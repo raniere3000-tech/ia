@@ -39,7 +39,6 @@ export default function Inicio(){
      <li>As chaves ficam salvas só neste navegador. Apague-as em Chaves e ajustes se usar um computador compartilhado.</li>
     </ul></section>
     <section className="panel"><div className="section-head"><h2><Clock size={18}/> Ainda não disponível no site</h2></div><ul className="plain muted">
-     <li><Ban size={13}/> Baixar vídeo direto por link do YouTube: o navegador não permite, e os termos do YouTube restringem. Envie o arquivo.</li>
      <li><Ban size={13}/> Agendar e postar automaticamente no TikTok, Instagram e YouTube: exige servidor e apps aprovados pelas redes.</li>
      <li><Ban size={13}/> Reenquadramento que segue o rosto: os cortes usam fundo desfocado ou corte central.</li>
     </ul></section>

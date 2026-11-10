@@ -1,0 +1,35 @@
+# Servidor de cortes pelo link
+
+O site roda todo no navegador, mas nenhum navegador consegue baixar vídeo do YouTube.
+Este servidor pequeno faz só isso: recebe o link, baixa o vídeo (até 720p) com o
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) e entrega o arquivo para o site, que analisa e corta sozinho.
+
+**Use apenas com vídeos seus ou com autorização do dono.**
+
+## Rodar no seu computador (recomendado)
+
+1. Instale o [Python 3](https://www.python.org/downloads/). No Windows, marque **Add Python to PATH**.
+2. Windows: dois cliques em `iniciar-windows.bat`. Mac/Linux: `./iniciar-mac-linux.sh`.
+   Na primeira vez ele cria um ambiente e instala tudo (yt-dlp, Deno e FFmpeg vêm pelo pip).
+3. Quando aparecer `rodando em http://localhost:8787`, deixe a janela aberta.
+4. No site, em **Chaves e ajustes → Cortes direto pelo link do YouTube**, cole `http://localhost:8787` e clique em **Testar e salvar**.
+
+Depois disso, em **Gerar cortes**, colar um link (ou clicar em "Abrir no estúdio" no Radar) já baixa e corta sozinho.
+
+## Configuração (variáveis de ambiente)
+
+| Variável | Padrão | Para quê |
+|---|---|---|
+| `PORTA` / `PORT` | `8787` | Porta do servidor |
+| `HOST` | `127.0.0.1` | Use `0.0.0.0` para hospedar |
+| `TOKEN` | vazio | Senha. Se definir, cole a mesma no site |
+| `MAX_MINUTOS` | `180` | Duração máxima do vídeo |
+| `ALTURA_MAX` | `720` | Resolução máxima baixada |
+| `ORIGENS` | site no GitHub Pages + localhost | Sites que podem usar o servidor |
+
+## Hospedar na nuvem
+
+Tem `Dockerfile` nesta pasta. Defina `TOKEN`. Atenção: o YouTube costuma bloquear
+servidores de nuvem ("Sign in to confirm you're not a bot"). No seu computador funciona melhor.
+
+Se um vídeo parar de baixar, atualize o yt-dlp abrindo o iniciador de novo (ele roda `pip install -U`).

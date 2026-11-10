@@ -234,3 +234,7 @@ label.inline select{max-width:180px}.label-row .help-btn{height:20px;min-width:2
 .note-bar.info{margin-top:16px;margin-bottom:0}.note-bar.info b{color:#e6e9f2}
 .marks-check{margin-bottom:16px}
 @media (max-width:860px){.ls-grid{grid-template-columns:1fr}}
+.check.big.auto-check{margin:0 0 16px}.auto-check b{display:block;margin-top:4px;color:var(--brand2)}
+.config-icon.srv{background:#13263f;color:#7cb8ff}
+.dl-box{margin-top:16px;background:#141a2b;border:1px solid #2f3a5c;border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}.dl-box .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.dl-box .row span{flex:1;min-width:200px;font-size:13px;color:#c9cfe0}
+.dl-bar{height:8px;border-radius:99px;background:#232a40;overflow:hidden}.dl-bar i{display:block;height:100%;background:linear-gradient(90deg,#7758ef,#38bdf8);transition:width .4s}

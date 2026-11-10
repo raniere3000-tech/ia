@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link2, Flag, FlagOff, Plus, Play, Trash2, ExternalLink, Upload, Info } from 'lucide-react';
+import { Link2, Flag, FlagOff, Plus, Play, Trash2, ExternalLink, Upload, Info, Wand2, Loader2, X, Server } from 'lucide-react';
 import { useApp } from '../state';
 import { tm, uid } from '../lib/store';
+import { baixarPeloServidor } from '../lib/servidor';
 
 /** Extrai o ID de um link do YouTube (watch, youtu.be, shorts, live, embed). */
 export function youtubeId(url:string){
@@ -22,8 +23,10 @@ function loadYT(){
 }
 
 /** Abre o vídeo do link dentro do estúdio: assistir, marcar início/fim e guardar os trechos. */
-export default function LinkStudio({onUpload}:{onUpload:()=>void}){
-  const {linkRef,setLinkRef,marcas,setMarcas,toast}=useApp();
+export default function LinkStudio({onUpload,onArquivo,direitos}:{onUpload:()=>void;onArquivo:(f:File)=>void;direitos:boolean}){
+  const {linkRef,setLinkRef,marcas,setMarcas,toast,settings,go}=useApp();
+  const [dl,setDl]=useState<{pct:number;etapa:string}|null>(null); const sinal=useRef<{cancelado:boolean}|null>(null);
+  const iniciado=useRef('');
   const [campo,setCampo]=useState(linkRef);
   const [info,setInfo]=useState<{titulo:string;canal:string}|null>(null);
   const [ini,setIni]=useState<number|null>(null);
@@ -42,8 +45,22 @@ export default function LinkStudio({onUpload}:{onUpload:()=>void}){
     const t=setInterval(()=>{ const p=player.current; if(p?.getCurrentTime) setAgora(p.getCurrentTime()||0); },250);
     return ()=>{ alive=false; clearInterval(t); try{ player.current?.destroy?.(); }catch{ /* ignore */ } player.current=null; };
   },[id]);
+  async function cortarAuto(link=linkRef){
+    if(!settings.servidor){ go('config'); toast('Primeiro ligue o servidor em Chaves e ajustes (botão "Como ligar?").','info'); return; }
+    if(!direitos){ toast('Marque a declaração de direitos acima para cortar automático.','erro'); return; }
+    if(sinal.current) return;
+    const s={cancelado:false}; sinal.current=s; setDl({pct:0,etapa:'Pedindo o vídeo ao servidor'});
+    try{
+      const f=await baixarPeloServidor(settings.servidor,settings.servidorToken,link,(pct,etapa)=>{ if(!s.cancelado) setDl({pct,etapa}); },s);
+      if(s.cancelado) return;
+      setDl(null); sinal.current=null; onArquivo(f);
+    }catch(e){ if(!s.cancelado) toast(e instanceof Error?e.message:String(e),'erro'); setDl(null); sinal.current=null; }
+  }
+  const cancelar=()=>{ if(sinal.current) sinal.current.cancelado=true; sinal.current=null; setDl(null); };
+  // Abriu um vídeo com o servidor ligado: já começa a cortar sozinho.
+  useEffect(()=>{ if(id&&settings.servidor&&direitos&&iniciado.current!==id){ iniciado.current=id; cortarAuto('https://www.youtube.com/watch?v='+id); } },[id]); // eslint-disable-line react-hooks/exhaustive-deps
   const tempo=()=>player.current?.getCurrentTime?.()||0;
-  const abrir=()=>{ const v=youtubeId(campo); if(!v){ toast('Esse link não parece ser de um vídeo do YouTube.','erro'); return; } setLinkRef('https://www.youtube.com/watch?v='+v); setMarcas(()=>[]); setIni(null); };
+  const abrir=()=>{ const v=youtubeId(campo); if(!v){ toast('Esse link não parece ser de um vídeo do YouTube.','erro'); return; } if(v!==id){ cancelar(); setLinkRef('https://www.youtube.com/watch?v='+v); setMarcas(()=>[]); setIni(null); } else if(settings.servidor&&!dl) cortarAuto(); };
   const marcarFim=()=>{
     if(ini===null) return; const f=tempo();
     if(f-ini<1){ toast('O fim precisa ser depois do início.','erro'); return; }
@@ -75,6 +92,8 @@ export default function LinkStudio({onUpload}:{onUpload:()=>void}){
      </div>)}
     </div>
    </div>}
-   {id&&<div className="note-bar info"><Info size={16}/><span><b>Para exportar com legenda e efeitos, falta o arquivo do vídeo.</b> O YouTube não deixa sites baixarem vídeos, e baixar vídeo de terceiros só é permitido com autorização. Se o vídeo é seu, baixe pelo <a href="https://studio.youtube.com/" target="_blank" rel="noreferrer">YouTube Studio</a> (Conteúdo → ⋮ → Baixar) e envie abaixo: {marcas.length?`os ${marcas.length} trechos marcados serão usados automaticamente.`:'o site acha os melhores trechos sozinho.'}</span><button className="subtle sm" onClick={onUpload}><Upload size={14}/> Enviar arquivo</button></div>}
+   {id&&dl&&<div className="dl-box"><div className="row"><Loader2 size={16} className="spin"/><span><b>{dl.etapa}</b> {dl.pct>0&&dl.pct<100?`${Math.round(dl.pct)}%`:''}. Depois o site analisa e corta sozinho{marcas.length?` (usando os ${marcas.length} trechos marcados)`:''}.</span><button className="subtle sm" onClick={cancelar}><X size={14}/> Cancelar</button></div><div className="dl-bar"><i style={{width:Math.max(3,dl.pct)+'%'}}/></div></div>}
+   {id&&!dl&&settings.servidor&&<div className="note-bar info"><Server size={16}/><span><b>Servidor ligado.</b> Clique em <b>Cortar automático</b> para baixar este vídeo e receber os melhores cortes com nota{marcas.length?`, ou só os ${marcas.length} trechos marcados`:''}. Use só vídeos seus ou autorizados.</span><button className="primary sm" onClick={()=>cortarAuto()}><Wand2 size={14}/> Cortar automático</button></div>}
+   {id&&!settings.servidor&&<div className="note-bar info"><Info size={16}/><span><b>Quer que corte sozinho pelo link?</b> Ligue o servidor gratuito no seu computador (leva uns 5 minutos, uma vez só). Sem ele, envie o arquivo do vídeo: {marcas.length?`os ${marcas.length} trechos marcados serão usados.`:'o site acha os melhores trechos sozinho.'}</span><button className="primary sm" onClick={()=>go('config')}><Server size={14}/> Ligar cortes pelo link</button><button className="subtle sm" onClick={onUpload}><Upload size={14}/> Enviar arquivo</button></div>}
   </section>;
 }

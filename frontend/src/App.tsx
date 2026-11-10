@@ -11,7 +11,7 @@ import Templates from './pages/Templates';
 import Config from './pages/Config';
 import './style.css';
 
-const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'blur-background'};
+const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'blur-background',servidor:'',servidorToken:''};
 const NAV:[Tab,string,typeof Home][] = [['inicio','Como funciona',Home],['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['estilos','Legendas e efeitos',Captions],['templates','Template da marca',LayoutTemplate],['config','Chaves e ajustes',Gear]];
 const TITLES:Record<Tab,[string,string]> = {
   inicio:['Bem-vindo ao EstúdioClip','Descubra vídeos em alta, transforme vídeos longos em cortes curtos e exporte com legenda, tudo no navegador.'],
@@ -38,7 +38,7 @@ export default function App(){
   const setMarcas=useCallback((f:(m:Marca[])=>Marca[])=>setM(f),[]);
   useEffect(()=>()=>{ if(projeto.url) URL.revokeObjectURL(projeto.url); },[projeto.url]);
   const ctx=useMemo(()=>({settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,linkRef,setLinkRef,marcas,setMarcas}),[settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,linkRef,marcas,setMarcas]);
-  const status=[{ok:!!settings.ytKey,label:'Radar (YouTube)',opt:false},{ok:true,label:'Cortes e exportação',opt:false},{ok:!!settings.claudeKey,label:'Notas com IA',opt:true}];
+  const status=[{ok:!!settings.ytKey,label:'Radar (YouTube)',opt:false},{ok:true,label:'Cortes e exportação',opt:false},{ok:!!settings.claudeKey,label:'Notas com IA',opt:true},{ok:!!settings.servidor,label:'Cortes pelo link',opt:true}];
   const [t,sub]=TITLES[tab];
   return <AppCtx.Provider value={ctx}>
    <div className="app">

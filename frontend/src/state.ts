@@ -5,7 +5,7 @@ import type { Template } from './lib/render';
 import presets from '../../config/presets.json';
 
 export type Marca = {id:string;inicio:number;fim:number;titulo:string};
-export type Settings = {ytKey:string; claudeKey:string; whisperModel:string; idioma:string; api:string; legendaPadrao:string; efeitoPadrao:string};
+export type Settings = {ytKey:string; claudeKey:string; whisperModel:string; idioma:string; api:string; legendaPadrao:string; efeitoPadrao:string; servidor:string; servidorToken:string};
 export type Tab = 'inicio'|'radar'|'cortes'|'estilos'|'templates'|'config';
 
 export type Projeto = {

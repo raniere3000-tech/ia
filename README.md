@@ -16,7 +16,9 @@ O site publicado em https://raniere3000-tech.github.io/ia/ funciona sozinho, dir
 | Template da marca | Nada | Logo, cor, moldura e crédito em todos os cortes |
 | Exportar | Chrome, Edge ou Safari | MP4 (ou WEBM) 1080p gravado em tempo real; vários cortes em ZIP com .srt e planilha |
 
-Ainda não disponível no site: baixar vídeos por link (o navegador não permite) e agendar/postar automaticamente nas redes (exige servidor e apps aprovados). A API Python em `backend/` continua disponível para uso local.
+Cortes direto pelo link do YouTube: rode o servidor da pasta `servidor/` no seu computador (dois cliques em `iniciar-windows.bat`) e cole `http://localhost:8787` em Chaves e ajustes. Veja `servidor/README.md`.
+
+Ainda não disponível no site: agendar/postar automaticamente nas redes (exige servidor e apps aprovados). A API Python em `backend/` continua disponível para uso local.
 
 ## Rodar interface
 

@@ -48,8 +48,16 @@ export const TOPICS:Record<string,Topic> = {
   velocidade:{titulo:'O que é “views por dia”',corpo:<>
     <p>É uma média: total de visualizações ÷ dias desde a publicação. Não é a velocidade de agora nem previsão de viralização, e os números públicos podem estar defasados.</p>
   </>},
-  servidor:{titulo:'Servidor Python (avançado, opcional)',corpo:<>
-    <p>O projeto também traz uma API em Python (pasta <code>backend</code>) com FFmpeg e Whisper. Ela só é necessária se você quiser processar no servidor em vez do navegador. Para rodar: veja o README do repositório. Sem servidor, o site funciona normalmente.</p>
+  servidor:{titulo:'Como ligar os cortes direto pelo link',corpo:<>
+    <p>Nenhum site consegue baixar vídeo do YouTube sozinho: o próprio YouTube bloqueia. Por isso o EstúdioClip tem um <b>servidor pequeno que roda no seu computador</b>. Ele baixa o vídeo do link e entrega para o site, que analisa e corta sozinho.</p>
+    <ol>
+     <li>Instale o <a href="https://www.python.org/downloads/" target="_blank" rel="noreferrer">Python</a> (no Windows, marque <b>Add Python to PATH</b> na instalação).</li>
+     <li>Baixe o servidor: <a href="https://github.com/raniere3000-tech/ia/archive/refs/heads/main.zip" target="_blank" rel="noreferrer">clique aqui para baixar o ZIP do projeto</a> e descompacte.</li>
+     <li>Abra a pasta <code>servidor</code> e dê dois cliques em <b>iniciar-windows.bat</b> (no Mac/Linux: <code>iniciar-mac-linux.sh</code>). Na primeira vez ele instala tudo sozinho em 1 a 3 minutos.</li>
+     <li>Quando aparecer <code>rodando em http://localhost:8787</code>, deixe a janela aberta, cole <b>http://localhost:8787</b> aqui e clique em <b>Testar e salvar</b>.</li>
+    </ol>
+    <p>Pronto: em <b>Gerar cortes</b>, cole o link e clique em <b>Cortar automático</b>. Use só vídeos seus ou com autorização do dono.</p>
+    <p className="hint">Dá para hospedar o servidor na nuvem (tem Dockerfile na pasta), mas o YouTube costuma bloquear servidores de nuvem. No seu computador funciona melhor. Se hospedar, defina uma senha (variável <code>TOKEN</code>) e cole a mesma senha aqui.</p>
   </>},
   modelo:{titulo:'Falas ou Gameplay/ação?',corpo:<>
     <ul><li><b>Falas</b>: podcasts, entrevistas, aulas. Usa a transcrição para achar frases completas.</li><li><b>Gameplay/ação</b>: jogos, esportes, vídeos com pouca fala. Dá mais peso aos picos de áudio e, se a Claude estiver configurada, envia 2 quadros de cada trecho para a IA ver o que acontece (custa um pouco mais).</li></ul>

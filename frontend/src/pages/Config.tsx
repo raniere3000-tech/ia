@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { KeyRound, Youtube, Sparkles, Captions, CheckCircle2, Loader2, Eye, EyeOff, Trash2, ExternalLink } from 'lucide-react';
+import { KeyRound, Youtube, Sparkles, Captions, Server, CheckCircle2, Loader2, Eye, EyeOff, Trash2, ExternalLink } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { testarChaveYouTube } from '../lib/radar';
 import { WHISPER_MODELS, IDIOMAS } from '../lib/transcribe';
+import { testarServidor } from '../lib/servidor';
 
 function KeyField({label,value,placeholder,onSave,onTest,help,link,linkLabel}:{label:string;value:string;placeholder:string;onSave:(v:string)=>void;onTest:(v:string)=>Promise<void>;help:'youtube'|'claude';link:string;linkLabel:string}){
   const {toast}=useApp();
@@ -26,6 +27,35 @@ function KeyField({label,value,placeholder,onSave,onTest,help,link,linkLabel}:{l
   </div>;
 }
 
+function ServidorCard(){
+  const {settings,setSettings,toast}=useApp();
+  const [url,setUrl]=useState(settings.servidor||'http://localhost:8787'); const [tok,setTok]=useState(settings.servidorToken);
+  const [busy,setBusy]=useState(false); const [info,setInfo]=useState('');
+  async function salvar(){
+    setBusy(true); setInfo('');
+    try{ const s=await testarServidor(url,tok); setSettings({servidor:url.trim().replace(/\/+$/,''),servidorToken:tok.trim()}); setInfo(`Conectado (versão ${s.versao}, vídeos até ${Math.round(s.max_minutos)} min).`); toast('Servidor conectado! Agora é só colar o link em Gerar cortes.','ok'); }
+    catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
+    finally{ setBusy(false); }
+  }
+  return <section className="panel config-card">
+    <div className="config-icon srv"><Server size={22}/></div>
+    <div className="config-body">
+     <div className="section-head"><h2>Cortes direto pelo link do YouTube <span className="tag">opcional</span></h2></div>
+     <p className="subtitle">Com o servidor aberto no seu computador, você cola o link e o site baixa, analisa e corta sozinho. Sem ele, envie o arquivo do vídeo. Não sabe como? Clique em <b>Como ligar?</b>.</p>
+     <div className="key-field">
+      <label className="key-label">Endereço do servidor <HelpButton topic="servidor" label="Como ligar?"/></label>
+      <div className="key-row">
+       <div className="input-wrap"><Server size={16}/><input value={url} onChange={e=>setUrl(e.target.value)} placeholder="http://localhost:8787" spellCheck={false}/></div>
+       <button className="primary" disabled={!url.trim()||busy} onClick={salvar}>{busy?<Loader2 size={16} className="spin"/>:<CheckCircle2 size={16}/>} Testar e salvar</button>
+       {settings.servidor&&<button className="subtle" title="Desligar servidor" onClick={()=>{setSettings({servidor:'',servidorToken:''});setInfo('');toast('Servidor desligado neste navegador.')}}><Trash2 size={16}/></button>}
+      </div>
+      <label className="mt">Senha do servidor (só se você definiu uma)<input type="password" value={tok} onChange={e=>setTok(e.target.value)} placeholder="Deixe vazio no servidor do seu computador" autoComplete="off"/></label>
+      <div className="key-foot">{settings.servidor?<span className="tag ok">Servidor salvo: {settings.servidor}</span>:<span className="tag warn">Nenhum servidor</span>}{info&&<span className="tag ok">{info}</span>}</div>
+     </div>
+    </div>
+   </section>;
+}
+
 export default function Config(){
   const {settings,setSettings}=useApp();
   return <>
@@ -46,6 +76,8 @@ export default function Config(){
      <KeyField label="Chave da API da Claude" value={settings.claudeKey} placeholder="Cole aqui a chave que começa com sk-ant-..." onSave={v=>setSettings({claudeKey:v})} onTest={async k=>{ const {testarChaveClaude,erroAmigavel}=await import('../lib/ai'); try{ await testarChaveClaude(k); }catch(e){ throw new Error(erroAmigavel(e)); } }} help="claude" link="https://console.anthropic.com/settings/keys" linkLabel="Abrir console da Anthropic"/>
     </div>
    </section>
+
+   <ServidorCard/>
 
    <section className="panel config-card">
     <div className="config-icon cap"><Captions size={22}/></div>

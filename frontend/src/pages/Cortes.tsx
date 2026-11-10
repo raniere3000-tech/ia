@@ -10,7 +10,7 @@ import { parseLegendas, type Cue } from '../lib/captions';
 import { transcrever, IDIOMAS } from '../lib/transcribe';
 import { formatoSuportado } from '../lib/render';
 import { renderClip, baixar, zipar, nomeArquivo, srtDoCorte } from '../lib/exporter';
-import { tm, parseTime, uid } from '../lib/store';
+import { tm, parseTime, uid, store } from '../lib/store';
 
 // Cache do áudio decodificado, para refazer a análise sem ler o arquivo de novo.
 let cache:{file:File|null;audio:AudioData|null;energy:Float32Array|null} = {file:null,audio:null,energy:null};
@@ -20,9 +20,10 @@ const DURACOES:[string,number,number][] = [['Até 30 s',15,30],['30–60 s',30,6
 export default function Cortes(){
   const {settings,toast,projeto,setProjeto,template,marcas,go}=useApp();
   const [usarMarcas,setUsarMarcas]=useState(true);
-  const [direitos,setDireitos]=useState(false);
+  const [direitos,setD]=useState(()=>store.get('studio_direitos')==='1');
+  const setDireitos=(v:boolean)=>{ setD(v); store.set('studio_direitos',v?'1':''); };
   const [modelo,setModelo]=useState<'falas'|'acao'>('falas');
-  const [faixa,setFaixa]=useState<[number,number]>([61,90]);
+  const [faixa,setFaixa]=useState<[number,number]>([30,60]);
   const [custom,setCustom]=useState(false);
   const [trechoIni,setTrechoIni]=useState(''); const [trechoFim,setTrechoFim]=useState('');
   const [limite,setLimite]=useState(15); const [minimo,setMinimo]=useState(3);
@@ -48,17 +49,18 @@ export default function Cortes(){
     const url=URL.createObjectURL(f);
     setProjeto(()=>({...PROJETO_VAZIO,file:f,url,nome:f.name}));
     setSel(new Set());
+    if(direitos){ gerar({file:f,url}); return; }
     videoInfo(url).then(i=>setProjeto(p=>p.url===url?{...p,duracao:i.duration}:p)).catch(e=>toast(e.message,'erro'));
   }
   const setJob=(j:Partial<Job>)=>setProjeto(p=>({...p,job:{...p.job,...j}}));
 
-  async function avaliarIA(cands:(Candidate&{id:string})[],cues:Cue[],promptTxt:string,temaTxt:string){
+  async function avaliarIA(cands:(Candidate&{id:string})[],cues:Cue[],promptTxt:string,temaTxt:string,url=projeto.url){
     const {avaliarComIA}=await import('../lib/ai');
     const top=cands.slice(0,Math.min(30,Math.max(10,limite*2)));
     let frames:Record<string,string[]>|undefined;
     if(modelo==='acao'){
       frames={};
-      for(const c of top.slice(0,20)){ frames[c.id]=await captureFrames(projeto.url,[c.inicio+(c.fim-c.inicio)*0.25,c.inicio+(c.fim-c.inicio)*0.65],512); }
+      for(const c of top.slice(0,20)){ frames[c.id]=await captureFrames(url,[c.inicio+(c.fim-c.inicio)*0.25,c.inicio+(c.fim-c.inicio)*0.65],512); }
     }
     const res=await avaliarComIA(settings.claudeKey,top,cues,{prompt:promptTxt,tema:temaTxt,frames});
     return new Map(res.map(r=>[r.id,r]));
@@ -77,17 +79,18 @@ export default function Cortes(){
     return out;
   }
 
-  async function gerar(){
-    if(!projeto.file||!direitos) return;
+  async function gerar(src?:{file:File;url:string}){
+    const file=src?.file??projeto.file, url=src?.url??projeto.url;
+    if(!file||!direitos) return;
     const etapas=['Lendo o vídeo','Analisando o áudio',...(legSrc!=='nenhuma'?['Preparando a legenda']:[]),'Montando candidatos',...(temIA?['Avaliando com IA (Claude)']:[]),'Gerando miniaturas'];
     setProjeto(p=>({...p,clips:[],candidatos:0,prompt,tema,job:{status:'rodando',etapa:etapas[0],pct:0,etapas}}));
     setSel(new Set());
     try{
-      const info=await videoInfo(projeto.url);
+      const info=await videoInfo(url);
       setJob({etapa:'Analisando o áudio',pct:0});
-      if(cache.file!==projeto.file){ const audio=await decodeAudio(projeto.file); cache={file:projeto.file,audio,energy:audio?energyProfile(audio,STEP):null}; }
+      if(cache.file!==file){ const audio=await decodeAudio(file); cache={file,audio,energy:audio?energyProfile(audio,STEP):null}; }
       if(!cache.audio) toast('O navegador não conseguiu ler o áudio deste vídeo. Os cortes serão sugeridos em sequência e sem legenda automática.','erro');
-      let cues:Cue[]=projeto.cues; let fonte=projeto.cuesFonte;
+      let cues:Cue[]=src?[]:projeto.cues; let fonte=src?'':projeto.cuesFonte;
       if(legSrc==='arquivo'){
         if(!srtFile) throw new Error('Escolha o arquivo de legenda (.srt ou .vtt) ou mude a opção de legenda.');
         setJob({etapa:'Preparando a legenda'}); cues=parseLegendas(await srtFile.text()); fonte='arquivo';
@@ -113,14 +116,14 @@ export default function Cortes(){
       let ia:Map<string,any>|null=null;
       if(temIA){
         setJob({etapa:'Avaliando com IA (Claude)'});
-        try{ ia=await avaliarIA(cands,cues,prompt,tema); }
+        try{ ia=await avaliarIA(cands,cues,prompt,tema,url); }
         catch(e){ const {erroAmigavel}=await import('../lib/ai'); toast('A avaliação com IA falhou, usando notas automáticas. '+erroAmigavel(e),'erro'); }
       }
       let clips=montarClips(cands,ia,info.duration);
       setProjeto(p=>({...p,clips,candidatos:cands.length}));
       setJob({etapa:'Gerando miniaturas'});
       const top=clips.slice(0,30);
-      const thumbs=await captureFrames(projeto.url,top.map(c=>Math.min(c.fim-0.1,c.inicio+1.5)),320).catch(()=>[] as string[]);
+      const thumbs=await captureFrames(url,top.map(c=>Math.min(c.fim-0.1,c.inicio+1.5)),320).catch(()=>[] as string[]);
       clips=clips.map(c=>{ const i=top.indexOf(c); return i>=0&&thumbs[i]?{...c,thumb:thumbs[i]}:c; });
       setProjeto(p=>({...p,clips,job:{...p.job,status:'pronto',etapa:'',pct:100,erro:undefined}}));
       toast(`${cands.length} trechos avaliados. Confira os melhores abaixo.`,'ok');
@@ -182,11 +185,13 @@ export default function Cortes(){
   // ---------- Tela: sem vídeo ----------
   if(!projeto.file) return <>
    <Stepper atual={1}/>
-   <LinkStudio onUpload={()=>fileInput.current?.click()}/>
+   <label className="check big auto-check"><input type="checkbox" checked={direitos} onChange={e=>setDireitos(e.target.checked)}/> <span>Declaro que tenho direito de usar e publicar os vídeos que envio (meus ou com autorização). <b>{direitos?'Pronto: os cortes começam sozinhos assim que você escolher o vídeo.':'Marque para os cortes começarem sozinhos ao escolher o vídeo.'}</b></span></label>
+   <LinkStudio onUpload={()=>fileInput.current?.click()} onArquivo={escolherArquivo} direitos={direitos}/>
+   
    <section className={'panel dropzone '+(drag?'drag':'')} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);escolherArquivo(e.dataTransfer.files?.[0]||null)}} onClick={()=>fileInput.current?.click()} role="button" tabIndex={0}>
     <span className="drop-icon"><Upload size={30}/></span>
     <h2>{marcas.length?`Envie o arquivo deste vídeo para cortar os ${marcas.length} trechos marcados`:'Arraste o vídeo aqui ou clique para escolher'}</h2>
-    <p>MP4, MOV ou WEBM. O arquivo não sai do seu computador.</p>
+    <p>MP4, MOV ou WEBM. O site analisa o áudio e as falas, dá nota a cada trecho e entrega os melhores cortes com legenda. O arquivo não sai do seu computador.</p>
     <input ref={fileInput} type="file" accept="video/*,.mkv,.mov" hidden onChange={e=>escolherArquivo(e.target.files?.[0]||null)}/>
    </section>
    <p className="hint center">Ainda sem vídeo? Ache inspiração no <button className="link-btn inline" onClick={()=>go('radar')}>Radar</button>.</p>
@@ -221,7 +226,7 @@ export default function Cortes(){
      </details>
     </div>
     <label className="check big"><input type="checkbox" checked={direitos} onChange={e=>setDireitos(e.target.checked)}/> Declaro que tenho direito de usar e publicar este vídeo (é meu ou tenho autorização do dono).</label>
-    <button className="primary lg full" disabled={!direitos||rodando||!projeto.duracao} onClick={gerar}>{rodando?<Loader2 size={18} className="spin"/>:<Sparkles size={18}/>} {rodando?'Gerando cortes...':'Gerar cortes'}</button>
+    <button className="primary lg full" disabled={!direitos||rodando||!projeto.duracao} onClick={()=>gerar()}>{rodando?<Loader2 size={18} className="spin"/>:<Sparkles size={18}/>} {rodando?'Gerando cortes...':'Gerar cortes'}</button>
     {!temIA&&<p className="hint center">Notas automáticas pelo áudio e pelas frases. Para notas e títulos feitos por IA, <button className="link-btn inline" onClick={()=>go('config')}>configure a chave da Claude</button>.</p>}
     {job.status!=='idle'&&<JobView job={job}/>}
    </section>
