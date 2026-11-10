@@ -16,6 +16,23 @@ Este servidor pequeno faz só isso: recebe o link, baixa o vídeo (até 720p) co
 
 Depois disso, em **Gerar cortes**, colar um link (ou clicar em "Abrir no estúdio" no Radar) já baixa e corta sozinho.
 
+## Rodar no celular Android (Termux)
+
+O IP do celular é residencial, então o YouTube quase nunca bloqueia. No Termux:
+
+```bash
+pkg install -y git
+git clone https://github.com/raniere3000-tech/ia
+cd ia/servidor
+bash iniciar-termux.sh          # usar o site no próprio celular: cole http://localhost:8787
+bash iniciar-termux.sh link     # usar o site no PC: cria um endereço https e uma senha
+```
+
+Com `link`, o terminal mostra a **senha** e um endereço `https://….trycloudflare.com`.
+Cole os dois no site, em **Chaves e ajustes**. O endereço muda cada vez que você reinicia.
+Se você usa Ubuntu dentro do Termux (proot-distro), use `./iniciar-mac-linux.sh`.
+Para atualizar depois: `cd ia && git pull`.
+
 ## Configuração (variáveis de ambiente)
 
 | Variável | Padrão | Para quê |

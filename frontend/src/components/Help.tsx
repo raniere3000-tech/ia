@@ -57,6 +57,7 @@ export const TOPICS:Record<string,Topic> = {
      <li>Quando aparecer <code>rodando em http://localhost:8787</code>, deixe a janela aberta, cole <b>http://localhost:8787</b> aqui e clique em <b>Testar e salvar</b>.</li>
     </ol>
     <p>Pronto: em <b>Gerar cortes</b>, cole o link e clique em <b>Cortar automático</b>. Use só vídeos seus ou com autorização do dono.</p>
+    <p><b>No celular Android (Termux):</b> rode <code>pkg install -y git && git clone https://github.com/raniere3000-tech/ia && cd ia/servidor && bash iniciar-termux.sh link</code>. O terminal mostra um link do site já ligado ao celular: abra esse link em qualquer aparelho, de qualquer lugar.</p>
     <p className="hint">Dá para hospedar o servidor na nuvem (tem Dockerfile na pasta), mas o YouTube costuma bloquear servidores de nuvem. No seu computador funciona melhor. Se hospedar, defina uma senha (variável <code>TOKEN</code>) e cole a mesma senha aqui.</p>
   </>},
   modelo:{titulo:'Falas ou Gameplay/ação?',corpo:<>

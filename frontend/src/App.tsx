@@ -37,6 +37,14 @@ export default function App(){
   const [marcas,setM]=useState<Marca[]>([]);
   const setMarcas=useCallback((f:(m:Marca[])=>Marca[])=>setM(f),[]);
   useEffect(()=>()=>{ if(projeto.url) URL.revokeObjectURL(projeto.url); },[projeto.url]);
+  // Link gerado pelo servidor (?servidor=...&senha=...): liga o servidor neste aparelho sozinho.
+  useEffect(()=>{
+    const q=new URLSearchParams(location.search); const srv=q.get('servidor'); if(!srv) return;
+    const senha=q.get('senha')||'';
+    history.replaceState(null,'',location.pathname+location.hash);
+    import('./lib/servidor').then(({testarServidor})=>testarServidor(srv,senha)).then(()=>{ setSettings({servidor:srv.replace(/\/+$/,''),servidorToken:senha}); toast('Servidor do celular conectado! Cole um link em Gerar cortes.','ok'); })
+      .catch(e=>toast('Não consegui conectar ao servidor do link: '+(e instanceof Error?e.message:String(e)),'erro'));
+  },[setSettings,toast]);
   const ctx=useMemo(()=>({settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,linkRef,setLinkRef,marcas,setMarcas}),[settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,linkRef,marcas,setMarcas]);
   const status=[{ok:!!settings.ytKey,label:'Radar (YouTube)',opt:false},{ok:true,label:'Cortes e exportação',opt:false},{ok:!!settings.claudeKey,label:'Notas com IA',opt:true},{ok:!!settings.servidor,label:'Cortes pelo link',opt:true}];
   const [t,sub]=TITLES[tab];

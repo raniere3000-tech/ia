@@ -1,10 +1,12 @@
 """Servidor do EstúdioClip: baixa um vídeo do YouTube pelo link para o site cortar sozinho.
 
 Use apenas com vídeos seus ou com autorização do dono.
+Só precisa de Python 3.9+, yt-dlp e FFmpeg (roda no Windows, Mac, Linux e Android/Termux).
 Rodar:  python servidor.py   (abre em http://localhost:8787)
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -12,15 +14,11 @@ import tempfile
 import threading
 import time
 import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
-import uvicorn
-from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
-from starlette.background import BackgroundTask
-
-VERSAO = '1.0.0'
+VERSAO = '1.1.0'
 PORTA = int(os.getenv('PORT', os.getenv('PORTA', '8787')))
 HOST = os.getenv('HOST', '127.0.0.1')
 TOKEN = os.getenv('TOKEN', '').strip()
@@ -32,33 +30,15 @@ PASTA = Path(os.getenv('PASTA_TEMP', tempfile.gettempdir())) / 'estudioclip'
 PASTA.mkdir(parents=True, exist_ok=True)
 YT = re.compile(r'^https?://(www\.|m\.|music\.)?(youtube\.com|youtu\.be)/', re.I)
 
-app = FastAPI(title='EstúdioClip servidor', version=VERSAO)
 JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
 
 
-@app.middleware('http')
-async def cors(request, call_next):
-    """CORS + Private Network Access (o site no github.io pode chamar o localhost)."""
-    origem = request.headers.get('origin', '')
-    ok = origem in ORIGENS or '*' in ORIGENS
-    if request.method == 'OPTIONS':
-        resp = JSONResponse({}, status_code=204 if ok else 403)
-    else:
-        resp = await call_next(request)
-    if ok:
-        resp.headers['Access-Control-Allow-Origin'] = origem
-        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Token'
-        resp.headers['Access-Control-Allow-Private-Network'] = 'true'
-        resp.headers['Access-Control-Expose-Headers'] = 'Content-Length, X-Titulo'
-        resp.headers['Vary'] = 'Origin'
-    return resp
-
-
-def checar_token(tok: str | None):
-    if TOKEN and (tok or '') != TOKEN:
-        raise HTTPException(401, 'Senha do servidor errada. Confira em Chaves e ajustes.')
+class Erro(Exception):
+    def __init__(self, status: int, msg: str):
+        super().__init__(msg)
+        self.status = status
+        self.msg = msg
 
 
 def limpar_antigos():
@@ -156,59 +136,138 @@ def baixar(jid: str, url: str):
         shutil.rmtree(pasta, ignore_errors=True)
 
 
-class Pedido(BaseModel):
-    url: str
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = 'EstudioClip/' + VERSAO
+    protocol_version = 'HTTP/1.1'
+
+    def log_message(self, *a):  # silencioso
+        pass
+
+    # ---- respostas ----
+    def cors(self):
+        origem = self.headers.get('Origin', '')
+        if origem and (origem in ORIGENS or '*' in ORIGENS):
+            self.send_header('Access-Control-Allow-Origin', origem)
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Token')
+            self.send_header('Access-Control-Allow-Private-Network', 'true')
+            self.send_header('Access-Control-Expose-Headers', 'Content-Length, X-Titulo')
+            self.send_header('Vary', 'Origin')
+
+    def json(self, status: int, dados: dict):
+        corpo = json.dumps(dados, ensure_ascii=False).encode()
+        self.send_response(status)
+        self.cors()
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(corpo)))
+        self.end_headers()
+        self.wfile.write(corpo)
+
+    def token_ok(self):
+        tok = self.headers.get('X-Token') or parse_qs(urlparse(self.path).query).get('token', [''])[0]
+        if TOKEN and tok != TOKEN:
+            raise Erro(401, 'Senha do servidor errada. Confira em Chaves e ajustes.')
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.cors()
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+
+    def do_GET(self):
+        self.rodar(self.get)
+
+    def do_POST(self):
+        n = int(self.headers.get('Content-Length') or 0)
+        self.corpo = self.rfile.read(n) if 0 < n <= 10000 else b''
+        if n > 10000:
+            self.close_connection = True
+        self.rodar(self.post)
+
+    def rodar(self, f):
+        try:
+            f(urlparse(self.path).path.rstrip('/') or '/')
+        except Erro as e:
+            self.json(e.status, {'detail': e.msg})
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as e:  # noqa: BLE001
+            self.json(500, {'detail': f'Erro interno: {e}'})
+
+    # ---- rotas ----
+    def get(self, caminho: str):
+        if caminho in ('/', '/saude'):
+            try:
+                import yt_dlp
+                versao_yt = yt_dlp.version.__version__
+            except Exception:
+                versao_yt = None
+            return self.json(200, {'ok': versao_yt is not None, 'versao': VERSAO, 'yt_dlp': versao_yt, 'senha': bool(TOKEN), 'max_minutos': MAX_MIN,
+                                   'aviso': None if versao_yt else 'yt-dlp não instalado: rode  pip install -U yt-dlp'})
+        m = re.fullmatch(r'/baixar/(\w+)(/arquivo)?', caminho)
+        if not m:
+            raise Erro(404, 'Rota não encontrada.')
+        self.token_ok()
+        jid, arquivo = m.group(1), m.group(2)
+        j = JOBS.get(jid)
+        if not arquivo:
+            if not j:
+                raise Erro(404, 'Download não encontrado (o servidor reiniciou?). Tente de novo.')
+            return self.json(200, {k: j.get(k) for k in ('status', 'pct', 'erro', 'titulo', 'duracao', 'tamanho')})
+        if not j or j.get('status') != 'pronto':
+            raise Erro(404, 'Arquivo ainda não está pronto.')
+        caminho_arq = Path(j['arquivo'])
+        tamanho = caminho_arq.stat().st_size
+        self.send_response(200)
+        self.cors()
+        self.send_header('Content-Type', 'video/mp4' if caminho_arq.suffix == '.mp4' else 'video/webm')
+        self.send_header('Content-Length', str(tamanho))
+        self.send_header('X-Titulo', re.sub(r'[^\x20-\x7e]', '', j.get('titulo') or '')[:200])
+        self.end_headers()
+        try:
+            with open(caminho_arq, 'rb') as f:
+                shutil.copyfileobj(f, self.wfile, 1024 * 1024)
+        finally:
+            shutil.rmtree(PASTA / jid, ignore_errors=True)
+            JOBS.pop(jid, None)
+
+    def post(self, caminho: str):
+        if caminho != '/baixar':
+            raise Erro(404, 'Rota não encontrada.')
+        self.token_ok()
+        try:
+            url = str(json.loads(self.corpo or b'{}').get('url', '')).strip()
+        except ValueError:
+            raise Erro(400, 'Pedido inválido.')
+        if not (YT.match(url) or (QUALQUER_URL and url.startswith('http'))):
+            raise Erro(400, 'Envie um link do YouTube.')
+        limpar_antigos()
+        jid = uuid.uuid4().hex[:12]
+        JOBS[jid] = {'status': 'baixando', 'pct': 0, 'criado': time.time(), 'url': url}
+        threading.Thread(target=baixar, args=(jid, url), daemon=True).start()
+        self.json(200, {'id': jid})
 
 
-@app.get('/saude')
-def saude():
-    import yt_dlp
-    return {'ok': True, 'versao': VERSAO, 'yt_dlp': yt_dlp.version.__version__, 'senha': bool(TOKEN), 'max_minutos': MAX_MIN}
-
-
-@app.post('/baixar')
-def iniciar(p: Pedido, x_token: str | None = Header(default=None)):
-    checar_token(x_token)
-    url = p.url.strip()
-    if not (YT.match(url) or (QUALQUER_URL and url.startswith('http'))):
-        raise HTTPException(400, 'Envie um link do YouTube.')
-    limpar_antigos()
-    jid = uuid.uuid4().hex[:12]
-    JOBS[jid] = {'status': 'baixando', 'pct': 0, 'criado': time.time(), 'url': url}
-    threading.Thread(target=baixar, args=(jid, url), daemon=True).start()
-    return {'id': jid}
-
-
-@app.get('/baixar/{jid}')
-def status(jid: str, x_token: str | None = Header(default=None)):
-    checar_token(x_token)
-    j = JOBS.get(jid)
-    if not j:
-        raise HTTPException(404, 'Download não encontrado (o servidor reiniciou?). Tente de novo.')
-    return {k: j.get(k) for k in ('status', 'pct', 'erro', 'titulo', 'duracao', 'tamanho')}
-
-
-@app.get('/baixar/{jid}/arquivo')
-def arquivo(jid: str, x_token: str | None = Header(default=None), token: str | None = None):
-    checar_token(x_token or token)
-    j = JOBS.get(jid)
-    if not j or j.get('status') != 'pronto':
-        raise HTTPException(404, 'Arquivo ainda não está pronto.')
-    caminho = Path(j['arquivo'])
-
-    def apagar():
-        shutil.rmtree(PASTA / jid, ignore_errors=True)
-        JOBS.pop(jid, None)
-
-    nome = re.sub(r'[^\w\- ]+', '', j.get('titulo') or 'video')[:80].strip() or 'video'
-    resp = FileResponse(caminho, media_type='video/mp4' if caminho.suffix == '.mp4' else 'video/webm',
-                        filename=nome + caminho.suffix, background=BackgroundTask(apagar))
-    resp.headers['X-Titulo'] = re.sub(r'[^\x20-\x7e]', '', j.get('titulo') or '')[:200]
-    return resp
+def main():
+    try:
+        import yt_dlp  # noqa: F401
+    except ImportError:
+        print('Falta o yt-dlp. Rode:  pip install -U yt-dlp')
+        raise SystemExit(1)
+    if not shutil.which('ffmpeg') and not ffmpeg_path():
+        print('Aviso: FFmpeg não encontrado. Vídeos acima de 360p podem falhar. (Termux: pkg install ffmpeg)')
+    srv = ThreadingHTTPServer((HOST, PORTA), Handler)
+    print(f'\n  EstúdioClip servidor {VERSAO} rodando em http://localhost:{PORTA}')
+    print('  Cole esse endereço no site, em Chaves e ajustes > Cortes direto pelo link.')
+    if TOKEN:
+        print('  Senha ligada: cole a mesma senha no site.')
+    print('  Deixe esta janela aberta enquanto usa o site. Para parar: Ctrl+C\n')
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == '__main__':
-    print(f'\n  EstúdioClip servidor {VERSAO} rodando em http://localhost:{PORTA}')
-    print('  Cole esse endereço no site, em Chaves e ajustes > Servidor de cortes pelo link.')
-    print('  Deixe esta janela aberta enquanto usa o site. Para parar: Ctrl+C\n')
-    uvicorn.run(app, host=HOST, port=PORTA, log_level='warning')
+    main()
