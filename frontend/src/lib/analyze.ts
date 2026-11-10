@@ -1,60 +1,65 @@
-// Análise de cortes no navegador: mesma heurística do backend (energia RMS do áudio).
-export type Clip = {id:string;titulo:string;nota_final:number;nota_10:number;inicio:number;fim:number;motivo:string};
+// Motor de cortes no navegador: monta candidatos a partir dos picos de áudio e das frases
+// da transcrição, dá notas heurísticas (gancho, fluxo, valor, tendência) e remove sobreposições.
+import type { Cue } from './captions';
 
-export function videoDuration(url:string){
-  return new Promise<number>((resolve,reject)=>{
-    const v = document.createElement('video');
-    v.preload = 'metadata'; v.muted = true; v.src = url;
-    v.onloadedmetadata = ()=>{ const d = v.duration; v.removeAttribute('src'); v.load(); isFinite(d)&&d>0 ? resolve(d) : reject(new Error('Duração do vídeo indisponível.')); };
-    v.onerror = ()=>reject(new Error('O navegador não conseguiu abrir este vídeo. Tente um MP4 (H.264) ou WEBM.'));
-  });
-}
+export type Notas = {gancho:number;fluxo:number;valor:number;tendencia:number};
+export type Formato = '9:16'|'1:1'|'16:9';
+export type Clip = {
+  id:string; titulo:string; inicio:number; fim:number;
+  nota_final:number; nota_10:number; notas:Notas; motivo:string; fonte:'heuristica'|'ia';
+  legenda:string; efeito:string; formato:Formato; gancho_texto:string;
+  versao_de?:string; descartado?:boolean; thumb?:string;
+};
+export type AnalyzeOpts = {min:number;max:number;limite:number;inicio:number;fim:number};
 
-async function decodeAudio(file:File){
-  const buf = await file.arrayBuffer();
-  for(const rate of [8000,16000,22050,44100]){
-    try{
-      const ctx = new OfflineAudioContext(1,1,rate);
-      return await ctx.decodeAudioData(buf.slice(0));
-    }catch{ /* tenta outra taxa */ }
-  }
-  return null;
-}
+/** Converte a nota interna 0–99 para a exibição 0–10 (arredondada em 1 casa). */
+export const nota10 = (n:number)=>Math.round(n*10/99*10)/10;
+export const notaFinal = (n:Notas)=>Math.round(0.35*n.gancho+0.25*n.fluxo+0.25*n.valor+0.15*n.tendencia);
 
-export async function analisarNoNavegador(file:File,url:string,opt:{min:number;max:number;limite:number},progress:(n:number)=>void){
-  progress(5);
-  const dur = await videoDuration(url);
-  progress(15);
-  const audio = await decodeAudio(file);
-  progress(60);
-  const low = opt.min, high = opt.max;
-  const window = Math.max(4,Math.min(high,Math.round((low+high)/2)));
-  const segs:{inicio:number;fim:number;energia:number}[] = [];
-  let start = 0;
-  const chans = audio ? Array.from({length:audio.numberOfChannels},(_,i)=>audio.getChannelData(i)) : [];
-  const rate = audio?.sampleRate || 8000;
-  while(start+Math.min(low,dur) <= dur && segs.length < 120){
-    const end = Math.min(dur,start+window);
-    if(end-start < Math.min(low,dur)) break;
-    let energia = 0;
-    if(chans.length){
-      const a = Math.floor(start*rate), b = Math.min(chans[0].length,Math.floor(end*rate));
-      const step = Math.max(1,Math.floor((b-a)/20000));
-      let sum = 0, n = 0;
-      for(let i=a;i<b;i+=step){ let v=0; for(const c of chans) v+=c[i]; v/=chans.length; sum+=v*v; n++; }
-      energia = Math.sqrt(sum/Math.max(1,n));
+function mean(a:Float32Array,i:number,j:number){ let s=0; const b=Math.max(i,0), e=Math.min(j,a.length); for(let k=b;k<e;k++) s+=a[k]; return e>b? s/(e-b):0; }
+function maxOf(a:Float32Array,i:number,j:number){ let m=0; for(let k=Math.max(i,0);k<Math.min(j,a.length);k++) m=Math.max(m,a[k]); return m; }
+
+export type Candidate = {inicio:number;fim:number;notas:Notas;motivo:string};
+
+export function gerarCandidatos(energy:Float32Array|null,step:number,duration:number,cues:Cue[],o:AnalyzeOpts):Candidate[]{
+  const a = Math.max(0,Math.min(o.inicio,duration)), b = Math.min(duration,o.fim>0?o.fim:duration);
+  const span = b-a;
+  if(span < Math.min(o.min,5)) return [];
+  const min = Math.min(o.min,span), max = Math.min(o.max,span);
+  const lens = Array.from(new Set([min,Math.round((min+max)/2),max])).filter(l=>l>0);
+  const stride = Math.max(2,Math.round(min/4));
+  const ref = energy ? (()=>{ const s=Array.from(energy.slice(Math.floor(a/step),Math.ceil(b/step))).sort((x,y)=>x-y); return {p50:s[Math.floor(s.length*0.5)]||0, p95:s[Math.floor(s.length*0.95)]||1}; })() : {p50:0,p95:1};
+  const norm = (v:number)=>Math.max(0,Math.min(1,(v-ref.p50)/Math.max(1e-6,ref.p95-ref.p50)));
+  const snapStart = (t:number)=>{ const c=cues.find(c=>c.start>=t-0.01&&c.start<=t+3); return c? c.start : t; };
+  const snapEnd = (t:number)=>{ const c=[...cues].reverse().find(c=>c.end<=t+0.01&&c.end>=t-3); return c? c.end : t; };
+  const out:Candidate[] = [];
+  for(const L of lens){
+    for(let s=a; s+L<=b+0.01; s+=stride){
+      let ini=s, fim=Math.min(b,s+L);
+      let snapped=0;
+      if(cues.length){ const ns=snapStart(ini); if(ns!==ini){ini=ns;snapped++;} const ne=snapEnd(fim); if(ne!==fim&&ne-ini>=min*0.8){fim=ne;snapped++;} }
+      if(fim-ini < min*0.8) continue;
+      const fala = cues.filter(c=>c.end>ini&&c.start<fim).reduce((n,c)=>n+Math.min(fim,c.end)-Math.max(ini,c.start),0)/(fim-ini);
+      let gancho=40, valor=40, fluxo=cues.length? 45+snapped*25 : 55, motivo='';
+      if(energy){
+        const i0=Math.floor(ini/step), i3=Math.floor((ini+3)/step), i1=Math.floor(fim/step);
+        const hook = Math.max(norm(mean(energy,i0,i3)), norm(maxOf(energy,i0,i3))*0.8);
+        const body = norm(mean(energy,i0,i1)); const peak = norm(maxOf(energy,i0,i1));
+        gancho = 20+75*hook; valor = 20+45*body+30*peak;
+        motivo = hook>0.6 ? 'Começa com áudio forte, bom gancho nos primeiros segundos.' : peak>0.8 ? 'Tem pico de áudio marcante (reação, grito, risada ou ação).' : 'Trecho com energia sonora estável.';
+      }
+      if(cues.length){ valor += 10*fala; motivo += fala>0.6 ? ' Fala contínua.' : ''; if(snapped===2) motivo+=' Começa e termina em frase completa.'; }
+      const notas = {gancho:Math.round(Math.min(95,gancho)),fluxo:Math.round(Math.min(95,fluxo)),valor:Math.round(Math.min(95,valor)),tendencia:50};
+      out.push({inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,motivo:motivo.trim()||'Sem áudio legível: trecho sugerido em sequência.'});
     }
-    segs.push({inicio:+start.toFixed(2),fim:+end.toFixed(2),energia});
-    start = end;
   }
-  progress(90);
-  const peak = Math.max(...segs.map(s=>s.energia),0) || 1;
-  const clips:Clip[] = segs.map((s,idx)=>{
-    const nota = chans.length ? Math.min(95,Math.max(10,Math.round(35+60*s.energia/peak))) : 35;
-    return {id:String(idx+1),titulo:`Destaque ${idx+1}`,inicio:s.inicio,fim:s.fim,nota_final:nota,nota_10:+(nota/9.9).toFixed(1),
-      motivo: chans.length ? 'Estimativa inicial por energia sonora; revise manualmente.' : 'Áudio não pôde ser lido pelo navegador; trechos sugeridos em sequência.'};
-  });
-  clips.sort((a,b)=>b.nota_final-a.nota_final);
-  progress(100);
-  return {duracao:dur, cortes:clips.slice(0,Math.min(30,opt.limite)), audio_lido:!!audio};
+  // Ordena por nota e remove candidatos que se sobrepõem mais de 50%.
+  out.sort((x,y)=>notaFinal(y.notas)-notaFinal(x.notas) || y.notas.gancho-x.notas.gancho || x.inicio-y.inicio);
+  const sel:Candidate[] = [];
+  for(const c of out){
+    const ok = sel.every(s=>{ const ov=Math.max(0,Math.min(s.fim,c.fim)-Math.max(s.inicio,c.inicio)); return ov/Math.min(s.fim-s.inicio,c.fim-c.inicio) <= 0.5; });
+    if(ok) sel.push(c);
+    if(sel.length>=60) break;
+  }
+  return sel;
 }

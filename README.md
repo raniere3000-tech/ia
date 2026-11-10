@@ -4,15 +4,19 @@ Projeto inicial baseado nas especificações **V8 unificadas**, com Radar genér
 
 ## Funciona sem servidor (GitHub Pages)
 
-O site publicado em https://raniere3000-tech.github.io/ia/ funciona sozinho, direto no navegador:
+O site publicado em https://raniere3000-tech.github.io/ia/ funciona sozinho, direto no navegador. Abra a aba **Como funciona** para o passo a passo e **Chaves e ajustes** para colar as chaves (cada campo tem um botão de ajuda “Onde consigo?”).
 
-- **Radar**: cole sua chave da YouTube Data API v3 em *Configurações*. Ela fica salva só no seu navegador e as consultas vão direto ao YouTube. Restrinja a chave ao domínio do site no Google Cloud.
-- **Gerar cortes**: o vídeo é analisado no próprio navegador (energia do áudio) e não é enviado a nenhum servidor.
-- **Prévia real 9:16** com os 10 estilos de legenda e os 6 efeitos.
-- **Legendas**: envie um arquivo `.srt` ou `.vtt` (a transcrição automática com Whisper só existe no servidor Python).
-- **Exportar**: gera o corte 1080x1920 em MP4 (Chrome, Edge, Safari) ou WEBM, gravado em tempo real. Mantenha a aba aberta durante a exportação.
+| Função | Precisa de | Como funciona |
+| --- | --- | --- |
+| Radar (vídeos e canais, pesquisas salvas) | Chave grátis da YouTube Data API v3 | Consulta direta ao YouTube com a chave salva só no navegador |
+| Gerar cortes | Nada | Áudio analisado no navegador; candidatos sem sobreposição, nota 0–99 e 0–10 |
+| Legendas automáticas | Nada | Whisper (transformers.js) roda no navegador; o modelo é baixado na 1ª vez. Também aceita .srt/.vtt |
+| Notas com IA, títulos e “refazer com pedido” | Chave da API da Claude (opcional, paga por uso) | Gancho, fluxo, valor e tendência avaliados pela Claude; no modo Gameplay envia 2 quadros por trecho |
+| Editor | Nada | Ajuste de início/fim, correção da legenda, 10 estilos, 6 efeitos, 9:16 / 1:1 / 16:9, texto de gancho, duplicar versão |
+| Template da marca | Nada | Logo, cor, moldura e crédito em todos os cortes |
+| Exportar | Chrome, Edge ou Safari | MP4 (ou WEBM) 1080p gravado em tempo real; vários cortes em ZIP com .srt e planilha |
 
-Se a API Python estiver configurada em *Configurações*, o site passa a usá-la no lugar do motor do navegador.
+Ainda não disponível no site: baixar vídeos por link (o navegador não permite) e agendar/postar automaticamente nas redes (exige servidor e apps aprovados). A API Python em `backend/` continua disponível para uso local.
 
 ## Rodar interface
 
