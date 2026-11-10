@@ -1,0 +1,366 @@
+{
+  "schemaVersion": "1.0",
+  "idioma": "pt-BR",
+  "defaultSubtitlePreset": "classico-contorno",
+  "defaultEffects": [
+    "blur-background"
+  ],
+  "defaultOutput": {
+    "aspectRatio": "9:16",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "container": "mp4",
+    "videoCodec": "h264",
+    "audioCodec": "aac",
+    "burnSubtitles": true
+  },
+  "presets": [
+    {
+      "id": "gta-impacto",
+      "nome": "GTA Impacto",
+      "tipo": "legenda",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "bold",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#FFD400",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "center-bottom",
+      "maxLines": 2,
+      "animation": "pop",
+      "animationDurationSeconds": 0.18,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "tscaps-engine",
+        "custom-ffmpeg"
+      ]
+    },
+    {
+      "id": "karaoke-amarelo",
+      "nome": "Karaokê Amarelo",
+      "tipo": "legenda",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "bold",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#FFDA00",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "center-bottom",
+      "maxLines": 3,
+      "animation": "karaoke",
+      "animationDurationSeconds": 0.12,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "ass-ffmpeg"
+      ]
+    },
+    {
+      "id": "podcast-clean",
+      "nome": "Podcast Clean",
+      "tipo": "legenda",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "semibold",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#5EEAD4",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "center-bottom",
+      "maxLines": 2,
+      "animation": "fade",
+      "animationDurationSeconds": 0.18,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "ass-ffmpeg"
+      ]
+    },
+    {
+      "id": "neon-gamer",
+      "nome": "Neon Gamer",
+      "tipo": "legenda",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "bold",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#A855F7",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "center-bottom",
+      "maxLines": 2,
+      "animation": "glow",
+      "animationDurationSeconds": 0.13,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "tscaps-engine",
+        "custom-ffmpeg"
+      ]
+    },
+    {
+      "id": "minimal-branco",
+      "nome": "Minimal Branco",
+      "tipo": "legenda",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "regular",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#FFFFFF",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "center-bottom",
+      "maxLines": 2,
+      "animation": "none",
+      "animationDurationSeconds": 0,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "ass-ffmpeg"
+      ]
+    },
+    {
+      "id": "impacto-vermelho",
+      "nome": "Impacto Vermelho",
+      "tipo": "legenda",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "black",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#FF3B3B",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "center-bottom",
+      "maxLines": 2,
+      "animation": "shake",
+      "animationDurationSeconds": 0.1,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "tscaps-engine",
+        "custom-ffmpeg"
+      ]
+    },
+    {
+      "id": "storytelling",
+      "nome": "Storytelling",
+      "tipo": "legenda",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "semibold",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#FACC15",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "center-bottom",
+      "maxLines": 3,
+      "animation": "slide-up",
+      "animationDurationSeconds": 0.22,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "tscaps-engine",
+        "custom-ffmpeg"
+      ]
+    },
+    {
+      "id": "frase-chave",
+      "nome": "Frase-Chave",
+      "tipo": "legenda",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "bold",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#22C55E",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "center",
+      "maxLines": 2,
+      "animation": "zoom",
+      "animationDurationSeconds": 0.16,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "tscaps-engine",
+        "custom-ffmpeg"
+      ]
+    },
+    {
+      "id": "classico-contorno",
+      "nome": "Clássico com Contorno",
+      "tipo": "legenda",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "semibold",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#FACC15",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "center-bottom",
+      "maxLines": 2,
+      "animation": "none",
+      "animationDurationSeconds": 0,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "ass-ffmpeg"
+      ]
+    },
+    {
+      "id": "legenda-caixa",
+      "nome": "Legenda com Caixa",
+      "tipo": "legenda",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "bold",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#38BDF8",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "center-bottom",
+      "maxLines": 2,
+      "animation": "fade",
+      "animationDurationSeconds": 0.15,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "ass-ffmpeg"
+      ]
+    },
+    {
+      "id": "virada-cena",
+      "nome": "Virada de Cena",
+      "tipo": "efeito",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "normal",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#FFFFFF",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "full-screen",
+      "maxLines": 0,
+      "animation": "flash",
+      "animationDurationSeconds": 0.15,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "tscaps-engine",
+        "custom-ffmpeg"
+      ]
+    },
+    {
+      "id": "zoom-acao",
+      "nome": "Zoom na Ação",
+      "tipo": "efeito",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "normal",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#FFFFFF",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "full-screen",
+      "maxLines": 0,
+      "animation": "zoom",
+      "animationDurationSeconds": 0.3,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "tscaps-engine",
+        "custom-ffmpeg"
+      ]
+    },
+    {
+      "id": "camera-shake",
+      "nome": "Tremor de Câmera",
+      "tipo": "efeito",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "normal",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#FFFFFF",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "full-screen",
+      "maxLines": 0,
+      "animation": "shake",
+      "animationDurationSeconds": 0.22,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "tscaps-engine",
+        "custom-ffmpeg"
+      ]
+    },
+    {
+      "id": "transicao-fade",
+      "nome": "Transição Fade",
+      "tipo": "efeito",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "normal",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#FFFFFF",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "full-screen",
+      "maxLines": 0,
+      "animation": "fade",
+      "animationDurationSeconds": 0.4,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "ass-ffmpeg"
+      ]
+    },
+    {
+      "id": "blur-background",
+      "nome": "Fundo Desfocado",
+      "tipo": "efeito",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "normal",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#FFFFFF",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "full-screen",
+      "maxLines": 0,
+      "animation": "blur",
+      "animationDurationSeconds": 0,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "tscaps-engine",
+        "custom-ffmpeg"
+      ]
+    },
+    {
+      "id": "speed-ramp",
+      "nome": "Aceleração de Cena",
+      "tipo": "efeito",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "normal",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#FFFFFF",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "full-screen",
+      "maxLines": 0,
+      "animation": "speed-ramp",
+      "animationDurationSeconds": 0.5,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "tscaps-engine",
+        "custom-ffmpeg"
+      ]
+    }
+  ]
+}
