@@ -2,6 +2,18 @@
 
 Projeto inicial baseado nas especificações **V8 unificadas**, com Radar genérico (qualquer nicho), ranking de cortes, legendas e catálogo de efeitos. **Não é um produto pronto para produção**: alguns recursos são demonstrativos ou exigem configuração de serviços.
 
+## Funciona sem servidor (GitHub Pages)
+
+O site publicado em https://raniere3000-tech.github.io/ia/ funciona sozinho, direto no navegador:
+
+- **Radar**: cole sua chave da YouTube Data API v3 em *Configurações*. Ela fica salva só no seu navegador e as consultas vão direto ao YouTube. Restrinja a chave ao domínio do site no Google Cloud.
+- **Gerar cortes**: o vídeo é analisado no próprio navegador (energia do áudio) e não é enviado a nenhum servidor.
+- **Prévia real 9:16** com os 10 estilos de legenda e os 6 efeitos.
+- **Legendas**: envie um arquivo `.srt` ou `.vtt` (a transcrição automática com Whisper só existe no servidor Python).
+- **Exportar**: gera o corte 1080x1920 em MP4 (Chrome, Edge, Safari) ou WEBM, gravado em tempo real. Mantenha a aba aberta durante a exportação.
+
+Se a API Python estiver configurada em *Configurações*, o site passa a usá-la no lugar do motor do navegador.
+
 ## Rodar interface
 
 ```bash
