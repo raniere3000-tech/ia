@@ -4,6 +4,7 @@ import type { Cue, Preset } from './lib/captions';
 import type { Template } from './lib/render';
 import presets from '../../config/presets.json';
 
+export type Marca = {id:string;inicio:number;fim:number;titulo:string};
 export type Settings = {ytKey:string; claudeKey:string; whisperModel:string; idioma:string; api:string; legendaPadrao:string; efeitoPadrao:string};
 export type Tab = 'inicio'|'radar'|'cortes'|'estilos'|'templates'|'config';
 
@@ -27,6 +28,7 @@ export type Ctx = {
   projeto:Projeto; setProjeto:(f:(p:Projeto)=>Projeto)=>void;
   template:Template; setTemplate:(t:Template)=>void;
   linkRef:string; setLinkRef:(s:string)=>void;
+  marcas:Marca[]; setMarcas:(f:(m:Marca[])=>Marca[])=>void;
 };
 export const AppCtx = createContext<Ctx>(null as unknown as Ctx);
 export const useApp = ()=>useContext(AppCtx);

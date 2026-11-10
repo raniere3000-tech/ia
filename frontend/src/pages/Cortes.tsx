@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
-import { Upload, Film, Sparkles, Loader2, CheckCircle2, Circle, AlertTriangle, Pencil, Download, Copy, Trash2, Undo2, FileText, Wand2, Package, ExternalLink, X, Play } from 'lucide-react';
+import { Upload, Film, Sparkles, Loader2, CheckCircle2, Circle, AlertTriangle, Pencil, Download, Copy, Trash2, Undo2, FileText, Wand2, Package, Play } from 'lucide-react';
 import { useApp, captionPresets, PROJETO_VAZIO, type Job } from '../state';
 import { HelpButton } from '../components/Help';
 import Editor from '../components/Editor';
+import LinkStudio from '../components/LinkStudio';
 import { videoInfo, decodeAudio, energyProfile, captureFrames, type AudioData } from '../lib/media';
-import { gerarCandidatos, notaFinal, nota10, type Clip, type Candidate } from '../lib/analyze';
+import { gerarCandidatos, avaliarJanelas, notaFinal, nota10, type Clip, type Candidate } from '../lib/analyze';
 import { parseLegendas, type Cue } from '../lib/captions';
 import { transcrever, IDIOMAS } from '../lib/transcribe';
 import { formatoSuportado } from '../lib/render';
@@ -17,7 +18,8 @@ const STEP=0.5;
 const DURACOES:[string,number,number][] = [['Até 30 s',15,30],['30–60 s',30,60],['61–90 s',61,90],['90–180 s',90,180]];
 
 export default function Cortes(){
-  const {settings,toast,projeto,setProjeto,template,linkRef,setLinkRef,go}=useApp();
+  const {settings,toast,projeto,setProjeto,template,marcas,go}=useApp();
+  const [usarMarcas,setUsarMarcas]=useState(true);
   const [direitos,setDireitos]=useState(false);
   const [modelo,setModelo]=useState<'falas'|'acao'>('falas');
   const [faixa,setFaixa]=useState<[number,number]>([61,90]);
@@ -62,13 +64,13 @@ export default function Cortes(){
     return new Map(res.map(r=>[r.id,r]));
   }
 
-  function montarClips(cands:(Candidate&{id:string})[],ia:Map<string,any>|null,dur:number):Clip[]{
+  function montarClips(cands:(Candidate&{id:string;titulo?:string})[],ia:Map<string,any>|null,dur:number):Clip[]{
     const out=cands.map(c=>{
       const r=ia?.get(c.id);
       const notas=r?{gancho:clamp(r.gancho),fluxo:clamp(r.fluxo),valor:clamp(r.valor),tendencia:clamp(r.tendencia)}:c.notas;
       const ini=r&&Math.abs(r.inicio-c.inicio)<=3?Math.max(0,r.inicio):c.inicio; const fim=r&&Math.abs(r.fim-c.fim)<=3?Math.min(dur,r.fim):c.fim;
       const nf=notaFinal(notas);
-      return {id:c.id,titulo:r?.titulo||'',inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,nota_final:nf,nota_10:nota10(nf),motivo:r?.motivo||c.motivo,fonte:r?'ia':'heuristica',legenda:legSrc==='nenhuma'?'':settings.legendaPadrao,efeito:settings.efeitoPadrao,formato:'9:16',gancho_texto:''} as Clip;
+      return {id:c.id,titulo:c.titulo||r?.titulo||'',marca:c.titulo,inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,nota_final:nf,nota_10:nota10(nf),motivo:r?.motivo||c.motivo,fonte:r?'ia':'heuristica',legenda:legSrc==='nenhuma'?'':settings.legendaPadrao,efeito:settings.efeitoPadrao,formato:'9:16',gancho_texto:''} as Clip;
     });
     out.sort((a,b)=>b.nota_final-a.nota_final||b.notas.gancho-a.notas.gancho||a.inicio-b.inicio);
     out.forEach((c,i)=>{ if(!c.titulo) c.titulo=`Destaque ${i+1}`; });
@@ -104,7 +106,9 @@ export default function Cortes(){
       setProjeto(p=>({...p,cues,cuesFonte:fonte,duracao:info.duration}));
       setJob({etapa:'Montando candidatos',pct:0,erro:undefined});
       const ini=trechoIni?parseTime(trechoIni):0, fimT=trechoFim?parseTime(trechoFim):0;
-      const cands=gerarCandidatos(cache.energy,STEP,info.duration,modelo==='falas'?cues:cues.length?cues:[],{min:faixa[0],max:faixa[1],limite,inicio:isNaN(ini)?0:ini,fim:isNaN(fimT)?0:fimT}).map(c=>({...c,id:uid()}));
+      const porMarca=usarMarcas&&marcas.length>0;
+      const cands=porMarca?avaliarJanelas(cache.energy,STEP,cues,marcas.filter(m=>m.inicio<info.duration).map(m=>({...m,fim:Math.min(m.fim,info.duration)}))).map(c=>({...c,id:uid()})):gerarCandidatos(cache.energy,STEP,info.duration,modelo==='falas'?cues:cues.length?cues:[],{min:faixa[0],max:faixa[1],limite,inicio:isNaN(ini)?0:ini,fim:isNaN(fimT)?0:fimT}).map(c=>({...c,id:uid()}));
+      if(!cands.length&&porMarca) throw new Error('Os trechos marcados ficam depois do fim deste arquivo. Confira se enviou o vídeo certo.');
       if(!cands.length) throw new Error('O vídeo (ou o trecho escolhido) é mais curto que a duração mínima dos cortes. Escolha uma duração menor.');
       let ia:Map<string,any>|null=null;
       if(temIA){
@@ -128,7 +132,7 @@ export default function Cortes(){
 
   async function refazer(){
     if(!temIA||!novoPrompt.trim()) return;
-    const cands=projeto.clips.filter(c=>!c.versao_de).map(c=>({id:c.id,inicio:c.inicio,fim:c.fim,notas:c.notas,motivo:c.motivo}));
+    const cands=projeto.clips.filter(c=>!c.versao_de).map(c=>({id:c.id,inicio:c.inicio,fim:c.fim,notas:c.notas,motivo:c.motivo,titulo:c.marca}));
     const prev=new Map(projeto.clips.map(c=>[c.id,c]));
     setJob({status:'rodando',etapa:'Avaliando com IA (Claude)',etapas:['Avaliando com IA (Claude)'],pct:0});
     try{
@@ -178,13 +182,13 @@ export default function Cortes(){
   // ---------- Tela: sem vídeo ----------
   if(!projeto.file) return <>
    <Stepper atual={1}/>
+   <LinkStudio onUpload={()=>fileInput.current?.click()}/>
    <section className={'panel dropzone '+(drag?'drag':'')} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);escolherArquivo(e.dataTransfer.files?.[0]||null)}} onClick={()=>fileInput.current?.click()} role="button" tabIndex={0}>
     <span className="drop-icon"><Upload size={30}/></span>
-    <h2>Arraste o vídeo aqui ou clique para escolher</h2>
+    <h2>{marcas.length?`Envie o arquivo deste vídeo para cortar os ${marcas.length} trechos marcados`:'Arraste o vídeo aqui ou clique para escolher'}</h2>
     <p>MP4, MOV ou WEBM. O arquivo não sai do seu computador.</p>
     <input ref={fileInput} type="file" accept="video/*,.mkv,.mov" hidden onChange={e=>escolherArquivo(e.target.files?.[0]||null)}/>
    </section>
-   {linkRef&&<div className="note-bar"><ExternalLink size={15}/><span>Referência do Radar: <a href={linkRef} target="_blank" rel="noreferrer">{linkRef}</a>. O site não baixa vídeos de terceiros: baixe o arquivo (se for seu ou autorizado) e envie acima.</span><button className="icon-btn" onClick={()=>setLinkRef('')}><X size={14}/></button></div>}
    <p className="hint center">Ainda sem vídeo? Ache inspiração no <button className="link-btn inline" onClick={()=>go('radar')}>Radar</button>.</p>
   </>;
 
@@ -195,6 +199,7 @@ export default function Cortes(){
 
    {job.status!=='pronto'||!projeto.clips.length?<section className="panel">
     <div className="section-head"><h2><Sparkles size={18}/> Como você quer os cortes?</h2></div>
+    {marcas.length>0&&<label className="check big marks-check"><input type="checkbox" checked={usarMarcas} onChange={e=>setUsarMarcas(e.target.checked)}/> Usar os {marcas.length} trechos que marquei no link ({marcas.map(m=>`${tm(m.inicio)}–${tm(m.fim)}`).join(', ')}). Desmarque para o site procurar os melhores trechos sozinho.</label>}
     <div className="form-grid">
      <div className="field"><span className="field-label">Tipo de vídeo <HelpButton topic="modelo"/></span><div className="seg big">
       <button className={modelo==='falas'?'on':''} onClick={()=>setModelo('falas')}><strong>Falas</strong><small>Podcast, entrevista, aula</small></button>

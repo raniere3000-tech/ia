@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Home, Search, Clapperboard, Captions, LayoutTemplate, Settings as Gear, CheckCircle2, AlertTriangle, Info, X, Circle } from 'lucide-react';
-import { AppCtx, PROJETO_VAZIO, type Projeto, type Settings, type Tab } from './state';
+import { AppCtx, PROJETO_VAZIO, type Marca, type Projeto, type Settings, type Tab } from './state';
 import { store } from './lib/store';
 import { TEMPLATE_PADRAO, type Template } from './lib/render';
 import Inicio from './pages/Inicio';
@@ -34,8 +34,10 @@ export default function App(){
   const [template,setT]=useState<Template>(()=>({...TEMPLATE_PADRAO,...store.json<Partial<Template>>('studio_template',{})}));
   const setTemplate=useCallback((t:Template)=>{ setT(t); store.setJson('studio_template',t); },[]);
   const [linkRef,setLinkRef]=useState('');
+  const [marcas,setM]=useState<Marca[]>([]);
+  const setMarcas=useCallback((f:(m:Marca[])=>Marca[])=>setM(f),[]);
   useEffect(()=>()=>{ if(projeto.url) URL.revokeObjectURL(projeto.url); },[projeto.url]);
-  const ctx=useMemo(()=>({settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,linkRef,setLinkRef}),[settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,linkRef]);
+  const ctx=useMemo(()=>({settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,linkRef,setLinkRef,marcas,setMarcas}),[settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,linkRef,marcas,setMarcas]);
   const status=[{ok:!!settings.ytKey,label:'Radar (YouTube)',opt:false},{ok:true,label:'Cortes e exportação',opt:false},{ok:!!settings.claudeKey,label:'Notas com IA',opt:true}];
   const [t,sub]=TITLES[tab];
   return <AppCtx.Provider value={ctx}>

@@ -8,7 +8,7 @@ export type Clip = {
   id:string; titulo:string; inicio:number; fim:number;
   nota_final:number; nota_10:number; notas:Notas; motivo:string; fonte:'heuristica'|'ia';
   legenda:string; efeito:string; formato:Formato; gancho_texto:string;
-  versao_de?:string; descartado?:boolean; thumb?:string;
+  versao_de?:string; descartado?:boolean; thumb?:string; marca?:string;
 };
 export type AnalyzeOpts = {min:number;max:number;limite:number;inicio:number;fim:number};
 
@@ -62,4 +62,22 @@ export function gerarCandidatos(energy:Float32Array|null,step:number,duration:nu
     if(sel.length>=60) break;
   }
   return sel;
+}
+
+/** Dá notas aos trechos que o próprio usuário marcou (sem procurar outros). */
+export function avaliarJanelas(energy:Float32Array|null,step:number,cues:Cue[],janelas:{inicio:number;fim:number;titulo?:string}[]):(Candidate&{titulo?:string})[]{
+  const ref = energy ? (()=>{ const s=Array.from(energy).sort((x,y)=>x-y); return {p50:s[Math.floor(s.length*0.5)]||0, p95:s[Math.floor(s.length*0.95)]||1}; })() : {p50:0,p95:1};
+  const norm = (v:number)=>Math.max(0,Math.min(1,(v-ref.p50)/Math.max(1e-6,ref.p95-ref.p50)));
+  return janelas.filter(j=>j.fim-j.inicio>=1).map(j=>{
+    const ini=j.inicio, fim=j.fim;
+    const fala = cues.length ? cues.filter(c=>c.end>ini&&c.start<fim).reduce((n,c)=>n+Math.min(fim,c.end)-Math.max(ini,c.start),0)/(fim-ini) : 0;
+    let gancho=50, valor=50;
+    if(energy){
+      const i0=Math.floor(ini/step), i3=Math.floor((ini+3)/step), i1=Math.floor(fim/step);
+      gancho = 20+75*Math.max(norm(mean(energy,i0,i3)), norm(maxOf(energy,i0,i3))*0.8);
+      valor = 20+45*norm(mean(energy,i0,i1))+30*norm(maxOf(energy,i0,i1))+10*fala;
+    }
+    const notas = {gancho:Math.round(Math.min(95,gancho)),fluxo:60,valor:Math.round(Math.min(95,valor)),tendencia:50};
+    return {inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,motivo:'Trecho marcado por você no link.',titulo:j.titulo};
+  });
 }

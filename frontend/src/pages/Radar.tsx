@@ -40,7 +40,7 @@ export default function Radar(){
     const nome=[f.tema,f.nicho!=='Todos os nichos'?f.nicho:'',`${f.dias===3650?'sempre':f.dias+'d'}`].filter(Boolean).join(' • ');
     persist([...salvas.filter(s=>s.nome!==nome),{nome,f}]); toast('Pesquisa salva.','ok');
   }
-  const usar=(link:string)=>{ setLinkRef(link); go('cortes'); toast('Link anotado como referência. Para gerar cortes, envie o arquivo do vídeo (seu ou autorizado).'); };
+  const usar=(link:string)=>{ setLinkRef(link); go('cortes'); toast('Vídeo aberto no estúdio. Assista e marque os trechos que quer cortar.','ok'); };
 
   if(!settings.ytKey) return <section className="panel setup-callout">
    <span className="setup-icon"><KeyRound size={26}/></span>
@@ -76,7 +76,7 @@ export default function Radar(){
       <a href={v.link} target="_blank" rel="noreferrer" className="thumb"><img src={v.thumbnail} alt="" loading="lazy"/><span className="dur">{tm(v.duracao_segundos)}</span></a>
       <div className="video-body"><h3 title={v.titulo}>{v.titulo}</h3><a className="channel" href={v.link_canal} target="_blank" rel="noreferrer">{v.canal} <ExternalLink size={12}/></a>
        <div className="metrics"><span>▶ {v.views===null?'Não informado':fmt(v.views)+' views'}</span><span>⚡ {v.velocidade===null?'Não informado':fmt(v.velocidade)+'/dia'}</span><span>📅 {new Date(v.publicado).toLocaleDateString('pt-BR')}</span></div>
-       <div className="card-actions"><a className="subtle sm" href={v.link} target="_blank" rel="noreferrer"><ExternalLink size={13}/> Assistir</a><button className="action-link" onClick={()=>usar(v.link)}><Scissors size={13}/> Abrir em Gerar cortes</button></div></div></article>)}</div>
+       <div className="card-actions"><a className="subtle sm" href={v.link} target="_blank" rel="noreferrer"><ExternalLink size={13}/> Assistir</a><button className="action-link" onClick={()=>usar(v.link)}><Scissors size={13}/> Abrir no estúdio de cortes</button></div></div></article>)}</div>
       :<div className="empty"><Search size={30}/><strong>Nenhum vídeo encontrado</strong><p>Amplie o período, reduza as views mínimas ou mude a duração.</p></div>)
     :(canais.length?<div className="channel-list">{canais.map(c=><article key={c.id} className="channel-row">{c.thumbnail?<img src={c.thumbnail} alt=""/>:<span className="avatar"><Users size={18}/></span>}<div className="grow"><a href={c.link} target="_blank" rel="noreferrer"><strong>{c.nome}</strong> <ExternalLink size={12}/></a><small>{c.inscritos===null?'Inscritos: não informado':fmt(c.inscritos)+' inscritos'} • {c.videos} vídeo(s) nesta pesquisa • {fmt(c.views)} views somadas</small><small className="muted">Destaque: {c.melhor.titulo}</small></div><a className="subtle sm" href={c.melhor.link} target="_blank" rel="noreferrer">Ver destaque</a></article>)}</div>
       :<div className="empty"><Users size={30}/><strong>Nenhum canal</strong></div>)}
