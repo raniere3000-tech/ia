@@ -5,8 +5,9 @@ import { HelpButton } from '../components/Help';
 import { testarChaveYouTube } from '../lib/radar';
 import { WHISPER_MODELS, IDIOMAS } from '../lib/transcribe';
 import { testarServidor } from '../lib/servidor';
+import { iaAtiva } from '../lib/ia';
 
-function KeyField({label,value,placeholder,onSave,onTest,help,link,linkLabel}:{label:string;value:string;placeholder:string;onSave:(v:string)=>void;onTest:(v:string)=>Promise<void>;help:'youtube'|'claude';link:string;linkLabel:string}){
+function KeyField({label,value,placeholder,onSave,onTest,help,link,linkLabel}:{label:string;value:string;placeholder:string;onSave:(v:string)=>void;onTest:(v:string)=>Promise<void>;help:'youtube'|'claude'|'gemini';link:string;linkLabel:string}){
   const {toast}=useApp();
   const [v,setV]=useState(value); const [show,setShow]=useState(false); const [busy,setBusy]=useState(false);
   const [estado,setEstado]=useState<''|'ok'|'erro'>('');
@@ -71,9 +72,11 @@ export default function Config(){
    <section className="panel config-card">
     <div className="config-icon ai"><Sparkles size={22}/></div>
     <div className="config-body">
-     <div className="section-head"><h2>Notas com IA (Claude) <span className="tag">opcional</span></h2></div>
-     <p className="subtitle">Sem esta chave tudo funciona, mas as notas vêm só do áudio. Com ela, a IA lê o que é falado, dá notas de gancho, fluxo, valor e tendência, escreve títulos e encontra trechos pelo seu pedido. Custo por uso, pago à Anthropic.</p>
+     <div className="section-head"><h2>Notas com IA <span className="tag">opcional</span></h2></div>
+     <p className="subtitle">Sem chave tudo funciona, mas as notas vêm só do áudio. Com uma IA, ela lê o que é falado, dá notas de gancho, fluxo, valor e tendência, escreve títulos e encontra trechos pelo seu pedido. Use o <b>Gemini</b> (Google, tem cota grátis) ou a <b>Claude</b> (Anthropic, paga por uso).</p>
+     <KeyField label="Chave do Gemini (Google AI Studio)" value={settings.geminiKey} placeholder="Cole aqui a chave do Gemini (começa com AIza...)" onSave={v=>setSettings({geminiKey:v})} onTest={async k=>{ const {testarChaveGemini,erroGemini}=await import('../lib/gemini'); try{ await testarChaveGemini(k); }catch(e){ throw new Error(erroGemini(e)); } }} help="gemini" link="https://aistudio.google.com/apikey" linkLabel="Abrir Google AI Studio"/>
      <KeyField label="Chave da API da Claude" value={settings.claudeKey} placeholder="Cole aqui a chave que começa com sk-ant-..." onSave={v=>setSettings({claudeKey:v})} onTest={async k=>{ const {testarChaveClaude,erroAmigavel}=await import('../lib/ai'); try{ await testarChaveClaude(k); }catch(e){ throw new Error(erroAmigavel(e)); } }} help="claude" link="https://console.anthropic.com/settings/keys" linkLabel="Abrir console da Anthropic"/>
+     {settings.geminiKey&&settings.claudeKey&&<label className="mt">Qual IA dá as notas?<select value={iaAtiva(settings)||''} onChange={e=>setSettings({ia:e.target.value as 'gemini'|'claude'})}><option value="gemini">Gemini (Google)</option><option value="claude">Claude (Anthropic)</option></select></label>}
     </div>
    </section>
 

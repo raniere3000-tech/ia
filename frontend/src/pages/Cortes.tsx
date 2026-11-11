@@ -4,6 +4,7 @@ import { useApp, captionPresets, PROJETO_VAZIO, type Job } from '../state';
 import { HelpButton } from '../components/Help';
 import Editor from '../components/Editor';
 import LinkStudio from '../components/LinkStudio';
+import { iaAtiva, nomeIA, avaliar, erroIA } from '../lib/ia';
 import { videoInfo, decodeAudio, energyProfile, captureFrames, type AudioData } from '../lib/media';
 import { gerarCandidatos, avaliarJanelas, notaFinal, nota10, type Clip, type Candidate } from '../lib/analyze';
 import { parseLegendas, type Cue } from '../lib/captions';
@@ -38,7 +39,7 @@ export default function Cortes(){
   const [novoPrompt,setNovoPrompt]=useState('');
   const fileInput=useRef<HTMLInputElement>(null);
   const job=projeto.job; const rodando=job.status==='rodando';
-  const temIA=!!settings.claudeKey;
+  const qualIA=iaAtiva(settings); const temIA=!!qualIA; const rotuloIA=`Avaliando com IA (${nomeIA(qualIA)})`;
   const recSupport=formatoSuportado();
 
   function escolherArquivo(f:File|null){
@@ -55,14 +56,13 @@ export default function Cortes(){
   const setJob=(j:Partial<Job>)=>setProjeto(p=>({...p,job:{...p.job,...j}}));
 
   async function avaliarIA(cands:(Candidate&{id:string})[],cues:Cue[],promptTxt:string,temaTxt:string,url=projeto.url){
-    const {avaliarComIA}=await import('../lib/ai');
     const top=cands.slice(0,Math.min(30,Math.max(10,limite*2)));
     let frames:Record<string,string[]>|undefined;
     if(modelo==='acao'){
       frames={};
       for(const c of top.slice(0,20)){ frames[c.id]=await captureFrames(url,[c.inicio+(c.fim-c.inicio)*0.25,c.inicio+(c.fim-c.inicio)*0.65],512); }
     }
-    const res=await avaliarComIA(settings.claudeKey,top,cues,{prompt:promptTxt,tema:temaTxt,frames});
+    const res=await avaliar(settings,top,cues,{prompt:promptTxt,tema:temaTxt,frames});
     return new Map(res.map(r=>[r.id,r]));
   }
 
@@ -82,7 +82,7 @@ export default function Cortes(){
   async function gerar(src?:{file:File;url:string}){
     const file=src?.file??projeto.file, url=src?.url??projeto.url;
     if(!file||!direitos) return;
-    const etapas=['Lendo o vídeo','Analisando o áudio',...(legSrc!=='nenhuma'?['Preparando a legenda']:[]),'Montando candidatos',...(temIA?['Avaliando com IA (Claude)']:[]),'Gerando miniaturas'];
+    const etapas=['Lendo o vídeo','Analisando o áudio',...(legSrc!=='nenhuma'?['Preparando a legenda']:[]),'Montando candidatos',...(temIA?[rotuloIA]:[]),'Gerando miniaturas'];
     setProjeto(p=>({...p,clips:[],candidatos:0,prompt,tema,job:{status:'rodando',etapa:etapas[0],pct:0,etapas}}));
     setSel(new Set());
     try{
@@ -115,9 +115,9 @@ export default function Cortes(){
       if(!cands.length) throw new Error('O vídeo (ou o trecho escolhido) é mais curto que a duração mínima dos cortes. Escolha uma duração menor.');
       let ia:Map<string,any>|null=null;
       if(temIA){
-        setJob({etapa:'Avaliando com IA (Claude)'});
+        setJob({etapa:rotuloIA});
         try{ ia=await avaliarIA(cands,cues,prompt,tema,url); }
-        catch(e){ const {erroAmigavel}=await import('../lib/ai'); toast('A avaliação com IA falhou, usando notas automáticas. '+erroAmigavel(e),'erro'); }
+        catch(e){ toast('A avaliação com IA falhou, usando notas automáticas. '+await erroIA(settings,e),'erro'); }
       }
       let clips=montarClips(cands,ia,info.duration);
       setProjeto(p=>({...p,clips,candidatos:cands.length}));
@@ -137,13 +137,13 @@ export default function Cortes(){
     if(!temIA||!novoPrompt.trim()) return;
     const cands=projeto.clips.filter(c=>!c.versao_de).map(c=>({id:c.id,inicio:c.inicio,fim:c.fim,notas:c.notas,motivo:c.motivo,titulo:c.marca}));
     const prev=new Map(projeto.clips.map(c=>[c.id,c]));
-    setJob({status:'rodando',etapa:'Avaliando com IA (Claude)',etapas:['Avaliando com IA (Claude)'],pct:0});
+    setJob({status:'rodando',etapa:rotuloIA,etapas:[rotuloIA],pct:0});
     try{
       const ia=await avaliarIA(cands,projeto.cues,novoPrompt,projeto.tema);
       const clips=montarClips(cands,ia,projeto.duracao).map(c=>({...c,thumb:prev.get(c.id)?.thumb,legenda:prev.get(c.id)?.legenda??c.legenda,efeito:prev.get(c.id)?.efeito??c.efeito,formato:prev.get(c.id)?.formato??c.formato}));
       setProjeto(p=>({...p,clips,prompt:novoPrompt,job:{...p.job,status:'pronto',etapa:''}}));
       toast('Cortes reavaliados com o novo pedido.','ok');
-    }catch(e){ const {erroAmigavel}=await import('../lib/ai'); setJob({status:'pronto'}); toast(erroAmigavel(e),'erro'); }
+    }catch(e){ setJob({status:'pronto'}); toast(await erroIA(settings,e),'erro'); }
   }
 
   const atualizar=(c:Clip)=>setProjeto(p=>({...p,clips:p.clips.map(x=>x.id===c.id?c:x)}));
@@ -222,12 +222,12 @@ export default function Cortes(){
      <details className="field more"><summary>Mais opções: trecho do vídeo, tema e pedido para a IA</summary>
       <div className="small-grid mt"><label>Começar em (min:seg)<input placeholder="0:00" value={trechoIni} onChange={e=>setTrechoIni(e.target.value)}/></label><label>Terminar em (min:seg)<input placeholder={projeto.duracao?tm(projeto.duracao):'fim'} value={trechoFim} onChange={e=>setTrechoFim(e.target.value)}/></label></div>
       <label className="mt">Tema do vídeo<input placeholder="Ex.: GTA RP, podcast de finanças" value={tema} onChange={e=>setTema(e.target.value)}/></label>
-      <label className="mt"><span className="label-row">Pedido para a IA {!temIA&&<span className="tag">precisa da chave da Claude</span>}</span><input disabled={!temIA} placeholder={temIA?'Ex.: ache onde ele fala de preço; perseguições policiais':'Configure a chave da Claude para usar'} value={prompt} onChange={e=>setPrompt(e.target.value)}/></label>
+      <label className="mt"><span className="label-row">Pedido para a IA {!temIA&&<span className="tag">precisa de uma chave de IA</span>}</span><input disabled={!temIA} placeholder={temIA?'Ex.: ache onde ele fala de preço; perseguições policiais':'Configure uma chave de IA para usar'} value={prompt} onChange={e=>setPrompt(e.target.value)}/></label>
      </details>
     </div>
     <label className="check big"><input type="checkbox" checked={direitos} onChange={e=>setDireitos(e.target.checked)}/> Declaro que tenho direito de usar e publicar este vídeo (é meu ou tenho autorização do dono).</label>
     <button className="primary lg full" disabled={!direitos||rodando||!projeto.duracao} onClick={()=>gerar()}>{rodando?<Loader2 size={18} className="spin"/>:<Sparkles size={18}/>} {rodando?'Gerando cortes...':'Gerar cortes'}</button>
-    {!temIA&&<p className="hint center">Notas automáticas pelo áudio e pelas frases. Para notas e títulos feitos por IA, <button className="link-btn inline" onClick={()=>go('config')}>configure a chave da Claude</button>.</p>}
+    {!temIA&&<p className="hint center">Notas automáticas pelo áudio e pelas frases. Para notas e títulos feitos por IA, <button className="link-btn inline" onClick={()=>go('config')}>configure a chave do Gemini (grátis) ou da Claude</button>.</p>}
     {job.status!=='idle'&&<JobView job={job}/>}
    </section>
    :<>

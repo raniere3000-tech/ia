@@ -18,6 +18,16 @@ export const TOPICS:Record<string,Topic> = {
     </ol>
     <p className="help-note">A chave fica salva apenas neste navegador. Ninguém mais tem acesso a ela.</p>
   </>},
+  gemini:{titulo:'Como conseguir a chave do Gemini (IA do Google, tem cota grátis)',corpo:<>
+    <p>O Gemini faz o mesmo que a Claude aqui: lê a transcrição (e, no modo Gameplay, quadros do vídeo), dá notas de <b>gancho, fluxo, valor e tendência</b>, escreve títulos e aceita pedidos. Tem uma <b>cota grátis por dia</b>.</p>
+    <ol>
+      <li>Entre em <L href="https://aistudio.google.com/apikey">aistudio.google.com/apikey</L> com sua conta Google.</li>
+      <li>Clique em <b>Create API key</b> (ou <b>Criar chave de API</b>) e copie a chave (começa com <code>AIza</code>).</li>
+      <li>Cole no campo desta página e clique em <b>Testar e salvar</b>.</li>
+    </ol>
+    <p>Já tem uma chave do Gemini em outro projeto? Pode usar a mesma.</p>
+    <p className="help-note">A chave fica só neste navegador e vai direto para o Google. Na cota grátis, o Google pode usar o que é enviado para melhorar os modelos. Se a chave tiver restrição de site no Google Cloud, adicione <code>raniere3000-tech.github.io</code>.</p>
+  </>},
   claude:{titulo:'Como conseguir a chave da Claude (IA para notas e títulos)',corpo:<>
     <p>Com essa chave, a IA lê a transcrição (e, no modo Gameplay, quadros do vídeo) e dá notas de <b>gancho, fluxo, valor e tendência</b>, escreve títulos e aceita pedidos como “ache onde ele fala de preço”. É <b>opcional</b>: sem ela o site usa notas automáticas pelo áudio.</p>
     <ol>

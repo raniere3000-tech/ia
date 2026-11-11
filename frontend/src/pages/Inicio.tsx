@@ -5,14 +5,14 @@ import { HelpButton } from '../components/Help';
 export default function Inicio(){
   const {settings,go}=useApp();
   const passos=[
-    {icon:KeyRound,t:'1. Cole suas chaves',d:'A chave gratuita do YouTube ativa o Radar. A chave da Claude é opcional e deixa as notas mais inteligentes.',btn:'Abrir Chaves e ajustes',to:'config' as const},
+    {icon:KeyRound,t:'1. Cole suas chaves',d:'A chave gratuita do YouTube ativa o Radar. A chave de IA (Gemini grátis ou Claude) é opcional e deixa as notas mais inteligentes.',btn:'Abrir Chaves e ajustes',to:'config' as const},
     {icon:Search,t:'2. Ache vídeos em alta',d:'No Radar, escolha um nicho e veja vídeos e canais com mais views por dia. Use para se inspirar ou achar parceiros.',btn:'Abrir o Radar',to:'radar' as const},
     {icon:Upload,t:'3. Envie seu vídeo',d:'Em Gerar cortes, arraste um vídeo seu ou autorizado. O site transcreve a fala e encontra os melhores trechos.',btn:'Gerar cortes',to:'cortes' as const},
     {icon:Download,t:'4. Edite e exporte',d:'Ajuste início e fim, corrija a legenda, escolha estilo e efeito, e baixe em MP4 vertical, quadrado ou horizontal.',btn:'Ver estilos',to:'estilos' as const},
   ];
   const checks=[
     {ok:!!settings.ytKey,t:'Chave da YouTube Data API',d:'Necessária só para o Radar. Grátis.',help:'youtube' as const,need:'Obrigatória para o Radar'},
-    {ok:!!settings.claudeKey,t:'Chave da Claude (Anthropic)',d:'Opcional. Notas de gancho, fluxo, valor e tendência, títulos e busca por pedido.',help:'claude' as const,need:'Opcional'},
+    {ok:!!(settings.geminiKey||settings.claudeKey),t:'Chave de IA: Gemini (grátis) ou Claude',d:'Opcional. Notas de gancho, fluxo, valor e tendência, títulos e busca por pedido.',help:'gemini' as const,need:'Opcional'},
     {ok:true,t:'Legendas automáticas (Whisper)',d:'Já funciona, sem chave. O modelo é baixado na primeira vez.',help:'whisper' as const,need:'Sem chave'},
   ];
   return <>
