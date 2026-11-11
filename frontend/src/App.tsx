@@ -11,7 +11,7 @@ import Templates from './pages/Templates';
 import Config from './pages/Config';
 import './style.css';
 
-const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'blur-background',servidor:'',servidorToken:'',geminiKey:'',ia:''};
+const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'seguir-rosto',servidor:'',servidorToken:'',geminiKey:'',ia:''};
 const NAV:[Tab,string,typeof Home][] = [['inicio','Como funciona',Home],['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['estilos','Legendas e efeitos',Captions],['templates','Template da marca',LayoutTemplate],['config','Chaves e ajustes',Gear]];
 const TITLES:Record<Tab,[string,string]> = {
   inicio:['Bem-vindo ao EstúdioClip','Descubra vídeos em alta, transforme vídeos longos em cortes curtos e exporte com legenda, tudo no navegador.'],

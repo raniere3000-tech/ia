@@ -341,6 +341,28 @@
       ]
     },
     {
+      "id": "seguir-rosto",
+      "nome": "Segue o Rosto",
+      "tipo": "efeito",
+      "ativo": true,
+      "fontFamily": "DejaVu Sans",
+      "fontWeight": "normal",
+      "textColor": "#FFFFFF",
+      "highlightColor": "#FFFFFF",
+      "outlineColor": "#101010",
+      "outlineWidth": 3,
+      "position": "full-screen",
+      "maxLines": 0,
+      "animation": "face-tracking",
+      "animationDurationSeconds": 0,
+      "safeAreaBottomPercent": 17,
+      "previewAsset": null,
+      "compatibleRenderers": [
+        "tscaps-engine",
+        "custom-ffmpeg"
+      ]
+    },
+    {
       "id": "speed-ramp",
       "nome": "Aceleração de Cena",
       "tipo": "efeito",

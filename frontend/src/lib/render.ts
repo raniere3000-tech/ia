@@ -9,7 +9,8 @@ export const DIMS:Record<Formato,[number,number]> = {'9:16':[1080,1920],'1:1':[1
 export type Template = {ativo:boolean; logo:string; logoPos:'top-left'|'top-right'|'bottom-left'|'bottom-right'; credito:string; cor:string; moldura:boolean};
 export const TEMPLATE_PADRAO:Template = {ativo:false,logo:'',logoPos:'top-right',credito:'',cor:'#7758ef',moldura:false};
 
-export type RenderOpts = {legenda:Preset|null; efeito:string; cues:Cue[]; gancho:string; accent:string; template:Template; logoImg?:HTMLImageElement|null};
+import { posicao, type Trilha } from './rosto';
+export type RenderOpts = {legenda:Preset|null; efeito:string; cues:Cue[]; gancho:string; accent:string; template:Template; logoImg?:HTMLImageElement|null; rosto?:Trilha|null};
 
 export function formatoSuportado(){
   if(typeof MediaRecorder==='undefined') return null;
@@ -30,7 +31,12 @@ export function drawFrame(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,small:
   let z=1,dx=0,dy=0;
   if(o.efeito==='zoom-acao') z=1+0.18*Math.min(1,t/Math.max(1,dur));
   if(o.efeito==='camera-shake' && (t%4)<0.22){ dx=(Math.random()-.5)*28; dy=(Math.random()-.5)*28; }
-  if(o.efeito==='nenhum' || Math.abs(W/H - vw/vh) < 0.05){
+  if(o.efeito==='seguir-rosto' && o.rosto && Math.abs(W/H - vw/vh) >= 0.05){
+    // Corta o quadro inteiro (sem bordas) e move a janela para manter o rosto no centro.
+    const p=posicao(o.rosto,t); const w=vw*cover, h=vh*cover;
+    const x=Math.min(0,Math.max(W-w,W/2-p.cx*w)), y=Math.min(0,Math.max(H-h,H*0.42-p.cy*h));
+    ctx.drawImage(v,x,y,w,h);
+  }else if(o.efeito==='nenhum' || (o.efeito==='seguir-rosto' && o.rosto===undefined) || Math.abs(W/H - vw/vh) < 0.05){
     const w=vw*cover*z, h=vh*cover*z; ctx.drawImage(v,(W-w)/2+dx,(H-h)/2+dy,w,h);
   }else{
     // Fundo desfocado: reduz para um canvas minúsculo e amplia (funciona em todos os navegadores).

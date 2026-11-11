@@ -5,6 +5,7 @@ import { drawCaption, type Preset } from '../lib/captions';
 
 const EFEITOS:Record<string,string> = {
   'blur-background':'O vídeo horizontal fica no centro e o fundo é preenchido com uma versão desfocada dele.',
+  'seguir-rosto':'Tela cheia na vertical: a câmera acompanha o rosto de quem fala (detecção de rosto no seu navegador). Sem rosto no trecho, usa fundo desfocado.',
   'zoom-acao':'Aproxima a imagem devagar durante o corte, dando sensação de tensão.',
   'camera-shake':'Pequenos tremores a cada 4 segundos, bom para ação e reações.',
   'transicao-fade':'Entra e sai suavemente do preto.',
