@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
-import { ArrowLeft, CalendarClock, CheckCircle2, Loader2, Send, Server } from 'lucide-react';
+import { ArrowLeft, CalendarClock, CheckCircle2, Loader2, Send, Server, Sparkles, RotateCcw } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from './Help';
 import { ContasPainel } from '../pages/Agendar';
 import { REDES, enviarVideo, criarPost, type Contas, type Rede } from '../lib/agenda';
 import type { Clip } from '../lib/analyze';
+import { legendaAutomatica, escreverComIA, montarTexto } from '../lib/legendasPost';
+import { iaAtiva, nomeIA, erroIA } from '../lib/ia';
 
 const dd=(n:number)=>String(n).padStart(2,'0');
 function proximaHora(){ const d=new Date(Date.now()+60*60*1000); d.setMinutes(0,0,0); return `${d.getFullYear()}-${dd(d.getMonth()+1)}-${dd(d.getDate())}T${dd(d.getHours())}:00`; }
@@ -15,11 +17,24 @@ type Props = { clips:Clip[]; tema:string; gerar:(c:Clip,onPct:(p:number)=>void)=
 
 /** Etapa 4: login nas redes e agendamento de todos os cortes escolhidos de uma vez. */
 export default function PostarLote({clips,tema,gerar,onVoltar}:Props){
-  const {settings,toast,go}=useApp();
+  const {settings,toast,go,projeto}=useApp();
   const [contas,setContas]=useState<Contas|null>(null);
   const [redes,setRedes]=useState<Set<Rede>|null>(null);
   const [agora,setAgora]=useState(false); const [quando,setQuando]=useState(proximaHora()); const [intervalo,setIntervalo]=useState(120);
-  const [modelo,setModelo]=useState(`{titulo}\n\n${tema?'#'+tema.replace(/\s+/g,'').toLowerCase()+' ':''}#cortes #shorts`);
+  // Legenda de cada post, já preenchida com título, fala do corte e hashtags.
+  const automatico=()=>Object.fromEntries(clips.map(c=>[c.id,legendaAutomatica(c,projeto.cues,tema)]));
+  const [textos,setTextos]=useState<Record<string,string>>(automatico);
+  const [escrevendo,setEscrevendo]=useState(false);
+  const qualIA=iaAtiva(settings);
+  async function comIA(){
+    setEscrevendo(true);
+    try{
+      const r=await escreverComIA(settings,clips,projeto.cues,tema);
+      setTextos(t=>{ const n={...t}; for(const x of r) if(n[x.id]!==undefined) n[x.id]=montarTexto(x); return n; });
+      toast(`Legendas escritas pela IA (${nomeIA(qualIA)}). Confira e ajuste se quiser.`,'ok');
+    }catch(e){ toast(await erroIA(settings,e),'erro'); }
+    finally{ setEscrevendo(false); }
+  }
   const [privac,setPrivac]=useState('public'); const [ttModo,setTtModo]=useState('rascunho');
   const [prog,setProg]=useState<{i:number;txt:string;pct:number;feitos:string[]}|null>(null);
   const onContas=useCallback((c:Contas)=>{ setContas(c); setRedes(r=>r??new Set(REDES.filter(x=>x.prov&&c[x.prov].conectado&&(x.id!=='instagram'||c.meta.paginas.find(p=>p.id===c.meta.pagina)?.instagram)).map(x=>x.id))); },[]);
@@ -44,7 +59,7 @@ export default function PostarLote({clips,tema,gerar,onVoltar}:Props){
         const {blob,nome}=await gerar(c,p=>setProg({i:k,txt:'Preparando o vídeo',pct:p,feitos:[...feitos]}));
         setProg({i:k,txt:'Enviando para o servidor',pct:0,feitos:[...feitos]});
         const video=await enviarVideo(settings,blob,nome,p=>setProg({i:k,txt:'Enviando para o servidor',pct:p,feitos:[...feitos]}));
-        await criarPost(settings,{video,redes:[...sel],titulo:c.titulo,legenda:modelo.replace(/\{titulo\}/g,c.titulo).trim(),quando:(agora&&intervalo===0?Date.now():horarios[k])/1000,youtube_privacidade:privac,tiktok_modo:ttModo});
+        await criarPost(settings,{video,redes:[...sel],titulo:c.titulo,legenda:(textos[c.id]??legendaAutomatica(c,projeto.cues,tema)).trim(),quando:(agora&&intervalo===0?Date.now():horarios[k])/1000,youtube_privacidade:privac,tiktok_modo:ttModo});
         feitos.push(c.id);
       }
       toast(`${clips.length} corte(s) agendado(s)! Confira na agenda.`,'ok');
@@ -71,15 +86,20 @@ export default function PostarLote({clips,tema,gerar,onVoltar}:Props){
       {!agora&&<label>Primeiro post<input type="datetime-local" value={quando} onChange={e=>setQuando(e.target.value)}/></label>}
       <label>Intervalo entre os posts<select value={intervalo} onChange={e=>setIntervalo(+e.target.value)}>{INTERVALOS.map(([l,v])=><option key={v} value={v}>{l}</option>)}</select></label>
      </div>
-     <label className="mt">Legenda do post (use {'{titulo}'} para o título de cada corte)<textarea rows={3} value={modelo} maxLength={2200} onChange={e=>setModelo(e.target.value)}/></label>
      <div className="small-grid mt">
       {sel.has('youtube')&&<label>YouTube<select value={privac} onChange={e=>setPrivac(e.target.value)}><option value="public">Público</option><option value="unlisted">Não listado</option><option value="private">Privado</option></select></label>}
       {sel.has('tiktok')&&<label>TikTok<select value={ttModo} onChange={e=>setTtModo(e.target.value)}><option value="rascunho">Mandar para rascunhos (você toca em Postar)</option><option value="direto">Postar direto (app aprovado pelo TikTok)</option></select></label>}
      </div>
-     <div className="fila-posts">{clips.map((c,k)=><div key={c.id} className={'fila-item '+(prog?.i===k?'on':'')}>
-       <span className="fila-n">{prog?.feitos.includes(c.id)?<CheckCircle2 size={15}/>:k+1}</span>
+     <div className="section-head mt"><h3>Legenda de cada post</h3><div className="row-gap">
+      {qualIA&&<button className="primary sm" disabled={escrevendo||!!prog} onClick={comIA}>{escrevendo?<Loader2 size={14} className="spin"/>:<Sparkles size={14}/>} Escrever com IA ({nomeIA(qualIA)})</button>}
+      <button className="subtle sm" disabled={escrevendo||!!prog} onClick={()=>setTextos(automatico())}><RotateCcw size={14}/> Preencher de novo</button></div></div>
+     <p className="hint">Já vem preenchida com o título, um trecho da fala e hashtags do tema. Edite à vontade.{!qualIA&&' Com a chave do Gemini em Chaves e ajustes, a IA escreve legendas mais chamativas.'}</p>
+     <div className="fila-posts">{clips.map((c,k)=><div key={c.id} className={'fila-item col '+(prog?.i===k?'on':'')}>
+       <div className="fila-top"><span className="fila-n">{prog?.feitos.includes(c.id)?<CheckCircle2 size={15}/>:k+1}</span>
        <span className="grow"><b>{c.titulo}</b><small>{isNaN(horarios[k])?'—':fmt(horarios[k])}</small></span>
-       {prog?.i===k&&<small><Loader2 size={13} className="spin"/> {prog.txt} {prog.pct}%</small>}
+       {prog?.i===k&&<small><Loader2 size={13} className="spin"/> {prog.txt} {prog.pct}%</small>}</div>
+       <textarea rows={4} maxLength={2200} value={textos[c.id]??''} disabled={!!prog} onChange={e=>{ const v=e.target.value; setTextos(t=>({...t,[c.id]:v})); }} aria-label={'Legenda do post '+(k+1)}/>
+       <small className="conta-chars">{(textos[c.id]??'').length}/2200 • {((textos[c.id]??'').match(/#\w+/g)||[]).length} hashtags</small>
       </div>)}</div>
      <p className="hint">Os vídeos ficam guardados no servidor e são postados na hora marcada, mesmo com o site fechado. O servidor (celular) precisa estar ligado nesses horários. Mantenha esta aba aberta até terminar de enviar.</p>
      <button className="primary lg full" disabled={!sel.size||!!prog} onClick={agendarTodos}>{prog?<><Loader2 size={17} className="spin"/> Enviando {prog.i+1} de {clips.length}...</>:agora&&intervalo===0?<><Send size={17}/> Postar os {clips.length} agora</>:<><CalendarClock size={17}/> Agendar os {clips.length} cortes</>}</button>

@@ -6,6 +6,7 @@ import Editor from '../components/Editor';
 import LinkStudio from '../components/LinkStudio';
 import AgendarPost from '../components/AgendarPost';
 import EdicaoLote from '../components/EdicaoLote';
+import { legendaAutomatica } from '../lib/legendasPost';
 import PostarLote from '../components/PostarLote';
 import { iaAtiva, nomeIA, avaliar, erroIA } from '../lib/ia';
 import { ErroGemini, erroGemini } from '../lib/gemini';
@@ -396,7 +397,7 @@ export default function Cortes(){
     {!recSupport&&<p className="hint center"><AlertTriangle size={13}/> Este navegador não grava vídeo. Use Chrome, Edge ou Safari atualizados para exportar.</p>}
    </>}
    {exp&&etapa==='edicao'&&temResultado&&<div className="export-bar"><Loader2 size={16} className="spin"/><span>{exp.fila?`Exportando ${exp.fila}`:'Exportando corte'} • {exp.pct}% — mantenha esta aba aberta e visível</span><div className="progress"><div style={{width:exp.pct+'%'}}/></div></div>}
-   {agendando&&<AgendarPost titulo={agendando.titulo} legenda={[agendando.titulo,projeto.tema?'#'+projeto.tema.replace(/\s+/g,'').toLowerCase():'','#cortes'].filter(Boolean).join(' ')} gerar={async onPct=>{ const {blob,ext}=await renderClip(projeto.url,agendando,projeto.cues,captionPresets,template,onPct); return {blob,nome:nomeArquivo(agendando,visiveis.indexOf(agendando),ext)}; }} onClose={()=>setAgendando(null)}/>}
+   {agendando&&<AgendarPost titulo={agendando.titulo} legenda={legendaAutomatica(agendando,projeto.cues,projeto.tema)} gerar={async onPct=>{ const {blob,ext}=await renderClip(projeto.url,agendando,projeto.cues,captionPresets,template,onPct); return {blob,nome:nomeArquivo(agendando,visiveis.indexOf(agendando),ext)}; }} onClose={()=>setAgendando(null)}/>}
    {editando&&<Editor clip={editando} onClose={()=>setEditando(null)}
      onSave={(c,cues)=>{ atualizar(c); setProjeto(p=>({...p,cues})); setEditando(null); toast('Alterações salvas.','ok'); }}
      onDuplicate={c=>{ const n=duplicar(c); setEditando(n); }}

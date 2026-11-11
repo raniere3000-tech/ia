@@ -50,3 +50,20 @@ export function erroAmigavel(e:unknown){
   if(e instanceof Anthropic.APIError) return 'Erro da Claude: '+e.message;
   return e instanceof Error ? e.message : String(e);
 }
+
+const Posts = z.object({ posts: z.array(z.object({ id: z.string(), legenda: z.string(), hashtags: z.array(z.string()) })) });
+
+/** Legendas de post escritas pela Claude (usado na etapa Postar). */
+export async function escreverPostsClaude(key:string, texto:string){
+  const res = await client(key).beta.messages.parse({
+    model: CLAUDE_MODEL,
+    max_tokens: 8000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    messages: [{role:'user',content:texto}],
+    output_config: { format: betaZodOutputFormat(Posts) },
+  } as any);
+  const parsed = (res as any).parsed_output as z.infer<typeof Posts> | null;
+  if(!parsed) throw new Error('A resposta da IA veio incompleta. Tente novamente.');
+  return parsed.posts;
+}
