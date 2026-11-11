@@ -10,9 +10,9 @@ import type { Cue } from '../lib/captions';
 export default function Editor({clip,onClose,onSave,onDuplicate,onExport}:{clip:Clip;onClose:()=>void;onSave:(c:Clip,cues:Cue[])=>void;onDuplicate:(c:Clip)=>void;onExport:(c:Clip)=>void}){
   const {projeto,template}=useApp();
   const [c,setC]=useState<Clip>(clip);
-  const [cues,setCues]=useState<Cue[]>(projeto.cues);
+  const [cues,setCues]=useState<Cue[]>(clip.video?.cues??projeto.cues);
   const set=(p:Partial<Clip>)=>setC(x=>({...x,...p}));
-  const dur=projeto.duracao;
+  const dur=clip.video?.duracao??projeto.duracao;
   const setIni=(v:number)=>set({inicio:Math.max(0,Math.min(v,c.fim-1))});
   const setFim=(v:number)=>set({fim:Math.min(dur,Math.max(v,c.inicio+1))});
   const legenda=captionPresets.find(p=>p.id===c.legenda)||null;
@@ -23,7 +23,7 @@ export default function Editor({clip,onClose,onSave,onDuplicate,onExport}:{clip:
   return <Modal title="Editar corte" onClose={onClose} wide>
    <div className="editor">
     <div className="editor-left">
-     <Preview url={projeto.url} inicio={c.inicio} fim={c.fim} formato={c.formato} opts={opts}/>
+     <Preview url={clip.video?.url||projeto.url} inicio={c.inicio} fim={c.fim} formato={c.formato} opts={opts}/>
      <div className="seg">{(['9:16','1:1','16:9'] as Formato[]).map(f=><button key={f} className={c.formato===f?'on':''} onClick={()=>set({formato:f})}>{f}</button>)}</div>
     </div>
     <div className="editor-right">

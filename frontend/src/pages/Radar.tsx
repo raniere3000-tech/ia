@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
-import { Search, RefreshCcw, ExternalLink, Bookmark, X, KeyRound, Loader2, Users, PlaySquare, Scissors, Smartphone } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Search, RefreshCcw, ExternalLink, Bookmark, X, KeyRound, Loader2, Users, PlaySquare, Scissors, Smartphone, Download, ListChecks } from 'lucide-react';
+import { PROJETO_VAZIO } from '../state';
+import { baixarLote, lerLinks, type ItemLote } from '../lib/loteVideos';
 import { useApp } from '../state';
-import { usarVideoInteiro } from './Cortes';
+import { usarVideoInteiro, abrirLote } from './Cortes';
 import { HelpButton } from '../components/Help';
 import { radarDireto, canaisDe, ordenar, testarChaveYouTube, type Video, type Canal, type RadarParams } from '../lib/radar';
 import { store, fmt, tm } from '../lib/store';
@@ -13,7 +15,28 @@ const PADRAO:Filtros = {nicho:'Todos os nichos',tema:'',dias:30,views:100000,min
 const PRESET_GTA:Salva = {nome:'Radar GTA — teste',f:{...PADRAO,tema:'GTA'}};
 
 export default function Radar(){
-  const {settings,setSettings,go,toast,setLinkRef}=useApp();
+  const {settings,setSettings,go,toast,setLinkRef,setProjeto}=useApp();
+  const [marcados,setMarcados]=useState<Set<string>>(new Set());
+  const [links,setLinks]=useState('');
+  const [lote,setLote]=useState<{txt:string;pct:number}|null>(null); const sinal=useRef({cancelado:false});
+  const marcar=(id:string,v:boolean)=>setMarcados(m=>{ const n=new Set(m); v?n.add(id):n.delete(id); return n; });
+  async function editarVarios(itens:ItemLote[]){
+    if(!itens.length) return;
+    if(!settings.servidor){ go('config'); toast('Para baixar vários vídeos de uma vez, ligue o servidor em Chaves e ajustes.','info'); return; }
+    sinal.current={cancelado:false}; setLote({txt:'Começando',pct:0});
+    try{
+      const {clips,erros}=await baixarLote(settings,itens,(txt,pct)=>setLote({txt,pct}),sinal.current);
+      if(sinal.current.cancelado) return;
+      if(!clips.length){ toast('Nenhum vídeo baixou. '+(erros[0]||''),'erro'); return; }
+      const v=clips[0].video!;
+      setProjeto(()=>({...PROJETO_VAZIO,file:v.file,url:v.url,nome:`${clips.length} vídeo(s) curtos`,duracao:v.duracao,clips,candidatos:clips.length,tema:f.tema,job:{status:'pronto',etapa:'',pct:100,etapas:[]}}));
+      abrirLote(clips.map(c=>c.id),v.url); setMarcados(new Set()); go('cortes'); window.scrollTo({top:0});
+      toast(erros.length?`${clips.length} vídeo(s) prontos para editar. ${erros.length} não baixaram: ${erros.join(' | ')}`:`${clips.length} vídeo(s) prontos para editar: coloque o template e a legenda.`,erros.length?'info':'ok');
+    }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
+    finally{ setLote(null); }
+  }
+  const curtosMarcados=()=>videos.filter(v=>marcados.has(v.id)).map(v=>({link:v.link,titulo:v.titulo}));
+  const linksLidos=lerLinks(links);
   const [f,setF]=useState<Filtros>(PADRAO);
   const set=(p:Partial<Filtros>)=>setF(x=>({...x,...p}));
   const [salvas,setSalvas]=useState<Salva[]>(()=>store.json('studio_radar_salvas',[PRESET_GTA]));
@@ -70,13 +93,27 @@ export default function Radar(){
     {salvas.length>0&&<div className="saved"><span>Pesquisas salvas:</span>{salvas.map(s=><span key={s.nome} className="saved-chip"><button onClick={()=>{setF(s.f);toast(`Filtros de “${s.nome}” aplicados. Clique em Pesquisar.`)}}>{s.nome}</button><button aria-label="Apagar" onClick={()=>persist(salvas.filter(x=>x.nome!==s.nome))}><X size={12}/></button></span>)}</div>}
    </section>
 
+   <section className="panel lote-links">
+    <div className="section-head"><h2><ListChecks size={18}/> Vários vídeos curtos de uma vez</h2><span>YouTube Shorts e TikTok</span></div>
+    <p className="hint">Marque os Shorts na lista abaixo (caixinha <b>Selecionar</b>) ou cole aqui links do TikTok ou do YouTube, um por linha. O servidor baixa todos e eles vão juntos para a edição: template, legenda, dublagem e postagem em lote. O TikTok não deixa pesquisar vídeos por fora do app, por isso lá é colando os links.</p>
+    <textarea rows={3} value={links} onChange={e=>setLinks(e.target.value)} placeholder={'https://www.tiktok.com/@perfil/video/123...\nhttps://youtube.com/shorts/abc...'} aria-label="Links dos vídeos curtos"/>
+    {lote?<div className="dl-box mt"><div className="row"><Loader2 size={16} className="spin"/><span><b>{lote.txt}</b> {lote.pct}%</span><button className="subtle sm" onClick={()=>{ sinal.current.cancelado=true; setLote(null); }}>Cancelar</button></div><div className="dl-bar"><i style={{width:Math.max(3,lote.pct)+'%'}}/></div></div>
+    :<div className="row-gap left mt">
+      <button className="primary" disabled={!marcados.size} onClick={()=>editarVarios(curtosMarcados())}><Download size={15}/> Baixar e editar os {marcados.size} marcados</button>
+      <button className={marcados.size?'subtle':'primary'} disabled={!linksLidos.length} onClick={()=>editarVarios(linksLidos)}><Download size={15}/> Baixar e editar {linksLidos.length} link(s) colado(s)</button>
+      {videos.some(v=>v.duracao_segundos<=240)&&<button className="subtle" onClick={()=>setMarcados(new Set(videos.filter(v=>v.duracao_segundos<=240).map(v=>v.id)))}>Marcar todos os curtos ({videos.filter(v=>v.duracao_segundos<=240).length})</button>}
+      {marcados.size>0&&<button className="subtle" onClick={()=>setMarcados(new Set())}>Desmarcar todos</button>}
+    </div>}
+    {!settings.servidor&&<p className="hint">Precisa do servidor ligado (celular ou PC) para baixar os vídeos.</p>}
+   </section>
+
    <section className="results">
     <div className="section-head"><div className="tabs"><button className={aba==='videos'?'on':''} onClick={()=>setAba('videos')}><PlaySquare size={15}/> Vídeos <span className="count">{videos.length}</span></button><button className={aba==='canais'?'on':''} onClick={()=>setAba('canais')}><Users size={15}/> Canais <span className="count">{canais.length}</span></button></div>{coleta&&<span>Coletado em {coleta}</span>}</div>
     {!buscou?<div className="empty"><Search size={34}/><strong>Escolha um nicho e clique em Pesquisar</strong><p>Os resultados mostram views, views por dia, duração e data de publicação.</p></div>
     :loading?<div className="empty"><Loader2 size={30} className="spin"/><strong>Buscando no YouTube...</strong></div>
-    :aba==='videos'?(ordenados.length?<div className="video-grid">{ordenados.map(v=><article className="video-card" key={v.id}>
+    :aba==='videos'?(ordenados.length?<div className="video-grid">{ordenados.map(v=><article className={'video-card '+(marcados.has(v.id)?'marcado':'')} key={v.id}>
       <a href={v.link} target="_blank" rel="noreferrer" className="thumb"><img src={v.thumbnail} alt="" loading="lazy"/><span className="dur">{tm(v.duracao_segundos)}</span></a>
-      <div className="video-body"><h3 title={v.titulo}>{v.titulo}</h3><a className="channel" href={v.link_canal} target="_blank" rel="noreferrer">{v.canal} <ExternalLink size={12}/></a>
+      <div className="video-body">{v.duracao_segundos<=240&&<label className="check sel-video"><input type="checkbox" checked={marcados.has(v.id)} disabled={!!lote} onChange={e=>marcar(v.id,e.target.checked)}/> Selecionar</label>}<h3 title={v.titulo}>{v.titulo}</h3><a className="channel" href={v.link_canal} target="_blank" rel="noreferrer">{v.canal} <ExternalLink size={12}/></a>
        <div className="metrics"><span>▶ {v.views===null?'Não informado':fmt(v.views)+' views'}</span><span>⚡ {v.velocidade===null?'Não informado':fmt(v.velocidade)+'/dia'}</span><span>📅 {new Date(v.publicado).toLocaleDateString('pt-BR')}</span></div>
        <div className="card-actions"><a className="subtle sm" href={v.link} target="_blank" rel="noreferrer"><ExternalLink size={13}/> Assistir</a>{v.duracao_segundos<=240?<button className="action-link" onClick={()=>usarInteiro(v.link)}><Smartphone size={13}/> Usar inteiro (sem cortar)</button>:<button className="action-link" onClick={()=>usar(v.link)}><Scissors size={13}/> Abrir no estúdio de cortes</button>}</div></div></article>)}</div>
       :<div className="empty"><Search size={30}/><strong>Nenhum vídeo encontrado</strong><p>Amplie o período, reduza as views mínimas ou mude a duração.</p></div>)

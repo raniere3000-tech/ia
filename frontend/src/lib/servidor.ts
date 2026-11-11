@@ -24,7 +24,7 @@ export async function testarServidor(url:string,token:string):Promise<Saude>{
 export async function baixarPeloServidor(url:string,token:string,link:string,onPct:(pct:number,etapa:string)=>void,sinal?:{cancelado:boolean}):Promise<File>{
   const b=base(url);
   const {id}=await (await pedir(b+'/baixar',{method:'POST',headers:headers(token),body:JSON.stringify({url:link})})).json();
-  onPct(0,'Baixando o vídeo do YouTube');
+  onPct(0,'Baixando o vídeo');
   let titulo='video';
   for(;;){
     await new Promise(r=>setTimeout(r,1000));
@@ -32,7 +32,7 @@ export async function baixarPeloServidor(url:string,token:string,link:string,onP
     const s=await (await pedir(`${b}/baixar/${id}`,{headers:headers(token)})).json();
     if(s.status==='erro') throw new Error(s.erro||'O servidor não conseguiu baixar o vídeo.');
     if(s.status==='pronto'){ titulo=s.titulo||titulo; break; }
-    onPct(Math.min(99,s.pct||0),'Baixando o vídeo do YouTube');
+    onPct(Math.min(99,s.pct||0),'Baixando o vídeo');
   }
   onPct(100,'Trazendo o vídeo para o navegador');
   const r=await pedir(`${b}/baixar/${id}/arquivo`,{headers:headers(token)});

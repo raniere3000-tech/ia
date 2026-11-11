@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 import postagem as pg
 
-VERSAO = '1.2.0'
+VERSAO = '1.3.0'
 PORTA = int(os.getenv('PORT', os.getenv('PORTA', '8787')))
 HOST = os.getenv('HOST', '127.0.0.1')
 TOKEN = os.getenv('TOKEN', '').strip()
@@ -32,6 +32,7 @@ QUALQUER_URL = os.getenv('PERMITIR_QUALQUER_URL') == '1'  # só para testes
 PASTA = Path(os.getenv('PASTA_TEMP', tempfile.gettempdir())) / 'estudioclip'
 PASTA.mkdir(parents=True, exist_ok=True)
 YT = re.compile(r'^https?://(www\.|m\.|music\.)?(youtube\.com|youtu\.be)/', re.I)
+TT = re.compile(r'^https?://([a-z]+\.)?tiktok\.com/', re.I)  # TikTok (vídeo público)
 
 COOKIES = pg.DADOS / 'youtube-cookies.txt'  # cookies do YouTube enviados pelo site (opcional)
 JOBS: dict[str, dict] = {}
@@ -327,8 +328,8 @@ class Handler(BaseHTTPRequestHandler):
             url = str(json.loads(self.corpo or b'{}').get('url', '')).strip()
         except ValueError:
             raise Erro(400, 'Pedido inválido.')
-        if not (YT.match(url) or (QUALQUER_URL and url.startswith('http'))):
-            raise Erro(400, 'Envie um link do YouTube.')
+        if not (YT.match(url) or TT.match(url) or (QUALQUER_URL and url.startswith('http'))):
+            raise Erro(400, 'Envie um link do YouTube ou do TikTok.')
         limpar_antigos()
         jid = uuid.uuid4().hex[:12]
         JOBS[jid] = {'status': 'baixando', 'pct': 0, 'criado': time.time(), 'url': url}

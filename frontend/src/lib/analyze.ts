@@ -8,8 +8,14 @@ export type Clip = {
   id:string; titulo:string; inicio:number; fim:number;
   nota_final:number; nota_10:number; notas:Notas; motivo:string; fonte:'heuristica'|'ia';
   legenda:string; efeito:string; formato:Formato; gancho_texto:string;
-  versao_de?:string; descartado?:boolean; thumb?:string; marca?:string; legendaOk?:boolean; dublado?:boolean;
+  versao_de?:string; descartado?:boolean; thumb?:string; marca?:string; legendaOk?:boolean; dublado?:boolean; semTemplate?:boolean;
+  /** Vídeo próprio do corte (ex.: vários Shorts do Radar no mesmo lote). Sem isso, usa o vídeo do projeto. */
+  video?:Fonte;
 };
+export type Fonte = {url:string;file:File;cues:Cue[];duracao:number;link?:string};
+/** Legenda e vídeo que valem para este corte. */
+export const cuesDe=(c:Clip,cues:Cue[])=>c.video?.cues??cues;
+export const urlDe=(c:Clip,url:string)=>c.video?.url||url;
 export type AnalyzeOpts = {min:number;max:number;limite:number;inicio:number;fim:number};
 
 /** Converte a nota interna 0–99 para a exibição 0–10 (arredondada em 1 casa). */

@@ -28,6 +28,8 @@ type Etapa='cortes'|'edicao'|'postar';
 let mem:{etapa:Etapa;sel:Set<string>;url:string;tempos:string;inteiro:boolean}={etapa:'cortes',sel:new Set(),url:'',tempos:'',inteiro:false};
 /** Chamado pelo Radar: o próximo vídeo aberto é usado inteiro (sem cortar) e vai direto para a edição. */
 export function usarVideoInteiro(v:boolean){ mem={...mem,inteiro:v}; }
+/** Chamado pelo Radar depois de baixar vários vídeos: abre direto a edição com todos marcados. */
+export function abrirLote(ids:string[],url:string){ mem={etapa:'edicao',sel:new Set(ids),url,tempos:'',inteiro:false}; }
 
 /** Lê os tempos colados, um corte por linha: "0:30-1:10", "1:02:05 a 1:03:00 Título", "90-120". */
 export function lerTempos(txt:string){
@@ -68,6 +70,7 @@ export default function Cortes(){
   const setEtapa=(e:Etapa)=>{ setE(e); window.scrollTo({top:0}); };
   const lidos=useMemo(()=>lerTempos(tempos),[tempos]);
   const [editando,setEditando]=useState<Clip|null>(null);
+  const [postarIds,setPostarIds]=useState<string[]|null>(null);
   const [agendando,setAgendando]=useState<Clip|null>(null);
   const [exp,setExp]=useState<{id:string;pct:number;fila?:string}|null>(null);
   const [drag,setDrag]=useState(false);
@@ -137,6 +140,11 @@ export default function Cortes(){
     const lista=projeto.clips.filter(c=>ids.includes(c.id)); let cues=projeto.cues;
     for(let i=0;i<lista.length;i++){
       const c=lista[i];
+      if(c.video){
+        const novas=await dublarCorte(settings.geminiKey,c,c.video.cues,voz,volumeOriginal,(t,p)=>onStatus(lista.length>1?`Corte ${i+1} de ${lista.length}: ${t}`:t,Math.round((i+p/100)/lista.length*100)));
+        setProjeto(p=>({...p,clips:p.clips.map(x=>x.id===c.id&&x.video?{...x,video:{...x.video,cues:novas},dublado:true,legendaOk:true,legenda:x.legenda||settings.legendaPadrao}:x)}));
+        continue;
+      }
       const novas=await dublarCorte(settings.geminiKey,c,cues,voz,volumeOriginal,(t,p)=>onStatus(lista.length>1?`Corte ${i+1} de ${lista.length}: ${t}`:t,Math.round((i+p/100)/lista.length*100)));
       cues=[...cues.filter(q=>!(q.end>c.inicio&&q.start<c.fim)),...novas].sort((a,b)=>a.start-b.start);
       const fixas=cues;
@@ -145,7 +153,22 @@ export default function Cortes(){
     return lista.length;
   }
 
-  async function gerarLegendas(ids:string[],via:'auto'|'gemini',onStatus:(s:string,pct:number)=>void){
+  async function gerarLegendas(idsTodos:string[],via:'auto'|'gemini',onStatus:(s:string,pct:number)=>void){
+    // Cortes com vídeo próprio (lote do Radar): transcreve cada vídeo inteiro, que já é curto.
+    const proprios=projeto.clips.filter(c=>idsTodos.includes(c.id)&&c.video);
+    let n=0;
+    for(let i=0;i<proprios.length;i++){
+      const c=proprios[i], f=c.video!;
+      const st=(t:string,p:number)=>onStatus(proprios.length>1?`Vídeo ${i+1} de ${proprios.length}: ${t}`:t,Math.round((i+p/100)/proprios.length*100));
+      st('Lendo o áudio do vídeo',0);
+      const audio=await decodeAudio(f.file);
+      if(!audio) throw new Error('O navegador não conseguiu ler o áudio de um dos vídeos. Tente pelo computador.');
+      const cues=via==='gemini'?await transcreverGemini(audio.samples,settings.geminiKey,settings.idioma,st):await transcrever(audio.samples,settings.whisperModel,settings.idioma,st);
+      n+=cues.length;
+      setProjeto(p=>({...p,clips:p.clips.map(x=>x.id===c.id&&x.video?{...x,video:{...x.video,cues},legendaOk:true,legenda:x.legenda||settings.legendaPadrao}:x)}));
+    }
+    const ids=idsTodos.filter(id=>!proprios.some(c=>c.id===id));
+    if(!ids.length) return n;
     const file=projeto.file; if(!file) throw new Error('Envie o vídeo de novo.');
     if(cache.file!==file||!cache.audio){ onStatus('Lendo o áudio do vídeo',0); const audio=await decodeAudio(file); cache={file,audio,energy:audio?energyProfile(audio,STEP):null}; }
     const audio=cache.audio;
@@ -363,8 +386,8 @@ export default function Cortes(){
     {!temIA&&<p className="hint center">Notas automáticas pelo áudio e pelas frases. Para notas e títulos feitos por IA, <button className="link-btn inline" onClick={()=>go('config')}>configure a chave do Gemini (grátis) ou da Claude</button>.</p>}
     {job.status!=='idle'&&<JobView job={job}/>}
    </section>
-   :etapa==='edicao'?<EdicaoLote clips={escolhidos} mudar={mudar} gerarLegendas={gerarLegendas} dublar={dublar} onEditar={setEditando} onVoltar={()=>setEtapa('cortes')} onProximo={()=>setEtapa('postar')} onZip={exportarZip} exportando={!!exp}/>
-   :etapa==='postar'?<PostarLote clips={escolhidos} tema={projeto.tema} gerar={renderizar} onVoltar={()=>setEtapa('edicao')}/>
+   :etapa==='edicao'?<EdicaoLote clips={escolhidos} mudar={mudar} gerarLegendas={gerarLegendas} dublar={dublar} onEditar={setEditando} onVoltar={()=>setEtapa('cortes')} onProximo={ids=>{ setPostarIds(ids); setEtapa('postar'); }} onZip={exportarZip} exportando={!!exp}/>
+   :etapa==='postar'?<PostarLote clips={postarIds?escolhidos.filter(c=>postarIds.includes(c.id)):escolhidos} tema={projeto.tema} gerar={renderizar} onVoltar={()=>setEtapa('edicao')}/>
    :<>
     <section className="panel results-bar">
      <div className="result-summary"><strong>{aprovados.length>limite?limite:aprovados.length} cortes aprovados</strong> de {projeto.candidatos} candidatos • nota mínima &gt; {minimo.toFixed(1)}/10 • máximo {limite} {projeto.clips.some(c=>c.fonte==='ia')?<span className="tag ai"><Sparkles size={12}/> notas da IA</span>:<span className="tag">notas automáticas</span>}</div>
@@ -413,7 +436,7 @@ export default function Cortes(){
    {exp&&etapa==='edicao'&&temResultado&&<div className="export-bar"><Loader2 size={16} className="spin"/><span>{exp.fila?`Exportando ${exp.fila}`:'Exportando corte'} • {exp.pct}% — mantenha esta aba aberta e visível</span><div className="progress"><div style={{width:exp.pct+'%'}}/></div></div>}
    {agendando&&<AgendarPost titulo={agendando.titulo} legenda={legendaAutomatica(agendando,projeto.cues,projeto.tema)} gerar={async onPct=>{ const {blob,ext}=await renderClip(projeto.url,agendando,projeto.cues,captionPresets,template,onPct); return {blob,nome:nomeArquivo(agendando,visiveis.indexOf(agendando),ext)}; }} onClose={()=>setAgendando(null)}/>}
    {editando&&<Editor clip={editando} onClose={()=>setEditando(null)}
-     onSave={(c,cues)=>{ atualizar(c); setProjeto(p=>({...p,cues})); setEditando(null); toast('Alterações salvas.','ok'); }}
+     onSave={(c,cues)=>{ if(c.video) atualizar({...c,video:{...c.video,cues}}); else { atualizar(c); setProjeto(p=>({...p,cues})); } setEditando(null); toast('Alterações salvas.','ok'); }}
      onDuplicate={c=>{ const n=duplicar(c); setEditando(n); }}
      onExport={c=>{ setEditando(null); exportar(c); }}/>}
   </>;

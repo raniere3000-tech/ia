@@ -11,7 +11,7 @@ type Props = {
   clips:Clip[];
   mudar:(ids:string[],p:Partial<Clip>)=>void;
   onEditar:(c:Clip)=>void;
-  onVoltar:()=>void; onProximo:()=>void; onZip:()=>void;
+  onVoltar:()=>void; onProximo:(ids:string[])=>void; onZip:()=>void;
   exportando:boolean;
   gerarLegendas:(ids:string[],via:'auto'|'gemini',onStatus:(s:string,pct:number)=>void)=>Promise<number>;
   dublar:(ids:string[],voz:string,volumeOriginal:number,onStatus:(s:string,pct:number)=>void)=>Promise<number>;
@@ -27,13 +27,17 @@ export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZi
   const {projeto,template,settings,toast}=useApp();
   const [leg,setLeg]=useState<{txt:string;pct:number}|null>(null);
   const [i,setI]=useState(0); const [todos,setTodos]=useState(true);
+  // Cortes desmarcados ficam fora das mudanças em lote e da postagem.
+  const [fora,setFora]=useState<Set<string>>(new Set());
+  const marcados=clips.filter(c=>!fora.has(c.id)).map(c=>c.id);
+  const marcar=(id:string,v:boolean)=>setFora(f=>{ const n=new Set(f); v?n.delete(id):n.add(id); return n; });
   const atual=clips[Math.min(i,clips.length-1)];
   const legenda=captionPresets.find(p=>p.id===atual?.legenda)||null;
-  const opts=useMemo(()=>({legenda,efeito:atual?.efeito||'nenhum',cues:projeto.cues,gancho:atual?.gancho_texto||'',accent:legenda?.highlightColor||template.cor,template}),[legenda,atual?.efeito,atual?.gancho_texto,projeto.cues,template]);
+  const opts=useMemo(()=>({legenda,efeito:atual?.efeito||'nenhum',cues:atual?.video?.cues??projeto.cues,gancho:atual?.gancho_texto||'',accent:legenda?.highlightColor||template.cor,template:atual?.semTemplate?{...template,ativo:false}:template}),[legenda,atual?.semTemplate,atual?.efeito,atual?.gancho_texto,atual?.video,projeto.cues,template]);
   if(!atual) return <section className="panel empty-state"><h2>Nenhum corte escolhido</h2><button className="primary" onClick={onVoltar}><ArrowLeft size={16}/> Voltar e escolher</button></section>;
-  const alvo=()=>todos?clips.map(c=>c.id):[atual.id];
+  const alvo=()=>todos&&marcados.length?marcados:[atual.id];
   const igual=(k:keyof Clip)=>clips.every(c=>c[k]===atual[k]);
-  const semLegenda=clips.filter(c=>!c.legendaOk&&!projeto.cues.some(q=>q.end>c.inicio&&q.start<c.fim));
+  const semLegenda=clips.filter(c=>!c.legendaOk&&!(c.video?.cues??projeto.cues).some(q=>q.end>c.inicio&&q.start<c.fim));
   async function legendar(via:'auto'|'gemini'){
     const ids=(semLegenda.length?semLegenda:clips).map(c=>c.id);
     setLeg({txt:'Começando',pct:0});
@@ -45,7 +49,7 @@ export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZi
   }
   async function dublarTodos(){
     if(semLegenda.length){ toast('Gere a legenda dos cortes primeiro (quadro Legenda, acima). A dublagem usa essa fala.','erro'); return; }
-    const ids=todos?clips.map(c=>c.id):[atual.id];
+    const ids=alvo();
     setDub({txt:'Começando',pct:0}); setOuvir('');
     try{
       const n=await dublar(ids,voz,volOrig,(txt,pct)=>setDub({txt,pct}));
@@ -61,7 +65,7 @@ export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZi
     <div className="result-controls">
      <button className="subtle" onClick={onVoltar}><ArrowLeft size={15}/> Voltar aos cortes</button>
      <button className="subtle" disabled={exportando} onClick={onZip}>{exportando?<Loader2 size={15} className="spin"/>:<Package size={15}/>} Baixar todos (ZIP)</button>
-     <button className="primary" onClick={onProximo}>Próximo: postar <ArrowRight size={15}/></button>
+     <button className="primary" disabled={!marcados.length} onClick={()=>onProximo(marcados)}>Próximo: postar {marcados.length<clips.length?`os ${marcados.length} marcados`:''} <ArrowRight size={15}/></button>
     </div>
    </section>
    <div className="edicao">
@@ -71,11 +75,12 @@ export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZi
       <span><b>Corte {i+1} de {clips.length}</b> • {tm(atual.inicio)}–{tm(atual.fim)}</span>
       <button className="icon-btn" disabled={i>=clips.length-1} onClick={()=>setI(i+1)} aria-label="Próximo corte"><ChevronRight size={18}/></button>
      </div>
-     <Preview key={atual.id} url={projeto.url} inicio={atual.inicio} fim={atual.fim} formato={atual.formato} opts={opts}/>
+     <Preview key={atual.id} url={atual.video?.url||projeto.url} inicio={atual.inicio} fim={atual.fim} formato={atual.formato} opts={opts}/>
      <label className="mt">Título deste corte<input value={atual.titulo} maxLength={100} onChange={e=>mudar([atual.id],{titulo:e.target.value})}/></label>
      <label className="mt">Texto de gancho no topo (opcional)<input value={atual.gancho_texto} maxLength={60} placeholder="Ex.: ELE NÃO ESPERAVA ISSO" onChange={e=>mudar([atual.id],{gancho_texto:e.target.value})}/></label>
      <button className="subtle mt" onClick={()=>onEditar(atual)}><Pencil size={14}/> Ajustar início, fim e legenda deste corte</button>
-     <div className="edicao-tira">{clips.map((c,k)=><button key={c.id} className={'edicao-mini '+(k===i?'on':'')} onClick={()=>setI(k)} title={c.titulo}>{c.thumb?<img src={c.thumb} alt=""/>:<Film size={16}/>}<small>{k+1}</small></button>)}</div>
+     <div className="tira-head"><span><b>{marcados.length} de {clips.length}</b> marcados para mudar em lote e postar</span><button className="link-btn" onClick={()=>setFora(new Set())}>Marcar todos</button><button className="link-btn" onClick={()=>setFora(new Set(clips.map(c=>c.id)))}>Desmarcar todos</button></div>
+     <div className="edicao-tira">{clips.map((c,k)=><div key={c.id} className={'mini-wrap '+(fora.has(c.id)?'fora':'')}><button className={'edicao-mini '+(k===i?'on':'')} onClick={()=>setI(k)} title={c.titulo}>{c.thumb?<img src={c.thumb} alt=""/>:<Film size={16}/>}<small>{k+1}</small></button><input type="checkbox" className="mini-check" checked={!fora.has(c.id)} onChange={e=>marcar(c.id,e.target.checked)} aria-label={'Marcar corte '+(k+1)}/></div>)}</div>
     </section>
     <div className="edicao-lado">
      <section className="panel legenda-lote">
@@ -89,7 +94,7 @@ export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZi
      </section>
      <section className="panel dub-lote">
       <div className="section-head"><h2><Languages size={18}/> Dublar em português</h2>{clips.every(c=>c.dublado)&&<span className="tag ok"><CheckCircle2 size={12}/> Todos dublados</span>}</div>
-      <p className="hint">O Gemini traduz a fala, troca a legenda para português e grava uma voz em português por cima do áudio original abaixado. {todos?`Vale para os ${clips.length} cortes.`:`Só o corte ${i+1}.`}</p>
+      <p className="hint">O Gemini traduz a fala, troca a legenda para português e grava uma voz em português por cima do áudio original abaixado. {todos?`Vale para os ${marcados.length} corte(s) marcados.`:`Só o corte ${i+1}.`}</p>
       {!settings.geminiKey?<p className="hint">Coloque a chave do Gemini (grátis) em Chaves e ajustes para dublar.</p>
       :dub?<div className="dl-box"><div className="row"><Loader2 size={16} className="spin"/><span><b>{dub.txt}</b> {dub.pct}%</span></div><div className="dl-bar"><i style={{width:Math.max(3,dub.pct)+'%'}}/></div></div>
       :<>
@@ -108,16 +113,18 @@ export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZi
      </section>
      <section className="panel">
       <div className="section-head"><h2><Wand2 size={18}/> Estilo dos cortes</h2></div>
-      <label className="check big"><input type="checkbox" checked={todos} onChange={e=>setTodos(e.target.checked)}/> Aplicar em todos os {clips.length} cortes (desmarque para mudar só o corte {i+1})</label>
+      <label className="check big"><input type="checkbox" checked={todos} onChange={e=>setTodos(e.target.checked)}/> Aplicar nos {marcados.length} corte(s) marcados na tira (desmarque para mudar só o corte {i+1})</label>
       <label className="mt"><span className="label-row"><Type size={14}/> Estilo da legenda {!igual('legenda')&&<span className="tag">varia entre os cortes</span>}</span>
        <select value={atual.legenda} onChange={e=>mudar(alvo(),{legenda:e.target.value})}><option value="">Sem legenda</option>{captionPresets.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select></label>
       {semLegenda.some(c=>c.id===atual.id)&&atual.legenda&&<p className="hint">Este corte ainda não tem legenda. Gere no quadro Legenda, acima.</p>}
       <label className="mt"><span className="label-row">Efeito e enquadramento {!igual('efeito')&&<span className="tag">varia entre os cortes</span>}</span>
        <select value={atual.efeito} onChange={e=>mudar(alvo(),{efeito:e.target.value})}>{efeitos.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select></label>
+      <label className="mt"><span className="label-row">Template e @ {!igual('semTemplate')&&<span className="tag">varia entre os cortes</span>}</span>
+       <select value={atual.semTemplate?'nao':'sim'} onChange={e=>mudar(alvo(),{semTemplate:e.target.value==='nao'})}><option value="sim">Usar o template</option><option value="nao">Sem template</option></select></label>
       <div className="field mt"><span className="field-label">Formato</span><div className="seg">{(['9:16','1:1','16:9'] as Formato[]).map(f=><button key={f} className={atual.formato===f?'on':''} onClick={()=>mudar(alvo(),{formato:f})}>{f}</button>)}</div></div>
      </section>
      <TemplateForm titulo="Template e @ do canal"/>
-     <p className="hint"><LayoutTemplate size={13}/> O template vale para todos os cortes e fica salvo para os próximos vídeos.</p>
+     <p className="hint"><LayoutTemplate size={13}/> O template fica salvo para os próximos vídeos. Para tirar de alguns cortes, marque-os na tira e escolha Sem template acima.</p>
     </div>
    </div>
   </>;

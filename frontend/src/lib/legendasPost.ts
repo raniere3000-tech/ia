@@ -1,7 +1,7 @@
 // Texto (legenda) de cada post: preenchido automático com o que o site já sabe do corte,
 // ou escrito pela IA (Gemini ou Claude) com base na fala do trecho.
 import type { Settings } from '../state';
-import type { Clip } from './analyze';
+import { cuesDe, type Clip } from './analyze';
 import type { Cue } from './captions';
 import { iaAtiva } from './ia';
 
@@ -15,7 +15,7 @@ export function hashtag(t:string){
 
 /** Fala do trecho (texto da legenda do vídeo), cortada num tamanho bom para o post. */
 export function falaDoCorte(c:Clip,cues:Cue[],max=180){
-  const t=cues.filter(q=>q.end>c.inicio&&q.start<c.fim).map(q=>q.text.trim()).join(' ').replace(/\s+/g,' ').trim();
+  const t=cuesDe(c,cues).filter(q=>q.end>c.inicio&&q.start<c.fim).map(q=>q.text.trim()).join(' ').replace(/\s+/g,' ').trim();
   if(t.length<=max) return t;
   const corte=t.slice(0,max); const fim=Math.max(corte.lastIndexOf('. '),corte.lastIndexOf('? '),corte.lastIndexOf('! '));
   return (fim>60?corte.slice(0,fim+1):corte.slice(0,corte.lastIndexOf(' '))+'...');

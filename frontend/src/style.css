@@ -292,3 +292,10 @@ a.subtle.sm{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
 .fila-item textarea{width:100%;background:#0c1018;border:1px solid var(--line2);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;color:inherit;resize:vertical}
 .conta-chars{color:var(--muted);font-size:11px;text-align:right}
 .fila-posts{max-height:none}
+.video-card.marcado{outline:3px solid var(--brand);outline-offset:-3px}
+.sel-video{display:flex;align-items:center;gap:6px;font-size:.85rem;font-weight:600;margin-bottom:6px;cursor:pointer}
+.lote-links textarea{width:100%;font-family:inherit}
+.tira-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px;font-size:.85rem;color:var(--muted)}
+.mini-wrap{position:relative;flex:0 0 auto}.mini-wrap.fora .edicao-mini{opacity:.4}
+.mini-check{position:absolute;top:3px;left:3px;width:18px;height:18px;margin:0;accent-color:var(--brand)}
+.mini-wrap .edicao-mini{width:64px}
