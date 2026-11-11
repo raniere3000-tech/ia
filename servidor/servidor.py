@@ -1,6 +1,7 @@
 """Servidor do EstúdioClip: baixa um vídeo do YouTube pelo link para o site cortar sozinho.
 
 Use apenas com vídeos seus ou com autorização do dono.
+Também agenda e publica os cortes nas SUAS contas (postagem.py).
 Só precisa de Python 3.9+, yt-dlp e FFmpeg (roda no Windows, Mac, Linux e Android/Termux).
 Rodar:  python servidor.py   (abre em http://localhost:8787)
 """
@@ -17,6 +18,8 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+import postagem as pg
 
 VERSAO = '1.1.0'
 PORTA = int(os.getenv('PORT', os.getenv('PORTA', '8787')))
@@ -180,8 +183,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get('Content-Length') or 0)
-        self.corpo = self.rfile.read(n) if 0 < n <= 10000 else b''
-        if n > 10000:
+        limite = 40 * 1024 * 1024 if urlparse(self.path).path.rstrip('/') == '/video' else 100000
+        self.corpo = self.rfile.read(n) if 0 < n <= limite else b''
+        if n > limite:
             self.close_connection = True
         self.rodar(self.post)
 
@@ -190,6 +194,8 @@ class Handler(BaseHTTPRequestHandler):
             f(urlparse(self.path).path.rstrip('/') or '/')
         except Erro as e:
             self.json(e.status, {'detail': e.msg})
+        except pg.ErroRede as e:
+            self.json(400, {'detail': str(e)})
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as e:  # noqa: BLE001
@@ -203,8 +209,21 @@ class Handler(BaseHTTPRequestHandler):
                 versao_yt = yt_dlp.version.__version__
             except Exception:
                 versao_yt = None
-            return self.json(200, {'ok': versao_yt is not None, 'versao': VERSAO, 'yt_dlp': versao_yt, 'senha': bool(TOKEN), 'max_minutos': MAX_MIN,
+            return self.json(200, {'ok': True, 'download': versao_yt is not None, 'agendador': True, 'versao': VERSAO, 'yt_dlp': versao_yt, 'senha': bool(TOKEN), 'max_minutos': MAX_MIN,
                                    'aviso': None if versao_yt else 'yt-dlp não instalado: rode  pip install -U yt-dlp'})
+        if caminho == '/contas':
+            self.token_ok()
+            return self.json(200, pg.status_contas())
+        if caminho == '/posts':
+            self.token_ok()
+            return self.json(200, {'posts': pg.lista_posts(), 'agora': time.time()})
+        mv = re.fullmatch(r'/posts/(\w+)/video', caminho)
+        if mv:
+            self.token_ok()
+            alvo = [x for x in pg.posts() if x['id'] == mv.group(1)]
+            if not alvo:
+                raise Erro(404, 'Post não encontrado.')
+            return self.enviar_arquivo(pg.video_path(alvo[0]['video']), (alvo[0]['titulo'] or 'corte'))
         m = re.fullmatch(r'/baixar/(\w+)(/arquivo)?', caminho)
         if not m:
             raise Erro(404, 'Rota não encontrada.')
@@ -232,9 +251,32 @@ class Handler(BaseHTTPRequestHandler):
             shutil.rmtree(PASTA / jid, ignore_errors=True)
             JOBS.pop(jid, None)
 
+    def enviar_arquivo(self, caminho_arq: Path, nome: str):
+        tamanho = caminho_arq.stat().st_size
+        nome = re.sub(r'[^\w\- ]+', '', nome)[:60].strip() or 'corte'
+        self.send_response(200)
+        self.cors()
+        self.send_header('Content-Type', 'video/mp4' if caminho_arq.suffix == '.mp4' else 'video/webm')
+        self.send_header('Content-Length', str(tamanho))
+        self.send_header('Content-Disposition', f'attachment; filename="{nome}{caminho_arq.suffix}"')
+        self.end_headers()
+        with open(caminho_arq, 'rb') as f:
+            shutil.copyfileobj(f, self.wfile, 1024 * 1024)
+
+    def corpo_json(self) -> dict:
+        try:
+            d = json.loads(self.corpo or b'{}')
+            return d if isinstance(d, dict) else {}
+        except ValueError:
+            raise Erro(400, 'Pedido inválido.')
+
     def post(self, caminho: str):
         if caminho != '/baixar':
-            raise Erro(404, 'Rota não encontrada.')
+            self.token_ok()
+            try:
+                return self.json(200, self.post_agenda(caminho) or {'ok': True})
+            except pg.ErroRede as e:
+                raise Erro(400, str(e))
         self.token_ok()
         try:
             url = str(json.loads(self.corpo or b'{}').get('url', '')).strip()
@@ -249,6 +291,43 @@ class Handler(BaseHTTPRequestHandler):
         self.json(200, {'id': jid})
 
 
+def _rotas_agenda(self, caminho: str):
+    d = self.corpo_json() if caminho != '/video' else {}
+    q = parse_qs(urlparse(self.path).query)
+    if caminho == '/contas/codigo':
+        return {'rede': pg.receber_codigo(str(d.get('code', '')), str(d.get('state', '')))}
+    if caminho == '/contas/meta/pagina':
+        return pg.escolher_pagina(str(d.get('pagina', '')))
+    m = re.fullmatch(r'/contas/(google|meta|tiktok)/(app|login|sair)', caminho)
+    if m:
+        prov, acao = m.groups()
+        if acao == 'app':
+            return pg.salvar_app(prov, str(d.get('client_id', '')), str(d.get('client_secret', '')))
+        if acao == 'login':
+            return {'url': pg.url_login(prov, str(d.get('volta', '')))}
+        return pg.sair(prov)
+    if caminho == '/video':
+        vid = q.get('video', [None])[0]
+        return pg.receber_pedaco(vid, int(q.get('offset', ['0'])[0]), self.corpo, q.get('nome', ['video.mp4'])[0])
+    m = re.fullmatch(r'/video/(\w+)/fim', caminho)
+    if m:
+        return pg.finalizar_video(m.group(1))
+    if caminho == '/posts':
+        return pg.criar_post(d)
+    m = re.fullmatch(r'/posts/(\w+)/(agora|cancelar|feito)', caminho)
+    if m:
+        pid, acao = m.groups()
+        if acao == 'agora':
+            return pg.postar_agora(pid)
+        if acao == 'cancelar':
+            return pg.cancelar_post(pid)
+        return pg.marcar_feito(pid, str(d.get('rede', '')))
+    raise Erro(404, 'Rota não encontrada.')
+
+
+Handler.post_agenda = _rotas_agenda
+
+
 def main():
     try:
         import yt_dlp  # noqa: F401
@@ -257,6 +336,7 @@ def main():
         raise SystemExit(1)
     if not shutil.which('ffmpeg') and not ffmpeg_path():
         print('Aviso: FFmpeg não encontrado. Vídeos acima de 360p podem falhar. (Termux: pkg install ffmpeg)')
+    pg.iniciar_relogio()
     srv = ThreadingHTTPServer((HOST, PORTA), Handler)
     print(f'\n  EstúdioClip servidor {VERSAO} rodando em http://localhost:{PORTA}')
     print('  Cole esse endereço no site, em Chaves e ajustes > Cortes direto pelo link.')

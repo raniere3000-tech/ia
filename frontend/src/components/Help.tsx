@@ -28,6 +28,41 @@ export const TOPICS:Record<string,Topic> = {
     <p>Já tem uma chave do Gemini em outro projeto? Pode usar a mesma.</p>
     <p className="help-note">A chave fica só neste navegador e vai direto para o Google. Na cota grátis, o Google pode usar o que é enviado para melhorar os modelos. Se a chave tiver restrição de site no Google Cloud, adicione <code>raniere3000-tech.github.io</code>.</p>
   </>},
+  app_google:{titulo:'YouTube: criar o acesso para postar (no mesmo projeto da agendinha)',corpo:<>
+    <ol>
+      <li>Abra o <L href="https://console.cloud.google.com/">Google Cloud</L> e selecione o <b>projeto da agendinha</b> no topo.</li>
+      <li>Em <b>APIs e serviços → Biblioteca</b>, procure <b>YouTube Data API v3</b> e clique em <b>Ativar</b>.</li>
+      <li>Em <L href="https://console.cloud.google.com/auth/audience">Google Auth Platform → Público-alvo</L>: tipo <b>Externo</b>. Clique em <b>Publicar app</b> (Em produção). Se ficar em "Teste", o login vence a cada 7 dias.</li>
+      <li>Em <L href="https://console.cloud.google.com/auth/clients">Clientes</L> → <b>Criar cliente</b> → tipo <b>Aplicativo da Web</b>. Em <b>URIs de redirecionamento autorizados</b>, cole o <b>endereço de retorno</b> que aparece na aba Agendar posts.</li>
+      <li>Copie o <b>ID do cliente</b> e a <b>Chave secreta do cliente</b> e cole no card do YouTube. Clique em <b>Entrar com minha conta</b>. Como o app é seu e não verificado, o Google mostra um aviso: clique em <b>Avançado → Acessar</b>.</li>
+    </ol>
+    <p><b>Importante:</b> projetos não verificados pelo YouTube sobem os vídeos como <b>privados</b>. Para sair público sozinho, peça a auditoria gratuita no <L href="https://support.google.com/youtube/contact/yt_api_form">formulário da API do YouTube</L> (leva alguns dias). Até lá, o vídeo sobe privado e você o deixa público no YouTube Studio.</p>
+    <p className="help-note">O ID e a chave secreta ficam guardados só no seu servidor (celular), não neste navegador.</p>
+  </>},
+  app_meta:{titulo:'Facebook + Instagram: criar o app da Meta',corpo:<>
+    <p>Precisa de: Instagram <b>profissional</b> (Criador ou Empresa) <b>ligado a uma Página</b> do Facebook.</p>
+    <ol>
+      <li>Entre em <L href="https://developers.facebook.com/apps/">developers.facebook.com/apps</L> → <b>Criar app</b>. Escolha o caso de uso para <b>gerenciar Páginas</b> / tipo <b>Empresa</b>.</li>
+      <li>Adicione o produto <b>Login do Facebook</b>. Em <b>Configurações</b> dele, cole o <b>endereço de retorno</b> (aba Agendar posts) em <b>URIs de redirecionamento do OAuth válidos</b> e salve.</li>
+      <li>Em <b>Permissões / Casos de uso</b>, adicione: <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>pages_manage_posts</code>, <code>instagram_basic</code>, <code>instagram_content_publish</code>, <code>business_management</code>.</li>
+      <li>Em <b>Configurações do app → Básico</b>, copie o <b>ID do app</b> e a <b>Chave secreta</b> e cole no card do Facebook + Instagram.</li>
+      <li>Clique em <b>Entrar com minha conta</b> e, na tela da Meta, <b>marque sua Página e o Instagram</b>.</li>
+    </ol>
+    <p>Pode deixar o app em <b>modo de desenvolvimento</b>: para você (dono do app) tudo funciona, sem precisar de análise da Meta.</p>
+  </>},
+  app_tiktok:{titulo:'TikTok: criar o app de desenvolvedor',corpo:<>
+    <ol>
+      <li>Entre em <L href="https://developers.tiktok.com/apps/">developers.tiktok.com</L> com sua conta e clique em <b>Connect an app</b> / <b>Create app</b>.</li>
+      <li>Adicione os produtos <b>Login Kit</b> e <b>Content Posting API</b>.</li>
+      <li>No Login Kit, em <b>Redirect URI</b> (Web), cole o <b>endereço de retorno</b> (aba Agendar posts). Marque os escopos <code>user.info.basic</code>, <code>video.upload</code> e <code>video.publish</code>.</li>
+      <li>Em <b>Sandbox</b>, adicione sua conta do TikTok em <b>Target users</b> (assim funciona sem análise).</li>
+      <li>Copie o <b>Client key</b> e o <b>Client secret</b>, cole no card do TikTok e clique em <b>Entrar com minha conta</b>.</li>
+    </ol>
+    <p><b>Como o vídeo chega:</b> no modo <b>rascunhos</b>, ele aparece nas notificações/rascunhos do app do TikTok na hora marcada e você só toca em <b>Postar</b>. O modo <b>direto</b> publica sozinho, mas sem aprovação do TikTok o vídeo fica como "Só eu".</p>
+  </>},
+  kwai:{titulo:'Kwai',corpo:<>
+    <p>O Kwai não oferece API para postar de fora do app. Marque o Kwai ao agendar: na hora, o post aparece na agenda com <b>Baixar vídeo</b>. Baixe no celular, poste pelo app do Kwai e clique em <b>Já postei no Kwai</b> para ficar registrado.</p>
+  </>},
   claude:{titulo:'Como conseguir a chave da Claude (IA para notas e títulos)',corpo:<>
     <p>Com essa chave, a IA lê a transcrição (e, no modo Gameplay, quadros do vídeo) e dá notas de <b>gancho, fluxo, valor e tendência</b>, escreve títulos e aceita pedidos como “ache onde ele fala de preço”. É <b>opcional</b>: sem ela o site usa notas automáticas pelo áudio.</p>
     <ol>

@@ -1,9 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
-import { Upload, Film, Sparkles, Loader2, CheckCircle2, Circle, AlertTriangle, Pencil, Download, Copy, Trash2, Undo2, FileText, Wand2, Package, Play } from 'lucide-react';
+import { Upload, Film, Sparkles, Loader2, CheckCircle2, Circle, AlertTriangle, Pencil, Download, Copy, Trash2, Undo2, FileText, Wand2, Package, Play, CalendarClock } from 'lucide-react';
 import { useApp, captionPresets, PROJETO_VAZIO, type Job } from '../state';
 import { HelpButton } from '../components/Help';
 import Editor from '../components/Editor';
 import LinkStudio from '../components/LinkStudio';
+import AgendarPost from '../components/AgendarPost';
 import { iaAtiva, nomeIA, avaliar, erroIA } from '../lib/ia';
 import { videoInfo, decodeAudio, energyProfile, captureFrames, type AudioData } from '../lib/media';
 import { gerarCandidatos, avaliarJanelas, notaFinal, nota10, type Clip, type Candidate } from '../lib/analyze';
@@ -34,6 +35,7 @@ export default function Cortes(){
   const [mostrarTodos,setMostrarTodos]=useState(false); const [ordem,setOrdem]=useState<'nota'|'tempo'>('nota');
   const [sel,setSel]=useState<Set<string>>(new Set());
   const [editando,setEditando]=useState<Clip|null>(null);
+  const [agendando,setAgendando]=useState<Clip|null>(null);
   const [exp,setExp]=useState<{id:string;pct:number;fila?:string}|null>(null);
   const [drag,setDrag]=useState(false);
   const [novoPrompt,setNovoPrompt]=useState('');
@@ -264,6 +266,7 @@ export default function Cortes(){
        <div className="clip-actions">
         <button className="primary sm" onClick={()=>setEditando(c)}><Pencil size={14}/> Editar e ver</button>
         <button className="subtle sm" disabled={!!exp||!recSupport} onClick={()=>exportar(c)}>{exp?.id===c.id?<><Loader2 size={14} className="spin"/> {exp.pct}%</>:<><Download size={14}/> Baixar</>}</button>
+        <button className="subtle sm" disabled={!!exp||!recSupport} title="Agendar nas redes" onClick={()=>setAgendando(c)}><CalendarClock size={14}/> Agendar</button>
         <button className="icon-btn" title="Duplicar" onClick={()=>duplicar(c)}><Copy size={15}/></button>
         <button className="icon-btn" title="Descartar" onClick={()=>atualizar({...c,descartado:true})}><Trash2 size={15}/></button>
        </div>
@@ -272,6 +275,7 @@ export default function Cortes(){
     {descartados.length>0&&<details className="discarded"><summary>{descartados.length} descartado(s)</summary>{descartados.map(c=><div key={c.id} className="discard-row"><span>{c.titulo} ({tm(c.inicio)}–{tm(c.fim)})</span><button className="link-btn" onClick={()=>atualizar({...c,descartado:false})}><Undo2 size={13}/> Restaurar</button></div>)}</details>}
     {!recSupport&&<p className="hint center"><AlertTriangle size={13}/> Este navegador não grava vídeo. Use Chrome, Edge ou Safari atualizados para exportar.</p>}
    </>}
+   {agendando&&<AgendarPost titulo={agendando.titulo} legenda={[agendando.titulo,projeto.tema?'#'+projeto.tema.replace(/\s+/g,'').toLowerCase():'','#cortes'].filter(Boolean).join(' ')} gerar={async onPct=>{ const {blob,ext}=await renderClip(projeto.url,agendando,projeto.cues,captionPresets,template,onPct); return {blob,nome:nomeArquivo(agendando,visiveis.indexOf(agendando),ext)}; }} onClose={()=>setAgendando(null)}/>}
    {editando&&<Editor clip={editando} onClose={()=>setEditando(null)}
      onSave={(c,cues)=>{ atualizar(c); setProjeto(p=>({...p,cues})); setEditando(null); toast('Alterações salvas.','ok'); }}
      onDuplicate={c=>{ const n=duplicar(c); setEditando(n); }}

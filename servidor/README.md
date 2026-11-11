@@ -33,6 +33,19 @@ Cole os dois no site, em **Chaves e ajustes**. O endereço muda cada vez que voc
 Se você usa Ubuntu dentro do Termux (proot-distro), use `./iniciar-mac-linux.sh`.
 Para atualizar depois: `cd ia && git pull`.
 
+## Agendar posts (YouTube, Instagram, Facebook, TikTok, Kwai)
+
+O mesmo servidor guarda os cortes e publica nas **suas** contas na hora marcada, mesmo com o site fechado
+(o servidor precisa estar ligado no horário). Os dados ficam em `~/.estudioclip/` (`contas.json`, `posts.json`, `videos/`).
+
+1. No site, abra **Agendar posts** e copie o **endereço de retorno**.
+2. Em cada rede, crie o app de desenvolvedor (botão **Como criar?** de cada card) e cadastre esse endereço.
+3. Cole o ID e o segredo no card e clique em **Entrar com minha conta**.
+4. Em **Gerar cortes**, clique em **Agendar** no corte, escolha redes, data e hora.
+
+Limites das redes: YouTube com projeto não verificado sobe como privado (peça a auditoria);
+TikTok sem aprovação manda para os rascunhos; Kwai não tem API (fica o botão de baixar).
+
 ## Configuração (variáveis de ambiente)
 
 | Variável | Padrão | Para quê |
@@ -42,6 +55,7 @@ Para atualizar depois: `cd ia && git pull`.
 | `TOKEN` | vazio | Senha. Se definir, cole a mesma no site |
 | `MAX_MINUTOS` | `180` | Duração máxima do vídeo |
 | `ALTURA_MAX` | `720` | Resolução máxima baixada |
+| `DADOS` | `~/.estudioclip` | Onde ficam contas, posts e vídeos agendados |
 | `ORIGENS` | site no GitHub Pages + localhost | Sites que podem usar o servidor |
 
 ## Hospedar na nuvem
