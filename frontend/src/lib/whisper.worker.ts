@@ -25,8 +25,8 @@ self.onmessage = async (e:MessageEvent<Msg>)=>{
       progress_callback:(p:any)=>{ if(p.status==='progress') self.postMessage({type:'download',file:p.file,progress:p.progress}); },
     });
     self.postMessage({type:'stage',stage:'transcrevendo'});
-    // Processa em blocos de ~5 minutos para mostrar progresso.
-    const rate = 16000, block = rate*300; const chunks:{start:number;end:number;text:string}[] = [];
+    // Processa em blocos de 1 minuto para mostrar o progresso aos poucos.
+    const rate = 16000, block = rate*60; const chunks:{start:number;end:number;text:string}[] = [];
     for(let off=0; off<samples.length; off+=block){
       const part = samples.subarray(off,Math.min(samples.length,off+block));
       const out:any = await asr(part,{language:language==='auto'?undefined:language,task:'transcribe',return_timestamps:true,chunk_length_s:30,stride_length_s:5});

@@ -365,8 +365,23 @@ function Stepper({atual,onIr}:{atual:number;onIr?:(n:number)=>void}){
 }
 
 function JobView({job}:{job:Job}){
+  // Marca quando a etapa atual começou, para estimar o tempo que falta.
+  const ini=useRef<{etapa:string;t:number;txt:string}>({etapa:'',t:0,txt:''});
+  const [,tick]=useState(0);
+  useEffect(()=>{ const t=setInterval(()=>tick(x=>x+1),1000); return ()=>clearInterval(t); },[]);
   if(job.status==='erro') return <div className="job-status err"><AlertTriangle size={17}/><span>{job.erro}</span></div>;
-  const idx=job.etapas.indexOf(job.etapa);
-  return <div className="job-status"><ul className="stages">{job.etapas.map((e,i)=><li key={e} className={job.status==='pronto'||i<idx?'done':i===idx?'on':''}>{job.status==='pronto'||i<idx?<CheckCircle2 size={15}/>:i===idx?<Loader2 size={15} className="spin"/>:<Circle size={15}/>}{e}{i===idx&&job.status==='rodando'&&e==='Preparando a legenda'&&job.erro&&<small> — {job.erro} {job.pct?job.pct+'%':''}</small>}</li>)}</ul>
-   {job.etapa==='Preparando a legenda'&&<p className="hint"><FileText size={13}/> A transcrição roda no seu computador. Pode levar alguns minutos em vídeos longos.</p>}</div>;
+  const idx=Math.max(0,job.etapas.indexOf(job.etapa));
+  const pct=Math.max(0,Math.min(100,job.pct||0));
+  const chave=job.etapa+'|'+(job.erro||'');
+  if(ini.current.etapa!==chave){ ini.current={etapa:chave,t:Date.now(),txt:job.erro||''}; }
+  const passou=(Date.now()-ini.current.t)/1000;
+  const falta=pct>=3&&pct<100&&passou>5?passou*(100-pct)/pct:0;
+  const geral=job.status==='pronto'?100:Math.round((idx+pct/100)/Math.max(1,job.etapas.length)*100);
+  const fmtS=(x:number)=>x>=60?`${Math.floor(x/60)} min ${Math.round(x%60)} s`:`${Math.round(x)} s`;
+  return <div className="job-status">
+   {job.status==='rodando'&&<div className="geral"><div className="geral-row"><b>Progresso geral</b><b>{geral}%</b></div><div className="progress"><div style={{width:geral+'%'}}/></div></div>}
+   <ul className="stages">{job.etapas.map((e,i)=><li key={e} className={job.status==='pronto'||i<idx?'done':i===idx?'on':''}>{job.status==='pronto'||i<idx?<CheckCircle2 size={15}/>:i===idx?<Loader2 size={15} className="spin"/>:<Circle size={15}/>}<span>{e}{i===idx&&job.status==='rodando'&&<small> — {job.erro?job.erro+' ':''}<b className="pct">{pct}%</b>{falta>0&&` • faltam uns ${fmtS(falta)}`}</small>}</span></li>)}</ul>
+   {job.status==='rodando'&&pct>0&&<div className="progress etapa"><div style={{width:pct+'%'}}/></div>}
+   {job.etapa==='Preparando a legenda'&&<p className="hint"><FileText size={13}/> A transcrição roda no seu aparelho (ou no Gemini). Pode levar alguns minutos em vídeos longos.</p>}</div>;
 }
+
