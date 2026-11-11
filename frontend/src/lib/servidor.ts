@@ -47,3 +47,15 @@ export async function enviarCookies(url:string,token:string,texto:string|null):P
   const h:Record<string,string>={'Content-Type':'text/plain'}; if(token) h['X-Token']=token;
   return (await pedir(base(url)+(texto===null?'/cookies/apagar':'/cookies'),{method:'POST',headers:h,body:texto??''})).json();
 }
+
+/** Endereço atual do servidor, avisado por ele mesmo num canal do ntfy.sh toda vez que liga. */
+export async function enderecoDoCanal(canal:string):Promise<string|null>{
+  if(!/^[A-Za-z0-9]{8,64}$/.test(canal)) return null;
+  const r=await fetch(`https://ntfy.sh/estudioclip-${canal}/json?poll=1&since=all`);
+  if(!r.ok) return null;
+  let ultimo:string|null=null;
+  for(const linha of (await r.text()).split('\n')){
+    try{ const m=JSON.parse(linha); const u=String(m.message||'').trim(); if(m.event==='message'&&/^https:\/\/[a-z0-9.-]+$/i.test(u)) ultimo=u; }catch{ /* linha vazia */ }
+  }
+  return ultimo;
+}

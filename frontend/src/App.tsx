@@ -12,7 +12,7 @@ import Templates from './pages/Templates';
 import Config from './pages/Config';
 import './style.css';
 
-const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'seguir-rosto',servidor:'',servidorToken:'',geminiKey:'',ia:''};
+const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'seguir-rosto',servidor:'',servidorToken:'',servidorCanal:'',geminiKey:'',ia:''};
 const NAV:[Tab,string,typeof Home][] = [['inicio','Como funciona',Home],['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['agendar','Agendar posts',CalendarClock],['estilos','Legendas e efeitos',Captions],['templates','Template da marca',LayoutTemplate],['config','Chaves e ajustes',Gear]];
 const TITLES:Record<Tab,[string,string]> = {
   inicio:['Bem-vindo ao EstúdioClip','Descubra vídeos em alta, transforme vídeos longos em cortes curtos e exporte com legenda, tudo no navegador.'],
@@ -60,13 +60,27 @@ export default function App(){
       .then(()=>{ toast(nome+' conectado!'+(ehJanela?' Pode fechar esta janela.':''),'ok'); fim({tipo:'conectado',nome}); })
       .catch(e=>{ const t=e instanceof Error?e.message:String(e); toast(t,'erro'); fim({tipo:'erro',msg:t}); });
   },[toast]);
-  // Link gerado pelo servidor (?servidor=...&senha=...): liga o servidor neste aparelho sozinho.
+  // Link gerado pelo servidor (?canal=...&senha=..., ou o antigo ?servidor=...&senha=...): liga o servidor neste aparelho.
+  // Com o "canal", o site acha sozinho o endereço novo do servidor toda vez que ele reinicia (link fixo).
   useEffect(()=>{
-    const q=new URLSearchParams(location.search); const srv=q.get('servidor'); if(!srv) return;
-    const senha=q.get('senha')||'';
-    history.replaceState(null,'',location.pathname+location.hash);
-    import('./lib/servidor').then(({testarServidor})=>testarServidor(srv,senha)).then(()=>{ setSettings({servidor:srv.replace(/\/+$/,''),servidorToken:senha}); toast('Servidor do celular conectado! Cole um link em Gerar cortes.','ok'); })
-      .catch(e=>toast('Não consegui conectar ao servidor do link: '+(e instanceof Error?e.message:String(e)),'erro'));
+    const q=new URLSearchParams(location.search); const srv=q.get('servidor'); const canalQ=q.get('canal');
+    if(srv||canalQ) history.replaceState(null,'',location.pathname+location.hash);
+    const atual=store.json<Partial<Settings>>('studio_settings',{});
+    const canal=canalQ||atual.servidorCanal||''; const senha=q.get('senha')??atual.servidorToken??'';
+    const doLink=!!(srv||canalQ);
+    if(!srv&&!canal) return;
+    (async()=>{
+      const {testarServidor,enderecoDoCanal}=await import('./lib/servidor');
+      let url=srv?srv.replace(/\/+$/,''):'';
+      if(canal){ const u=await enderecoDoCanal(canal).catch(()=>null); if(u) url=u; }
+      if(!url){ if(doLink) toast('O servidor do celular ainda não avisou o endereço. Ligue o servidor no Termux e abra o link de novo.','erro'); return; }
+      if(!doLink&&url===atual.servidor) return;
+      try{
+        await testarServidor(url,senha);
+        setSettings({servidor:url,servidorToken:senha,servidorCanal:canal});
+        toast(doLink?'Servidor do celular conectado! Guarde este link: ele funciona sempre.':'Servidor do celular reconectado no endereço novo.','ok');
+      }catch(e){ if(doLink) toast('Não consegui conectar ao servidor do link: '+(e instanceof Error?e.message:String(e)),'erro'); }
+    })();
   },[setSettings,toast]);
   const ctx=useMemo(()=>({settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,linkRef,setLinkRef,marcas,setMarcas}),[settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,linkRef,marcas,setMarcas]);
   const status=[{ok:!!settings.ytKey,label:'Radar (YouTube)',opt:false},{ok:true,label:'Cortes e exportação',opt:false},{ok:!!(settings.claudeKey||settings.geminiKey),label:'Notas com IA',opt:true},{ok:!!settings.servidor,label:'Cortes pelo link',opt:true}];
