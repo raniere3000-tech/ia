@@ -67,3 +67,24 @@ export async function escreverPostsClaude(key:string, texto:string){
   if(!parsed) throw new Error('A resposta da IA veio incompleta. Tente novamente.');
   return parsed.posts;
 }
+
+const RoteiroZ = z.object({
+  titulo: z.string(), selo: z.string(), legenda: z.string(), hashtags: z.array(z.string()),
+  cenas: z.array(z.object({ texto: z.string(), destaque: z.string(), emoji: z.string(), numero: z.string(), contagem: z.boolean() })),
+});
+
+/** Roteiro de vídeo animado (aba Vídeo com código) escrito pela Claude. */
+export async function escreverRoteiroClaude(key:string, texto:string){
+  const res = await client(key).beta.messages.parse({
+    model: CLAUDE_MODEL,
+    max_tokens: 8000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    messages: [{role:'user',content:texto}],
+    output_config: { format: betaZodOutputFormat(RoteiroZ) },
+  } as any);
+  if(res.stop_reason==='refusal') throw new Error('A IA recusou escrever sobre este tema.');
+  const parsed = (res as any).parsed_output as z.infer<typeof RoteiroZ> | null;
+  if(!parsed) throw new Error('A resposta da IA veio incompleta. Tente novamente.');
+  return parsed;
+}
