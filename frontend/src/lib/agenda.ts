@@ -32,9 +32,15 @@ async function chamar<T=any>(cfg:Cfg,metodo:string,caminho:string,corpo?:unknown
 
 export const lerContas=(c:Cfg)=>chamar<Contas>(c,'GET','/contas');
 export const salvarApp=(c:Cfg,p:Prov,client_id:string,client_secret:string)=>chamar(c,'POST',`/contas/${p}/app`,{client_id,client_secret});
+/** Abre o login da rede numa janelinha, para não perder os cortes que estão nesta aba. */
 export async function entrar(c:Cfg,p:Prov){
-  const {url}=await chamar<{url:string}>(c,'POST',`/contas/${p}/login`,{volta:enderecoRetorno()});
-  location.href=url;
+  // Abre a janela já no clique (o navegador bloqueia janelas abertas depois de esperar o servidor).
+  const jan=window.open('','login_rede','width=520,height=720');
+  try{
+    const {url}=await chamar<{url:string}>(c,'POST',`/contas/${p}/login`,{volta:enderecoRetorno()});
+    if(jan&&!jan.closed){ try{ localStorage.setItem('studio_login_popup',String(Date.now())); }catch{ /* ignora */ } jan.location.href=url; jan.focus(); }
+    else { try{ localStorage.removeItem('studio_login_popup'); }catch{ /* ignora */ } location.href=url; }
+  }catch(e){ jan?.close(); throw e; }
 }
 export const enviarCodigo=(c:Cfg,code:string,state:string)=>chamar<{rede:Prov}>(c,'POST','/contas/codigo',{code,state});
 export const escolherPagina=(c:Cfg,pagina:string)=>chamar(c,'POST','/contas/meta/pagina',{pagina});

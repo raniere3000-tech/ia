@@ -10,7 +10,7 @@ export type Tab = 'inicio'|'radar'|'cortes'|'agendar'|'estilos'|'templates'|'con
 
 export type Projeto = {
   file:File|null; url:string; nome:string; duracao:number;
-  cues:Cue[]; cuesFonte:''|'whisper'|'arquivo';
+  cues:Cue[]; cuesFonte:''|'whisper'|'gemini'|'arquivo';
   candidatos:number; clips:Clip[]; tema:string; prompt:string;
   job:Job;
 };

@@ -8,7 +8,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
 export class ErroGemini extends Error { constructor(public status:number, msg:string, public motivo=''){ super(msg); } }
 
-async function chamar(key:string, caminho:string, body?:unknown){
+export async function chamar(key:string, caminho:string, body?:unknown){
   let r:Response;
   try{ r = await fetch(API+caminho,{method:body?'POST':'GET',headers:{'x-goog-api-key':key.trim(),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined}); }
   catch{ throw new ErroGemini(0,'Não foi possível conectar ao Gemini. Verifique sua internet.'); }

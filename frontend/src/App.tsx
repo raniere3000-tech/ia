@@ -40,16 +40,25 @@ export default function App(){
   const setMarcas=useCallback((f:(m:Marca[])=>Marca[])=>setM(f),[]);
   useEffect(()=>()=>{ if(projeto.url) URL.revokeObjectURL(projeto.url); },[projeto.url]);
   // Volta do login das redes (?code=...&state=google_...): entrega o código ao servidor.
+  // Normalmente isso acontece na janelinha de login: ela avisa a aba principal e fecha sozinha.
   useEffect(()=>{
     const q=new URLSearchParams(location.search); const state=q.get('state')||''; const m=/^(google|meta|tiktok)_/.exec(state);
     if(!m) return;
     const code=q.get('code'); const erro=q.get('error_description')||q.get('error_message')||q.get('error');
     history.replaceState(null,'',location.pathname+'#agendar'); setTab('agendar');
-    if(!code){ toast('Login cancelado'+(erro?': '+erro:'.'),'erro'); return; }
+    const nome={google:'YouTube',meta:'Facebook e Instagram',tiktok:'TikTok'}[m[1]]!;
+    const t0=+(store.get('studio_login_popup')||0); const ehJanela=!!window.opener||(t0>0&&Date.now()-t0<30*60*1000);
+    const avisar=(msg:object)=>{ try{ const bc=new BroadcastChannel('estudioclip-contas'); bc.postMessage(msg); bc.close(); }catch{ /* navegador antigo */ } };
+    const fim=(msg:{tipo:string;nome?:string;msg?:string})=>{
+      if(!ehJanela) return;
+      store.set('studio_login_popup',''); avisar(msg);
+      setTimeout(()=>{ try{ window.close(); }catch{ /* ignora */ } },msg.tipo==='erro'?4000:800);
+    };
+    if(!code){ const t='Login cancelado'+(erro?': '+erro:'.'); toast(t,'erro'); fim({tipo:'erro',msg:t}); return; }
     const cfg=store.json<Partial<Settings>>('studio_settings',{});
     import('./lib/agenda').then(({enviarCodigo})=>enviarCodigo({servidor:cfg.servidor||'',servidorToken:cfg.servidorToken||''},code,state))
-      .then(()=>toast({google:'YouTube',meta:'Facebook e Instagram',tiktok:'TikTok'}[m[1]]+' conectado!','ok'))
-      .catch(e=>toast(e instanceof Error?e.message:String(e),'erro'));
+      .then(()=>{ toast(nome+' conectado!'+(ehJanela?' Pode fechar esta janela.':''),'ok'); fim({tipo:'conectado',nome}); })
+      .catch(e=>{ const t=e instanceof Error?e.message:String(e); toast(t,'erro'); fim({tipo:'erro',msg:t}); });
   },[toast]);
   // Link gerado pelo servidor (?servidor=...&senha=...): liga o servidor neste aparelho sozinho.
   useEffect(()=>{

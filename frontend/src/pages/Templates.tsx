@@ -18,16 +18,16 @@ function Mock({t}:{t:Template}){
   return <canvas ref={ref} width={1080} height={1920} className="preview-canvas f9x16"/>;
 }
 
-export default function Templates(){
+/** Campos do template (logo, @, cor). Usado na aba Template e na etapa de edição dos cortes. */
+export function TemplateForm({titulo='Sua marca nos cortes'}:{titulo?:string}){
   const {template:t,setTemplate,toast}=useApp();
   const set=(p:Partial<Template>)=>setTemplate({...t,ativo:true,...p});
   function logo(f:File|null){
     if(!f) return; if(f.size>1_500_000){ toast('Use uma imagem de até 1,5 MB (PNG com fundo transparente fica melhor).','erro'); return; }
     const r=new FileReader(); r.onload=()=>{ set({logo:String(r.result),ativo:true}); toast('Logo carregado.','ok'); }; r.readAsDataURL(f);
   }
-  return <div className="two-cols">
-   <section className="panel">
-    <div className="section-head"><h2>Sua marca nos cortes</h2></div>
+  return <section className="panel">
+    <div className="section-head"><h2>{titulo}</h2></div>
     <label className="check big"><input type="checkbox" checked={t.ativo} onChange={e=>set({ativo:e.target.checked})}/> Aplicar o template em todos os cortes exportados</label>
     <div className="field"><span className="field-label">Logo</span>
      <div className="logo-row">{t.logo?<img src={t.logo} alt="Logo" className="logo-prev"/>:<span className="logo-prev empty"><ImagePlus size={22}/></span>}
@@ -38,7 +38,13 @@ export default function Templates(){
     <div className="small-grid"><label>Cor da marca<input type="color" value={t.cor} onChange={e=>set({cor:e.target.value})}/></label>
      <label className="check"><input type="checkbox" checked={t.moldura} onChange={e=>set({moldura:e.target.checked})}/> Moldura colorida</label></div>
     <p className="hint">O template fica salvo neste navegador e aparece na prévia do editor e nos vídeos exportados.</p>
-   </section>
+   </section>;
+}
+
+export default function Templates(){
+  const {template:t}=useApp();
+  return <div className="two-cols">
+   <TemplateForm/>
    <section className="panel center-col"><div className="section-head"><h2>Prévia</h2></div><Mock t={t}/></section>
   </div>;
 }

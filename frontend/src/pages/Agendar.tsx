@@ -40,13 +40,42 @@ function ContaCard({p,conta,recarregar}:{p:typeof PROVS[number];conta:Contas[Pro
   </article>;
 }
 
+/** Painel com as contas das redes (login e app). Usado na aba Agendar e na etapa Postar dos cortes. */
+export function ContasPainel({aoMudar,onContas}:{aoMudar?:()=>void;onContas?:(c:Contas)=>void}){
+  const {settings,toast}=useApp();
+  const [contas,setContas]=useState<Contas|null>(null); const [erro,setErro]=useState('');
+  const recarregar=useCallback(()=>{
+    if(!settings.servidor) return;
+    lerContas(settings).then(c=>{ setContas(c); onContas?.(c); setErro(''); }).catch(e=>setErro(e.message));
+    aoMudar?.();
+  },[settings,aoMudar,onContas]);
+  useEffect(()=>{ recarregar(); },[recarregar]);
+  // O login abre numa janelinha; quando ela termina, avisa esta aba para atualizar.
+  useEffect(()=>{
+    if(typeof BroadcastChannel==='undefined') return;
+    const bc=new BroadcastChannel('estudioclip-contas');
+    bc.onmessage=e=>{ if(e.data?.tipo==='conectado'){ toast(e.data.nome+' conectado!','ok'); recarregar(); } else if(e.data?.tipo==='erro'){ toast(e.data.msg,'erro'); recarregar(); } };
+    return ()=>bc.close();
+  },[recarregar,toast]);
+  return <section className="panel">
+    {erro&&<div className="note-bar"><AlertTriangle size={16}/><span>{erro}</span><button className="subtle sm" onClick={recarregar}><RefreshCw size={14}/> Tentar de novo</button></div>}
+    <div className="section-head"><h2><LogIn size={18}/> Suas contas</h2><button className="subtle sm" onClick={recarregar}><RefreshCw size={14}/> Atualizar</button></div>
+    <p className="subtitle">Para postar na sua conta, cada rede pede um "app de desenvolvedor" seu (grátis e só para você). Faça uma vez: clique em <b>Como criar?</b>, siga o passo a passo, cole os dados e clique em <b>Entrar com minha conta</b>. O login abre numa janelinha, e o seu trabalho continua aqui.</p>
+    <div className="retorno"><span>Endereço de retorno (cole no app de cada rede):</span><code>{enderecoRetorno()}</code><button className="icon-btn" title="Copiar" onClick={()=>{ navigator.clipboard?.writeText(enderecoRetorno()); toast('Copiado.','ok'); }}><Copy size={14}/></button></div>
+    {!contas?<p className="hint"><Loader2 size={14} className="spin"/> Lendo contas do servidor...</p>
+    :<div className="contas-grid">{PROVS.map(p=><ContaCard key={p.id} p={p} conta={contas[p.id]} recarregar={recarregar}/>)}
+      <article className="conta-card"><div className="conta-head"><span className="conta-ic kwai"><Hand size={20}/></span><div className="grow"><strong>Kwai</strong><small>Sem API pública para postar</small></div><span className="tag">Manual</span></div>
+       <p className="hint">Marque o Kwai ao agendar: na hora, o post aparece aqui com <b>Baixar vídeo</b>. É só postar no app do Kwai e clicar em <b>Já postei</b>. <HelpButton topic="kwai"/></p></article>
+     </div>}
+   </section>;
+}
+
 export default function Agendar(){
   const {settings,toast,go}=useApp();
-  const [contas,setContas]=useState<Contas|null>(null); const [posts,setPosts]=useState<Post[]|null>(null); const [erro,setErro]=useState('');
+  const [posts,setPosts]=useState<Post[]|null>(null);
   const [novo,setNovo]=useState<File|null>(null); const arq=useRef<HTMLInputElement>(null);
   const recarregar=useCallback(()=>{
     if(!settings.servidor) return;
-    lerContas(settings).then(c=>{ setContas(c); setErro(''); }).catch(e=>setErro(e.message));
     listarPosts(settings).then(r=>setPosts(r.posts)).catch(()=>{});
   },[settings]);
   useEffect(()=>{ recarregar(); const t=setInterval(()=>listarPosts(settings).then(r=>setPosts(r.posts)).catch(()=>{}),10000); return ()=>clearInterval(t); },[recarregar,settings]);
@@ -60,18 +89,7 @@ export default function Agendar(){
 
   const porDia=new Map<string,Post[]>(); for(const p of posts||[]){ const d=dia(p.quando); porDia.set(d,[...(porDia.get(d)||[]),p]); }
   return <>
-   {erro&&<div className="note-bar"><AlertTriangle size={16}/><span>{erro}</span><button className="subtle sm" onClick={recarregar}><RefreshCw size={14}/> Tentar de novo</button></div>}
-
-   <section className="panel">
-    <div className="section-head"><h2><LogIn size={18}/> Suas contas</h2><button className="subtle sm" onClick={recarregar}><RefreshCw size={14}/> Atualizar</button></div>
-    <p className="subtitle">Para postar na sua conta, cada rede pede um "app de desenvolvedor" seu (grátis e só para você). Faça uma vez: clique em <b>Como criar?</b>, siga o passo a passo, cole os dados e clique em <b>Entrar com minha conta</b>.</p>
-    <div className="retorno"><span>Endereço de retorno (cole no app de cada rede):</span><code>{enderecoRetorno()}</code><button className="icon-btn" title="Copiar" onClick={()=>{ navigator.clipboard?.writeText(enderecoRetorno()); toast('Copiado.','ok'); }}><Copy size={14}/></button></div>
-    {!contas?<p className="hint"><Loader2 size={14} className="spin"/> Lendo contas do servidor...</p>
-    :<div className="contas-grid">{PROVS.map(p=><ContaCard key={p.id} p={p} conta={contas[p.id]} recarregar={recarregar}/>)}
-      <article className="conta-card"><div className="conta-head"><span className="conta-ic kwai"><Hand size={20}/></span><div className="grow"><strong>Kwai</strong><small>Sem API pública para postar</small></div><span className="tag">Manual</span></div>
-       <p className="hint">Marque o Kwai ao agendar: na hora, o post aparece aqui com <b>Baixar vídeo</b>. É só postar no app do Kwai e clicar em <b>Já postei</b>. <HelpButton topic="kwai"/></p></article>
-     </div>}
-   </section>
+   <ContasPainel aoMudar={recarregar}/>
 
    <section className="panel">
     <div className="section-head"><h2><CalendarClock size={18}/> Agenda de posts</h2>
