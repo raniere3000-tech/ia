@@ -88,13 +88,14 @@ export default function Cortes(){
   const qualIA=iaAtiva(settings); const temIA=!!qualIA; const rotuloIA=`Avaliando com IA (${nomeIA(qualIA)})`;
   const recSupport=formatoSuportado();
 
-  async function escolherArquivo(orig:File|null){
+  /** iniciar=true quando veio do botão "Baixar e começar" (link): já gera os cortes com as opções escolhidas. */
+  async function escolherArquivo(orig:File|null,iniciar=false){
     if(!orig) return;
     if(!orig.type.startsWith('video/') && !/\.(mp4|mov|mkv|webm|m4v)$/i.test(orig.name)){ toast('Escolha um arquivo de vídeo (MP4, MOV, WEBM).','erro'); return; }
     // No celular, a permissão de ler o arquivo escolhido pode acabar antes de tocar em Gerar cortes.
     // Por isso guardamos uma cópia do vídeo na memória logo ao escolher.
     let f=orig;
-    if(!(orig as any).__copia){
+    if(!iniciar){   // arquivo do servidor já está na memória
       setLendo(true);
       try{ f=new File([await orig.arrayBuffer()],orig.name,{type:orig.type||'video/mp4'}); }
       catch(e){ setLendo(false); toast(erroArquivo(e),'erro'); return; }
@@ -105,7 +106,10 @@ export default function Cortes(){
     const url=URL.createObjectURL(f);
     setProjeto(()=>({...PROJETO_VAZIO,file:f,url,nome:f.name}));
     setSel(new Set()); setE('cortes'); setLegErro('');
+    if(iniciar&&direitos){ gerar({file:f,url}); return; }
     videoInfo(url).then(i=>setProjeto(p=>p.url===url?{...p,duracao:i.duration}:p)).catch(e=>toast(e.message,'erro'));
+    toast('Vídeo carregado. Confira as opções e toque em Gerar cortes.','ok');
+    setTimeout(()=>document.getElementById('btn-gerar')?.scrollIntoView({behavior:'smooth',block:'center'}),400);
   }
   const [lendo,setLendo]=useState(false);
   const setJob=(j:Partial<Job>)=>setProjeto(p=>({...p,job:{...p.job,...j}}));
@@ -380,7 +384,7 @@ export default function Cortes(){
     <label className="check big auto-check"><input type="checkbox" checked={direitos} onChange={e=>setDireitos(e.target.checked)}/> <span>Declaro que tenho direito de usar e publicar os vídeos que envio (meus ou com autorização). <b>{direitos?'Pronto. Depois de escolher o vídeo, confira as opções e toque em Gerar cortes. Nada começa sozinho.':'Marque para poder gerar os cortes.'}</b></span></label>
    </section>
    <h2 className="passo-titulo">2. Envie o vídeo</h2>
-   <LinkStudio onUpload={()=>fileInput.current?.click()} onArquivo={escolherArquivo} direitos={direitos}/>
+   <LinkStudio onUpload={()=>fileInput.current?.click()} onArquivo={f=>escolherArquivo(f,true)} direitos={direitos}/>
    
    <section className={'panel dropzone '+(drag?'drag':'')} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);escolherArquivo(e.dataTransfer.files?.[0]||null)}} onClick={()=>fileInput.current?.click()} role="button" tabIndex={0}>
     <span className="drop-icon"><Upload size={30}/></span>
@@ -401,7 +405,7 @@ export default function Cortes(){
     <div className="section-head"><h2><Sparkles size={18}/> Como você quer os cortes?</h2></div>
     {opcoes}
     <label className="check big"><input type="checkbox" checked={direitos} onChange={e=>setDireitos(e.target.checked)}/> Declaro que tenho direito de usar e publicar este vídeo (é meu ou tenho autorização do dono).</label>
-    <button className="primary lg full" disabled={!direitos||rodando||!projeto.duracao} onClick={()=>gerar()}>{rodando?<Loader2 size={18} className="spin"/>:<Sparkles size={18}/>} {rodando?(inteiro?'Preparando...':'Gerando cortes...'):(inteiro?'Usar o vídeo inteiro':'Gerar cortes')}</button>
+    <button id="btn-gerar" className="primary lg full" disabled={!direitos||rodando||!projeto.duracao} onClick={()=>gerar()}>{rodando?<Loader2 size={18} className="spin"/>:<Sparkles size={18}/>} {rodando?(inteiro?'Preparando...':'Gerando cortes...'):(inteiro?'Usar o vídeo inteiro':'Gerar cortes')}</button>
     {!temIA&&<p className="hint center">Notas automáticas pelo áudio e pelas frases. Para notas e títulos feitos por IA, <button className="link-btn inline" onClick={()=>go('config')}>configure a chave do Gemini (grátis) ou da Claude</button>.</p>}
     {job.status!=='idle'&&<JobView job={job}/>}
    </section>
