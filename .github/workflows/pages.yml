@@ -27,5 +27,9 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/dist
+      # Se o Pages ainda estiver em "Deploy from a branch", o GitHub publica o README por cima.
+      # Esperar faz este site ser publicado por último (o certo é Settings > Pages > Source: GitHub Actions).
+      - name: Esperar a publicação automática do GitHub terminar
+        run: sleep 90
       - id: deployment
         uses: actions/deploy-pages@v4
