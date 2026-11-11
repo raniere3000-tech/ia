@@ -287,3 +287,4 @@ a.subtle.sm{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
 @media(max-width:600px){.next-btn{margin-left:0;width:100%;justify-content:center}}
 .job-status .geral{margin-bottom:14px}.geral-row{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px}
 .job-status .progress.etapa{margin-top:12px}.stages .pct{color:#fff}
+.row-gap.left{justify-content:flex-start}.legenda-lote .hint{margin-bottom:10px}

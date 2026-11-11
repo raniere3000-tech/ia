@@ -23,7 +23,9 @@ const STEP=0.5;
 const DURACOES:[string,number,number][] = [['Até 30 s',15,30],['30–60 s',30,60],['61–90 s',61,90],['90–180 s',90,180]];
 type Etapa='cortes'|'edicao'|'postar';
 // Guarda a etapa e a seleção ao trocar de aba (o vídeo continua carregado).
-let mem:{etapa:Etapa;sel:Set<string>;url:string;tempos:string}={etapa:'cortes',sel:new Set(),url:'',tempos:''};
+let mem:{etapa:Etapa;sel:Set<string>;url:string;tempos:string;inteiro:boolean}={etapa:'cortes',sel:new Set(),url:'',tempos:'',inteiro:false};
+/** Chamado pelo Radar: o próximo vídeo aberto é usado inteiro (sem cortar) e vai direto para a edição. */
+export function usarVideoInteiro(v:boolean){ mem={...mem,inteiro:v}; }
 
 /** Lê os tempos colados, um corte por linha: "0:30-1:10", "1:02:05 a 1:03:00 Título", "90-120". */
 export function lerTempos(txt:string){
@@ -50,7 +52,7 @@ export default function Cortes(){
   const [custom,setCustom]=useState(false);
   const [trechoIni,setTrechoIni]=useState(''); const [trechoFim,setTrechoFim]=useState('');
   const [limite,setLimite]=useState(15); const [minimo,setMinimo]=useState(3);
-  const [legSrc,setLegSrc]=useState<'auto'|'gemini'|'arquivo'|'nenhuma'>('auto'); const [idioma,setIdioma]=useState(settings.idioma);
+  const [legSrc,setLegSrc]=useState<'depois'|'auto'|'gemini'|'arquivo'|'nenhuma'>('depois'); const [idioma,setIdioma]=useState(settings.idioma);
   const [prompt,setPrompt]=useState(''); const [tema,setTema]=useState('');
   const [srtFile,setSrtFile]=useState<File|null>(null);
   const [mostrarTodos,setMostrarTodos]=useState(false); const [ordem,setOrdem]=useState<'nota'|'tempo'>('nota');
@@ -58,8 +60,9 @@ export default function Cortes(){
   const [sel,setSel]=useState<Set<string>>(()=>mesmo?mem.sel:new Set());
   const [etapa,setE]=useState<Etapa>(()=>mesmo?mem.etapa:'cortes');
   const [tempos,setTempos]=useState(mem.tempos);
+  const [inteiro,setInteiro]=useState(mem.inteiro);
   const [legErro,setLegErro]=useState('');
-  useEffect(()=>{ mem={etapa,sel,url:projeto.url,tempos}; },[etapa,sel,projeto.url,tempos]);
+  useEffect(()=>{ mem={etapa,sel,url:projeto.url,tempos,inteiro}; },[etapa,sel,projeto.url,tempos,inteiro]);
   const setEtapa=(e:Etapa)=>{ setE(e); window.scrollTo({top:0}); };
   const lidos=useMemo(()=>lerTempos(tempos),[tempos]);
   const [editando,setEditando]=useState<Clip|null>(null);
@@ -109,10 +112,48 @@ export default function Cortes(){
     return out;
   }
 
+  /** Vídeo curto: usa o arquivo inteiro como um corte só e vai direto para a edição. */
+  async function usarInteiro(file:File,url:string){
+    const etapas=['Lendo o vídeo','Gerando miniatura'];
+    setProjeto(p=>({...p,clips:[],candidatos:0,job:{status:'rodando',etapa:etapas[0],pct:0,etapas}}));
+    setSel(new Set()); setLegErro('');
+    try{
+      const info=await videoInfo(url);
+      setJob({etapa:'Gerando miniatura'});
+      const [thumb]=await captureFrames(url,[Math.min(Math.max(0,info.duration-0.1),1.5)],320).catch(()=>[] as string[]);
+      const id=uid();
+      const clip:Clip={id,titulo:file.name.replace(/\.\w+$/,'').slice(0,90),inicio:0,fim:+info.duration.toFixed(2),notas:{gancho:0,fluxo:0,valor:0,tendencia:0},nota_final:0,nota_10:0,motivo:'Vídeo inteiro, sem cortes.',fonte:'heuristica',legenda:legSrc==='nenhuma'?'':settings.legendaPadrao,efeito:settings.efeitoPadrao,formato:'9:16',gancho_texto:'',thumb};
+      setProjeto(p=>({...p,duracao:info.duration,clips:[clip],candidatos:1,job:{...p.job,status:'pronto',etapa:'',pct:100,erro:undefined}}));
+      setMostrarTodos(true); setSel(new Set([id])); setE('edicao'); window.scrollTo({top:0});
+      toast('Vídeo pronto para editar: coloque o template e a legenda.','ok');
+    }catch(e){ const msg=e instanceof Error?e.message:String(e); setJob({status:'erro',erro:msg}); toast(msg,'erro'); }
+  }
+
+  /** Faz a legenda só dos cortes escolhidos (bem mais rápido que o vídeo todo). */
+  async function gerarLegendas(ids:string[],via:'auto'|'gemini',onStatus:(s:string,pct:number)=>void){
+    const file=projeto.file; if(!file) throw new Error('Envie o vídeo de novo.');
+    if(cache.file!==file||!cache.audio){ onStatus('Lendo o áudio do vídeo',0); const audio=await decodeAudio(file); cache={file,audio,energy:audio?energyProfile(audio,STEP):null}; }
+    const audio=cache.audio;
+    if(!audio) throw new Error('O navegador não conseguiu ler o áudio deste vídeo. Tente pelo computador ou envie um .srt.');
+    const R=16000;
+    // Junta os trechos (sem repetir partes iguais) com 1 s de silêncio entre eles e transcreve tudo de uma vez.
+    const faixas=projeto.clips.filter(c=>ids.includes(c.id)).map(c=>[Math.max(0,Math.floor(c.inicio*R)),Math.min(audio.samples.length,Math.ceil(c.fim*R))] as [number,number]).sort((a,b)=>a[0]-b[0]);
+    const unidas:[number,number][]=[]; for(const f of faixas){ const u=unidas[unidas.length-1]; if(u&&f[0]<=u[1]) u[1]=Math.max(u[1],f[1]); else unidas.push([...f]); }
+    const total=unidas.reduce((t,[a,b])=>t+(b-a)+R,0); const junto=new Float32Array(total);
+    const mapa:{ini:number;fim:number;base:number}[]=[]; let off=0;
+    for(const [a,b] of unidas){ junto.set(audio.samples.subarray(a,b),off); mapa.push({ini:off/R,fim:(off+b-a)/R,base:a/R}); off+=b-a+R; }
+    const cues=via==='gemini'?await transcreverGemini(junto,settings.geminiKey,settings.idioma,onStatus):await transcrever(junto,settings.whisperModel,settings.idioma,onStatus);
+    const novas:Cue[]=[];
+    for(const q of cues){ const m=mapa.find(x=>q.start>=x.ini-0.3&&q.start<x.fim); if(!m) continue; const d=m.base-m.ini; novas.push({start:+Math.max(m.base,q.start+d).toFixed(2),end:+Math.min(m.base+(m.fim-m.ini),Math.max(q.start,q.end)+d).toFixed(2),text:q.text}); }
+    setProjeto(p=>{ const fora=p.cues.filter(q=>!unidas.some(([a,b])=>q.start<b/R&&q.end>a/R)); return {...p,cues:[...fora,...novas].sort((a,b)=>a.start-b.start),cuesFonte:via==='gemini'?'gemini':'whisper',clips:p.clips.map(c=>ids.includes(c.id)?{...c,legendaOk:true,legenda:c.legenda||settings.legendaPadrao}:c)}; });
+    return novas.length;
+  }
+
   async function gerar(src?:{file:File;url:string}){
     const file=src?.file??projeto.file, url=src?.url??projeto.url;
     if(!file||!direitos) return;
-    const etapas=['Lendo o vídeo','Analisando o áudio',...(legSrc!=='nenhuma'?['Preparando a legenda']:[]),'Montando candidatos',...(temIA?[rotuloIA]:[]),'Gerando miniaturas'];
+    if(inteiro){ await usarInteiro(file,url); return; }
+    const etapas=['Lendo o vídeo','Analisando o áudio',...(legSrc!=='nenhuma'&&legSrc!=='depois'?['Preparando a legenda']:[]),'Montando candidatos',...(temIA?[rotuloIA]:[]),'Gerando miniaturas'];
     setProjeto(p=>({...p,clips:[],candidatos:0,prompt,tema,job:{status:'rodando',etapa:etapas[0],pct:0,etapas}}));
     setSel(new Set()); setE('cortes'); setLegErro('');
     try{
@@ -147,7 +188,7 @@ export default function Cortes(){
           toast(msg+' Os cortes serão gerados sem legenda.','erro');
         }
       }else if(legSrc==='nenhuma'){ cues=[]; fonte=''; }
-      if(legSrc!=='nenhuma'&&!cache.audio) setLegErro('O navegador não conseguiu ler o áudio deste arquivo, então não deu para fazer a legenda. Isso costuma acontecer com vídeos muito grandes no celular: tente pelo computador, um vídeo menor, ou envie um .srt.');
+      if((legSrc==='auto'||legSrc==='gemini')&&!cache.audio) setLegErro('O navegador não conseguiu ler o áudio deste arquivo, então não deu para fazer a legenda. Isso costuma acontecer com vídeos muito grandes no celular: tente pelo computador, um vídeo menor, ou envie um .srt.');
       setProjeto(p=>({...p,cues,cuesFonte:fonte,duracao:info.duration}));
       setJob({etapa:'Montando candidatos',pct:0,erro:undefined});
       const ini=trechoIni?parseTime(trechoIni):0, fimT=trechoFim?parseTime(trechoFim):0;
@@ -237,6 +278,10 @@ export default function Cortes(){
 
   // Opções: aparecem antes de enviar o vídeo, para os cortes já saírem do jeito certo.
   const opcoes=<>
+    <div className="field"><span className="field-label">O que fazer com o vídeo</span><div className="seg big">
+     <button className={!inteiro?'on':''} onClick={()=>setInteiro(false)}><strong>Fazer cortes</strong><small>Vídeo longo: o site acha os melhores trechos</small></button>
+     <button className={inteiro?'on':''} onClick={()=>setInteiro(true)}><strong>Usar o vídeo inteiro</strong><small>Já é curto (Shorts): só template e legenda</small></button></div></div>
+    {!inteiro&&<>
     {marcas.length>0&&!lidos.janelas.length&&<label className="check big marks-check"><input type="checkbox" checked={usarMarcas} onChange={e=>setUsarMarcas(e.target.checked)}/> Usar os {marcas.length} trechos que marquei no link ({marcas.map(m=>`${tm(m.inicio)}–${tm(m.fim)}`).join(', ')}). Desmarque para o site procurar os melhores trechos sozinho.</label>}
     <div className="field tempos-field"><span className="field-label"><Clock size={15}/> Tempos exatos dos cortes (opcional)</span>
      <textarea rows={4} value={tempos} onChange={e=>setTempos(e.target.value)} placeholder={'Cole um corte por linha, assim:\n0:30 - 1:10\n12:05 a 12:50 Melhor jogada\n1:02:00 - 1:03:15'} aria-label="Tempos dos cortes"/>
@@ -250,9 +295,10 @@ export default function Cortes(){
      <div className={'field '+(lidos.janelas.length?'off':'')}><span className="field-label">Duração de cada corte {lidos.janelas.length>0&&<span className="tag">usando os tempos colados</span>}</span><div className="seg">{DURACOES.map(([l,a,b])=><button key={l} className={!custom&&faixa[0]===a&&faixa[1]===b?'on':''} onClick={()=>{setCustom(false);setFaixa([a,b])}}>{l}</button>)}<button className={custom?'on':''} onClick={()=>setCustom(true)}>Personalizada</button></div>
       {custom&&<div className="small-grid mt"><label>Mínimo (s)<input type="number" min={5} max={600} value={faixa[0]} onChange={e=>{const v=Math.max(5,+e.target.value);setFaixa([v,Math.max(v,faixa[1])])}}/></label><label>Máximo (s)<input type="number" min={5} max={600} value={faixa[1]} onChange={e=>setFaixa([faixa[0],Math.max(faixa[0],+e.target.value)])}/></label></div>}</div>
      <div className="field"><span className="field-label">Legenda <HelpButton topic="whisper"/></span><div className="seg">
-      <button className={legSrc==='auto'?'on':''} onClick={()=>setLegSrc('auto')}>Automática</button>{settings.geminiKey&&<button className={legSrc==='gemini'?'on':''} onClick={()=>setLegSrc('gemini')}>Pelo Gemini</button>}<button className={legSrc==='arquivo'?'on':''} onClick={()=>setLegSrc('arquivo')}>Tenho um .srt/.vtt</button><button className={legSrc==='nenhuma'?'on':''} onClick={()=>setLegSrc('nenhuma')}>Sem legenda</button></div>
+      <button className={legSrc==='depois'?'on':''} onClick={()=>setLegSrc('depois')}>Depois, só nos escolhidos</button><button className={legSrc==='auto'?'on':''} onClick={()=>setLegSrc('auto')}>Agora, no vídeo todo</button>{settings.geminiKey&&<button className={legSrc==='gemini'?'on':''} onClick={()=>setLegSrc('gemini')}>Pelo Gemini</button>}<button className={legSrc==='arquivo'?'on':''} onClick={()=>setLegSrc('arquivo')}>Tenho um .srt/.vtt</button><button className={legSrc==='nenhuma'?'on':''} onClick={()=>setLegSrc('nenhuma')}>Sem legenda</button></div>
       {(legSrc==='auto'||legSrc==='gemini')&&<label className="mt">Idioma da fala<select value={idioma} onChange={e=>setIdioma(e.target.value)}>{IDIOMAS.map(i=><option key={i.id} value={i.id}>{i.nome}</option>)}</select></label>}
-      {legSrc==='auto'&&<small className="hint">Roda no seu aparelho.{settings.geminiKey?' Se falhar, o site tenta pelo Gemini sozinho.':' Se der erro no celular, configure a chave do Gemini para ter outra opção.'}</small>}
+      {legSrc==='depois'&&<small className="hint">Mais rápido: os cortes saem sem esperar a legenda. Você gera a legenda na etapa de Edição, só dos cortes que escolher.</small>}
+      {legSrc==='auto'&&<small className="hint">Roda no seu aparelho e pode demorar em vídeos longos.{settings.geminiKey?' Se falhar, o site tenta pelo Gemini sozinho.':' Se der erro no celular, configure a chave do Gemini para ter outra opção.'}</small>}
       {legSrc==='gemini'&&<small className="hint">Usa sua chave do Google. Mais rápido no celular; o áudio é enviado ao Gemini.</small>}
       {legSrc==='arquivo'&&<label className="mt"><span className="label-row">Arquivo de legenda <HelpButton topic="srt"/></span><input type="file" accept=".srt,.vtt" onChange={e=>setSrtFile(e.target.files?.[0]||null)}/></label>}
      </div>
@@ -265,6 +311,7 @@ export default function Cortes(){
       <label className="mt"><span className="label-row">Pedido para a IA {!temIA&&<span className="tag">precisa de uma chave de IA</span>}</span><input disabled={!temIA} placeholder={temIA?'Ex.: ache onde ele fala de preço; perseguições policiais':'Configure uma chave de IA para usar'} value={prompt} onChange={e=>setPrompt(e.target.value)}/></label>
      </details>
     </div>
+    </>}
   </>;
 
   // ---------- Tela: sem vídeo ----------
@@ -297,11 +344,11 @@ export default function Cortes(){
     <div className="section-head"><h2><Sparkles size={18}/> Como você quer os cortes?</h2></div>
     {opcoes}
     <label className="check big"><input type="checkbox" checked={direitos} onChange={e=>setDireitos(e.target.checked)}/> Declaro que tenho direito de usar e publicar este vídeo (é meu ou tenho autorização do dono).</label>
-    <button className="primary lg full" disabled={!direitos||rodando||!projeto.duracao} onClick={()=>gerar()}>{rodando?<Loader2 size={18} className="spin"/>:<Sparkles size={18}/>} {rodando?'Gerando cortes...':'Gerar cortes'}</button>
+    <button className="primary lg full" disabled={!direitos||rodando||!projeto.duracao} onClick={()=>gerar()}>{rodando?<Loader2 size={18} className="spin"/>:<Sparkles size={18}/>} {rodando?(inteiro?'Preparando...':'Gerando cortes...'):(inteiro?'Usar o vídeo inteiro':'Gerar cortes')}</button>
     {!temIA&&<p className="hint center">Notas automáticas pelo áudio e pelas frases. Para notas e títulos feitos por IA, <button className="link-btn inline" onClick={()=>go('config')}>configure a chave do Gemini (grátis) ou da Claude</button>.</p>}
     {job.status!=='idle'&&<JobView job={job}/>}
    </section>
-   :etapa==='edicao'?<EdicaoLote clips={escolhidos} mudar={mudar} onEditar={setEditando} onVoltar={()=>setEtapa('cortes')} onProximo={()=>setEtapa('postar')} onZip={exportarZip} exportando={!!exp}/>
+   :etapa==='edicao'?<EdicaoLote clips={escolhidos} mudar={mudar} gerarLegendas={gerarLegendas} onEditar={setEditando} onVoltar={()=>setEtapa('cortes')} onProximo={()=>setEtapa('postar')} onZip={exportarZip} exportando={!!exp}/>
    :etapa==='postar'?<PostarLote clips={escolhidos} tema={projeto.tema} gerar={renderizar} onVoltar={()=>setEtapa('edicao')}/>
    :<>
     <section className="panel results-bar">

@@ -33,7 +33,8 @@ export async function radarDireto(key:string,p:RadarParams){
   const q:Record<string,string>={part:'snippet',type:'video',maxResults:'50',q:p.tema||'',publishedAfter:since,key,order:p.ordem==='views'?'viewCount':p.ordem==='recentes'?'date':'relevance'};
   if(p.regiao) q.regionCode=p.regiao;
   if(p.idioma) q.relevanceLanguage=p.idioma;
-  if(p.minutos>=20) q.videoDuration='long'; else if(p.minutos>=4) q.videoDuration='medium';
+  if(p.minutos>=20) q.videoDuration='long'; else if(p.minutos>=4) q.videoDuration='medium'; else if(p.minutos<0) q.videoDuration='short';
+  if(p.minutos===-1&&!/shorts/i.test(q.q)) q.q=(q.q+' #shorts').trim();
   const search=await getJSON(`${API}/search?${new URLSearchParams(q)}`);
   const items:any[]=search.items||[];
   const ids=items.map(i=>i?.id?.videoId).filter(Boolean);
@@ -45,6 +46,8 @@ export async function radarDireto(key:string,p:RadarParams){
     const id=i?.id?.videoId; const m=meta.get(id); if(!m) continue;
     const views=num(m.statistics?.viewCount); const t=isoSeconds(m.contentDetails?.duration);
     if((views??0)<p.views || t<p.minutos*60) continue;
+    if(p.minutos===-1&&t>180) continue;   // Shorts: até 3 minutos
+    if(p.minutos===-2&&t>240) continue;
     const age=Math.max(1,(Date.now()-new Date(i.snippet.publishedAt).getTime())/86400000);
     out.push({id,titulo:decode(i.snippet.title),canal:decode(i.snippet.channelTitle),canal_id:i.snippet.channelId,link:'https://www.youtube.com/watch?v='+id,link_canal:'https://www.youtube.com/channel/'+i.snippet.channelId,thumbnail:i.snippet.thumbnails?.medium?.url,views,velocidade:views===null?null:Math.round(views/age),duracao_segundos:t,publicado:i.snippet.publishedAt,likes:num(m.statistics?.likeCount),comentarios:num(m.statistics?.commentCount)});
   }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Search, RefreshCcw, ExternalLink, Bookmark, X, KeyRound, Loader2, Users, PlaySquare, Scissors } from 'lucide-react';
+import { Search, RefreshCcw, ExternalLink, Bookmark, X, KeyRound, Loader2, Users, PlaySquare, Scissors, Smartphone } from 'lucide-react';
 import { useApp } from '../state';
+import { usarVideoInteiro } from './Cortes';
 import { HelpButton } from '../components/Help';
 import { radarDireto, canaisDe, ordenar, testarChaveYouTube, type Video, type Canal, type RadarParams } from '../lib/radar';
 import { store, fmt, tm } from '../lib/store';
@@ -40,7 +41,8 @@ export default function Radar(){
     const nome=[f.tema,f.nicho!=='Todos os nichos'?f.nicho:'',`${f.dias===3650?'sempre':f.dias+'d'}`].filter(Boolean).join(' • ');
     persist([...salvas.filter(s=>s.nome!==nome),{nome,f}]); toast('Pesquisa salva.','ok');
   }
-  const usar=(link:string)=>{ setLinkRef(link); go('cortes'); toast('Vídeo aberto no estúdio. Assista e marque os trechos que quer cortar.','ok'); };
+  const usar=(link:string)=>{ usarVideoInteiro(false); setLinkRef(link); go('cortes'); toast('Vídeo aberto no estúdio. Assista e marque os trechos que quer cortar.','ok'); };
+  const usarInteiro=(link:string)=>{ usarVideoInteiro(true); setLinkRef(link); go('cortes'); toast(settings.servidor?'Baixando o vídeo inteiro pelo servidor. Depois é só colocar o template e a legenda.':'Ligue o servidor para baixar sozinho, ou use "Enviar arquivo" com o vídeo baixado.','ok'); };
 
   if(!settings.ytKey) return <section className="panel setup-callout">
    <span className="setup-icon"><KeyRound size={26}/></span>
@@ -59,7 +61,7 @@ export default function Radar(){
      <label className="wide">Palavra-chave (opcional)<input placeholder="Ex.: GTA, entrevista com atleta, futebol, ciência..." value={f.tema} onChange={e=>set({tema:e.target.value})} onKeyDown={e=>{if(e.key==='Enter')pesquisar()}}/></label>
      <label>Publicados nos últimos<select value={f.dias} onChange={e=>set({dias:+e.target.value})}><option value={7}>7 dias</option><option value={30}>30 dias</option><option value={90}>90 dias</option><option value={365}>1 ano</option><option value={3650}>Qualquer período</option></select></label>
      <label>Views mínimas<select value={f.views} onChange={e=>set({views:+e.target.value})}><option value={0}>Qualquer</option><option value={10000}>10 mil</option><option value={100000}>100 mil</option><option value={500000}>500 mil</option><option value={1000000}>1 milhão</option><option value={5000000}>5 milhões</option></select></label>
-     <label>Duração do vídeo<select value={f.minutos} onChange={e=>set({minutos:+e.target.value})}><option value={0}>Qualquer</option><option value={4}>Mais de 4 min</option><option value={10}>Mais de 10 min</option><option value={20}>Mais de 20 min</option><option value={40}>Mais de 40 min</option></select></label>
+     <label>Duração do vídeo<select value={f.minutos} onChange={e=>set({minutos:+e.target.value})}><option value={0}>Qualquer</option><option value={-1}>Shorts (até 3 min)</option><option value={-2}>Curtos (até 4 min)</option><option value={4}>Mais de 4 min</option><option value={10}>Mais de 10 min</option><option value={20}>Mais de 20 min</option><option value={40}>Mais de 40 min</option></select></label>
      <label><span className="label-row">Ordenar por <HelpButton topic="velocidade"/></span><select value={f.ordem} onChange={e=>set({ordem:e.target.value})}><option value="velocidade">Views por dia (média)</option><option value="views">Total de views</option><option value="recentes">Mais recentes</option><option value="engajamento">Engajamento (likes+comentários/views)</option></select></label>
      <label>País<select value={f.regiao} onChange={e=>set({regiao:e.target.value})}><option value="BR">Brasil</option><option value="PT">Portugal</option><option value="US">Estados Unidos</option><option value="">Qualquer</option></select></label>
      <label>Idioma<select value={f.idioma} onChange={e=>set({idioma:e.target.value})}><option value="pt">Português</option><option value="en">Inglês</option><option value="es">Espanhol</option><option value="">Qualquer</option></select></label>
@@ -76,7 +78,7 @@ export default function Radar(){
       <a href={v.link} target="_blank" rel="noreferrer" className="thumb"><img src={v.thumbnail} alt="" loading="lazy"/><span className="dur">{tm(v.duracao_segundos)}</span></a>
       <div className="video-body"><h3 title={v.titulo}>{v.titulo}</h3><a className="channel" href={v.link_canal} target="_blank" rel="noreferrer">{v.canal} <ExternalLink size={12}/></a>
        <div className="metrics"><span>▶ {v.views===null?'Não informado':fmt(v.views)+' views'}</span><span>⚡ {v.velocidade===null?'Não informado':fmt(v.velocidade)+'/dia'}</span><span>📅 {new Date(v.publicado).toLocaleDateString('pt-BR')}</span></div>
-       <div className="card-actions"><a className="subtle sm" href={v.link} target="_blank" rel="noreferrer"><ExternalLink size={13}/> Assistir</a><button className="action-link" onClick={()=>usar(v.link)}><Scissors size={13}/> Abrir no estúdio de cortes</button></div></div></article>)}</div>
+       <div className="card-actions"><a className="subtle sm" href={v.link} target="_blank" rel="noreferrer"><ExternalLink size={13}/> Assistir</a>{v.duracao_segundos<=240?<button className="action-link" onClick={()=>usarInteiro(v.link)}><Smartphone size={13}/> Usar inteiro (sem cortar)</button>:<button className="action-link" onClick={()=>usar(v.link)}><Scissors size={13}/> Abrir no estúdio de cortes</button>}</div></div></article>)}</div>
       :<div className="empty"><Search size={30}/><strong>Nenhum vídeo encontrado</strong><p>Amplie o período, reduza as views mínimas ou mude a duração.</p></div>)
     :(canais.length?<div className="channel-list">{canais.map(c=><article key={c.id} className="channel-row">{c.thumbnail?<img src={c.thumbnail} alt=""/>:<span className="avatar"><Users size={18}/></span>}<div className="grow"><a href={c.link} target="_blank" rel="noreferrer"><strong>{c.nome}</strong> <ExternalLink size={12}/></a><small>{c.inscritos===null?'Inscritos: não informado':fmt(c.inscritos)+' inscritos'} • {c.videos} vídeo(s) nesta pesquisa • {fmt(c.views)} views somadas</small><small className="muted">Destaque: {c.melhor.titulo}</small></div><a className="subtle sm" href={c.melhor.link} target="_blank" rel="noreferrer">Ver destaque</a></article>)}</div>
       :<div className="empty"><Users size={30}/><strong>Nenhum canal</strong></div>)}
