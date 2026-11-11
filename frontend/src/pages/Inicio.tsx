@@ -1,4 +1,4 @@
-import { Search, Upload, Sparkles, Download, KeyRound, CheckCircle2, Circle, ArrowRight, ShieldCheck, Clock, Ban } from 'lucide-react';
+import { Search, Upload, Sparkles, Download, KeyRound, CheckCircle2, Circle, ArrowRight, ShieldCheck, Clock } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 
@@ -38,9 +38,10 @@ export default function Inicio(){
      <li>A nota é uma lista de prioridade, não uma garantia de viralização. Assista antes de publicar.</li>
      <li>As chaves ficam salvas só neste navegador. Apague-as em Chaves e ajustes se usar um computador compartilhado.</li>
     </ul></section>
-    <section className="panel"><div className="section-head"><h2><Clock size={18}/> Ainda não disponível no site</h2></div><ul className="plain muted">
-     <li><Ban size={13}/> Agendar e postar automaticamente no TikTok, Instagram e YouTube: exige servidor e apps aprovados pelas redes.</li>
-     <li><Ban size={13}/> Reenquadramento que segue o rosto: os cortes usam fundo desfocado ou corte central.</li>
+    <section className="panel"><div className="section-head"><h2><Clock size={18}/> Postar nas redes</h2><button className="subtle" onClick={()=>go('agendar')}>Abrir Agendar posts</button></div><ul className="plain muted">
+     <li>O agendamento já funciona: com o servidor ligado, entre nas suas contas em <b>Agendar posts</b> (YouTube, Facebook, Instagram e TikTok). O Kwai é manual: você baixa o vídeo e posta no app.</li>
+     <li>Cada rede pede um "app de desenvolvedor" seu, criado uma vez. O botão <b>Como criar?</b> de cada conta mostra o passo a passo.</li>
+     <li>Enquanto a rede não aprova o seu app, há limites: no YouTube os vídeos sobem como privados, e no TikTok vão para os rascunhos (você toca em Postar).</li>
     </ul></section>
    </div>
   </>;
