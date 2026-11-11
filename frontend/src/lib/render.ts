@@ -76,7 +76,7 @@ function drawTemplate(ctx:CanvasRenderingContext2D,tp:Template,logo:HTMLImageEle
 export type ExportClip = {inicio:number;fim:number;formato:Formato};
 
 /** Grava o corte em tempo real. Mantenha a aba visível durante a exportação. */
-export async function exportarCorte(url:string,clip:ExportClip,cuesAbs:Cue[],o:Omit<RenderOpts,'cues'>,progress:(n:number)=>void){
+export async function exportarCorte(url:string,clip:ExportClip,cuesAbs:Cue[],o:Omit<RenderOpts,'cues'>,progress:(n:number)=>void,dub?:{samples:Float32Array;rate:number;volumeOriginal:number}|null){
   const mime=formatoSuportado();
   if(!mime) throw new Error('Este navegador não grava vídeo. Use Chrome, Edge ou Safari atualizados.');
   const [W,H]=DIMS[clip.formato];
@@ -88,7 +88,14 @@ export async function exportarCorte(url:string,clip:ExportClip,cuesAbs:Cue[],o:O
   const ctx=canvas.getContext('2d')!; const small=document.createElement('canvas');
   const stream=canvas.captureStream(FPS);
   const ac=new AudioContext(); await ac.resume();
-  const src=ac.createMediaElementSource(v); const dest=ac.createMediaStreamDestination(); src.connect(dest);
+  const src=ac.createMediaElementSource(v); const dest=ac.createMediaStreamDestination();
+  // Com dublagem, o áudio original fica baixinho e a voz em português entra por cima.
+  let voz:AudioBufferSourceNode|null=null; let vozIniciada=false;
+  if(dub){
+    const g=ac.createGain(); g.gain.value=dub.volumeOriginal; src.connect(g); g.connect(dest);
+    const buf=ac.createBuffer(1,dub.samples.length,dub.rate); buf.copyToChannel(dub.samples as Float32Array<ArrayBuffer>,0);
+    voz=ac.createBufferSource(); voz.buffer=buf; voz.connect(dest);
+  } else src.connect(dest);
   dest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
   const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8_000_000,audioBitsPerSecond:160_000});
   const chunks:Blob[]=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
@@ -102,7 +109,9 @@ export async function exportarCorte(url:string,clip:ExportClip,cuesAbs:Cue[],o:O
   await new Promise<void>(res=>{
     const tick=()=>{
       const t=v.currentTime-clip.inicio;
-      if(o.efeito==='speed-ramp') v.playbackRate=(t>dur*0.4&&t<dur*0.6)?1.5:1;
+      // A voz começa junto com o primeiro quadro que anda de verdade, no mesmo ponto do vídeo.
+      if(voz&&!vozIniciada&&t>0){ vozIniciada=true; voz.start(0,Math.max(0,t)); }
+      if(o.efeito==='speed-ramp'&&!dub) v.playbackRate=(t>dur*0.4&&t<dur*0.6)?1.5:1;
       if(t>=dur||v.ended){ res(); return; }
       drawFrame(ctx,v,small,t,dur,opts,W,H);
       progress(Math.min(99,Math.round(t/dur*100)));

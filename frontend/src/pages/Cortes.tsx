@@ -6,6 +6,7 @@ import Editor from '../components/Editor';
 import LinkStudio from '../components/LinkStudio';
 import AgendarPost from '../components/AgendarPost';
 import EdicaoLote from '../components/EdicaoLote';
+import { dublarCorte } from '../lib/dublagem';
 import { legendaAutomatica } from '../lib/legendasPost';
 import PostarLote from '../components/PostarLote';
 import { iaAtiva, nomeIA, avaliar, erroIA } from '../lib/ia';
@@ -84,7 +85,6 @@ export default function Cortes(){
     const url=URL.createObjectURL(f);
     setProjeto(()=>({...PROJETO_VAZIO,file:f,url,nome:f.name}));
     setSel(new Set()); setE('cortes'); setLegErro('');
-    if(direitos){ gerar({file:f,url}); return; }
     videoInfo(url).then(i=>setProjeto(p=>p.url===url?{...p,duracao:i.duration}:p)).catch(e=>toast(e.message,'erro'));
   }
   const setJob=(j:Partial<Job>)=>setProjeto(p=>({...p,job:{...p.job,...j}}));
@@ -131,6 +131,20 @@ export default function Cortes(){
   }
 
   /** Faz a legenda só dos cortes escolhidos (bem mais rápido que o vídeo todo). */
+  /** Dubla os cortes em português (Gemini): troca a legenda pela traduzida e guarda a voz para a exportação. */
+  async function dublar(ids:string[],voz:string,volumeOriginal:number,onStatus:(s:string,pct:number)=>void){
+    if(!settings.geminiKey) throw new Error('Coloque a chave do Gemini em Chaves e ajustes.');
+    const lista=projeto.clips.filter(c=>ids.includes(c.id)); let cues=projeto.cues;
+    for(let i=0;i<lista.length;i++){
+      const c=lista[i];
+      const novas=await dublarCorte(settings.geminiKey,c,cues,voz,volumeOriginal,(t,p)=>onStatus(lista.length>1?`Corte ${i+1} de ${lista.length}: ${t}`:t,Math.round((i+p/100)/lista.length*100)));
+      cues=[...cues.filter(q=>!(q.end>c.inicio&&q.start<c.fim)),...novas].sort((a,b)=>a.start-b.start);
+      const fixas=cues;
+      setProjeto(p=>({...p,cues:fixas,clips:p.clips.map(x=>x.id===c.id?{...x,dublado:true,legendaOk:true,legenda:x.legenda||settings.legendaPadrao}:x)}));
+    }
+    return lista.length;
+  }
+
   async function gerarLegendas(ids:string[],via:'auto'|'gemini',onStatus:(s:string,pct:number)=>void){
     const file=projeto.file; if(!file) throw new Error('Envie o vídeo de novo.');
     if(cache.file!==file||!cache.audio){ onStatus('Lendo o áudio do vídeo',0); const audio=await decodeAudio(file); cache={file,audio,energy:audio?energyProfile(audio,STEP):null}; }
@@ -321,7 +335,7 @@ export default function Cortes(){
    <section className="panel">
     <div className="section-head"><h2><Sparkles size={18}/> 1. Como você quer os cortes?</h2><span>Escolha antes de enviar o vídeo</span></div>
     {opcoes}
-    <label className="check big auto-check"><input type="checkbox" checked={direitos} onChange={e=>setDireitos(e.target.checked)}/> <span>Declaro que tenho direito de usar e publicar os vídeos que envio (meus ou com autorização). <b>{direitos?'Pronto: os cortes começam sozinhos, com estas opções, assim que você escolher o vídeo.':'Marque para os cortes começarem sozinhos ao escolher o vídeo.'}</b></span></label>
+    <label className="check big auto-check"><input type="checkbox" checked={direitos} onChange={e=>setDireitos(e.target.checked)}/> <span>Declaro que tenho direito de usar e publicar os vídeos que envio (meus ou com autorização). <b>{direitos?'Pronto. Depois de escolher o vídeo, confira as opções e toque em Gerar cortes. Nada começa sozinho.':'Marque para poder gerar os cortes.'}</b></span></label>
    </section>
    <h2 className="passo-titulo">2. Envie o vídeo</h2>
    <LinkStudio onUpload={()=>fileInput.current?.click()} onArquivo={escolherArquivo} direitos={direitos}/>
@@ -349,7 +363,7 @@ export default function Cortes(){
     {!temIA&&<p className="hint center">Notas automáticas pelo áudio e pelas frases. Para notas e títulos feitos por IA, <button className="link-btn inline" onClick={()=>go('config')}>configure a chave do Gemini (grátis) ou da Claude</button>.</p>}
     {job.status!=='idle'&&<JobView job={job}/>}
    </section>
-   :etapa==='edicao'?<EdicaoLote clips={escolhidos} mudar={mudar} gerarLegendas={gerarLegendas} onEditar={setEditando} onVoltar={()=>setEtapa('cortes')} onProximo={()=>setEtapa('postar')} onZip={exportarZip} exportando={!!exp}/>
+   :etapa==='edicao'?<EdicaoLote clips={escolhidos} mudar={mudar} gerarLegendas={gerarLegendas} dublar={dublar} onEditar={setEditando} onVoltar={()=>setEtapa('cortes')} onProximo={()=>setEtapa('postar')} onZip={exportarZip} exportando={!!exp}/>
    :etapa==='postar'?<PostarLote clips={escolhidos} tema={projeto.tema} gerar={renderizar} onVoltar={()=>setEtapa('edicao')}/>
    :<>
     <section className="panel results-bar">

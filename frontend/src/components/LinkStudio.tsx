@@ -26,7 +26,6 @@ function loadYT(){
 export default function LinkStudio({onUpload,onArquivo,direitos}:{onUpload:()=>void;onArquivo:(f:File)=>void;direitos:boolean}){
   const {linkRef,setLinkRef,marcas,setMarcas,toast,settings,go}=useApp();
   const [dl,setDl]=useState<{pct:number;etapa:string}|null>(null); const [bot,setBot]=useState(''); const sinal=useRef<{cancelado:boolean}|null>(null);
-  const iniciado=useRef('');
   const [campo,setCampo]=useState(linkRef);
   const [info,setInfo]=useState<{titulo:string;canal:string}|null>(null);
   const [ini,setIni]=useState<number|null>(null);
@@ -57,10 +56,8 @@ export default function LinkStudio({onUpload,onArquivo,direitos}:{onUpload:()=>v
     }catch(e){ const msg=e instanceof Error?e.message:String(e); if(!s.cancelado){ toast(msg,'erro'); if(msg.includes('robô')) setBot(msg); } setDl(null); sinal.current=null; }
   }
   const cancelar=()=>{ if(sinal.current) sinal.current.cancelado=true; sinal.current=null; setDl(null); };
-  // Abriu um vídeo com o servidor ligado: já começa a cortar sozinho.
-  useEffect(()=>{ if(id&&settings.servidor&&direitos&&iniciado.current!==id){ iniciado.current=id; cortarAuto('https://www.youtube.com/watch?v='+id); } },[id]); // eslint-disable-line react-hooks/exhaustive-deps
   const tempo=()=>player.current?.getCurrentTime?.()||0;
-  const abrir=()=>{ const v=youtubeId(campo); if(!v){ toast('Esse link não parece ser de um vídeo do YouTube.','erro'); return; } if(v!==id){ cancelar(); setLinkRef('https://www.youtube.com/watch?v='+v); setMarcas(()=>[]); setIni(null); } else if(settings.servidor&&!dl) cortarAuto(); };
+  const abrir=()=>{ const v=youtubeId(campo); if(!v){ toast('Esse link não parece ser de um vídeo do YouTube.','erro'); return; } if(v!==id){ cancelar(); setLinkRef('https://www.youtube.com/watch?v='+v); setMarcas(()=>[]); setIni(null); } };
   const marcarFim=()=>{
     if(ini===null) return; const f=tempo();
     if(f-ini<1){ toast('O fim precisa ser depois do início.','erro'); return; }
@@ -94,7 +91,7 @@ export default function LinkStudio({onUpload,onArquivo,direitos}:{onUpload:()=>v
     </div>
    </div>}
    {id&&dl&&<div className="dl-box"><div className="row"><Loader2 size={16} className="spin"/><span><b>{dl.etapa}</b> {dl.pct>0&&dl.pct<100?`${Math.round(dl.pct)}%`:''}. Depois o site analisa e corta sozinho{marcas.length?` (usando os ${marcas.length} trechos marcados)`:''}.</span><button className="subtle sm" onClick={cancelar}><X size={14}/> Cancelar</button></div><div className="dl-bar"><i style={{width:Math.max(3,dl.pct)+'%'}}/></div></div>}
-   {id&&!dl&&settings.servidor&&<div className="note-bar info"><Server size={16}/><span><b>Servidor ligado.</b> Clique em <b>Cortar automático</b> para baixar este vídeo e receber os melhores cortes com nota{marcas.length?`, ou só os ${marcas.length} trechos marcados`:''}. Use só vídeos seus ou autorizados.</span><button className="primary sm" onClick={()=>cortarAuto()}><Wand2 size={14}/> Cortar automático</button></div>}
+   {id&&!dl&&settings.servidor&&<div className="note-bar info"><Server size={16}/><span><b>Servidor ligado.</b> Ajuste as opções acima e, quando estiver pronto, clique em <b>Baixar e começar</b> para receber os melhores cortes com nota{marcas.length?`, ou só os ${marcas.length} trechos marcados`:''}. Use só vídeos seus ou autorizados.</span><button className="primary sm" onClick={()=>cortarAuto()}><Wand2 size={14}/> Baixar e começar</button></div>}
    {id&&!settings.servidor&&<div className="note-bar info"><Info size={16}/><span><b>Quer que corte sozinho pelo link?</b> Ligue o servidor gratuito no seu computador (leva uns 5 minutos, uma vez só). Sem ele, envie o arquivo do vídeo: {marcas.length?`os ${marcas.length} trechos marcados serão usados.`:'o site acha os melhores trechos sozinho.'}</span><button className="primary sm" onClick={()=>go('config')}><Server size={14}/> Ligar cortes pelo link</button><button className="subtle sm" onClick={onUpload}><Upload size={14}/> Enviar arquivo</button></div>}
   </section>;
 }

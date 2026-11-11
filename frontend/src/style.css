@@ -287,7 +287,7 @@ a.subtle.sm{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
 @media(max-width:600px){.next-btn{margin-left:0;width:100%;justify-content:center}}
 .job-status .geral{margin-bottom:14px}.geral-row{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px}
 .job-status .progress.etapa{margin-top:12px}.stages .pct{color:#fff}
-.row-gap.left{justify-content:flex-start}.legenda-lote .hint{margin-bottom:10px}
+.row-gap.left{justify-content:flex-start}.legenda-lote .hint,.dub-lote .hint{margin-bottom:10px}
 .fila-item.col{flex-direction:column;align-items:stretch}.fila-top{display:flex;align-items:center;gap:10px}
 .fila-item textarea{width:100%;background:#0c1018;border:1px solid var(--line2);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;color:inherit;resize:vertical}
 .conta-chars{color:var(--muted);font-size:11px;text-align:right}

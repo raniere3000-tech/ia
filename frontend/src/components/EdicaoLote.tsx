@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Film, Loader2, Package, Pencil, Type, Wand2, LayoutTemplate, Captions, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Film, Loader2, Package, Pencil, Type, Wand2, LayoutTemplate, Captions, CheckCircle2, Languages, Play } from 'lucide-react';
+import { VOZES, pegarDub, wavDaDub } from '../lib/dublagem';
 import { useApp, captionPresets, effectPresets } from '../state';
 import Preview from './Preview';
 import { TemplateForm } from '../pages/Templates';
@@ -13,10 +14,16 @@ type Props = {
   onVoltar:()=>void; onProximo:()=>void; onZip:()=>void;
   exportando:boolean;
   gerarLegendas:(ids:string[],via:'auto'|'gemini',onStatus:(s:string,pct:number)=>void)=>Promise<number>;
+  dublar:(ids:string[],voz:string,volumeOriginal:number,onStatus:(s:string,pct:number)=>void)=>Promise<number>;
 };
+const ler=(k:string,p:string)=>{ try{ return localStorage.getItem(k)||p; }catch{ return p; } };
+const gravar=(k:string,v:string)=>{ try{ localStorage.setItem(k,v); }catch{ /* sem armazenamento */ } };
 
 /** Etapa 3: edição em lote dos cortes escolhidos (template, @, legenda, efeito e formato). */
-export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZip,exportando,gerarLegendas}:Props){
+export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZip,exportando,gerarLegendas,dublar}:Props){
+  const [dub,setDub]=useState<{txt:string;pct:number}|null>(null);
+  const [voz,setVoz]=useState(()=>ler('studio_dub_voz','Kore')); const [volOrig,setVolOrig]=useState(()=>+ler('studio_dub_vol','0.12'));
+  const [ouvir,setOuvir]=useState<string>('');
   const {projeto,template,settings,toast}=useApp();
   const [leg,setLeg]=useState<{txt:string;pct:number}|null>(null);
   const [i,setI]=useState(0); const [todos,setTodos]=useState(true);
@@ -36,6 +43,17 @@ export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZi
     }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
     finally{ setLeg(null); }
   }
+  async function dublarTodos(){
+    if(semLegenda.length){ toast('Gere a legenda dos cortes primeiro (quadro Legenda, acima). A dublagem usa essa fala.','erro'); return; }
+    const ids=todos?clips.map(c=>c.id):[atual.id];
+    setDub({txt:'Começando',pct:0}); setOuvir('');
+    try{
+      const n=await dublar(ids,voz,volOrig,(txt,pct)=>setDub({txt,pct}));
+      toast(`Dublagem pronta em ${n} corte(s). A legenda já está em português e a voz entra no vídeo final.`,'ok');
+    }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
+    finally{ setDub(null); }
+  }
+  function tocar(){ const d=pegarDub(atual.id); if(!d) return; if(ouvir) URL.revokeObjectURL(ouvir); setOuvir(URL.createObjectURL(wavDaDub(d))); }
   const efeitos=[...effectPresets.map(p=>({id:p.id,nome:p.nome})),{id:'nenhum',nome:'Sem efeito'}];
   return <>
    <section className="panel results-bar">
@@ -68,6 +86,25 @@ export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZi
         {settings.geminiKey&&<button className="primary" onClick={()=>legendar('gemini')}><Captions size={15}/> Gerar legenda pelo Gemini (rápido)</button>}
         <button className={settings.geminiKey?'subtle':'primary'} onClick={()=>legendar('auto')}><Captions size={15}/> Gerar legenda no aparelho</button>
       </div>}
+     </section>
+     <section className="panel dub-lote">
+      <div className="section-head"><h2><Languages size={18}/> Dublar em português</h2>{clips.every(c=>c.dublado)&&<span className="tag ok"><CheckCircle2 size={12}/> Todos dublados</span>}</div>
+      <p className="hint">O Gemini traduz a fala, troca a legenda para português e grava uma voz em português por cima do áudio original abaixado. {todos?`Vale para os ${clips.length} cortes.`:`Só o corte ${i+1}.`}</p>
+      {!settings.geminiKey?<p className="hint">Coloque a chave do Gemini (grátis) em Chaves e ajustes para dublar.</p>
+      :dub?<div className="dl-box"><div className="row"><Loader2 size={16} className="spin"/><span><b>{dub.txt}</b> {dub.pct}%</span></div><div className="dl-bar"><i style={{width:Math.max(3,dub.pct)+'%'}}/></div></div>
+      :<>
+       <div className="small-grid">
+        <label>Voz<select value={voz} onChange={e=>{ setVoz(e.target.value); gravar('studio_dub_voz',e.target.value); }}>{VOZES.map(([id,n])=><option key={id} value={id}>{n} ({id})</option>)}</select></label>
+        <label>Áudio original<select value={volOrig} onChange={e=>{ setVolOrig(+e.target.value); gravar('studio_dub_vol',e.target.value); }}><option value={0}>Sem áudio original</option><option value={0.12}>Bem baixinho (12%)</option><option value={0.25}>Baixo (25%)</option><option value={0.4}>Médio (40%)</option></select></label>
+       </div>
+       <div className="row-gap left mt">
+        <button className="primary" onClick={dublarTodos}><Languages size={15}/> {atual.dublado||(todos&&clips.some(c=>c.dublado))?'Dublar de novo':'Dublar em português'}</button>
+        {atual.dublado&&pegarDub(atual.id)&&<button className="subtle" onClick={tocar}><Play size={15}/> Ouvir a voz deste corte</button>}
+       </div>
+       {ouvir&&<audio className="mt" src={ouvir} controls autoPlay style={{width:'100%'}}/>}
+       {atual.dublado&&!pegarDub(atual.id)&&<p className="hint">A voz deste corte se perdeu ao recarregar a página. Toque em Dublar de novo.</p>}
+      </>}
+      <p className="hint">Cada dublagem gasta alguns pedidos da cota grátis do Gemini. A voz não aparece na prévia, só no vídeo exportado e no botão Ouvir.</p>
      </section>
      <section className="panel">
       <div className="section-head"><h2><Wand2 size={18}/> Estilo dos cortes</h2></div>

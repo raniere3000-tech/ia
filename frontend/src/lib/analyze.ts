@@ -8,7 +8,7 @@ export type Clip = {
   id:string; titulo:string; inicio:number; fim:number;
   nota_final:number; nota_10:number; notas:Notas; motivo:string; fonte:'heuristica'|'ia';
   legenda:string; efeito:string; formato:Formato; gancho_texto:string;
-  versao_de?:string; descartado?:boolean; thumb?:string; marca?:string; legendaOk?:boolean;
+  versao_de?:string; descartado?:boolean; thumb?:string; marca?:string; legendaOk?:boolean; dublado?:boolean;
 };
 export type AnalyzeOpts = {min:number;max:number;limite:number;inicio:number;fim:number};
 
