@@ -25,7 +25,7 @@ function loadYT(){
 /** Abre o vídeo do link dentro do estúdio: assistir, marcar início/fim e guardar os trechos. */
 export default function LinkStudio({onUpload,onArquivo,direitos}:{onUpload:()=>void;onArquivo:(f:File)=>void;direitos:boolean}){
   const {linkRef,setLinkRef,marcas,setMarcas,toast,settings,go}=useApp();
-  const [dl,setDl]=useState<{pct:number;etapa:string}|null>(null); const sinal=useRef<{cancelado:boolean}|null>(null);
+  const [dl,setDl]=useState<{pct:number;etapa:string}|null>(null); const [bot,setBot]=useState(''); const sinal=useRef<{cancelado:boolean}|null>(null);
   const iniciado=useRef('');
   const [campo,setCampo]=useState(linkRef);
   const [info,setInfo]=useState<{titulo:string;canal:string}|null>(null);
@@ -54,7 +54,7 @@ export default function LinkStudio({onUpload,onArquivo,direitos}:{onUpload:()=>v
       const f=await baixarPeloServidor(settings.servidor,settings.servidorToken,link,(pct,etapa)=>{ if(!s.cancelado) setDl({pct,etapa}); },s);
       if(s.cancelado) return;
       setDl(null); sinal.current=null; onArquivo(f);
-    }catch(e){ if(!s.cancelado) toast(e instanceof Error?e.message:String(e),'erro'); setDl(null); sinal.current=null; }
+    }catch(e){ const msg=e instanceof Error?e.message:String(e); if(!s.cancelado){ toast(msg,'erro'); if(msg.includes('robô')) setBot(msg); } setDl(null); sinal.current=null; }
   }
   const cancelar=()=>{ if(sinal.current) sinal.current.cancelado=true; sinal.current=null; setDl(null); };
   // Abriu um vídeo com o servidor ligado: já começa a cortar sozinho.
@@ -68,6 +68,7 @@ export default function LinkStudio({onUpload,onArquivo,direitos}:{onUpload:()=>v
     toast('Trecho marcado.','ok');
   };
   return <section className="panel link-studio">
+   {bot&&<div className="note-bar"><span>{bot}</span><button className="primary sm" onClick={()=>go('config')}>Enviar cookies do YouTube</button><button className="subtle sm" onClick={()=>setBot('')}>Fechar</button></div>}
    <div className="section-head"><h2><Link2 size={18}/> Abrir vídeo por link do YouTube</h2></div>
    <div className="key-row"><div className="input-wrap"><Link2 size={16}/><input value={campo} onChange={e=>setCampo(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')abrir()}} placeholder="Cole o link do vídeo (youtube.com/watch?v=... ou youtu.be/...)"/></div><button className="primary" onClick={abrir} disabled={!campo.trim()}>Abrir vídeo</button></div>
    {id&&<div className="ls-grid">

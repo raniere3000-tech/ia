@@ -1,5 +1,5 @@
 // Cliente do servidor opcional (pasta servidor/) que baixa o vídeo do YouTube pelo link.
-export type Saude = {ok:boolean;versao:string;yt_dlp:string;senha:boolean;max_minutos:number};
+export type Saude = {ok:boolean;versao:string;yt_dlp:string;senha:boolean;max_minutos:number;cookies?:boolean};
 
 const base=(u:string)=>u.trim().replace(/\/+$/,'');
 function headers(token:string){ const h:Record<string,string>={'Content-Type':'application/json'}; if(token) h['X-Token']=token; return h; }
@@ -40,4 +40,10 @@ export async function baixarPeloServidor(url:string,token:string,link:string,onP
   const tipo=blob.type||'video/mp4'; const ext=tipo.includes('webm')?'webm':'mp4';
   const nome=(titulo.replace(/[\\/:*?"<>|]+/g,'').trim().slice(0,80)||'video')+'.'+ext;
   return new File([blob],nome,{type:tipo});
+}
+
+/** Guarda no servidor os cookies do YouTube (arquivo cookies.txt), para quando o YouTube pede login. */
+export async function enviarCookies(url:string,token:string,texto:string|null):Promise<{cookies:boolean;linhas?:number}>{
+  const h:Record<string,string>={'Content-Type':'text/plain'}; if(token) h['X-Token']=token;
+  return (await pedir(base(url)+(texto===null?'/cookies/apagar':'/cookies'),{method:'POST',headers:h,body:texto??''})).json();
 }

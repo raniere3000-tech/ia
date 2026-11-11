@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { KeyRound, Youtube, Sparkles, Captions, Server, CheckCircle2, Loader2, Eye, EyeOff, Trash2, ExternalLink } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { KeyRound, Youtube, Sparkles, Captions, Server, CheckCircle2, Loader2, Eye, EyeOff, Trash2, ExternalLink, Upload } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { testarChaveYouTube } from '../lib/radar';
 import { WHISPER_MODELS, IDIOMAS } from '../lib/transcribe';
-import { testarServidor } from '../lib/servidor';
+import { testarServidor, enviarCookies } from '../lib/servidor';
 import { iaAtiva } from '../lib/ia';
 
 function KeyField({label,value,placeholder,onSave,onTest,help,link,linkLabel}:{label:string;value:string;placeholder:string;onSave:(v:string)=>void;onTest:(v:string)=>Promise<void>;help:'youtube'|'claude'|'gemini';link:string;linkLabel:string}){
@@ -32,6 +32,8 @@ function ServidorCard(){
   const {settings,setSettings,toast}=useApp();
   const [url,setUrl]=useState(settings.servidor||'http://localhost:8787'); const [tok,setTok]=useState(settings.servidorToken);
   const [busy,setBusy]=useState(false); const [info,setInfo]=useState('');
+  const [cookies,setCookies]=useState<boolean|null>(null);
+  useEffect(()=>{ if(settings.servidor) testarServidor(settings.servidor,settings.servidorToken).then(s=>setCookies(s.cookies??null)).catch(()=>{}); },[settings.servidor,settings.servidorToken]);
   async function salvar(){
     setBusy(true); setInfo('');
     try{ const s=await testarServidor(url,tok); setSettings({servidor:url.trim().replace(/\/+$/,''),servidorToken:tok.trim()}); setInfo(`Conectado (versão ${s.versao}, vídeos até ${Math.round(s.max_minutos)} min).`); toast('Servidor conectado! Agora é só colar o link em Gerar cortes.','ok'); }
@@ -53,6 +55,14 @@ function ServidorCard(){
       <label className="mt">Senha do servidor (só se você definiu uma)<input type="password" value={tok} onChange={e=>setTok(e.target.value)} placeholder="Deixe vazio no servidor do seu computador" autoComplete="off"/></label>
       <div className="key-foot">{settings.servidor?<span className="tag ok">Servidor salvo: {settings.servidor}</span>:<span className="tag warn">Nenhum servidor</span>}{info&&<span className="tag ok">{info}</span>}</div>
      </div>
+     {settings.servidor&&<div className="key-field cookies-box">
+      <label className="key-label">YouTube pede login ("confirme que não é robô")? <HelpButton topic="cookies" label="Como resolver?"/></label>
+      <p className="hint">Envie o arquivo <b>cookies.txt</b> do YouTube. Ele fica só no seu servidor e faz o download entrar como se fosse você no navegador. {cookies===true?<span className="tag ok">Cookies enviados</span>:cookies===false?<span className="tag">Sem cookies</span>:null}</p>
+      <div className="key-row">
+       <label className="subtle file-btn"><Upload size={15}/> Enviar cookies.txt<input type="file" accept=".txt,text/plain" hidden onChange={async e=>{ const f=e.target.files?.[0]; e.target.value=''; if(!f) return; try{ const r=await enviarCookies(settings.servidor,settings.servidorToken,await f.text()); setCookies(r.cookies); toast('Cookies salvos no servidor. Tente o link de novo.','ok'); }catch(er){ toast(er instanceof Error?er.message:String(er),'erro'); } }}/></label>
+       {cookies&&<button className="subtle" onClick={async()=>{ try{ await enviarCookies(settings.servidor,settings.servidorToken,null); setCookies(false); toast('Cookies apagados do servidor.'); }catch(er){ toast(er instanceof Error?er.message:String(er),'erro'); } }}><Trash2 size={15}/> Apagar cookies</button>}
+      </div>
+     </div>}
     </div>
    </section>;
 }

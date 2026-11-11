@@ -60,6 +60,18 @@ export const TOPICS:Record<string,Topic> = {
     </ol>
     <p><b>Como o vídeo chega:</b> no modo <b>rascunhos</b>, ele aparece nas notificações/rascunhos do app do TikTok na hora marcada e você só toca em <b>Postar</b>. O modo <b>direto</b> publica sozinho, mas sem aprovação do TikTok o vídeo fica como "Só eu".</p>
   </>},
+  cookies:{titulo:'YouTube pede login no servidor',corpo:<>
+    <p>Às vezes o YouTube desconfia do servidor (principalmente na internet de celular) e pede para "confirmar que não é robô". Para resolver, você entrega ao servidor os cookies de uma conta do YouTube logada no navegador. Faça no computador:</p>
+    <ol>
+      <li>No Chrome do computador, instale a extensão <L href="https://chromewebstore.google.com/search/Get%20cookies.txt%20LOCALLY">Get cookies.txt LOCALLY</L>.</li>
+      <li>Abra uma <b>janela anônima</b> (Ctrl+Shift+N), permita a extensão nela, entre no <L href="https://www.youtube.com">youtube.com</L> e faça login. De preferência use uma conta secundária, não a do seu canal.</li>
+      <li>Com o YouTube aberto, clique na extensão e em <b>Export</b>. Ela baixa um arquivo <b>cookies.txt</b>.</li>
+      <li>Feche a janela anônima (sem sair da conta, para os cookies continuarem valendo).</li>
+      <li>Aqui em Chaves e ajustes, clique em <b>Enviar cookies.txt</b> e escolha o arquivo.</li>
+    </ol>
+    <p>O arquivo fica só no seu servidor, em uma pasta protegida. Ele dá acesso àquela conta do Google, por isso não mande para ninguém. Se depois de um tempo o erro voltar, os cookies venceram: repita os passos.</p>
+    <p>Outra saída sem cookies: baixe o vídeo por outro app e use <b>Enviar arquivo</b>. Os trechos marcados no link continuam valendo.</p>
+  </>},
   kwai:{titulo:'Kwai',corpo:<>
     <p>O Kwai não oferece API para postar de fora do app. Marque o Kwai ao agendar: na hora, o post aparece na agenda com <b>Baixar vídeo</b>. Baixe no celular, poste pelo app do Kwai e clique em <b>Já postei no Kwai</b> para ficar registrado.</p>
   </>},

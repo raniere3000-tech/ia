@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 import postagem as pg
 
-VERSAO = '1.1.0'
+VERSAO = '1.2.0'
 PORTA = int(os.getenv('PORT', os.getenv('PORTA', '8787')))
 HOST = os.getenv('HOST', '127.0.0.1')
 TOKEN = os.getenv('TOKEN', '').strip()
@@ -33,6 +33,7 @@ PASTA = Path(os.getenv('PASTA_TEMP', tempfile.gettempdir())) / 'estudioclip'
 PASTA.mkdir(parents=True, exist_ok=True)
 YT = re.compile(r'^https?://(www\.|m\.|music\.)?(youtube\.com|youtu\.be)/', re.I)
 
+COOKIES = pg.DADOS / 'youtube-cookies.txt'  # cookies do YouTube enviados pelo site (opcional)
 JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
 
@@ -74,7 +75,11 @@ def js_runtimes() -> dict:
 def erro_amigavel(msg: str) -> str:
     m = msg.lower()
     if 'sign in to confirm' in m or 'not a bot' in m:
-        return 'O YouTube bloqueou este servidor (pede login para confirmar que não é robô). Rode o servidor no seu próprio computador.'
+        if COOKIES.exists():
+            return ('O YouTube ainda pede login (confirmar que não é robô), mesmo com os cookies. Os cookies podem ter vencido: '
+                    'exporte de novo em Chaves e ajustes > "YouTube pede login". Ou baixe o vídeo e use Enviar arquivo.')
+        return ('O YouTube pediu login para confirmar que não é robô (acontece muito com internet de celular). '
+                'Resolva enviando os cookies do YouTube em Chaves e ajustes > "YouTube pede login", ou baixe o vídeo e use Enviar arquivo.')
     if 'private video' in m:
         return 'Este vídeo é privado.'
     if 'members-only' in m or 'join this channel' in m:
@@ -89,6 +94,29 @@ def erro_amigavel(msg: str) -> str:
         return 'O servidor não conseguiu acessar o YouTube (sem internet, proxy ou firewall).'
     limpo = re.sub(r'^ERROR:\s*', '', msg.strip().splitlines()[-1]).split('; please report')[0]
     return 'Não deu para baixar: ' + limpo[-300:]
+
+
+def salvar_cookies(corpo: bytes | None) -> dict:
+    """Guarda (ou apaga) o cookies.txt do YouTube. Mantém só as linhas do YouTube/Google."""
+    if corpo is None:
+        COOKIES.unlink(missing_ok=True)
+        return {'ok': True, 'cookies': False}
+    texto = corpo.decode('utf-8', 'replace').replace('\r\n', '\n')
+    linhas = []
+    for ln in texto.split('\n'):
+        partes = ln.split('\t')
+        dominio = partes[0].replace('#HttpOnly_', '') if partes else ''
+        if len(partes) >= 7 and (dominio.endswith('youtube.com') or dominio.endswith('google.com')):
+            linhas.append(ln)
+    if not any('youtube.com' in ln for ln in linhas):
+        raise Erro(400, 'Esse arquivo não tem cookies do YouTube. Exporte com a extensão "Get cookies.txt LOCALLY" estando na página do youtube.com e logado.')
+    COOKIES.parent.mkdir(parents=True, exist_ok=True)
+    COOKIES.write_text('# Netscape HTTP Cookie File\n' + '\n'.join(linhas) + '\n', encoding='utf-8')
+    try:
+        os.chmod(COOKIES, 0o600)
+    except OSError:
+        pass
+    return {'ok': True, 'cookies': True, 'linhas': len(linhas)}
 
 
 def baixar(jid: str, url: str):
@@ -122,9 +150,22 @@ def baixar(jid: str, url: str):
     ff = ffmpeg_path()
     if ff:
         opts['ffmpeg_location'] = ff
+    if COOKIES.exists():
+        opts['cookiefile'] = str(COOKIES)
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+        except Exception as e:  # noqa: BLE001
+            m = str(e).lower()
+            if 'sign in to confirm' not in m and 'not a bot' not in m:
+                raise
+            # Tenta de novo fingindo ser outros aplicativos do YouTube (TV, Safari, celular).
+            j['pct'] = 0
+            j['parte'] = 0
+            opts2 = dict(opts, extractor_args={'youtube': {'player_client': ['tv', 'web_safari', 'mweb']}})
+            with yt_dlp.YoutubeDL(opts2) as ydl:
+                info = ydl.extract_info(url, download=True)
         if info is None:
             raise RuntimeError('does not pass filter')
         arquivos = sorted(pasta.glob('video.*'), key=lambda p: p.stat().st_size, reverse=True)
@@ -183,7 +224,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get('Content-Length') or 0)
-        limite = 40 * 1024 * 1024 if urlparse(self.path).path.rstrip('/') == '/video' else 100000
+        rota = urlparse(self.path).path.rstrip('/')
+        limite = 40 * 1024 * 1024 if rota == '/video' else 5 * 1024 * 1024 if rota == '/cookies' else 100000
         self.corpo = self.rfile.read(n) if 0 < n <= limite else b''
         if n > limite:
             self.close_connection = True
@@ -209,7 +251,7 @@ class Handler(BaseHTTPRequestHandler):
                 versao_yt = yt_dlp.version.__version__
             except Exception:
                 versao_yt = None
-            return self.json(200, {'ok': True, 'download': versao_yt is not None, 'agendador': True, 'versao': VERSAO, 'yt_dlp': versao_yt, 'senha': bool(TOKEN), 'max_minutos': MAX_MIN,
+            return self.json(200, {'ok': True, 'download': versao_yt is not None, 'agendador': True, 'versao': VERSAO, 'yt_dlp': versao_yt, 'senha': bool(TOKEN), 'max_minutos': MAX_MIN, 'cookies': COOKIES.exists(),
                                    'aviso': None if versao_yt else 'yt-dlp não instalado: rode  pip install -U yt-dlp'})
         if caminho == '/contas':
             self.token_ok()
@@ -271,6 +313,9 @@ class Handler(BaseHTTPRequestHandler):
             raise Erro(400, 'Pedido inválido.')
 
     def post(self, caminho: str):
+        if caminho in ('/cookies', '/cookies/apagar'):
+            self.token_ok()
+            return self.json(200, salvar_cookies(self.corpo if caminho == '/cookies' else None))
         if caminho != '/baixar':
             self.token_ok()
             try:
