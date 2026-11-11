@@ -20,6 +20,13 @@ import { renderClip, baixar, zipar, nomeArquivo, srtDoCorte } from '../lib/expor
 import { tm, parseTime, uid, store } from '../lib/store';
 
 // Cache do áudio decodificado, para refazer a análise sem ler o arquivo de novo.
+/** Erro de leitura do arquivo (comum no Android) em português. */
+export function erroArquivo(e:unknown){
+  const m=e instanceof Error?e.message:String(e);
+  if(/could not be read|NotReadable|permission/i.test(m)||(e as any)?.name==='NotReadableError') return 'O celular não deixou o site ler esse vídeo. Escolha o arquivo de novo, de preferência pelo app Arquivos ou pela pasta Downloads (não pela Galeria ou Google Fotos). Se o vídeo estiver na nuvem, baixe para o celular antes.';
+  if(/memory|allocation|too large|Array buffer/i.test(m)) return 'O vídeo é grande demais para a memória deste aparelho. Tente um vídeo menor ou use o computador.';
+  return m;
+}
 let cache:{file:File|null;audio:AudioData|null;energy:Float32Array|null} = {file:null,audio:null,energy:null};
 const STEP=0.5;
 const DURACOES:[string,number,number][] = [['Até 30 s',15,30],['30–60 s',30,60],['61–90 s',61,90],['90–180 s',90,180]];
@@ -80,9 +87,18 @@ export default function Cortes(){
   const qualIA=iaAtiva(settings); const temIA=!!qualIA; const rotuloIA=`Avaliando com IA (${nomeIA(qualIA)})`;
   const recSupport=formatoSuportado();
 
-  function escolherArquivo(f:File|null){
-    if(!f) return;
-    if(!f.type.startsWith('video/') && !/\.(mp4|mov|mkv|webm|m4v)$/i.test(f.name)){ toast('Escolha um arquivo de vídeo (MP4, MOV, WEBM).','erro'); return; }
+  async function escolherArquivo(orig:File|null){
+    if(!orig) return;
+    if(!orig.type.startsWith('video/') && !/\.(mp4|mov|mkv|webm|m4v)$/i.test(orig.name)){ toast('Escolha um arquivo de vídeo (MP4, MOV, WEBM).','erro'); return; }
+    // No celular, a permissão de ler o arquivo escolhido pode acabar antes de tocar em Gerar cortes.
+    // Por isso guardamos uma cópia do vídeo na memória logo ao escolher.
+    let f=orig;
+    if(!(orig as any).__copia){
+      setLendo(true);
+      try{ f=new File([await orig.arrayBuffer()],orig.name,{type:orig.type||'video/mp4'}); }
+      catch(e){ setLendo(false); toast(erroArquivo(e),'erro'); return; }
+      setLendo(false);
+    }
     if(projeto.url) URL.revokeObjectURL(projeto.url);
     cache={file:null,audio:null,energy:null};
     const url=URL.createObjectURL(f);
@@ -90,6 +106,7 @@ export default function Cortes(){
     setSel(new Set()); setE('cortes'); setLegErro('');
     videoInfo(url).then(i=>setProjeto(p=>p.url===url?{...p,duracao:i.duration}:p)).catch(e=>toast(e.message,'erro'));
   }
+  const [lendo,setLendo]=useState(false);
   const setJob=(j:Partial<Job>)=>setProjeto(p=>({...p,job:{...p.job,...j}}));
 
   async function avaliarIA(cands:(Candidate&{id:string})[],cues:Cue[],promptTxt:string,temaTxt:string,url=projeto.url){
@@ -130,7 +147,7 @@ export default function Cortes(){
       setProjeto(p=>({...p,duracao:info.duration,clips:[clip],candidatos:1,job:{...p.job,status:'pronto',etapa:'',pct:100,erro:undefined}}));
       setMostrarTodos(true); setSel(new Set([id])); setE('edicao'); window.scrollTo({top:0});
       toast('Vídeo pronto para editar: coloque o template e a legenda.','ok');
-    }catch(e){ const msg=e instanceof Error?e.message:String(e); setJob({status:'erro',erro:msg}); toast(msg,'erro'); }
+    }catch(e){ const msg=erroArquivo(e); setJob({status:'erro',erro:msg}); toast(msg,'erro'); }
   }
 
   /** Faz a legenda só dos cortes escolhidos (bem mais rápido que o vídeo todo). */
@@ -254,7 +271,7 @@ export default function Cortes(){
       else setSel(new Set(clips.filter(c=>c.nota_10>minimo).slice(0,limite).map(c=>c.id)));
       toast(porMarca?`${cands.length} cortes prontos nos tempos que você escolheu.`:`${cands.length} trechos avaliados. Confira os melhores abaixo.`,'ok');
     }catch(e){
-      const msg=e instanceof Error?e.message:String(e);
+      const msg=erroArquivo(e);
       setJob({status:'erro',erro:msg}); toast(msg,'erro');
     }
   }
@@ -365,7 +382,7 @@ export default function Cortes(){
    
    <section className={'panel dropzone '+(drag?'drag':'')} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);escolherArquivo(e.dataTransfer.files?.[0]||null)}} onClick={()=>fileInput.current?.click()} role="button" tabIndex={0}>
     <span className="drop-icon"><Upload size={30}/></span>
-    <h2>{marcas.length?`Envie o arquivo deste vídeo para cortar os ${marcas.length} trechos marcados`:'Arraste o vídeo aqui ou clique para escolher'}</h2>
+    <h2>{lendo?<><Loader2 size={18} className="spin"/> Preparando o vídeo...</>:marcas.length?`Envie o arquivo deste vídeo para cortar os ${marcas.length} trechos marcados`:'Arraste o vídeo aqui ou clique para escolher'}</h2>
     <p>MP4, MOV ou WEBM. O site analisa o áudio e as falas, dá nota a cada trecho e entrega os melhores cortes com legenda. O arquivo não sai do seu computador.</p>
     <input ref={fileInput} type="file" accept="video/*,.mkv,.mov" hidden onChange={e=>escolherArquivo(e.target.files?.[0]||null)}/>
    </section>
