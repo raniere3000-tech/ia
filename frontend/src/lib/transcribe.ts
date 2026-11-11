@@ -10,11 +10,23 @@ export const IDIOMAS = [
   {id:'portuguese',nome:'Português'},{id:'english',nome:'Inglês'},{id:'spanish',nome:'Espanhol'},{id:'auto',nome:'Detectar automaticamente'},
 ];
 
-/** Transcreve o áudio (mono 16 kHz) num Web Worker para não travar a página. */
-export function transcrever(samples:Float32Array,model:string,language:string,onStatus:(s:string,pct:number)=>void):Promise<Cue[]>{
+const novoWorker=()=>new Worker(new URL('./whisper.worker.ts',import.meta.url),{type:'module'});
+
+/** Pergunta (num worker separado) se este aparelho tem placa de vídeo utilizável. */
+function temGpu():Promise<boolean>{
+  return new Promise(res=>{
+    let w:Worker; try{ w=novoWorker(); }catch{ res(false); return; }
+    const t=setTimeout(()=>{ w.terminate(); res(false); },8000);
+    w.onmessage=e=>{ if(e.data?.type==='gpu'){ clearTimeout(t); w.terminate(); res(!!e.data.ok); } };
+    w.onerror=()=>{ clearTimeout(t); w.terminate(); res(false); };
+    w.postMessage({tipo:'gpu'});
+  });
+}
+
+function rodar(samples:Float32Array,model:string,language:string,device:'webgpu'|'wasm',onStatus:(s:string,pct:number)=>void):Promise<Cue[]>{
   return new Promise((resolve,reject)=>{
     let w:Worker;
-    try{ w = new Worker(new URL('./whisper.worker.ts',import.meta.url),{type:'module'}); }
+    try{ w = novoWorker(); }
     catch(e){ reject(new Error('Este navegador não consegue rodar a transcrição ('+(e instanceof Error?e.message:String(e))+').')); return; }
     const files = new Map<string,number>();
     w.onmessage = (e)=>{
@@ -22,14 +34,33 @@ export function transcrever(samples:Float32Array,model:string,language:string,on
       if(m.type==='download'){ files.set(m.file,m.progress||0); const v=[...files.values()]; onStatus('Baixando modelo de transcrição (só na primeira vez)',Math.round(v.reduce((a,b)=>a+b,0)/v.length)); }
       else if(m.type==='stage') onStatus('Transcrevendo a fala',0);
       else if(m.type==='progress') onStatus('Transcrevendo a fala',m.progress);
-      else if(m.type==='retry'){ files.clear(); onStatus('Tentando de outro jeito',0); console.warn('Whisper: tentando de novo', m.error); }
       else if(m.type==='done'){ w.terminate(); resolve(m.cues); }
-      else if(m.type==='error'){ w.terminate(); reject(new Error(traduzir(m.error))); }
+      else if(m.type==='error'){ w.terminate(); reject(new Error(m.error)); }
     };
-    w.onerror = (e)=>{ w.terminate(); reject(new Error(traduzir(e.message||'o processo de transcrição parou'))); };
+    w.onerror = (e)=>{ w.terminate(); reject(new Error(e.message||'o processo de transcrição parou')); };
     const copy = samples.slice();
-    w.postMessage({samples:copy,model,language},[copy.buffer]);
+    w.postMessage({tipo:'rodar',samples:copy,model,language,device},[copy.buffer]);
   });
+}
+
+/** Transcreve o áudio (mono 16 kHz) em Web Workers, para não travar a página.
+ *  Tenta a placa de vídeo (se existir), depois o processador e por fim o modelo mais leve. */
+export async function transcrever(samples:Float32Array,model:string,language:string,onStatus:(s:string,pct:number)=>void):Promise<Cue[]>{
+  const tentativas:[string,'webgpu'|'wasm'][] = [];
+  if(await temGpu()) tentativas.push([model,'webgpu']);
+  tentativas.push([model,'wasm']);
+  if(!model.endsWith('whisper-tiny')) tentativas.push(['onnx-community/whisper-tiny','wasm']);
+  const erros:string[] = [];
+  for(const [m,dev] of tentativas){
+    try{ return await rodar(samples,m,language,dev,onStatus); }
+    catch(e){
+      const msg=e instanceof Error?e.message:String(e);
+      console.warn('Whisper falhou',m,dev,msg);
+      erros.push(`${m.split('/').pop()}/${dev}: ${msg}`);
+      onStatus('Tentando de outro jeito',0);
+    }
+  }
+  throw new Error(traduzir(erros.join(' | ')));
 }
 
 function traduzir(err:string){
