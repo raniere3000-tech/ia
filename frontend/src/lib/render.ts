@@ -56,7 +56,7 @@ export function drawFrame(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,small:
   ctx.restore();
 }
 
-function drawTemplate(ctx:CanvasRenderingContext2D,tp:Template,logo:HTMLImageElement|null,W:number,H:number){
+export function drawTemplate(ctx:CanvasRenderingContext2D,tp:Template,logo:HTMLImageElement|null,W:number,H:number){
   const m = Math.round(Math.min(W,H)*0.04);
   if(tp.moldura){ ctx.strokeStyle=tp.cor; ctx.lineWidth=m*0.6; ctx.strokeRect(m*0.3,m*0.3,W-m*0.6,H-m*0.6); }
   if(logo){

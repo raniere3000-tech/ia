@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, CheckCircle2, AlertTriangle, Info, X, Circle } from 'lucide-react';
+import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, CheckCircle2, AlertTriangle, Info, X, Circle } from 'lucide-react';
 import { AppCtx, PROJETO_VAZIO, type Marca, type Projeto, type Settings, type Tab } from './state';
 import { store } from './lib/store';
 import { TEMPLATE_PADRAO, type Template } from './lib/render';
@@ -7,17 +7,19 @@ import Inicio from './pages/Inicio';
 import Radar from './pages/Radar';
 import Cortes from './pages/Cortes';
 import Agendar from './pages/Agendar';
+import VideoCodigo from './pages/VideoCodigo';
 import Estilos from './pages/Estilos';
 import Templates from './pages/Templates';
 import Config from './pages/Config';
 import './style.css';
 
 const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'seguir-rosto',servidor:'',servidorToken:'',servidorCanal:'',geminiKey:'',ia:''};
-const NAV:[Tab,string,typeof Home][] = [['inicio','Como funciona',Home],['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['agendar','Agendar posts',CalendarClock],['estilos','Legendas e efeitos',Captions],['templates','Template da marca',LayoutTemplate],['config','Chaves e ajustes',Gear]];
+const NAV:[Tab,string,typeof Home][] = [['inicio','Como funciona',Home],['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['video','Vídeo com código',Sparkles],['agendar','Agendar posts',CalendarClock],['estilos','Legendas e efeitos',Captions],['templates','Template da marca',LayoutTemplate],['config','Chaves e ajustes',Gear]];
 const TITLES:Record<Tab,[string,string]> = {
   inicio:['Bem-vindo ao EstúdioClip','Descubra vídeos em alta, transforme vídeos longos em cortes curtos e exporte com legenda, tudo no navegador.'],
   radar:['Descubra vídeos em alta','Pesquise qualquer nicho no YouTube e encontre canais e vídeos com muitas visualizações.'],
   cortes:['Transforme vídeos em cortes','Envie um vídeo seu (ou autorizado), escolha a duração e receba os melhores trechos com nota.'],
+  video:['Vídeo viral com código','Digite um tema: a IA escreve o roteiro e o site monta um vídeo vertical animado, com narração e batida, pronto para postar.'],
   agendar:['Agendar posts','Conecte suas contas uma vez e agende os cortes no YouTube, Instagram, Facebook e TikTok. O Kwai fica com o botão de baixar.'],
   estilos:['Legendas e efeitos','Escolha o visual padrão das legendas e o efeito aplicado nos cortes.'],
   templates:['Template da marca','Logo, cor, moldura e crédito aplicados automaticamente em todos os cortes.'],
@@ -100,6 +102,7 @@ export default function App(){
      {tab==='inicio'&&<Inicio/>}
      {tab==='radar'&&<Radar/>}
      {tab==='cortes'&&<Cortes/>}
+     {tab==='video'&&<VideoCodigo/>}
      {tab==='agendar'&&<Agendar/>}
      {tab==='estilos'&&<Estilos/>}
      {tab==='templates'&&<Templates/>}
