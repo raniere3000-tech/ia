@@ -16,6 +16,7 @@ import { gerarCandidatos, avaliarJanelas, notaFinal, nota10, type Clip, type Can
 import { parseLegendas, type Cue } from '../lib/captions';
 import { transcrever, transcreverGemini, IDIOMAS } from '../lib/transcribe';
 import { formatoSuportado } from '../lib/render';
+import { AJUSTE_MAX } from '../lib/promptCortes';
 import { renderClip, baixar, zipar, nomeArquivo, srtDoCorte } from '../lib/exporter';
 import { tm, parseTime, uid, store } from '../lib/store';
 
@@ -124,9 +125,10 @@ export default function Cortes(){
     const out=cands.map(c=>{
       const r=ia?.get(c.id);
       const notas=r?{gancho:clamp(r.gancho),fluxo:clamp(r.fluxo),valor:clamp(r.valor),tendencia:clamp(r.tendencia)}:c.notas;
-      const ini=r&&Math.abs(r.inicio-c.inicio)<=3?Math.max(0,r.inicio):c.inicio; const fim=r&&Math.abs(r.fim-c.fim)<=3?Math.min(dur,r.fim):c.fim;
+      let ini=r&&Math.abs(r.inicio-c.inicio)<=AJUSTE_MAX?Math.max(0,r.inicio):c.inicio; let fim=r&&Math.abs(r.fim-c.fim)<=AJUSTE_MAX?Math.min(dur,r.fim):c.fim;
+      if(fim-ini<Math.min(5,c.fim-c.inicio)){ ini=c.inicio; fim=c.fim; }   // ajuste da IA deixou curto demais: mantém o original
       const nf=notaFinal(notas);
-      return {id:c.id,titulo:c.titulo||r?.titulo||'',marca:c.titulo,inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,nota_final:nf,nota_10:nota10(nf),motivo:r?.motivo||c.motivo,fonte:r?'ia':'heuristica',legenda:legSrc==='nenhuma'?'':settings.legendaPadrao,efeito:settings.efeitoPadrao,formato:'9:16',gancho_texto:''} as Clip;
+      return {id:c.id,titulo:c.titulo||r?.titulo||'',marca:c.titulo,inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,nota_final:nf,nota_10:nota10(nf),motivo:r?.motivo||c.motivo,fonte:r?'ia':'heuristica',legenda:legSrc==='nenhuma'?'':settings.legendaPadrao,efeito:settings.efeitoPadrao,formato:'9:16',gancho_texto:String(r?.gancho_texto||'').replace(/[#"“”]/g,'').trim().slice(0,60)} as Clip;
     });
     out.sort((a,b)=>b.nota_final-a.nota_final||b.notas.gancho-a.notas.gancho||a.inicio-b.inicio);
     out.forEach((c,i)=>{ if(!c.titulo) c.titulo=`Destaque ${i+1}`; });

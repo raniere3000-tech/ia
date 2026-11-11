@@ -27,8 +27,8 @@ export async function testarChaveGemini(key:string){
 
 const N = {type:'NUMBER'}, S = {type:'STRING'};
 const SCHEMA = {type:'OBJECT',properties:{cortes:{type:'ARRAY',items:{type:'OBJECT',
-  properties:{id:S,gancho:N,fluxo:N,valor:N,tendencia:N,titulo:S,motivo:S,inicio:N,fim:N},
-  required:['id','gancho','fluxo','valor','tendencia','titulo','motivo','inicio','fim']}}},required:['cortes']};
+  properties:{id:S,gancho:N,fluxo:N,valor:N,tendencia:N,titulo:S,motivo:S,inicio:N,fim:N,gancho_texto:S},
+  required:['id','gancho','fluxo','valor','tendencia','titulo','motivo','inicio','fim','gancho_texto']}}},required:['cortes']};
 
 export async function avaliarComGemini(key:string, cands:(Candidate&{id:string})[], cues:Cue[], opts:OptsIA):Promise<AvaliacaoIA[]>{
   const parts:any[] = [{text:instrucoes(opts)}];

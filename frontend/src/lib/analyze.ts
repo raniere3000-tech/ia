@@ -27,6 +27,10 @@ function maxOf(a:Float32Array,i:number,j:number){ let m=0; for(let k=Math.max(i,
 
 export type Candidate = {inicio:number;fim:number;notas:Notas;motivo:string};
 
+const FRACAS = /^(e|mas|então|entao|aí|ai|daí|dai|porque|pq|tipo|né|ne|sim|não|nao|isso|é|eh|ah|hum|uhum|tá|ta|ok|beleza|exato|claro|só que|so que|and|but|so|yeah|yes|right|um|uh|like)\b[\s,.!?]/i;
+/** Primeira fala começa com palavra que só faz sentido com o que veio antes? */
+export function aberturaFraca(t:string){ const s=t.trim().toLowerCase(); return FRACAS.test(s+' ')||/^[^\s]+[.!?]?$/.test(s); }
+
 export function gerarCandidatos(energy:Float32Array|null,step:number,duration:number,cues:Cue[],o:AnalyzeOpts):Candidate[]{
   const a = Math.max(0,Math.min(o.inicio,duration)), b = Math.min(duration,o.fim>0?o.fim:duration);
   const span = b-a;
@@ -55,6 +59,9 @@ export function gerarCandidatos(energy:Float32Array|null,step:number,duration:nu
         motivo = hook>0.6 ? 'Começa com áudio forte, bom gancho nos primeiros segundos.' : peak>0.8 ? 'Tem pico de áudio marcante (reação, grito, risada ou ação).' : 'Trecho com energia sonora estável.';
       }
       if(cues.length){ valor += 10*fala; motivo += fala>0.6 ? ' Fala contínua.' : ''; if(snapped===2) motivo+=' Começa e termina em frase completa.'; }
+      // Abrir com conjunção, muleta ou resposta solta depende do que veio antes: gancho fraco.
+      const primeira = cues.find(c=>c.end>ini&&c.start<fim);
+      if(primeira&&aberturaFraca(primeira.text)){ gancho -= 15; motivo += ' Começa com palavra que depende do contexto anterior.'; }
       const notas = {gancho:Math.round(Math.min(95,gancho)),fluxo:Math.round(Math.min(95,fluxo)),valor:Math.round(Math.min(95,valor)),tendencia:50};
       out.push({inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,motivo:motivo.trim()||'Sem áudio legível: trecho sugerido em sequência.'});
     }
