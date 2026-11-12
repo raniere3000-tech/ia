@@ -1,3 +1,4 @@
+import ErroTela from './components/ErroTela';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, CheckCircle2, AlertTriangle, Info, X, Circle } from 'lucide-react';
 import { AppCtx, PROJETO_VAZIO, type Marca, type Projeto, type Settings, type Tab } from './state';
@@ -101,6 +102,7 @@ export default function App(){
     </aside>
     <main>
      <header className="page-head"><div><div className="eyebrow">PAINEL DE PRODUÇÃO</div><h1>{t}</h1><p className="subtitle">{sub}</p></div></header>
+     <ErroTela chave={tab}>
      {tab==='inicio'&&<Inicio/>}
      {tab==='radar'&&<Radar/>}
      {tab==='cortes'&&<Cortes/>}
@@ -110,6 +112,7 @@ export default function App(){
      {tab==='estilos'&&<Estilos/>}
      {tab==='templates'&&<Templates/>}
      {tab==='config'&&<Config/>}
+     </ErroTela>
      <footer>EstúdioClip • Use apenas vídeos próprios ou com autorização • Seus vídeos e chaves ficam neste navegador</footer>
     </main>
    </div>

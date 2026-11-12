@@ -116,9 +116,12 @@ export default function Vozes(){
     if(!settings.geminiKey) throw new Error('Coloque a chave do Gemini em Chaves e ajustes.');
     const voz=vozOutra||p.voz; const pedido=pedidoTTS(p,texto,direcao);
     const {wav,duracao}=await gerarVoz(settings.geminiKey,p.modelo,voz,pedido,()=>setOcupado(o=>o?{...o,txt:'Limite do Gemini, aguardando para continuar'}:o));
-    const jaTem=falaId&&takes.some(t=>t.falaId===falaId&&t.aprovado);
+    // Aprova sozinho o primeiro take da fala, ou o primeiro depois de o texto da fala ser editado.
+    const jaTem=falaId&&takes.some(t=>t.falaId===falaId&&t.aprovado&&t.texto===texto);
     const t:Take={id:uid(),projetoId:pid,falaId,personagemId:p.id,texto,direcao,pedido,voz,modelo:p.modelo,ajustes:ajustesDe({...p,voz}),data:Date.now(),duracao,wav,aprovado:!!falaId&&!jaTem,nota:''};
-    await salvar('takes',t); setTakes(x=>[t,...x]);
+    const velhos=t.aprovado?takes.filter(x=>x.falaId===falaId&&x.aprovado).map(x=>({...x,aprovado:false})):[];
+    if(velhos.length) await salvarVarios('takes',velhos);
+    await salvar('takes',t); setTakes(x=>[t,...x.map(y=>velhos.find(v=>v.id===y.id)||y)]);
     return t;
   }
   async function aprovarTake(t:Take){
@@ -297,7 +300,7 @@ function Roteiro({pid,elenco,roteiro,takes,gerando,ocupado,aplicar,mudarFala,ger
   const falasR=roteiro.filter(f=>f.tipo==='fala');
   const aprovadoDe=(f:Fala)=>takes.find(t=>t.falaId===f.id&&t.aprovado);
   const visiveis=roteiro.filter(f=>!filtro||f.personagemId===filtro||(f.tipo==='acao'&&!filtro));
-  const semTake=falasR.filter(f=>(!filtro||f.personagemId===filtro)&&!takes.some(t=>t.falaId===f.id));
+  const semTake=falasR.filter(f=>(!filtro||f.personagemId===filtro)&&!takes.some(t=>t.falaId===f.id&&t.texto===f.texto));
   let cenaAnt='';
   return <>
    <section className="panel">
@@ -330,7 +333,8 @@ function Roteiro({pid,elenco,roteiro,takes,gerando,ocupado,aplicar,mudarFala,ger
       {f.tipo==='acao'?<p className="acao">{f.texto}</p>:<div className={'fala '+(ap?'ok':'')+(gerando===f.id?' on':'')}>
        <div className="fala-top"><span className="fala-n">{f.ordem+1}</span>
         <select value={f.personagemId} onChange={e=>mudarFala({...f,personagemId:e.target.value})} aria-label="Quem fala"><option value="">Quem fala?</option>{elenco.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select>
-        <span className="grow fala-txt">{f.texto}</span></div>
+        <textarea className="grow fala-txt" rows={Math.min(5,Math.max(1,Math.ceil(f.texto.length/70)))} value={f.texto} onChange={e=>mudarFala({...f,texto:e.target.value})} aria-label="Texto da fala"/></div>
+       {ap&&ap.texto!==f.texto&&<p className="hint erro">O texto mudou depois desta voz. Toque em Novo take para gravar o texto novo (o take antigo continua no arquivo final até você aprovar outro).</p>}
        <div className="fala-ctl">
         <input value={f.direcao} placeholder="Direção (ex.: sussurrando, com raiva)" onChange={e=>mudarFala({...f,direcao:e.target.value})} aria-label="Direção da fala"/>
         <label className="pausa">Pausa depois<input type="number" min={0} max={10} step={0.1} value={f.pausa} onChange={e=>mudarFala({...f,pausa:Math.max(0,+e.target.value)})}/>s</label>

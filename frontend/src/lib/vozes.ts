@@ -243,13 +243,17 @@ export async function montarEpisodio(falas:Fala[],takes:Take[],nomes:Record<stri
   const partes:{f:Fala;t:Take;s:Float32Array;rate:number}[]=[];
   for(const f of ordem){ const t=takes.find(x=>x.falaId===f.id&&x.aprovado); if(!t) continue; const {samples,rate}=await lerWav(t.wav); partes.push({f,t,s:samples,rate}); }
   const rate=partes[0]?.rate||24000;
-  let total=Math.round(pausaInicial*rate); for(const p of partes) total+=p.s.length+Math.round(p.f.pausa*rate);
+  // Takes com taxa diferente são reamostrados; pausa inválida vira 0,4 s.
+  for(const p of partes){ if(p.rate!==rate&&p.rate>0){ const r=p.rate/rate, n=Math.floor(p.s.length/r), o=new Float32Array(n); for(let i=0;i<n;i++) o[i]=p.s[Math.min(p.s.length-1,Math.floor(i*r))]; p.s=o; p.rate=rate; } }
+  const pausa=(f:Fala)=>Number.isFinite(f.pausa)&&f.pausa>=0?f.pausa:0.4;
+  pausaInicial=Number.isFinite(pausaInicial)&&pausaInicial>=0?pausaInicial:0.3;
+  let total=Math.round(pausaInicial*rate); for(const p of partes) total+=p.s.length+Math.round(pausa(p.f)*rate);
   const out=new Float32Array(total); let off=Math.round(pausaInicial*rate);
   const manifesto:{ordem:number;cena:string;personagem:string;texto:string;inicio:number;fim:number;duracao:number;take:string;voz:string;modelo:string;arquivo:string}[]=[];
   for(const p of partes){
     out.set(p.s,off);
     manifesto.push({ordem:p.f.ordem,cena:p.f.cena,personagem:nomes[p.f.personagemId]||p.f.nomeRoteiro,texto:p.f.texto,inicio:+(off/rate).toFixed(3),fim:+((off+p.s.length)/rate).toFixed(3),duracao:+(p.s.length/rate).toFixed(3),take:p.t.id,voz:p.t.voz,modelo:p.t.modelo,arquivo:nomeTake(p.f,p.t,nomes[p.f.personagemId]||p.f.nomeRoteiro)});
-    off+=p.s.length+Math.round(p.f.pausa*rate);
+    off+=p.s.length+Math.round(pausa(p.f)*rate);
   }
   return {wav:wav(out,rate),manifesto,duracao:total/rate,faltando:ordem.filter(f=>!partes.some(p=>p.f.id===f.id))};
 }
