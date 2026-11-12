@@ -202,7 +202,7 @@ export default function Cortes(){
     const ids=idsTodos.filter(id=>!proprios.some(c=>c.id===id));
     if(!ids.length) return n;
     const file=projeto.file; if(!file) throw new Error('Envie o vídeo de novo.');
-    if(cache.file!==file||!cache.audio){ onStatus('Lendo o áudio do vídeo',0); const audio=await decodeAudio(file); cache={file,audio,energy:audio?energyProfile(audio,STEP):null}; }
+    if(cache.file!==file||!cache.audio){ onStatus('Lendo o áudio do vídeo',0); const audio=await decodeAudio(file,p=>onStatus('Lendo o áudio do vídeo',p)); cache={file,audio,energy:audio?energyProfile(audio,STEP):null}; }
     const audio=cache.audio;
     if(!audio) throw new Error('O navegador não conseguiu ler o áudio deste vídeo. Tente pelo computador ou envie um .srt.');
     const R=16000;
@@ -229,7 +229,7 @@ export default function Cortes(){
     try{
       const info=await videoInfo(url);
       setJob({etapa:'Analisando o áudio',pct:0});
-      if(cache.file!==file){ const audio=await decodeAudio(file); cache={file,audio,energy:audio?energyProfile(audio,STEP):null}; }
+      if(cache.file!==file){ const audio=await decodeAudio(file,p=>setJob({etapa:'Analisando o áudio',pct:p})); cache={file,audio,energy:audio?energyProfile(audio,STEP):null}; }
       if(!cache.audio) toast('O navegador não conseguiu ler o áudio deste vídeo. Os cortes serão sugeridos em sequência e sem legenda automática.','erro');
       let cues:Cue[]=src?[]:projeto.cues; let fonte=src?'':projeto.cuesFonte;
       if(legSrc==='arquivo'){
