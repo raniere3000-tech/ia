@@ -22,9 +22,12 @@ import { tm, parseTime, uid, store } from '../lib/store';
 
 // Cache do áudio decodificado, para refazer a análise sem ler o arquivo de novo.
 /** Erro de leitura do arquivo (comum no Android) em português. */
+const CELULAR=typeof navigator!=='undefined'&&/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 export function erroArquivo(e:unknown){
   const m=e instanceof Error?e.message:String(e);
-  if(/could not be read|NotReadable|permission/i.test(m)||(e as any)?.name==='NotReadableError') return 'O celular não deixou o site ler esse vídeo. Escolha o arquivo de novo, de preferência pelo app Arquivos ou pela pasta Downloads (não pela Galeria ou Google Fotos). Se o vídeo estiver na nuvem, baixe para o celular antes.';
+  if(/could not be read|NotReadable|permission/i.test(m)||(e as any)?.name==='NotReadableError') return CELULAR
+    ?'O celular não deixou o site ler esse vídeo. Escolha o arquivo de novo, de preferência pelo app Arquivos ou pela pasta Downloads (não pela Galeria ou Google Fotos). Se o vídeo estiver na nuvem, baixe para o celular antes.'
+    :'O computador não deixou o site ler esse vídeo. Isso acontece quando o arquivo ainda está baixando, está aberto em outro programa (editor de vídeo) ou está só na nuvem (OneDrive/Google Drive, ícone de nuvem). Espere terminar, feche o outro programa ou copie o vídeo para a pasta Downloads e escolha de novo.';
   if(/memory|allocation|too large|Array buffer/i.test(m)) return 'O vídeo é grande demais para a memória deste aparelho. Tente um vídeo menor ou use o computador.';
   return m;
 }
@@ -97,8 +100,14 @@ export default function Cortes(){
     let f=orig;
     if(!iniciar){   // arquivo do servidor já está na memória
       setLendo(true);
-      try{ f=new File([await orig.arrayBuffer()],orig.name,{type:orig.type||'video/mp4'}); }
-      catch(e){ setLendo(false); toast(erroArquivo(e),'erro'); return; }
+      try{
+        if(CELULAR) f=new File([await orig.arrayBuffer()],orig.name,{type:orig.type||'video/mp4'});
+        else await orig.slice(0,1024*1024).arrayBuffer();   // no computador só confere se dá para ler (vídeos grandes não cabem na memória)
+      }catch(e){
+        // Se a cópia falhou mas o arquivo ainda abre, segue com o original.
+        let ok=false; if(CELULAR){ try{ await orig.slice(0,1024*1024).arrayBuffer(); ok=true; }catch{ /* não dá mesmo */ } }
+        if(!ok){ setLendo(false); toast(erroArquivo(e),'erro'); return; }
+      }
       setLendo(false);
     }
     if(projeto.url) URL.revokeObjectURL(projeto.url);
