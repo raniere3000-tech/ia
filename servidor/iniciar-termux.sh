@@ -21,6 +21,9 @@ if [ ! -f .instalado ]; then
 else
   pip install -q -U yt-dlp yt-dlp-ejs || true   # mantém o yt-dlp em dia (o YouTube muda sempre)
 fi
+# Se já tem um servidor ligado (outra sessão do Termux), desliga antes para não dar "Address already in use".
+pkill -f "python servidor.py" 2>/dev/null && sleep 1 || true
+pkill -x cloudflared 2>/dev/null || true
 command -v termux-wake-lock >/dev/null && termux-wake-lock || true   # não deixa o Android dormir no meio do download
 
 if [ "$1" = "link" ]; then
