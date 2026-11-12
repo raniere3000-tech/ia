@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, Clapperboard, Dices, Volume2, Download, FileAudio, FileText, FlaskConical, KeyRound, Loader2, Mic, Package, Plus, RotateCcw, Star, Trash2, Upload, Users, Wand2 } from 'lucide-react';
-import JSZip from 'jszip';
 import { FICHAS_PRONTAS, GUIA_FICHA } from '../lib/fichasPadrao';
 import { gerarSom, receitaDe, type FonteSom } from '../lib/sons';
 import { receberVozes, type MetaVoz } from '../lib/montagem';
@@ -445,7 +444,7 @@ function Final({projeto,elenco,roteiro,takes,nomes,irRoteiro,enviar}:{enviar:()=
   const minimo=prev.total-prev.fala+prev.fala/maxVel-pausasTot*0.65;
   async function montar(){ setMontando(true); try{ setRes(await montarEpisodio(roteiro,takes,nomes,pausaIni,alvo?{alvo,maxVel}:undefined)); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } finally{ setMontando(false); } }
   async function zip(){
-    if(!res) return; const z=new JSZip();
+    if(!res) return; const {default:JSZip}=await import('jszip'); const z=new JSZip();
     z.file(`${slug}-completo.wav`,res.wav); z.file(`${slug}.srt`,srt(res.manifesto,comNome)); z.file(`${slug}-manifesto.json`,JSON.stringify({projeto,duracao:+res.duracao.toFixed(3),falas:res.manifesto},null,2));
     const pasta=z.folder('falas')!; for(const m of res.manifesto){ const t=takes.find(x=>x.id===m.take); if(t) pasta.file(m.arquivo,t.wav); }
     baixar(await z.generateAsync({type:'blob'}),`${slug}-audio.zip`);

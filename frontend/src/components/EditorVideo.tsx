@@ -1,16 +1,46 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftRight, Copy, Download, Film, Headphones, Loader2, Minus, Pause, Play, Plus, Redo2, Scissors, Trash2, Type, Undo2, Upload, Volume2, VolumeX } from 'lucide-react';
-import { useApp } from '../state';
+import { ArrowLeftRight, Maximize2, Copy, Download, Film, Headphones, Loader2, Minus, Pause, Play, Plus, Redo2, Scissors, Trash2, Type, Undo2, Upload, Volume2, VolumeX } from 'lucide-react';
+import { useApp, captionPresets } from '../state';
+import { drawCaption, type Preset } from '../lib/captions';
 import { baixar } from '../lib/exporter';
 import { CATEGORIAS_SOM, gerarSom, receitaDe } from '../lib/sons';
 import { ANIMS, TAMANHO, audioDe, midias, type Anim, type Arquivo, type Formato, type TipoArq } from '../lib/montagem';
 import {
-  CAMADAS, FAIXAS, PPS_ONDA, acertarDuracoes, apagar, bufferDe, camadaDe, clipsDeVideo, empurrar, ganhoCamada, picosDe, desenharProj, dividir, duplicar, durMax, ehAudio, fimDe, gravarProj, mixarProj, novoId, sincronizarVideosProj, tocarProj, totalDe,
-  type Camada, type Clip, type ClipA, type Faixa, type FaixaAudio, type Picos, type Proj, type Sessao,
+  CAMADAS, EFEITOS_VIDEO, FAIXAS, PPS_ONDA, acertarDuracoes, apagar, bufferDe, camadaDe, clipsDeVideo, empurrar, ganhoCamada, picosDe, desenharProj, dividir, duplicar, durMax, ehAudio, fimDe, gravarProj, mixarProj, novoId, sincronizarVideosProj, tocarProj, totalDe,
+  type Camada, type Clip, type ClipA, type ClipV, type EfeitoV, type Faixa, type FaixaAudio, type Picos, type Proj, type Sessao,
 } from '../lib/editor';
 
 const fmt=(s:number)=>{ s=Math.max(0,s); const m=Math.floor(s/60); const x=s-m*60; return `${m}:${x<10?'0':''}${x.toFixed(1)}`; };
 type Arrasto={id:string;modo:'mover'|'esq'|'dir';x0:number;orig:Clip;antes:Proj;mexeu:boolean};
+
+const COR_CAMADA:Record<string,string>={narracao:'#2fc592',trilha:'#9b78f0',efeito:'#e56a6a'};
+/** Visão do vídeo inteiro: a onda de cada camada do começo ao fim, com a janela que está aberta na linha do tempo. Toque ou arraste para ir até um ponto. */
+function Resumo({p,arquivos,total,tempo,janela,onIr}:{p:Proj;arquivos:Arquivo[];total:number;tempo:number;janela:[number,number];onIr:(t:number)=>void}){
+  const ref=useRef<HTMLCanvasElement>(null); const [larg,setLarg]=useState(600); const [pk,setPk]=useState<Map<string,Picos>>(new Map()); const seg=useRef(false);
+  const sons=p.clips.filter(ehAudio); const fontes=[...new Set(sons.map(c=>c.fonte))].sort().join('|');
+  useEffect(()=>{ const c=ref.current; if(!c) return; const ro=new ResizeObserver(()=>setLarg(Math.max(200,Math.round(c.clientWidth)))); ro.observe(c); return ()=>ro.disconnect(); },[]);
+  useEffect(()=>{ let vivo=true; (async()=>{ const m=new Map<string,Picos>(); for(const f of fontes?fontes.split('|'):[]){ const x=await picosDe(f,arquivos); if(x) m.set(f,x); } if(vivo) setPk(m); })(); return ()=>{ vivo=false; }; },[fontes,arquivos.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{ const c=ref.current; if(!c) return; const x=c.getContext('2d')!; const W=c.width, H=c.height, lin=H/3; x.clearRect(0,0,W,H);
+    x.fillStyle='rgba(255,255,255,.06)'; for(const v of p.clips) if(v.faixa==='video') x.fillRect(Math.round(v.ini/total*W),0,1,H);
+    CAMADAS.forEach(([f],k)=>{ const g=ganhoCamada(p,f); x.globalAlpha=g<=0?0.25:1; x.fillStyle=COR_CAMADA[f]; const meio=k*lin+lin/2;
+      for(const c2 of sons) if(c2.faixa===f){ const q=pk.get(c2.fonte); const x0=c2.ini/total*W, x1=Math.min(W,(c2.ini+c2.dur)/total*W);
+        if(!q){ x.fillRect(x0,meio-1,Math.max(1,x1-x0),2); continue; }
+        const ganho=Math.max(0.1,Math.min(1,c2.vol/100*Math.max(g,0.4)))/q.max; const passo=total/W;
+        for(let i=Math.floor(x0);i<x1;i++){ let t=c2.de+(i/W*total-c2.ini); if(t<0) continue; let m=0; for(let j=0;j<4;j++){ let tt=t+passo*j/4; if(c2.loop&&q.dur>0) tt%=q.dur; const v=q.p[Math.floor(tt*PPS_ONDA)]||0; if(v>m) m=v; } const h=Math.max(1,m*ganho*(lin-2)); x.fillRect(i,meio-h/2,1,h); } } });
+    x.globalAlpha=1; const a=janela[0]/total*W, b=Math.min(W,janela[1]/total*W); x.fillStyle='rgba(255,255,255,.10)'; x.fillRect(a,0,Math.max(2,b-a),H); x.strokeStyle='rgba(255,255,255,.7)'; x.lineWidth=1; x.strokeRect(a+0.5,0.5,Math.max(2,b-a)-1,H-1);
+    x.fillStyle='#ff4d6d'; x.fillRect(Math.round(tempo/total*W),0,2,H); },[p,pk,total,tempo,janela[0],janela[1],larg]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ir=(e:React.PointerEvent<HTMLCanvasElement>)=>{ const r=e.currentTarget.getBoundingClientRect(); onIr(Math.max(0,Math.min(total,(e.clientX-r.left)/r.width*total))); };
+  return <div className="ed-resumo"><div className="ed-resumo-nomes">{CAMADAS.map(([f,n])=><span key={f} style={{color:COR_CAMADA[f]}}>{n}</span>)}</div>
+   <canvas ref={ref} width={larg} height={66} aria-label="Áudio completo do vídeo" data-ondas={pk.size} onPointerDown={e=>{ seg.current=true; e.currentTarget.setPointerCapture(e.pointerId); ir(e); }} onPointerMove={e=>{ if(seg.current) ir(e); }} onPointerUp={()=>{ seg.current=false; }} onPointerCancel={()=>{ seg.current=false; }}/></div>;
+}
+
+/** Amostra de um estilo de legenda. */
+function Amostra({p}:{p:Preset}){
+  const ref=useRef<HTMLCanvasElement>(null);
+  useEffect(()=>{ const c=ref.current; if(!c) return; const x=c.getContext('2d')!; const g=x.createLinearGradient(0,0,c.width,c.height); g.addColorStop(0,'#2a3350'); g.addColorStop(1,'#151a28'); x.fillStyle=g; x.fillRect(0,0,c.width,c.height);
+    x.save(); x.scale(0.5,0.5); drawCaption(x,{...p,position:'center',safeAreaBottomPercent:0},'esse é o melhor momento',0.5,2.4,c.width*2,c.height*2); x.restore(); },[p]);
+  return <canvas ref={ref} width={540} height={180} className="ed-amostra"/>;
+}
 
 /** Onda do som dentro do bloco: mostra o trecho usado e encolhe junto com o volume. */
 function Onda({fonte,arquivos,de,dur,loop,vol,larg}:{fonte:string;arquivos:Arquivo[];de:number;dur:number;loop:boolean;vol:number;larg:number}){
@@ -28,9 +58,10 @@ export default function EditorVideo({inicial,arquivos,onChange,onEnviar}:{inicia
   const [p,setP]=useState<Proj>(inicial); const pRef=useRef(p); pRef.current=p;
   const desfazer=useRef<Proj[]>([]); const refazer=useRef<Proj[]>([]); const [,forca]=useState(0);
   const [sel,setSel]=useState<string>(''); const [tempo,setTempo]=useState(0); const [pps,setPps]=useState(50);
-  const [tocando,setTocando]=useState(false); const [ocupado,setOcupado]=useState(''); const [aba,setAba]=useState<'ajustes'|'sons'|'midia'|'camadas'>('sons'); const [empurra,setEmpurra]=useState(false);
+  const [tocando,setTocando]=useState(false); const [ocupado,setOcupado]=useState(''); const [aba,setAba]=useState<'ajustes'|'sons'|'midia'|'camadas'|'estilo'>('sons'); const [empurra,setEmpurra]=useState(false);
   const [video,setVideo]=useState<{url:string;blob:Blob;ext:string}|null>(null);
   const cv=useRef<HTMLCanvasElement>(null); const sessao=useRef<Sessao|null>(null); const arr=useRef<Arrasto|null>(null);
+  const rolo=useRef<HTMLDivElement>(null); const [vista,setVista]=useState<[number,number]>([0,600]);
   const audioCache=useRef<{chave:string;buf:AudioBuffer|null}|null>(null);
   const total=totalDe(p); const clipSel=p.clips.find(c=>c.id===sel);
 
@@ -101,6 +132,11 @@ export default function EditorVideo({inicial,arquivos,onChange,onEnviar}:{inicia
   /** Troca o som de um bloco por outro (da biblioteca do site ou um arquivo seu), sem tirar do lugar. */
   function trocarSom(c:ClipA,fonte:string,nome:string,dur:number){ const site=fonte.startsWith('site:'); const curto=c.faixa==='efeito'||dur<c.dur;
     mudarClip(c.id,{fonte,nome,de:0,fonteDur:site?0:dur,dur:c.loop?c.dur:curto?dur:c.dur} as Partial<ClipA>); toast(`Agora este bloco toca "${nome}".`,'ok'); }
+  const vidSel=clipSel&&clipSel.faixa==='video'?clipSel as ClipV:null; const txtSel=clipSel&&clipSel.faixa==='texto'?clipSel:null;
+  /** Estilo de legenda: no texto selecionado, ou em todas as legendas do vídeo. */
+  function usarLegenda(id:string){ if(txtSel){ mudarClip(txtSel.id,{estilo:id}); return; } commit({...p,legenda:id,clips:p.clips.map(c=>c.faixa==='texto'?{...c,estilo:undefined}:c)}); toast('Estilo aplicado em todas as legendas.','ok'); }
+  function usarEfeito(id:EfeitoV){ if(vidSel){ mudarClip(vidSel.id,{efeito:id}); return; } commit({...p,clips:p.clips.map(c=>c.faixa==='video'?{...c,efeito:id}:c)}); toast('Efeito aplicado em todos os blocos de vídeo.','ok'); }
+  const legAtual=txtSel?(txtSel.estilo||p.legenda||'simples'):(p.legenda||'simples'); const nTextos=p.clips.filter(c=>c.faixa==='texto').length;
   const efSel=clipSel&&clipSel.faixa==='efeito'?clipSel as ClipA:null;
   async function enviarAqui(tipo:TipoArq,fs:FileList|null,depois?:(a:Arquivo)=>void|Promise<void>){ if(!onEnviar||!fs?.length) return; const novos=await onEnviar(tipo,fs); for(const a of novos) await depois?.(a); }
   /** Vídeo pronto: entra inteiro, com o som dele numa camada para abaixar, cortar ou cobrir com outros sons. */
@@ -118,9 +154,14 @@ export default function EditorVideo({inicial,arquivos,onChange,onEnviar}:{inicia
   const linhas=useMemo(()=>{ const lane=new Map<string,number>(); const alt:Record<string,number>={};
     for(const [f] of FAIXAS){ const fins:number[]=[]; for(const c of p.clips.filter(x=>x.faixa===f).sort((a,b)=>a.ini-b.ini)){ let k=fins.findIndex(e=>e<=c.ini+0.001); if(k<0){ k=fins.length; fins.push(0); } fins[k]=fimDe(c); lane.set(c.id,k); } alt[f]=Math.max(1,fins.length)*40+4; }
     return {lane,alt}; },[p.clips]);
-  const largura=Math.max(600,(total+8)*pps);
-  const passoRegua=pps>=80?1:pps>=40?2:pps>=20?5:10;
-  const marcas=useMemo(()=>Array.from({length:Math.ceil((total+8)/passoRegua)+1},(_,i)=>i*passoRegua),[total,passoRegua]);
+  const largura=Math.max(600,total*pps+120);
+  // Janela visível da linha do tempo (para o resumo do vídeo inteiro).
+  const medir=()=>{ const r=rolo.current; if(r) setVista(v=>v[0]===r.scrollLeft&&v[1]===r.clientWidth?v:[r.scrollLeft,r.clientWidth]); };
+  useEffect(()=>{ const r=rolo.current; if(!r) return; medir(); const ro=new ResizeObserver(medir); ro.observe(r); return ()=>ro.disconnect(); },[]); // eslint-disable-line react-hooks/exhaustive-deps
+  const verTudo=()=>{ const r=rolo.current; if(!r) return; setPps(Math.max(1.5,Math.min(300,(r.clientWidth-130)/total))); r.scrollLeft=0; setTimeout(medir,50); };
+  const irResumo=(t:number)=>{ parar(); setTempo(t); const r=rolo.current; if(r){ r.scrollLeft=Math.max(0,t*pps-r.clientWidth/2); medir(); } };
+  const passoRegua=pps>=80?1:pps>=40?2:pps>=20?5:pps>=8?10:pps>=3?30:60;
+  const marcas=useMemo(()=>Array.from({length:Math.ceil((total+120/pps)/passoRegua)+1},(_,i)=>i*passoRegua),[total,passoRegua]);
   const nomeMidia=(id:string)=>arquivos.find(a=>a.id===id)?.nome||'sem imagem';
   const imgSrc=(id:string)=>{ const m=id?midias.get(id):undefined; return m?.tipo==='imagem'?(m.el as HTMLImageElement).src:''; };
 
@@ -131,7 +172,7 @@ export default function EditorVideo({inicial,arquivos,onChange,onEnviar}:{inicia
      {video&&<div className="ed-pronto"><video src={video.url} controls/><button className="primary sm" onClick={()=>baixar(video.blob,`video-editado-${p.formato.replace(':','x')}.${video.ext}`)}><Download size={14}/> Baixar ({video.ext.toUpperCase()})</button></div>}
     </div>
     <div className="ed-painel">
-     <div className="ed-abas">{([['sons','Efeitos sonoros'],['camadas','Camadas de áudio'],['midia','Mídia'],['ajustes','Ajustes']] as const).map(([k,n])=><button key={k} className={aba===k?'on':''} onClick={()=>setAba(k)}>{n}</button>)}</div>
+     <div className="ed-abas">{([['sons','Efeitos sonoros'],['camadas','Camadas de áudio'],['estilo','Legendas e efeitos'],['midia','Mídia'],['ajustes','Ajustes']] as const).map(([k,n])=><button key={k} className={aba===k?'on':''} onClick={()=>setAba(k)}>{n}</button>)}</div>
      {aba==='sons'&&<div className="ed-lib">
       <p className="hint">Toque no ▶ para ouvir e em + para colocar no cursor ({fmt(tempo)}). Todos são feitos pelo site, grátis.{efSel?<> Com um efeito selecionado, o botão <ArrowLeftRight size={11}/> troca o som dele por outro.</>:' Para trocar um efeito que já está no vídeo, toque nele na linha do tempo.'}</p>
       {efSel&&<p className="ed-trocando">Trocando: <b>{efSel.nome}</b> em {fmt(efSel.ini)}</p>}
@@ -148,6 +189,17 @@ export default function EditorVideo({inicial,arquivos,onChange,onEnviar}:{inicia
       </div>}
       <h4>Imagens e vídeos</h4><div className="ed-midias">{arquivos.filter(a=>a.tipo==='quadro').map(a=><button key={a.id} className="ed-mid" onClick={()=>clipSel?.faixa==='video'?mudarClip(clipSel.id,{midia:a.id}):addImagem(a)} title={clipSel?.faixa==='video'?'Trocar a imagem do bloco selecionado':'Adicionar no cursor'}>{imgSrc(a.id)?<img src={imgSrc(a.id)} alt=""/>:<span>vídeo</span>}<small>{a.nome}</small></button>)}</div>
       {(['narracao','trilha'] as const).map(f=>arquivos.some(a=>a.tipo===f)&&<div key={f}><h4>{f==='trilha'?'Trilhas':'Narrações'}</h4><div className="ed-sons">{arquivos.filter(a=>a.tipo===f).map(a=><div key={a.id} className="ed-som"><Volume2 size={12}/><span title={a.nome}>{a.nome}</span><button className="icon-btn" onClick={()=>addAudio(a,f)} aria-label={'Adicionar '+a.nome}><Plus size={13}/></button></div>)}</div></div>)}
+     </div>}
+     {aba==='estilo'&&<div className="ed-lib">
+      <h4>Estilo das legendas</h4>
+      <p className="hint">{txtSel?<>Vale só para o texto selecionado. Toque fora dele na linha do tempo para mudar todas de uma vez.</>:nTextos?`Vale para as ${nTextos} legendas e textos do vídeo. Para mudar só uma, toque nela na linha do tempo antes.`:'Este vídeo ainda não tem legenda. Sincronize um roteiro com falas ou use o botão Texto.'}</p>
+      <div className="ed-estilos">
+       <button className={'ed-estilo'+(legAtual==='simples'?' on':'')} onClick={()=>usarLegenda('simples')} aria-label="Legenda Simples"><span className="ed-amostra simples">esse é o melhor momento</span><b>Simples</b></button>
+       {captionPresets.map(c=><button key={c.id} className={'ed-estilo'+(legAtual===c.id?' on':'')} onClick={()=>usarLegenda(c.id)} aria-label={'Legenda '+c.nome}><Amostra p={c}/><b>{c.nome}</b></button>)}
+      </div>
+      <h4>Efeitos de vídeo</h4>
+      <p className="hint">{vidSel?'Vale para o bloco de vídeo selecionado.':'Sem bloco selecionado, vale para todos os blocos de vídeo. Para mudar só um, toque nele antes.'} Movimento, brilho e cor ficam em Ajustes.</p>
+      <div className="ed-efeitos">{EFEITOS_VIDEO.map(([id,n,d])=><button key={id} className={'ed-efeito'+(vidSel&&(vidSel.efeito||'nenhum')===id?' on':'')} onClick={()=>usarEfeito(id)} aria-label={'Efeito '+n}><b>{n}</b><small>{d}</small></button>)}</div>
      </div>}
      {aba==='camadas'&&<div className="ed-lib ed-camadas">
       <p className="hint">Cada camada de som do vídeo. Abaixe, deixe muda ou ouça só uma para conferir. Os blocos de cada camada estão na linha do tempo, com o desenho da onda.</p>
@@ -171,11 +223,13 @@ export default function EditorVideo({inicial,arquivos,onChange,onEnviar}:{inicia
        {clipSel.faixa==='video'&&<div className="ed-campos">
         <label>Imagem<select value={clipSel.midia} onChange={e=>mudarClip(clipSel.id,{midia:e.target.value})}><option value="">Sem imagem</option>{arquivos.filter(a=>a.tipo==='quadro').map(a=><option key={a.id} value={a.id}>{a.nome}</option>)}</select></label>
         <label>Movimento<select value={clipSel.anim} onChange={e=>mudarClip(clipSel.id,{anim:e.target.value as Anim})}>{ANIMS.map(([k,n])=><option key={k} value={k}>{n}</option>)}</select></label>
+        <label>Efeito<select value={clipSel.efeito||'nenhum'} aria-label="Efeito do bloco" onChange={e=>mudarClip(clipSel.id,{efeito:e.target.value as EfeitoV})}>{EFEITOS_VIDEO.map(([k,n])=><option key={k} value={k}>{n}</option>)}</select></label>
         <label>Entrada<select value={clipSel.entrada} onChange={e=>mudarClip(clipSel.id,{entrada:e.target.value as 'corte'|'fade'})}><option value="fade">Suave</option><option value="corte">Corte seco</option></select></label>
         {(['brilho','contraste','saturacao'] as const).map(k=><label key={k}>{k==='saturacao'?'Cor':k[0].toUpperCase()+k.slice(1)} {clipSel[k]}%<input type="range" min={0} max={200} value={clipSel[k]} onChange={e=>mudarClip(clipSel.id,{[k]:+e.target.value})}/></label>)}
        </div>}
        {clipSel.faixa==='texto'&&<div className="ed-campos">
         <label className="full">Texto<textarea rows={3} value={clipSel.texto} onChange={e=>mudarClip(clipSel.id,{texto:e.target.value})}/></label>
+        <label>Estilo<select value={clipSel.estilo||''} aria-label="Estilo do texto" onChange={e=>mudarClip(clipSel.id,{estilo:e.target.value||undefined})}><option value="">O mesmo do vídeo</option><option value="simples">Simples</option>{captionPresets.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
         <label>Posição<select value={clipSel.pos} onChange={e=>mudarClip(clipSel.id,{pos:e.target.value as 'topo'|'meio'|'baixo'})}><option value="topo">Em cima</option><option value="meio">No meio</option><option value="baixo">Embaixo</option></select></label>
         <label>Tamanho {clipSel.tam}%<input type="range" min={50} max={250} value={clipSel.tam} onChange={e=>mudarClip(clipSel.id,{tam:+e.target.value})}/></label>
         <label>Cor<input type="color" value={clipSel.cor} onChange={e=>mudarClip(clipSel.id,{cor:e.target.value})}/></label>
@@ -213,15 +267,17 @@ export default function EditorVideo({inicial,arquivos,onChange,onEnviar}:{inicia
     <span className="grow"/>
     <label className="check sm" title="Ao mudar a duração de um bloco, leva junto tudo que vem depois"><input type="checkbox" checked={empurra} onChange={e=>setEmpurra(e.target.checked)}/> Empurrar o que vem depois</label>
     <select value={p.formato} onChange={e=>commit({...p,formato:e.target.value as Formato})} aria-label="Formato"><option value="9:16">9:16</option><option value="16:9">16:9</option><option value="1:1">1:1</option></select>
-    <button className="icon-btn" onClick={()=>setPps(x=>Math.max(10,x/1.5))} aria-label="Diminuir zoom"><Minus size={16}/></button>
+    <button className="subtle sm" onClick={verTudo} title="Encaixa o vídeo inteiro na largura da tela"><Maximize2 size={13}/> Ver tudo</button>
+    <button className="icon-btn" onClick={()=>setPps(x=>Math.max(1.5,x/1.5))} aria-label="Diminuir zoom"><Minus size={16}/></button>
     <button className="icon-btn" onClick={()=>setPps(x=>Math.min(300,x*1.5))} aria-label="Aumentar zoom"><Plus size={16}/></button>
     <button className="primary sm" onClick={exportar} disabled={!!ocupado}>{ocupado?<Loader2 size={14} className="spin"/>:<Download size={14}/>} Exportar vídeo</button>
    </div>
    {ocupado&&<p className="hint"><Loader2 size={13} className="spin"/> {ocupado}</p>}
 
+   {p.clips.some(ehAudio)&&<Resumo p={p} arquivos={arquivos} total={total} tempo={tempo} janela={[vista[0]/pps,(vista[0]+vista[1])/pps]} onIr={irResumo}/>}
    <div className="ed-linha">
     <div className="ed-nomes"><div className="ed-regua-nome"/>{FAIXAS.map(([f,n])=>{ const au=f==='narracao'||f==='trilha'||f==='efeito'; const mudo=au&&ganhoCamada(p,f as FaixaAudio)<=0; return <div key={f} className={'ed-nome '+f+(mudo?' off':'')} style={{height:linhas.alt[f]}}><span>{f==='narracao'?'Vozes':f==='trilha'?'Música':n}</span>{au&&<button className="icon-btn" onClick={()=>mudarCamada(f as FaixaAudio,{mudo:!camadaDe(p,f as FaixaAudio).mudo})} aria-label={(camadaDe(p,f as FaixaAudio).mudo?'Ligar faixa ':'Silenciar faixa ')+n}>{mudo?<VolumeX size={13}/>:<Volume2 size={13}/>}</button>}</div>; })}</div>
-    <div className="ed-scroll">
+    <div className="ed-scroll" ref={rolo} onScroll={medir}>
      <div className="ed-trilhos" style={{width:largura}}>
       <div className="ed-regua" onPointerDown={irPara}>{marcas.map(m=><span key={m} style={{left:m*pps}}>{fmt(m).replace(/\.0$/,'')}</span>)}</div>
       {FAIXAS.map(([f])=><div key={f} className={'ed-faixa '+f+((f==='narracao'||f==='trilha'||f==='efeito')&&ganhoCamada(p,f)<=0?' off':'')} style={{height:linhas.alt[f]}} onPointerDown={e=>{ setSel(''); irPara(e); }}>

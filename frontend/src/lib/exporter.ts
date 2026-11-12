@@ -1,5 +1,4 @@
 import { rastrearRosto, type Trilha } from './rosto';
-import JSZip from 'jszip';
 import { pegarDub } from './dublagem';
 import { exportarCorte, loadImage, type Template } from './render';
 import { cuesDe, urlDe, type Clip } from './analyze';
@@ -31,7 +30,7 @@ export function baixar(blob:Blob,nome:string){
 }
 
 export async function zipar(arquivos:{nome:string;blob:Blob}[],extras:Record<string,string>){
-  const z=new JSZip();
+  const {default:JSZip}=await import('jszip'); const z=new JSZip();
   for(const a of arquivos) z.file(a.nome,a.blob);
   for(const [n,t] of Object.entries(extras)) z.file(n,t);
   return z.generateAsync({type:'blob',compression:'STORE'});

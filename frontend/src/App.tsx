@@ -1,20 +1,26 @@
 import ErroTela from './components/ErroTela';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useState, type ComponentType } from 'react';
 import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, Film, CheckCircle2, AlertTriangle, Info, X, Circle } from 'lucide-react';
 import { AppCtx, PROJETO_VAZIO, type Marca, type Projeto, type Settings, type Tab } from './state';
 import { store } from './lib/store';
 import { TEMPLATE_PADRAO, type Template } from './lib/render';
 import Inicio from './pages/Inicio';
-import Radar from './pages/Radar';
-import Cortes from './pages/Cortes';
-import Agendar from './pages/Agendar';
-import VideoCodigo from './pages/VideoCodigo';
-import Vozes from './pages/Vozes';
-import Manual from './pages/Manual';
-import Estilos from './pages/Estilos';
-import Templates from './pages/Templates';
-import Config from './pages/Config';
-import './style.css';
+
+// Cada aba é baixada só quando é aberta (a primeira tela abre mais rápido).
+// Se o site foi atualizado com a aba aberta, o pedaço antigo some do servidor: recarrega uma vez para pegar a versão nova.
+type Mod = Promise<{default:ComponentType}>;
+const CARGA:Partial<Record<Tab,()=>Mod>> = {
+  radar:()=>import('./pages/Radar'), cortes:()=>import('./pages/Cortes'), agendar:()=>import('./pages/Agendar'), video:()=>import('./pages/VideoCodigo'), vozes:()=>import('./pages/Vozes'),
+  manual:()=>import('./pages/Manual'), estilos:()=>import('./pages/Estilos'), templates:()=>import('./pages/Templates'), config:()=>import('./pages/Config'),
+};
+const seguro=(f:()=>Mod)=>()=>f().then(m=>{ try{ sessionStorage.removeItem('studio_recarregou'); }catch{ /* sem armazenamento */ } return m; },()=>{
+  let ja=true; try{ ja=!!sessionStorage.getItem('studio_recarregou'); sessionStorage.setItem('studio_recarregou','1'); }catch{ /* sem armazenamento */ }
+  if(!ja&&navigator.onLine){ location.reload(); return new Promise<{default:ComponentType}>(()=>{}); }
+  throw new Error(navigator.onLine?'Não consegui abrir esta tela. Recarregue a página.':'Sem internet: esta tela ainda não foi baixada neste aparelho.'); });
+const TELAS=Object.fromEntries(Object.entries(CARGA).map(([k,f])=>[k,memo(lazy(seguro(f)))])) as unknown as Record<Exclude<Tab,'inicio'>,ComponentType>;
+const InicioM=memo(Inicio);
+/** Começa a baixar a aba quando o dedo ou o mouse chega no botão. */
+const adiantar=(t:Tab)=>{ CARGA[t]?.().catch(()=>{}); };
 
 const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'seguir-rosto',servidor:'',servidorToken:'',servidorCanal:'',geminiKey:'',ia:''};
 const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['video','Criar vídeo animado',Sparkles],['vozes','Estúdio de vozes',Mic],['manual','Montagem manual',Film],['agendar','Agendar posts',CalendarClock],['estilos','Legendas e efeitos',Captions],['templates','Template da marca',LayoutTemplate],['config','Chaves e ajustes',Gear]];
@@ -98,7 +104,7 @@ export default function App(){
    <div className="app">
     <aside className="sidebar">
      <div className="brand"><span className="brand-icon"><Clapperboard size={22}/></span><div><strong>ESTÚDIO<span>CLIP</span></strong><small>RADAR + EDITOR</small></div></div>
-     <nav>{GRUPOS.map(([g,tabs])=><div key={g||'ini'} className="nav-grupo">{g&&<small className="nav-titulo">{g}</small>}{tabs.map(key=>{ const [,label,Icon]=NAV.find(n=>n[0]===key)!; return <button key={key} className={'nav '+(tab===key?'active':'')} onClick={()=>go(key)} title={label}><Icon size={18}/><span>{label}</span>{key==='cortes'&&projeto.clips.length>0&&<em className="nav-badge">{projeto.clips.filter(c=>!c.descartado).length}</em>}</button>; })}</div>)}</nav>
+     <nav>{GRUPOS.map(([g,tabs])=><div key={g||'ini'} className="nav-grupo">{g&&<small className="nav-titulo">{g}</small>}{tabs.map(key=>{ const [,label,Icon]=NAV.find(n=>n[0]===key)!; return <button key={key} className={'nav '+(tab===key?'active':'')} onClick={()=>go(key)} onPointerEnter={()=>adiantar(key)} onFocus={()=>adiantar(key)} aria-current={tab===key?'page':undefined} title={label}><Icon size={18}/><span>{label}</span>{key==='cortes'&&projeto.clips.length>0&&<em className="nav-badge">{projeto.clips.filter(c=>!c.descartado).length}</em>}</button>; })}</div>)}</nav>
      <div className="sidebar-bottom">
       <div className="side-title">STATUS</div>
       {status.map(s=><button key={s.label} className={'status-row '+(s.ok?'ok':s.opt?'opt':'no')} onClick={()=>go('config')}>{s.ok?<CheckCircle2 size={14}/>:<Circle size={14}/>}<span>{s.label}</span><small>{s.ok?'pronto':s.opt?'opcional':'falta chave'}</small></button>)}
@@ -107,16 +113,9 @@ export default function App(){
     <main>
      <header className="page-head"><div><div className="eyebrow">PAINEL DE PRODUÇÃO</div><h1>{t}</h1><p className="subtitle">{sub}</p></div></header>
      <ErroTela chave={tab}>
-     {tab==='inicio'&&<Inicio/>}
-     {tab==='radar'&&<Radar/>}
-     {tab==='cortes'&&<Cortes/>}
-     {tab==='video'&&<VideoCodigo/>}
-     {tab==='vozes'&&<Vozes/>}
-     {tab==='manual'&&<Manual/>}
-     {tab==='agendar'&&<Agendar/>}
-     {tab==='estilos'&&<Estilos/>}
-     {tab==='templates'&&<Templates/>}
-     {tab==='config'&&<Config/>}
+     <Suspense fallback={<p className="hint carregando-tela" role="status">Abrindo...</p>}>
+     {tab==='inicio'?<InicioM/>:(()=>{ const T=TELAS[tab]; return <T/>; })()}
+     </Suspense>
      </ErroTela>
      <footer>EstúdioClip • Use apenas vídeos próprios ou com autorização • Seus vídeos e chaves ficam neste navegador</footer>
     </main>

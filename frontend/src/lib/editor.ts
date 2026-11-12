@@ -2,21 +2,28 @@
 // Tudo roda no navegador: o desenho é feito num canvas e o áudio é misturado com a Web Audio API.
 import fixWebmDuration from 'fix-webm-duration';
 import { formatoSuportado } from './render';
-import { FONT_STACK } from './captions';
+import { FONT_STACK, drawCaption } from './captions';
+import { captionPresets } from '../state';
 import { gerarSom } from './sons';
 import { SR, TAMANHO, audioDe, cobrir, midias, narracoesDe, quebrar, type Anim, type Arquivo, type Formato, type Opcoes, type Sinc } from './montagem';
 
+/** Efeitos de imagem de cada bloco de vídeo (os mesmos nomes da aba Legendas e efeitos, mais dois). */
+export type EfeitoV = 'nenhum'|'blur-background'|'virada-cena'|'transicao-fade'|'camera-shake'|'pb'|'vinheta';
+export const EFEITOS_VIDEO:[EfeitoV,string,string][] = [['nenhum','Sem efeito','A imagem preenche a tela toda.'],['blur-background','Fundo desfocado','A imagem aparece inteira no centro e o fundo é uma cópia desfocada dela. Bom para imagem deitada em vídeo em pé.'],
+  ['virada-cena','Flash na entrada','Clarão branco quando o quadro começa.'],['transicao-fade','Entra e sai do preto','Aparece e some suavemente.'],['camera-shake','Tremores','Pequenos tremores a cada 4 segundos.'],['pb','Preto e branco','Tira a cor da imagem.'],['vinheta','Bordas escuras','Escurece os cantos e chama o olhar para o centro.']];
 export type Faixa = 'video'|'texto'|'narracao'|'trilha'|'efeito';
 export const FAIXAS:[Faixa,string][] = [['video','Vídeo'],['texto','Texto'],['narracao','Narração'],['trilha','Trilha'],['efeito','Efeitos']];
 type Base = {id:string;ini:number;dur:number};
-export type ClipV = Base&{faixa:'video';midia:string;de:number;anim:Anim;entrada:'corte'|'fade';brilho:number;contraste:number;saturacao:number};
-export type ClipT = Base&{faixa:'texto';texto:string;pos:'topo'|'meio'|'baixo';tam:number;cor:string;fundo:boolean};
+export type ClipV = Base&{faixa:'video';midia:string;de:number;anim:Anim;entrada:'corte'|'fade';brilho:number;contraste:number;saturacao:number;efeito?:EfeitoV};
+export type ClipT = Base&{faixa:'texto';texto:string;pos:'topo'|'meio'|'baixo';tam:number;cor:string;fundo:boolean;estilo?:string};
 export type ClipA = Base&{faixa:'narracao'|'trilha'|'efeito';fonte:string;nome:string;de:number;fonteDur:number;vol:number;fadeIn:number;fadeOut:number;loop:boolean};
 export type Clip = ClipV|ClipT|ClipA;
 export type FaixaAudio = 'narracao'|'trilha'|'efeito';
 /** Camada inteira: volume geral, mudo e "só esta". */
 export type Camada = {vol:number;mudo:boolean;solo:boolean};
-export type Proj = {clips:Clip[];formato:Formato;abaixarTrilha:boolean;mix?:Partial<Record<FaixaAudio,Camada>>};
+export type Proj = {clips:Clip[];formato:Formato;abaixarTrilha:boolean;mix?:Partial<Record<FaixaAudio,Camada>>;
+  /** Estilo das legendas do projeto (id de um estilo pronto). Vazio = texto simples. */
+  legenda?:string};
 export const CAMADAS:[FaixaAudio,string][] = [['narracao','Vozes'],['trilha','Música'],['efeito','Efeitos']];
 export const camadaDe = (p:Proj,f:FaixaAudio):Camada=>({vol:100,mudo:false,solo:false,...p.mix?.[f]});
 /** Ganho final da camada (0 quando está muda ou quando outra camada está em "só esta"). */
@@ -97,17 +104,35 @@ export function durMax(c:Clip){ return ehAudio(c)&&!c.loop&&c.fonteDur>0?Math.ma
 const ativo = (c:Clip,t:number)=>t>=c.ini&&t<fimDe(c);
 function clipVideoEm(vs:ClipV[],t:number){ let r:ClipV|undefined; for(const c of vs) if(ativo(c,t)&&(!r||c.ini>=r.ini)) r=c; return r; }
 
+let fundo:HTMLCanvasElement|null=null;
+/** Estilo pronto usado por um texto: o do próprio bloco, senão o do projeto. "simples" (ou nada) = texto simples com cor e fundo do bloco. */
+export function estiloDe(p:Proj,x:ClipT){ const id=x.estilo||p.legenda||''; return id&&id!=='simples'?captionPresets.find(c=>c.id===id)||null:null; }
 export function desenharProj(ctx:CanvasRenderingContext2D,p:Proj,t:number){
   const W=ctx.canvas.width, H=ctx.canvas.height; ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
   const vs=p.clips.filter((c):c is ClipV=>c.faixa==='video');
   const pinta=(c:ClipV,alpha:number)=>{ const m=c.midia?midias.get(c.midia):undefined; const pr=Math.min(1,Math.max(0,(t-c.ini)/Math.max(0.1,c.dur)));
-    ctx.save(); ctx.filter=c.brilho!==100||c.contraste!==100||c.saturacao!==100?`brightness(${c.brilho}%) contrast(${c.contraste}%) saturate(${c.saturacao}%)`:'none';
-    if(m) cobrir(ctx,m.el,W,H,c.anim,pr,alpha); else{ ctx.globalAlpha=alpha; ctx.fillStyle='#16161d'; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; }
-    ctx.restore(); };
+    const ef=c.efeito||'nenhum', tc=t-c.ini; const f=[c.brilho!==100?`brightness(${c.brilho}%)`:'',c.contraste!==100?`contrast(${c.contraste}%)`:'',c.saturacao!==100?`saturate(${c.saturacao}%)`:'',ef==='pb'?'grayscale(100%)':''].filter(Boolean).join(' ');
+    ctx.save(); ctx.filter=f||'none';
+    if(ef==='camera-shake'&&tc%4<0.22) ctx.translate(Math.sin(tc*91)*W*0.012,Math.cos(tc*77)*H*0.01);
+    if(!m){ ctx.globalAlpha=alpha; ctx.fillStyle='#16161d'; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; }
+    else if(ef==='blur-background'){
+      // Fundo: a própria imagem bem pequena e ampliada (desfoque barato, não trava a gravação). Frente: a imagem inteira.
+      const b=(fundo ||= document.createElement('canvas')); b.width=Math.max(16,Math.round(W/24)); b.height=Math.max(16,Math.round(H/24)); const bx=b.getContext('2d')!; bx.filter='blur(2px)'; cobrir(bx,m.el,b.width,b.height,'parado',0,1);
+      ctx.globalAlpha=alpha; ctx.imageSmoothingQuality='high'; ctx.drawImage(b,-W*0.04,-H*0.04,W*1.08,H*1.08); ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,0,W,H);
+      const iw=(m.el as HTMLVideoElement).videoWidth||(m.el as HTMLImageElement).naturalWidth||W, ih=(m.el as HTMLVideoElement).videoHeight||(m.el as HTMLImageElement).naturalHeight||H;
+      const k=Math.min(W/iw,H/ih)*(c.anim==='zoom-in'?1+0.06*pr:c.anim==='zoom-out'?1.06-0.06*pr:1); ctx.drawImage(m.el,(W-iw*k)/2,(H-ih*k)/2,iw*k,ih*k); ctx.globalAlpha=1; }
+    else cobrir(ctx,m.el,W,H,c.anim,pr,alpha);
+    ctx.restore();
+    if(ef==='vinheta'){ const g=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.35,W/2,H/2,Math.hypot(W,H)/2); g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,`rgba(0,0,0,${0.7*alpha})`); ctx.fillStyle=g; ctx.fillRect(0,0,W,H); }
+    if(ef==='transicao-fade'){ const a=Math.max(0,1-tc/0.4,1-(c.dur-tc)/0.4); if(a>0){ ctx.fillStyle=`rgba(0,0,0,${Math.min(1,a)*alpha})`; ctx.fillRect(0,0,W,H); } }
+    if(ef==='virada-cena'&&tc>=0&&tc<0.35){ ctx.fillStyle=`rgba(255,255,255,${(1-tc/0.35)*alpha})`; ctx.fillRect(0,0,W,H); } };
   const c=clipVideoEm(vs,t);
   if(c){ const tr=Math.min(0.4,c.dur/2); const ant=c.entrada==='fade'&&t-c.ini<tr?clipVideoEm(vs.filter(x=>x.id!==c.id),c.ini-0.001):undefined;
     if(ant){ pinta(ant,1); pinta(c,(t-c.ini)/tr); } else pinta(c,1); }
   for(const x of p.clips) if(x.faixa==='texto'&&ativo(x,t)&&x.texto.trim()){
+    const pre=estiloDe(p,x);
+    if(pre){ const k=W/TAMANHO[p.formato][0]*x.tam/100; ctx.save(); ctx.scale(k,k); const w2=W/k, h2=H/k; if(x.pos==='topo') ctx.translate(0,-h2*0.34);
+      drawCaption(ctx,{...pre,position:x.pos==='baixo'?'bottom':'center'},x.texto,t-x.ini,x.dur,w2,h2); ctx.restore(); continue; }
     const fs=Math.round(Math.min(W,H)*0.052*x.tam/100); ctx.font=`800 ${fs}px ${FONT_STACK}`; ctx.textAlign='center'; ctx.lineJoin='round';
     const ls=quebrar(ctx,x.texto,W*0.84).slice(0,5); const alt=ls.length*fs*1.2;
     const y0=x.pos==='topo'?H*0.12:x.pos==='meio'?H/2-alt/2+fs:H*(H>W?0.8:0.86)-alt+fs;
