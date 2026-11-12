@@ -9,7 +9,7 @@ import { useApp } from '../state';
 import { baixar } from '../lib/exporter';
 import { uid, store } from '../lib/store';
 import {
-  EMOCOES, MODELOS_TTS, aplicarFicha, rotuloIntensidade, vozAleatoria, generoDaVoz, type Genero, lerFichas, vozDoNome, VOZES_TTS, descreverVoz, gerarVoz, lerRoteiro, listar, montarEpisodio, nomeTake, novoPersonagem, pedidoTTS, rotulo, salvar, salvarVarios, apagar, srt,
+  EMOCOES, MODELOS_TTS, aplicarFicha, rotuloIntensidade, vozAleatoria, generoDaVoz, type Genero, lerFichas, vozDoNome, VOZES_TTS, descreverVoz, gerarVoz, lerRoteiro, listar, montarEpisodio, previaTempo, nomeTake, novoPersonagem, pedidoTTS, rotulo, salvar, salvarVarios, apagar, srt,
   type FichaLida, type Fala, type LinhaRoteiro, type Personagem, type Projeto, type Take,
 } from '../lib/vozes';
 
@@ -32,7 +32,7 @@ export default function Vozes(){
   const [pers,setPers]=useState<Personagem[]>([]);
   const [falas,setFalas]=useState<Fala[]>([]);
   const [takes,setTakes]=useState<Take[]>([]);
-  const [aba,setAba]=useState<Aba>('elenco');
+  const [aba,setAba]=useState<Aba>('elenco'); const [labPid,setLabPid]=useState('');
   const [carregado,setCarregado]=useState(false);
   const [ocupado,setOcupado]=useState<{txt:string;pct:number}|null>(null); const parar=useRef(false);
   const [gerando,setGerando]=useState<string>('');   // id da fala ou 'lab'
@@ -160,8 +160,8 @@ export default function Vozes(){
    </section>
    {semChave}
    {ocupado&&<div className="dl-box"><div className="row"><Loader2 size={16} className="spin"/><span><b>{ocupado.txt}</b> {ocupado.pct}%</span><button className="subtle sm" onClick={()=>{ parar.current=true; }}>Parar</button></div><div className="dl-bar"><i style={{width:Math.max(3,ocupado.pct)+'%'}}/></div></div>}
-   {aba==='elenco'&&<Elenco elenco={elenco} aleatoria={async(g:Genero)=>{ const n=elenco.length+1; const p=await addPersonagem(g==='feminina'?`PERSONAGEM ${n} (F)`:g==='masculina'?`PERSONAGEM ${n} (M)`:`PERSONAGEM ${n}`); mudarPersonagem(p.id,{...vozAleatoria(g),genero:g==='feminina'?'mulher':g==='masculina'?'homem':''}); toast('Voz sorteada. Dê um nome e teste no Laboratório; não gostou, toque em Sortear outra.','ok'); }} importar={importarFichas} comIA={fichasComIA} add={addPersonagem} mudar={mudarPersonagem} apagar={apagarPersonagem} testar={()=>setAba('lab')}/>}
-   {aba==='lab'&&<Lab elenco={elenco} takes={meusTakes.filter(t=>!t.falaId)} gerando={gerando==='lab'} gerar={async(p,txt,dir,vozB)=>{
+   {aba==='elenco'&&<Elenco elenco={elenco} aleatoria={async(g:Genero)=>{ const n=elenco.length+1; const p=await addPersonagem(g==='feminina'?`PERSONAGEM ${n} (F)`:g==='masculina'?`PERSONAGEM ${n} (M)`:`PERSONAGEM ${n}`); mudarPersonagem(p.id,{...vozAleatoria(g),genero:g==='feminina'?'mulher':g==='masculina'?'homem':''}); toast('Voz sorteada. Dê um nome e teste no Laboratório; não gostou, toque em Sortear outra.','ok'); }} importar={importarFichas} comIA={fichasComIA} add={addPersonagem} mudar={mudarPersonagem} apagar={apagarPersonagem} testar={id=>{ setLabPid(id); setAba('lab'); }}/>}
+   {aba==='lab'&&<Lab pid={labPid} setPid={setLabPid} elenco={elenco} takes={meusTakes.filter(t=>!t.falaId)} gerando={gerando==='lab'} gerar={async(p,txt,dir,vozB)=>{
       setGerando('lab');
       try{ await gerarTake(p,txt,dir); if(vozB&&vozB!==p.voz) await gerarTake(p,txt,dir,'',vozB); toast(vozB?'Dois takes prontos para comparar.':'Take pronto. Ouça abaixo.','ok'); }
       catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } finally{ setGerando(''); }
@@ -200,7 +200,7 @@ export default function Vozes(){
 }
 
 // ================= Elenco =================
-function Elenco({elenco,add,mudar,apagar,testar,importar,comIA,aleatoria}:{aleatoria:(g:Genero)=>Promise<void>;elenco:Personagem[];add:()=>void;mudar:(id:string,p:Partial<Personagem>)=>void;apagar:(p:Personagem)=>void;testar:()=>void;importar:(f:FichaLida[])=>Promise<void>;comIA:(t:string)=>Promise<FichaLida[]>}){
+function Elenco({elenco,add,mudar,apagar,testar,importar,comIA,aleatoria}:{aleatoria:(g:Genero)=>Promise<void>;elenco:Personagem[];add:()=>void;mudar:(id:string,p:Partial<Personagem>)=>void;apagar:(p:Personagem)=>void;testar:(id:string)=>void;importar:(f:FichaLida[])=>Promise<void>;comIA:(t:string)=>Promise<FichaLida[]>}){
   const {toast}=useApp();
   const [abrir,setAbrir]=useState(false); const [txt,setTxt]=useState(''); const [lidas,setLidas]=useState<FichaLida[]|null>(null); const [lendo,setLendo]=useState(false);
   async function ler(){
@@ -258,15 +258,15 @@ function Elenco({elenco,add,mudar,apagar,testar,importar,comIA,aleatoria}:{aleat
      <span className="pct-row"><input type="range" min={0} max={100} step={1} value={p.intensidade??50} onChange={e=>mudar(p.id,{intensidade:+e.target.value})}/><input type="number" min={0} max={100} value={p.intensidade??50} onChange={e=>mudar(p.id,{intensidade:Math.max(0,Math.min(100,+e.target.value||0))})} aria-label="intensidade em %"/></span></label>
     <label className="mt">Descrição e direção permanente<textarea rows={3} value={p.descricao} placeholder="Ex.: voz encorpada e cinematográfica, ironia seca e discreta; sem tom publicitário." onChange={e=>mudar(p.id,{descricao:e.target.value})}/></label>
     <details className="mt"><summary>Ver o que vai para o Gemini</summary><p className="hint">{descreverVoz(p)}</p></details>
-    <div className="row-gap left mt"><button className="subtle sm" onClick={testar}><FlaskConical size={14}/> Testar no Laboratório</button><button className="subtle sm" onClick={()=>mudar(p.id,vozAleatoria(generoDaVoz(p.voz),p.voz))} title="Sorteia outra voz do mesmo gênero e novos ajustes"><Dices size={14}/> Sortear outra</button><button className="subtle sm" onClick={()=>apagar(p)}><Trash2 size={14}/> Apagar</button></div>
+    <div className="row-gap left mt"><button className="subtle sm" onClick={()=>testar(p.id)}><FlaskConical size={14}/> Testar no Laboratório</button><button className="subtle sm" onClick={()=>mudar(p.id,vozAleatoria(generoDaVoz(p.voz),p.voz))} title="Sorteia outra voz do mesmo gênero e novos ajustes"><Dices size={14}/> Sortear outra</button><button className="subtle sm" onClick={()=>apagar(p)}><Trash2 size={14}/> Apagar</button></div>
    </article>)}</div>
   </section>;
 }
 
 // ================= Laboratório =================
 const FRASE_TESTE='Olá! Esta é a minha voz. Escute com atenção... porque o que vem agora vai mudar tudo.';
-function Lab({elenco,takes,gerando,gerar,aprovar,nota,apagarTake,usarAjustes,add}:{elenco:Personagem[];takes:Take[];gerando:boolean;gerar:(p:Personagem,txt:string,dir:string,vozB:string)=>void;aprovar:(t:Take)=>void;nota:(t:Take,n:string)=>void;apagarTake:(t:Take)=>void;usarAjustes:(t:Take)=>void;add:()=>void}){
-  const [pid,setPid]=useState(elenco[0]?.id||''); const p=elenco.find(x=>x.id===pid)||elenco[0];
+function Lab({pid,setPid,elenco,takes,gerando,gerar,aprovar,nota,apagarTake,usarAjustes,add}:{pid:string;setPid:(id:string)=>void;elenco:Personagem[];takes:Take[];gerando:boolean;gerar:(p:Personagem,txt:string,dir:string,vozB:string)=>void;aprovar:(t:Take)=>void;nota:(t:Take,n:string)=>void;apagarTake:(t:Take)=>void;usarAjustes:(t:Take)=>void;add:()=>void}){
+  const p=elenco.find(x=>x.id===pid)||elenco[0];
   const [txt,setTxt]=useState(FRASE_TESTE);
   useEffect(()=>{ if(p?.testes?.length) setTxt(p.testes[0]); },[p?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [dir,setDir]=useState(''); const [vozB,setVozB]=useState('');
@@ -393,6 +393,8 @@ function Roteiro({pid,elenco,roteiro,takes,gerando,ocupado,aplicar,mudarFala,ger
 }
 
 // ================= Arquivo final =================
+/** Lê "10", "9:30" ou "9,5" como segundos. */
+function lerTempo(t:string){ const v=t.trim().replace(',','.'); if(!v) return 0; const m=v.match(/^(\d+):(\d{1,2})$/); if(m) return +m[1]*60+ +m[2]; const n=parseFloat(v); return Number.isFinite(n)&&n>0?n*60:0; }
 function Final({projeto,elenco,roteiro,takes,nomes,irRoteiro}:{projeto:string;elenco:Personagem[];roteiro:Fala[];takes:Take[];nomes:Record<string,string>;irRoteiro:()=>void}){
   const {toast}=useApp();
   const [pausaIni,setPausaIni]=useState(0.3); const [comNome,setComNome]=useState(true);
@@ -405,7 +407,16 @@ function Final({projeto,elenco,roteiro,takes,nomes,irRoteiro}:{projeto:string;el
   const slug=projeto.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-|-$/g,'').toLowerCase()||'projeto';
   const assinatura=roteiro.map(f=>f.id+f.pausa+f.personagemId).join()+'|'+takes.filter(t=>t.aprovado).map(t=>t.id).join();
   useEffect(()=>{ setRes(null); },[assinatura]);
-  async function montar(){ setMontando(true); try{ setRes(await montarEpisodio(roteiro,takes,nomes,pausaIni)); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } finally{ setMontando(false); } }
+  const chaveMeta='studio_vozes_meta_'+slug;
+  const [metaTxt,setMetaTxt]=useState(()=>{ try{ return localStorage.getItem(chaveMeta)||''; }catch{ return ''; } });
+  const [maxVel,setMaxVel]=useState(1.25);
+  useEffect(()=>{ try{ localStorage.setItem(chaveMeta,metaTxt); }catch{ /* sem armazenamento */ } },[metaTxt,chaveMeta]);
+  const alvo=lerTempo(metaTxt);
+  useEffect(()=>{ setRes(null); },[metaTxt,maxVel]);
+  const prev=previaTempo(roteiro,takes,pausaIni);
+  const pausasTot=roteiro.filter(f=>f.tipo==='fala'||f.tipo==='som').reduce((a,f)=>a+(Number.isFinite(f.pausa)?f.pausa:0.4),0);
+  const minimo=prev.total-prev.fala+prev.fala/maxVel-pausasTot*0.65;
+  async function montar(){ setMontando(true); try{ setRes(await montarEpisodio(roteiro,takes,nomes,pausaIni,alvo?{alvo,maxVel}:undefined)); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } finally{ setMontando(false); } }
   async function zip(){
     if(!res) return; const z=new JSZip();
     z.file(`${slug}-completo.wav`,res.wav); z.file(`${slug}.srt`,srt(res.manifesto,comNome)); z.file(`${slug}-manifesto.json`,JSON.stringify({projeto,duracao:+res.duracao.toFixed(3),falas:res.manifesto},null,2));
@@ -426,9 +437,20 @@ function Final({projeto,elenco,roteiro,takes,nomes,irRoteiro}:{projeto:string;el
     <label>Silêncio no começo (s)<input type="number" min={0} max={10} step={0.1} value={pausaIni} onChange={e=>setPausaIni(Math.max(0,+e.target.value))}/></label>
     <label className="check"><input type="checkbox" checked={comNome} onChange={e=>setComNome(e.target.checked)}/> Legenda com o nome de quem fala</label>
    </div>
+   <div className="tempo-meta mt">
+    <h3>Tempo do vídeo</h3>
+    <p className="previa-tempo"><b>Prévia:</b> cerca de <b>{fmt(prev.total)}</b> de áudio ({fmt(prev.fala)} só de falas{prev.faltam?`, ${prev.faltam} sem take ainda`:''}).</p>
+    <div className="small-grid">
+     <label>Quanto o vídeo precisa ter (minutos)<input value={metaTxt} placeholder="ex.: 10 ou 9:30 (vazio = sem limite)" onChange={e=>setMetaTxt(e.target.value)} aria-label="Tempo do vídeo"/></label>
+     <label>Acelerar a fala no máximo<select value={maxVel} onChange={e=>setMaxVel(+e.target.value)}><option value={1.1}>1,10x (quase não se nota)</option><option value={1.2}>1,20x</option><option value={1.25}>1,25x (recomendado)</option><option value={1.35}>1,35x</option><option value={1.5}>1,50x (bem rápido)</option></select></label>
+    </div>
+    {alvo>0&&(prev.total<=alvo?<p className="hint ok-txt">Cabe no tempo: sobra {fmt(alvo-prev.total)}. Nada será cortado.</p>
+     :<p className="hint">Passa {fmt(prev.total-alvo)} do tempo. Ao montar, o site corta o silêncio das pontas das falas, encurta as pausas e, se ainda precisar, acelera a fala (sem mudar o tom) até {String(maxVel).replace('.',',')}x.{minimo>alvo?` Atenção: mesmo no máximo deve ficar perto de ${fmt(minimo)}. Aumente a aceleração ou tire algumas falas.`:''}</p>)}
+   </div>
    <button className="primary lg mt" disabled={montando||semAprov.length===falasR.length} onClick={montar}>{montando?<Loader2 size={17} className="spin"/>:<Package size={17}/>} Montar o áudio do episódio</button>
    {res&&<div className="final-ok mt">
     <p><b>Pronto:</b> {res.manifesto.filter(m=>m.tipo!=='som').length} falas{res.manifesto.some(m=>m.tipo==='som')?` e ${res.manifesto.filter(m=>m.tipo==='som').length} sons`:''} • {fmt(res.duracao)} de áudio{res.faltando.length?` • ${res.faltando.length} faltando`:''}</p>
+    {res.ajuste&&res.ajuste.passos.length>0&&<div className={'ajuste-tempo '+(res.ajuste.bateu?'ok':'')}><b>{res.ajuste.bateu?'Ajustado para caber no tempo':'Ainda passou do tempo'}:</b> {fmt(res.ajuste.original)} → {fmt(res.ajuste.final)} (meta {fmt(res.ajuste.alvo)})<ul>{res.ajuste.passos.map(x=><li key={x}>{x}</li>)}</ul>{!res.ajuste.bateu&&<small>Aumente a aceleração máxima ou tire algumas falas do roteiro.</small>}</div>}
     <Audio blob={res.wav}/>
     <div className="row-gap left mt">
      <button className="primary" onClick={()=>baixar(res.wav,`${slug}-completo.wav`)}><Download size={15}/> Áudio completo (WAV)</button>

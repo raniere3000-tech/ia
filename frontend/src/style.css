@@ -357,3 +357,10 @@ a.subtle.sm{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
 .fala.som{border-left:3px solid var(--accent,#7c5cff);}
 .fala.som .fala-top input.grow{flex:1;min-width:0;}
 .som-prev{font-style:italic;opacity:.85;}
+.tempo-meta{border:1px solid var(--line,#2a2a3a);border-radius:12px;padding:12px 14px;}
+.tempo-meta h3{margin:0 0 6px;font-size:15px;}
+.previa-tempo{margin:0 0 10px;}
+.ok-txt{color:#4ade80;}
+.ajuste-tempo{margin:8px 0;padding:10px 12px;border-radius:10px;background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.35);}
+.ajuste-tempo.ok{background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.35);}
+.ajuste-tempo ul{margin:6px 0 4px 18px;padding:0;}

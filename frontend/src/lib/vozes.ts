@@ -244,15 +244,73 @@ export async function lerWav(b:Blob){
 }
 
 /** Junta os takes aprovados na ordem do roteiro, com a pausa de cada fala. Devolve o WAV e o manifesto. */
-export async function montarEpisodio(falas:Fala[],takes:Take[],nomes:Record<string,string>,pausaInicial=0.3){
+function fmtSeg(s:number){ const t=Math.round(s); return t>=60?`${Math.floor(t/60)} min ${t%60} s`:`${t} s`; }
+/** Tira o silêncio do começo e do fim de um take (deixa uma folguinha). */
+export function aparar(x:Float32Array,rate:number){
+  let pico=0; for(const v of x) pico=Math.max(pico,Math.abs(v)); if(!pico) return x;
+  const lim=Math.max(0.006,pico*0.03), jan=Math.round(rate*0.01), folga=Math.round(rate*0.04);
+  const forte=(i:number)=>{ let m=0; for(let k=i;k<Math.min(x.length,i+jan);k++) m=Math.max(m,Math.abs(x[k])); return m>lim; };
+  let a=0; while(a<x.length&&!forte(a)) a+=jan; let b=x.length; while(b>a&&!forte(Math.max(0,b-jan))) b-=jan;
+  a=Math.max(0,a-folga); b=Math.min(x.length,b+folga);
+  return b-a<x.length?x.slice(a,b):x;
+}
+/** Deixa a fala mais rápida sem mudar o tom da voz (WSOLA). f=1.2 → 20% mais rápido. */
+export function acelerar(x:Float32Array,f:number){
+  if(f<=1.005||x.length<4096) return x;
+  const N=1024,Hs=512,Ha=Hs*f,tol=192; const nOut=Math.floor(x.length/f);
+  const out=new Float32Array(nOut+N); const w=new Float32Array(N); for(let i=0;i<N;i++) w[i]=0.5-0.5*Math.cos(2*Math.PI*i/N);
+  let prev=0;
+  for(let k=0;k*Hs<nOut;k++){
+    const ideal=Math.round(k*Ha); let pos=Math.min(ideal,x.length-N);
+    if(k>0){ const nat=prev+Hs; let best=-Infinity;
+      for(let d=-tol;d<=tol;d+=2){ const c=ideal+d; if(c<0||c+N>x.length) continue; let sc=0; for(let i=0;i<N/2;i+=4) sc+=x[c+i]*x[nat+i]; if(sc>best){ best=sc; pos=c; } } }
+    if(pos<0) break;
+    const o=k*Hs; for(let i=0;i<N&&pos+i<x.length&&o+i<out.length;i++) out[o+i]+=x[pos+i]*w[i];
+    prev=pos;
+  }
+  return out.slice(0,nOut);
+}
+/** Prévia do tempo total pelo tamanho dos takes aprovados (sem montar). */
+export function previaTempo(falas:Fala[],takes:Take[],pausaInicial=0.3){
+  const ordem=falas.filter(f=>f.tipo==='fala'||f.tipo==='som').sort((a,b)=>a.ordem-b.ordem);
+  let o=pausaInicial, fim=0, fala=0, faltam=0;
+  for(const f of ordem){ const t=takes.find(x=>x.falaId===f.id&&x.aprovado); if(!t){ faltam++; continue; }
+    fim=Math.max(fim,o+t.duracao); if(f.tipo==='fala') fala+=t.duracao;
+    o+=(f.tipo==='som'&&f.sobrepor?0:t.duracao)+(Number.isFinite(f.pausa)&&f.pausa>=0?f.pausa:0.4); }
+  return {total:Math.max(o,fim),fala,faltam};
+}
+export type AjusteTempo={alvo:number;original:number;final:number;passos:string[];velocidade:number;bateu:boolean};
+
+export async function montarEpisodio(falas:Fala[],takes:Take[],nomes:Record<string,string>,pausaInicial=0.3,meta?:{alvo:number;maxVel:number}){
   const ordem=falas.filter(f=>f.tipo==='fala'||f.tipo==='som').sort((a,b)=>a.ordem-b.ordem);
   const partes:{f:Fala;t:Take;s:Float32Array;rate:number}[]=[];
   for(const f of ordem){ const t=takes.find(x=>x.falaId===f.id&&x.aprovado); if(!t) continue; const {samples,rate}=await lerWav(t.wav); partes.push({f,t,s:samples,rate}); }
   const rate=partes[0]?.rate||24000;
   // Takes com taxa diferente são reamostrados; pausa inválida vira 0,4 s.
   for(const p of partes){ if(p.rate!==rate&&p.rate>0){ const r=p.rate/rate, n=Math.floor(p.s.length/r), o=new Float32Array(n); for(let i=0;i<n;i++) o[i]=p.s[Math.min(p.s.length-1,Math.floor(i*r))]; p.s=o; p.rate=rate; } }
-  const pausa=(f:Fala)=>Number.isFinite(f.pausa)&&f.pausa>=0?f.pausa:0.4;
+  const pausaBase=(f:Fala)=>Number.isFinite(f.pausa)&&f.pausa>=0?f.pausa:0.4;
   pausaInicial=Number.isFinite(pausaInicial)&&pausaInicial>=0?pausaInicial:0.3;
+  let fatorPausa=1; const pausa=(f:Fala)=>pausaBase(f)*fatorPausa;
+  // Meta de tempo: 1) tira silêncio das pontas das falas, 2) encurta as pausas, 3) acelera a fala sem mudar o tom.
+  let ajuste:AjusteTempo|undefined;
+  const medir=()=>{ let o=pausaInicial*rate, fim=0; for(const p of partes){ fim=Math.max(fim,o+p.s.length); o+=(p.f.tipo==='som'&&p.f.sobrepor?0:p.s.length)+pausa(p.f)*rate; } return Math.max(o,fim)/rate; };
+  if(meta&&meta.alvo>0){
+    const original=medir(); const passos:string[]=[]; let velocidade=1;
+    if(original>meta.alvo){
+      for(const p of partes) if(p.f.tipo==='fala') p.s=aparar(p.s,rate);
+      let agora=medir(); if(original-agora>0.5) passos.push(`silêncio das pontas das falas cortado (−${fmtSeg(original-agora)})`);
+      if(agora>meta.alvo){ const antes=agora; pausaInicial=Math.min(pausaInicial,0.2);
+        const somaP=partes.reduce((a,p)=>a+pausaBase(p.f),0);
+        if(somaP>0){ fatorPausa=Math.max(0.35,1-(agora-meta.alvo)/somaP); }
+        agora=medir(); if(antes-agora>0.5) passos.push(`pausas encurtadas para ${Math.round(fatorPausa*100)}% (−${fmtSeg(antes-agora)})`); }
+      if(agora>meta.alvo){ const antes=agora;
+        const fala=partes.filter(p=>p.f.tipo==='fala').reduce((a,p)=>a+p.s.length,0)/rate;
+        const resto=agora-fala; velocidade=Math.min(meta.maxVel,fala/Math.max(0.1,meta.alvo-resto));
+        if(meta.alvo-resto<=0) velocidade=meta.maxVel;
+        if(velocidade>1.005){ for(const p of partes) if(p.f.tipo==='fala') p.s=acelerar(p.s,velocidade); agora=medir(); passos.push(`falas ${velocidade.toFixed(2).replace('.',',')}x mais rápidas, sem mudar o tom (−${fmtSeg(antes-agora)})`); } else velocidade=1; }
+      ajuste={alvo:meta.alvo,original,final:agora,passos,velocidade,bateu:agora<=meta.alvo+0.5};
+    } else ajuste={alvo:meta.alvo,original,final:original,passos:[],velocidade:1,bateu:true};
+  }
   // Som com "toca junto" não empurra a próxima fala: começa junto com ela.
   const avanco=(p:{f:Fala;s:Float32Array})=>(p.f.tipo==='som'&&p.f.sobrepor?0:p.s.length)+Math.round(pausa(p.f)*rate);
   let total=Math.round(pausaInicial*rate), fimMax=0; { let o=total; for(const p of partes){ fimMax=Math.max(fimMax,o+p.s.length); o+=avanco(p); } total=Math.max(o,fimMax); }
@@ -265,7 +323,7 @@ export async function montarEpisodio(falas:Fala[],takes:Take[],nomes:Record<stri
     off+=avanco(p);
   }
   let pico=0; for(const v of out) pico=Math.max(pico,Math.abs(v)); if(pico>1) for(let i=0;i<out.length;i++) out[i]/=pico;
-  return {wav:wav(out,rate),manifesto,duracao:total/rate,faltando:ordem.filter(f=>!partes.some(p=>p.f.id===f.id))};
+  return {wav:wav(out,rate),manifesto,duracao:total/rate,faltando:ordem.filter(f=>!partes.some(p=>p.f.id===f.id)),ajuste};
 }
 
 /** Legenda .srt do episódio montado (personagem: fala). */
