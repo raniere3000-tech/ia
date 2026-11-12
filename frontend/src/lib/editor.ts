@@ -13,7 +13,14 @@ export type ClipV = Base&{faixa:'video';midia:string;de:number;anim:Anim;entrada
 export type ClipT = Base&{faixa:'texto';texto:string;pos:'topo'|'meio'|'baixo';tam:number;cor:string;fundo:boolean};
 export type ClipA = Base&{faixa:'narracao'|'trilha'|'efeito';fonte:string;nome:string;de:number;fonteDur:number;vol:number;fadeIn:number;fadeOut:number;loop:boolean};
 export type Clip = ClipV|ClipT|ClipA;
-export type Proj = {clips:Clip[];formato:Formato;abaixarTrilha:boolean};
+export type FaixaAudio = 'narracao'|'trilha'|'efeito';
+/** Camada inteira: volume geral, mudo e "só esta". */
+export type Camada = {vol:number;mudo:boolean;solo:boolean};
+export type Proj = {clips:Clip[];formato:Formato;abaixarTrilha:boolean;mix?:Partial<Record<FaixaAudio,Camada>>};
+export const CAMADAS:[FaixaAudio,string][] = [['narracao','Vozes'],['trilha','Música'],['efeito','Efeitos']];
+export const camadaDe = (p:Proj,f:FaixaAudio):Camada=>({vol:100,mudo:false,solo:false,...p.mix?.[f]});
+/** Ganho final da camada (0 quando está muda ou quando outra camada está em "só esta"). */
+export function ganhoCamada(p:Proj,f:FaixaAudio){ const c=camadaDe(p,f); const algumSolo=CAMADAS.some(([k])=>camadaDe(p,k).solo); return c.mudo||(algumSolo&&!c.solo)?0:Math.max(0,c.vol)/100; }
 
 export const novoId = ()=>Math.random().toString(36).slice(2,9);
 export const fimDe = (c:Clip)=>c.ini+c.dur;
@@ -42,6 +49,17 @@ export async function bufferDe(fonte:string,arquivos:Arquivo[]):Promise<AudioBuf
   if(fonte.startsWith('site:')){ const desc=fonte.slice(5); const g=await gerarSom(desc,'site'); return audioDe({id:fonte,blob:g.wav,nome:desc}); }
   const a=arquivos.find(x=>x.id===fonte); return a?audioDe(a):null;
 }
+/** Desenho da onda de cada som (40 picos por segundo), guardado para não recalcular. */
+export type Picos = {p:Float32Array;dur:number;max:number};
+const PICOS=new Map<string,Promise<Picos|null>>(); export const PPS_ONDA=40;
+export function picosDe(fonte:string,arquivos:Arquivo[]):Promise<Picos|null>{
+  if(!fonte.startsWith('site:')&&!arquivos.some(a=>a.id===fonte)) return Promise.resolve(null);
+  let r=PICOS.get(fonte);
+  if(!r){ r=(async()=>{ try{ const b=await bufferDe(fonte,arquivos); if(!b) return null; const d=b.getChannelData(0); const h=Math.max(1,Math.floor(b.sampleRate/PPS_ONDA)); const n=Math.ceil(d.length/h); const p=new Float32Array(n); let max=0.001;
+      for(let i=0;i<n;i++){ let m=0; const f=Math.min(d.length,(i+1)*h); for(let k=i*h;k<f;k+=4){ const v=Math.abs(d[k]); if(v>m) m=v; } p[i]=m; if(m>max) max=m; }
+      return {p,dur:b.duration,max}; }catch{ return null; } })(); PICOS.set(fonte,r); r.then(x=>{ if(!x) PICOS.delete(fonte); }); }
+  return r;
+}
 /** Descobre a duração dos sons feitos pelo site (para o tamanho do bloco na linha do tempo). */
 export async function acertarDuracoes(p:Proj,arquivos:Arquivo[]):Promise<Proj|null>{
   let mudou=false; const clips:Clip[]=[];
@@ -62,6 +80,14 @@ export function dividir(p:Proj,id:string,t:number):Proj{
   return {...p,clips:p.clips.flatMap(x=>x.id===id?[a,b]:[x])};
 }
 export function duplicar(p:Proj,id:string):Proj{ const c=p.clips.find(x=>x.id===id); if(!c) return p; return {...p,clips:[...p.clips,{...c,id:novoId(),ini:+fimDe(c).toFixed(3)} as Clip]}; }
+/** Depois de mudar o fim de um bloco, leva junto tudo que começava dali em diante. */
+export function empurrar(p:Proj,id:string,fimAntigo:number,delta:number):Proj{ if(Math.abs(delta)<0.001) return p; return {...p,clips:p.clips.map(c=>c.id!==id&&c.ini>=fimAntigo-0.01?{...c,ini:+Math.max(0,c.ini+delta).toFixed(3)} as Clip:c)}; }
+/** Coloca um vídeo pronto na linha do tempo, com o som dele numa camada própria para poder mexer. */
+export function clipsDeVideo(a:Arquivo,ini:number,temSom:boolean):Clip[]{
+  const d=Math.max(0.5,a.duracao||3); const r:Clip[]=[{faixa:'video',id:novoId(),ini,dur:d,midia:a.id,de:0,anim:'parado' as Anim,entrada:'corte',brilho:100,contraste:100,saturacao:100}];
+  if(temSom) r.push({faixa:'narracao',id:novoId(),ini,dur:d,fonte:a.id,nome:'Som de '+a.nome,de:0,fonteDur:d,vol:100,fadeIn:0,fadeOut:0,loop:false});
+  return r;
+}
 export function apagar(p:Proj,id:string):Proj{ return {...p,clips:p.clips.filter(x=>x.id!==id)}; }
 /** Limite do corte pela direita: sons sem repetição não passam do fim do arquivo. */
 export function durMax(c:Clip){ return ehAudio(c)&&!c.loop&&c.fonteDur>0?Math.max(0.1,c.fonteDur-c.de):600; }
@@ -107,12 +133,13 @@ export async function mixarProj(p:Proj,arquivos:Arquivo[],onStatus:(t:string)=>v
   for(const a of as) if(!bufs.has(a.fonte)){ onStatus('Preparando o som: '+a.nome); try{ bufs.set(a.fonte,await bufferDe(a.fonte,arquivos)); }catch{ bufs.set(a.fonte,null); } }
   // Onde tem voz (para abaixar a trilha).
   const passo=0.05, nP=Math.ceil(total/passo); const fala=new Uint8Array(nP);
-  if(p.abaixarTrilha) for(const a of as.filter(x=>x.faixa==='narracao')){ const b=bufs.get(a.fonte); if(!b) continue; const d=b.getChannelData(0); const h=Math.round(passo*b.sampleRate);
+  if(p.abaixarTrilha&&ganhoCamada(p,'narracao')>0) for(const a of as.filter(x=>x.faixa==='narracao')){ const b=bufs.get(a.fonte); if(!b) continue; const d=b.getChannelData(0); const h=Math.round(passo*b.sampleRate);
     for(let i=0;i*passo<a.dur;i++){ const s0=Math.floor((a.de+i*passo)*b.sampleRate); let m=0; for(let k=s0;k<Math.min(d.length,s0+h);k+=8) m=Math.max(m,Math.abs(d[k])); if(m>0.04){ const q=Math.floor((a.ini+i*passo)/passo); for(let x=q-3;x<=q+4;x++) if(x>=0&&x<nP) fala[x]=1; } } }
   for(const a of as){
     const b=bufs.get(a.fonte); if(!b||a.dur<0.05) continue;
     const n=c.createBufferSource(); n.buffer=b; const g=c.createGain(); n.connect(g).connect(comp);
-    const vol=Math.max(0,a.vol)/100, ini=a.ini, fim=a.ini+a.dur;
+    const gc=ganhoCamada(p,a.faixa); if(gc<=0) continue;
+    const vol=Math.max(0,a.vol)/100*gc, ini=a.ini, fim=a.ini+a.dur;
     const fi=Math.min(a.fadeIn,a.dur/2), fo=Math.min(a.fadeOut,a.dur/2);
     g.gain.setValueAtTime(fi>0?0:vol,ini); if(fi>0) g.gain.linearRampToValueAtTime(vol,ini+fi);
     if(a.faixa==='trilha'&&p.abaixarTrilha){ let ult=-1; for(let q=Math.ceil((ini+fi+0.05)/passo);q<Math.floor((fim-fo-0.05)/passo);q++){ const st=fala[q]; if(st!==ult){ g.gain.setTargetAtTime(st?vol*0.35:vol,q*passo,st?0.06:0.25); ult=st; } } }

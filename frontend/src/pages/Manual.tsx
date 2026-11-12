@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clapperboard, Download, FileText, ImagePlus, Loader2, Mic, Music, Play, Sparkles, Square, Trash2, Volume2, Wand2, SlidersHorizontal, RotateCcw, ListChecks } from 'lucide-react';
+import { ChevronDown, FileText, ImagePlus, Loader2, Mic, Music, Play, Sparkles, Trash2, Volume2, Wand2, SlidersHorizontal, RotateCcw, ListChecks, Settings2 } from 'lucide-react';
 import { useApp } from '../state';
-import { baixar } from '../lib/exporter';
 import { transcrever, transcreverGemini } from '../lib/transcribe';
 import type { Cue } from '../lib/captions';
 import EditorVideo from '../components/EditorVideo';
 import { deSinc, type Proj } from '../lib/editor';
 import {
-  ANIMS, MODELO_ROTEIRO, OPCOES_PADRAO, TAMANHO, apagarArquivo, audioDe, batidas, conferirImagensIA, desenhar, gravar, guardarArquivo, lerQuadros,
-  listarArquivos, midias, mixar, mono16k, narracoesDe, prepararMidia, reencadear, sincronizar, sincronizarVideos, tocar,
-  type Anim, type Arquivo, type Formato, type Opcoes, type Sessao, type Sinc, type TipoArq,
+  MODELO_ROTEIRO, OPCOES_PADRAO, apagarArquivo, audioDe, batidas, conferirImagensIA, guardarArquivo, lerQuadros,
+  listarArquivos, midias, mono16k, narracoesDe, prepararMidia, sincronizar,
+  type Arquivo, type Formato, type Opcoes, type Sinc, type TipoArq,
 } from '../lib/montagem';
 
 const CHAVE='studio_manual';
@@ -30,13 +29,16 @@ export default function Manual(){
   const [texto,setTexto]=useState(ini.texto); const [o,setO]=useState<Opcoes>(ini.o);
   const [sinc,setSinc]=useState<Sinc|null>(ini.sinc); const [cues,setCues]=useState<{de:string;lista:Cue[]}|null>(ini.cues?{de:ini.cuesDe,lista:ini.cues}:null);
   const [arqs,setArqs]=useState<Arquivo[]>([]); const [carregado,setCarregado]=useState(false);
-  const [usarIA,setUsarIA]=useState(false); const [ocupado,setOcupado]=useState(''); const [audio,setAudio]=useState<AudioBuffer|null>(null);
+  const [usarIA,setUsarIA]=useState(false); const [ocupado,setOcupado]=useState('');
   const [proj,setProj]=useState<Proj|null>(()=>{ try{ return JSON.parse(localStorage.getItem(CHAVE+'_editor')||'null'); }catch{ return null; } });
   const [versao,setVersao]=useState(0);
   const salvarProj=(n:Proj|null)=>{ try{ if(n) localStorage.setItem(CHAVE+'_editor',JSON.stringify(n)); else localStorage.removeItem(CHAVE+'_editor'); }catch{ /* cheio */ } };
-  function abrirEditor(){ if(!sinc) return; parar(); const n=deSinc(sinc,arqs,o); setProj(n); salvarProj(n); setVersao(v=>v+1); setTimeout(()=>document.querySelector('.ed')?.scrollIntoView({behavior:'smooth'}),100); }
-  const [tempo,setTempo]=useState(0); const [tocando,setTocando]=useState(false); const [video,setVideo]=useState<{url:string;blob:Blob;ext:string}|null>(null);
-  const cv=useRef<HTMLCanvasElement>(null); const sessao=useRef<Sessao|null>(null);
+  // "editado" = a pessoa já mexeu no editor à mão; daí uma sincronização nova não troca o projeto sozinha.
+  const [editado,setEditadoS]=useState(()=>{ try{ const v=localStorage.getItem(CHAVE+'_editado'); return v==null?!!localStorage.getItem(CHAVE+'_editor'):v==='1'; }catch{ return false; } });
+  const setEditado=(v:boolean)=>{ setEditadoS(v); try{ localStorage.setItem(CHAVE+'_editado',v?'1':'0'); }catch{ /* cheio */ } };
+  const [pendente,setPendente]=useState(false);
+  const [aba,setAba]=useState<''|'roteiro'|'arquivos'|'conferencia'|'opcoes'>(ini.sinc||proj?'':'roteiro');
+  function abrirEditor(s:Sinc|null=sinc,lista:Arquivo[]=arqs){ if(!s) return; const n=deSinc(s,lista,o); setProj(n); salvarProj(n); setEditado(false); setPendente(false); setVersao(v=>v+1); setTimeout(()=>document.querySelector('.ed')?.scrollIntoView({behavior:'smooth',block:'start'}),100); }
   const quadros=useMemo(()=>lerQuadros(texto),[texto]);
   // Associações escolhidas à mão na conferência (por número do quadro). "-" = sem imagem.
   const [manual,setManual]=useState<Record<number,string>>(()=>{ try{ return JSON.parse(localStorage.getItem(CHAVE+'_manual')||'{}')||{}; }catch{ return {}; } });
@@ -50,26 +52,21 @@ export default function Manual(){
   const tocarArq=(id:string)=>{ const a=arqs.find(x=>x.id===id); if(!a) return; ouvindo.current?.pause(); const el=new Audio(URL.createObjectURL(a.blob)); ouvindo.current=el; el.play().catch(()=>{}); };
   const ouvindo=useRef<HTMLAudioElement|null>(null);
 
-  useEffect(()=>{ (async()=>{ try{ const l=await listarArquivos(); for(const a of l) if(a.tipo==='quadro'){ try{ await prepararMidia(a); }catch{ /* arquivo estragado */ } } setArqs(l); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } setCarregado(true); })(); },[]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{ (async()=>{ try{ const l=await listarArquivos(); for(const a of l) if(a.tipo==='quadro'){ try{ await prepararMidia(a); }catch{ /* arquivo estragado */ } } setArqs(l);
+    if(ini.sinc&&!proj){ const n=deSinc(ini.sinc,l,ini.o); setProj(n); salvarProj(n); setEditado(false); } }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } setCarregado(true); })(); },[]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{ try{ localStorage.setItem(CHAVE,JSON.stringify({texto,o,sinc,cues:cues?.lista||null,cuesDe:cues?.de||''})); }catch{ /* cheio */ } },[texto,o,sinc,cues]);
-  useEffect(()=>{ setAudio(null); },[sinc,o.volTrilha,arqs]);
-  useEffect(()=>()=>{ sessao.current?.parar(); },[]);
-  // Prévia parada: desenha o quadro no tempo escolhido.
-  useEffect(()=>{ const c=cv.current; if(!c||!sinc||tocando) return; const [w,h]=TAMANHO[o.formato]; c.width=w/2; c.height=h/2; const x=c.getContext('2d')!;
-    sincronizarVideos(sinc,tempo,false); const t=setTimeout(()=>desenhar(x,sinc,Math.min(tempo,Math.max(0,sinc.total-0.01)),o),60); desenhar(x,sinc,Math.min(tempo,Math.max(0,sinc.total-0.01)),o); return ()=>clearTimeout(t); },[sinc,tempo,o,tocando,arqs]);
-
-  async function enviar(tipo:TipoArq,fs:FileList|null){
-    if(!fs?.length) return; const novos:Arquivo[]=[]; const erros:string[]=[];
+  async function enviar(tipo:TipoArq,fs:FileList|null,doEditor=false):Promise<Arquivo[]>{
+    if(!fs?.length) return []; const novos:Arquivo[]=[]; const erros:string[]=[];
     for(const f of Array.from(fs)){ setOcupado(`Guardando ${f.name}`); try{ novos.push(await guardarArquivo(f,tipo)); }catch(e){ erros.push(e instanceof Error?e.message:String(e)); } }
     setOcupado(''); setArqs(x=>[...x,...novos]);
-    if(erros.length) toast(erros.slice(0,2).join(' | '),'erro'); else toast(`${novos.length} arquivo(s) guardados. Quando terminar de enviar, toque em Analisar e sincronizar.`,'ok');
+    if(erros.length) toast(erros.slice(0,2).join(' | '),'erro'); else if(!doEditor) toast(`${novos.length} arquivo(s) guardados. Quando terminar de enviar, toque em Analisar e sincronizar.`,'ok');
+    return novos;
   }
   async function remover(a:Arquivo){ await apagarArquivo(a.id); setArqs(x=>x.filter(y=>y.id!==a.id)); }
   async function limpar(tipo:TipoArq){ for(const a of arqs.filter(x=>x.tipo===tipo)) await apagarArquivo(a.id); setArqs(x=>x.filter(y=>y.tipo!==tipo)); }
 
   async function analisar(){
     if(!quadros.length){ toast('Cole o roteiro de quadros primeiro.','erro'); return; }
-    parar();
     try{
       const nars=arqs.filter(a=>a.tipo==='narracao'); let lista:Cue[]|null=null;
       if(nars.length===1&&quadros.some(q=>q.falas.length)){
@@ -88,43 +85,40 @@ export default function Manual(){
         else{ setOcupado('A IA está olhando as imagens'); try{ ia=await conferirImagensIA(settings.geminiKey,quadros,arqs.filter(a=>a.tipo==='quadro')); }catch(e){ toast('A IA não conseguiu conferir as imagens: '+(e instanceof Error?e.message:String(e)),'info'); } } }
       const s=sincronizar({quadros,arquivos:arqs,cues:lista,batidas:bt,opcoes:o,imagensIA:ia,manual:{midia:manual}});
       if(ia?.size) s.notas.unshift(`A IA escolheu a imagem de ${ia.size} quadro(s) pelo que aparece nelas.`);
-      setSinc(s); setTempo(0); setVideo(null); setAssinaturaSinc(assinatura); try{ localStorage.setItem(CHAVE+'_ass',assinatura); }catch{ /* cheio */ }
-      toast(`Pronto: ${s.quadros.length} quadros em ${fmt(s.total)}. Confira a linha do tempo e toque em Prévia.`,'ok');
+      setSinc(s); setAssinaturaSinc(assinatura); try{ localStorage.setItem(CHAVE+'_ass',assinatura); }catch{ /* cheio */ }
+      if(proj&&editado&&proj.clips.length){ setPendente(true); toast(`Sincronizei ${s.quadros.length} quadros em ${fmt(s.total)}. Como você já editou o vídeo, o editor ficou como estava. Toque em "Usar a nova sincronização" se quiser trocar.`,'info'); }
+      else{ abrirEditor(s); setAba(''); toast(`Pronto: ${s.quadros.length} quadros em ${fmt(s.total)}. Já está no editor aqui embaixo: toque em ▶ para ver.`,'ok'); }
     }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
     finally{ setOcupado(''); }
   }
-  async function garantirAudio(){ if(!sinc) return null; if(audio) return audio; setOcupado('Preparando o áudio'); try{ const a=await mixar(sinc,arqs,o,t=>setOcupado(t)); setAudio(a); return a; } finally{ setOcupado(''); } }
-  function parar(){ sessao.current?.parar(); sessao.current=null; setTocando(false); }
-  async function previa(de=0){
-    if(!sinc||!cv.current) return; parar();
-    try{ const a=await garantirAudio(); const [w,h]=TAMANHO[o.formato]; cv.current.width=w/2; cv.current.height=h/2;
-      setTocando(true); const se=tocar(cv.current,sinc,a,o,{inicio:de,onTempo:setTempo}); sessao.current=se; se.fim.then(()=>{ if(sessao.current===se){ sessao.current=null; setTocando(false); } }); }
-    catch(e){ setTocando(false); toast(e instanceof Error?e.message:String(e),'erro'); }
-  }
-  async function gerarVideo(){
-    if(!sinc) return; parar();
-    try{ const a=await garantirAudio(); setOcupado('Gravando o vídeo: 0%');
-      const r=await gravar(sinc,a,o,t=>setOcupado(`Gravando o vídeo: ${Math.min(99,Math.round(t/sinc.total*100))}% (grava em tempo real, deixe esta aba aberta)`));
-      if(video) URL.revokeObjectURL(video.url); setVideo({url:URL.createObjectURL(r.blob),blob:r.blob,ext:r.ext}); toast('Vídeo pronto. Baixe logo abaixo.','ok'); }
-    catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
-    finally{ setOcupado(''); }
-  }
-  const mudarQ=(i:number,p:Partial<Sinc['quadros'][number]>)=>{ if(!sinc) return; const qs=sinc.quadros.map((q,k)=>k===i?{...q,...p}:q); setSinc(p.dur!=null?reencadear({...sinc,quadros:qs}):{...sinc,quadros:qs}); };
-  const mudarSom=(i:number,j:number,p:Partial<Sinc['quadros'][number]['sons'][number]>)=>{ if(!sinc) return; mudarQ(i,{sons:sinc.quadros[i].sons.map((s,k)=>k===j?{...s,...p}:s)}); };
-  const imgs=arqs.filter(a=>a.tipo==='quadro'), efs=arqs.filter(a=>a.tipo==='efeito');
+  const imgs=arqs.filter(a=>a.tipo==='quadro');
   const nome=(id:string)=>arqs.find(a=>a.id===id)?.nome||'';
   const resumo=`${quadros.length} quadros • ${quadros.reduce((a,q)=>a+q.falas.length,0)} falas • ${quadros.reduce((a,q)=>a+q.sons.length,0)} efeitos • ${quadros.filter(q=>q.trilha).length} marcações de trilha`;
 
+  const nAvisos=rascunho?rascunho.quadros.filter(q=>q.avisos?.length).length:0;
+  const ABAS:[typeof aba,string,typeof FileText,string][]=[['roteiro','Roteiro',FileText,quadros.length?`${quadros.length} quadros`:'colar'],['arquivos','Arquivos',ImagePlus,arqs.length?`${arqs.length}`:'enviar'],['conferencia','Conferência',ListChecks,rascunho?(nAvisos?`${nAvisos} aviso(s)`:'tudo certo'):'—'],['opcoes','Opções',Settings2,o.formato]];
+  const vazio:Proj={clips:[],formato:o.formato,abaixarTrilha:true};
+
   return <div className="manual">
-   <section className="panel">
-    <div className="section-head"><h2><FileText size={18}/> 1. Roteiro de quadros</h2><button className="subtle sm" onClick={()=>setTexto(t=>t.trim()?t:MODELO_ROTEIRO)} disabled={!!texto.trim()}>Usar modelo</button></div>
+   <section className="panel prep">
+    <div className="prep-topo">
+     <div className="prep-abas" role="tablist" aria-label="Preparar">{ABAS.map(([k,n,I,r])=><button key={k} role="tab" aria-selected={aba===k} className={aba===k?'on':''} onClick={()=>setAba(a=>a===k?'':k)} data-aba={k}><I size={15}/> {n}<small>{r}</small></button>)}</div>
+     <button className="primary" disabled={!!ocupado||!quadros.length} onClick={analisar} title={quadros.length?'':'Cole o roteiro de quadros primeiro'}>{ocupado?<Loader2 size={16} className="spin"/>:<Wand2 size={16}/>} Analisar e sincronizar</button>
+     {aba&&<button className="icon-btn" onClick={()=>setAba('')} aria-label="Recolher" title="Recolher"><ChevronDown size={16}/></button>}
+    </div>
+    {!aba&&<p className="hint prep-dica">{sinc?`Sincronizado: ${sinc.quadros.length} quadros em ${fmt(sinc.total)}. Toque em uma parte acima para mudar o roteiro, os arquivos ou as opções.`:quadros.length?'Roteiro lido. Envie os arquivos e toque em Analisar e sincronizar. O resultado abre no editor aqui embaixo.':'Cole o roteiro e envie os arquivos para o site montar tudo, ou vá direto ao editor abaixo e abra um vídeo pronto.'}</p>}
+    {ocupado&&<p className="hint mt"><Loader2 size={14} className="spin"/> {ocupado}</p>}
+    {pendente&&<p className="conf-aviso mt">A sincronização nova está pronta, mas o editor ainda mostra a sua edição. <button className="link-btn" onClick={()=>abrirEditor()}>Usar a nova sincronização</button> (a edição feita à mão é trocada).</p>}
+    {sinc&&!editado&&assinaturaSinc&&assinaturaSinc!==assinatura&&<p className="conf-aviso mt">⚠ O roteiro, os arquivos ou as escolhas mudaram depois da última sincronização. Toque em Analisar e sincronizar de novo para o editor usar o que está na conferência.</p>}
+    {sinc&&sinc.notas.length>0&&aba!==''&&<ul className="manual-notas">{sinc.notas.map(n=><li key={n}>{n}</li>)}</ul>}
+
+    <div className="prep-corpo" hidden={aba!=='roteiro'}>
+     <div className="row-gap left"><button className="subtle sm" onClick={()=>setTexto(t=>t.trim()?t:MODELO_ROTEIRO)} disabled={!!texto.trim()}>Usar modelo</button></div>
     <p className="hint">Um bloco por quadro, começando com <b>QUADRO 1</b>. Dentro: <b>VISUAL:</b> o que aparece, falas <b>NOME: texto</b>, <b>[SOM: porta batendo]</b> (com <b>@1.5</b> para tocar 1,5 s depois do início do quadro), <b>[TRILHA: tensa]</b>, <b>MOVIMENTO: aproximar</b> e, se quiser, o tempo no título: <b>QUADRO 2 (0:04–0:09)</b> ou <b>(4 s)</b>. Sem tempo, o site calcula pela narração, pelos vídeos ou pela duração padrão.</p>
     <textarea className="roteiro-quadros" rows={12} value={texto} onChange={e=>setTexto(e.target.value)} placeholder={MODELO_ROTEIRO} aria-label="Roteiro de quadros"/>
     {quadros.length>0&&<p className="hint">Li: <b>{resumo}</b></p>}
-   </section>
-
-   <section className="panel">
-    <div className="section-head"><h2><ImagePlus size={18}/> 2. Arquivos</h2></div>
+    </div>
+    <div className="prep-corpo" hidden={aba!=='arquivos'}>
     {!carregado&&<p className="hint"><Loader2 size={14} className="spin"/> Abrindo os arquivos guardados...</p>}
     <div className="manual-areas">{AREAS.map(([tipo,tit,acc,dica,I])=>{ const l=arqs.filter(a=>a.tipo===tipo); return <div key={tipo} className="manual-area">
      <div className="manual-area-top"><b><I size={15}/> {tit}</b>{l.length>0&&<button className="link-btn" onClick={()=>limpar(tipo)}>Tirar todos</button>}</div>
@@ -132,11 +126,11 @@ export default function Manual(){
      <label className="subtle sm vc-upload mt">Enviar<input type="file" accept={acc} multiple hidden data-area={tipo} onChange={e=>{ enviar(tipo,e.target.files); e.target.value=''; }}/></label>
      {l.length>0&&<ul className="manual-lista">{l.map(a=><li key={a.id}>{a.tipo==='quadro'&&midias.get(a.id)?.tipo==='imagem'?<img src={(midias.get(a.id)!.el as HTMLImageElement).src} alt=""/>:null}<span title={a.nome}>{a.nome}</span><small>{a.duracao?fmt(a.duracao):''}</small><button className="icon-btn" onClick={()=>remover(a)} aria-label={'Tirar '+a.nome}><Trash2 size={13}/></button></li>)}</ul>}
     </div>; })}</div>
-   </section>
-
-   {rascunho&&<section className="panel">
-    <div className="section-head"><h2><ListChecks size={18}/> 3. Conferência por quadro</h2>
-     <span className="hint">{rascunho.quadros.length} quadros • {rascunho.quadros.filter(q=>q.avisos?.length).length} com aviso</span></div>
+    </div>
+    <div className="prep-corpo" hidden={aba!=='conferencia'}>
+     {!rascunho&&<p className="hint">Cole o roteiro para ver aqui o que vai em cada quadro.</p>}
+     {rascunho&&<>
+     <div className="section-head"><span className="hint">{rascunho.quadros.length} quadros • {nAvisos} com aviso</span></div>
     <p className="hint">Veja o que vai em cada quadro antes de sincronizar. Para trocar a imagem, escolha outra na lista: não precisa renomear nem enviar de novo. A prévia e o vídeo final usam exatamente estas escolhas.</p>
     <div className="row-gap left"><label className="check"><input type="checkbox" checked={soAvisos} onChange={e=>setSoAvisos(e.target.checked)}/> Mostrar só os quadros com aviso</label>
      {Object.keys(manual).length>0&&<button className="link-btn" onClick={()=>setManual({})}>Voltar tudo para o automático</button>}</div>
@@ -156,10 +150,10 @@ export default function Manual(){
        {q.avisos?.map(a=><p key={a} className="conf-aviso">⚠ {a}</p>)}
       </div>
      </article>; })}</div>
-   </section>}
-
-   <section className="panel">
-    <div className="section-head"><h2><Wand2 size={18}/> 4. Analisar e sincronizar</h2></div>
+     </>}
+    </div>
+    <div className="prep-corpo" hidden={aba!=='opcoes'}>
+     <p className="hint">Valem para a próxima sincronização. Depois, cada bloco pode ser ajustado no editor.</p>
     <div className="small-grid">
      <label>Formato<select value={o.formato} onChange={e=>setO({...o,formato:e.target.value as Formato})}><option value="9:16">Vertical 9:16 (Reels, TikTok, Shorts)</option><option value="16:9">Horizontal 16:9 (YouTube)</option><option value="1:1">Quadrado 1:1</option></select></label>
      <label>Duração padrão do quadro (s)<input type="number" min={0.5} max={60} step={0.5} value={o.durPadrao} onChange={e=>setO({...o,durPadrao:Math.max(0.5,+e.target.value||3)})}/></label>
@@ -172,55 +166,15 @@ export default function Manual(){
      <label className="check"><input type="checkbox" checked={o.naBatida} onChange={e=>setO({...o,naBatida:e.target.checked})}/> Cortar na batida da música (quando não há narração)</label>
      <label className="check"><input type="checkbox" checked={usarIA} onChange={e=>setUsarIA(e.target.checked)}/> <Sparkles size={13}/> IA confere qual imagem é de cada quadro (Gemini)</label>
     </div>
-    <button className="primary lg mt" disabled={!!ocupado||!quadros.length} onClick={analisar}>{ocupado?<Loader2 size={17} className="spin"/>:<Wand2 size={17}/>} Analisar e sincronizar</button>
-    {ocupado&&<p className="hint mt"><Loader2 size={14} className="spin"/> {ocupado}</p>}
-    {sinc&&assinaturaSinc&&assinaturaSinc!==assinatura&&<p className="conf-aviso mt">⚠ O roteiro, os arquivos ou as escolhas mudaram depois da última sincronização. Toque em Analisar e sincronizar de novo para a prévia e o vídeo usarem o que está na conferência.</p>}
-    {sinc&&sinc.notas.length>0&&<ul className="manual-notas">{sinc.notas.map(n=><li key={n}>{n}</li>)}</ul>}
+    </div>
    </section>
 
-   {sinc&&<section className="panel">
-    <div className="section-head"><h2><Clapperboard size={18}/> 5. Linha do tempo e vídeo</h2><span className="hint">{sinc.quadros.length} quadros • {fmt(sinc.total)}{sinc.narracao!=='nenhuma'?` • narração ${sinc.narracao==='unica'?'em um arquivo':'por quadro'}`:''}{sinc.trilhas.length?` • ${sinc.trilhas.length} trilha(s)`:''}</span></div>
-    <div className="manual-player">
-     <canvas ref={cv} className={'manual-canvas f'+o.formato.replace(':','x')}/>
-     <div className="manual-ctl">
-      <input type="range" min={0} max={sinc.total} step={0.05} value={Math.min(tempo,sinc.total)} onChange={e=>{ parar(); setTempo(+e.target.value); }} aria-label="Posição"/>
-      <span className="hint">{fmt(tempo)} / {fmt(sinc.total)}</span>
-      <div className="row-gap left">
-       {tocando?<button className="subtle" onClick={parar}><Square size={15}/> Parar</button>:<button className="subtle" disabled={!!ocupado} onClick={()=>previa(tempo>=sinc.total-0.1?0:tempo)}><Play size={15}/> Prévia com som</button>}
-       <button className="primary" disabled={!!ocupado} onClick={gerarVideo}><Clapperboard size={15}/> Gerar vídeo</button>
-      </div>
-      {video&&<div className="final-ok mt"><video src={video.url} controls className="manual-video"/><button className="primary mt" onClick={()=>baixar(video.blob,`montagem-${o.formato.replace(':','x')}.${video.ext}`)}><Download size={15}/> Baixar vídeo ({video.ext.toUpperCase()})</button></div>}
-     </div>
-    </div>
-    <div className="manual-quadros">{sinc.quadros.map((q,i)=>{ const m=q.midia?midias.get(q.midia):undefined; const ativo=tempo>=q.ini&&tempo<q.ini+q.dur;
-     return <article key={i} className={'manual-q'+(ativo?' on':'')}>
-      <button className="manual-thumb" onClick={()=>{ parar(); setTempo(q.ini+Math.min(0.5,q.dur/2)); }} title="Ver este quadro">{m?.tipo==='imagem'?<img src={(m.el as HTMLImageElement).src} alt=""/>:m?<span>vídeo</span>:<span>sem imagem</span>}</button>
-      <div className="manual-q-info">
-       <b>Quadro {q.n}{q.titulo?` — ${q.titulo}`:''}</b>
-       <small>{fmt(q.ini)} – {fmt(q.ini+q.dur)}{q.visual?` • ${q.visual.slice(0,90)}`:''}</small>
-       <div className="manual-q-ctl">
-        <label className="manual-num">Dura<input type="number" min={0.3} max={120} step={0.1} value={+q.dur.toFixed(2)} onChange={e=>mudarQ(i,{dur:Math.max(0.3,+e.target.value||0.3)})} aria-label={`Duração do quadro ${q.n}`}/>s</label>
-        <select value={q.midia} onChange={e=>mudarQ(i,{midia:e.target.value})} aria-label={`Imagem do quadro ${q.n}`}><option value="">Sem imagem</option>{imgs.map(a=><option key={a.id} value={a.id}>{a.nome}</option>)}</select>
-        <select value={q.anim} onChange={e=>mudarQ(i,{anim:e.target.value as Anim})} aria-label={`Movimento do quadro ${q.n}`}>{ANIMS.map(([k,n])=><option key={k} value={k}>{n}</option>)}</select>
-        <button className="link-btn" onClick={()=>previa(q.ini)} disabled={!!ocupado}>▶ tocar daqui</button>
-       </div>
-       {q.legenda.length>0&&<small className="manual-fala">“{q.legenda.map(l=>l.texto).join(' ')}”</small>}
-       {q.sons.map((s,j)=><div key={j} className="manual-som"><Volume2 size={13}/><span>{s.desc}</span>
-        <select value={s.arquivo} onChange={e=>mudarSom(i,j,{arquivo:e.target.value})} aria-label={`Arquivo do som ${s.desc}`}><option value="">Feito pelo site</option>{efs.map(a=><option key={a.id} value={a.id}>{a.nome}</option>)}</select>
-        <label className="manual-num">aos<input type="number" min={0} step={0.1} value={s.em} onChange={e=>mudarSom(i,j,{em:Math.max(0,+e.target.value||0)})}/>s</label>
-        <label className="manual-num">vol<input type="number" min={0} max={200} step={5} value={s.vol} onChange={e=>mudarSom(i,j,{vol:Math.max(0,+e.target.value||0)})}/>%</label>
-       </div>)}
-      </div>
-     </article>; })}</div>
-    {sinc.trilhas.length>0&&<p className="hint mt">Trilha: {sinc.trilhas.map(t=>`${nome(t.arquivo)} (${fmt(t.ini)}–${fmt(t.fim)})`).join(' • ')}</p>}
-   </section>}
-
-   {sinc&&<section className="panel">
-    <div className="section-head"><h2><SlidersHorizontal size={18}/> 6. Editor (linha do tempo)</h2>
-     {proj?<button className="subtle sm" onClick={abrirEditor} title="Joga fora a edição e começa de novo pela sincronização"><RotateCcw size={14}/> Recomeçar pela sincronização</button>:null}</div>
-    {!proj?<><p className="hint">Abre o vídeo sincronizado numa linha do tempo com faixas de vídeo, texto, narração, trilha e efeitos. Lá você arrasta, corta, divide, coloca efeitos sonoros prontos, textos e ajusta cada parte do jeito que quiser.</p>
-     <button className="primary lg" onClick={abrirEditor}><SlidersHorizontal size={17}/> Abrir no editor</button></>
-    :carregado&&<EditorVideo key={versao} inicial={proj} arquivos={arqs} onChange={n=>{ setProj(n); salvarProj(n); }}/>}
-   </section>}
+   <section className="panel">
+    <div className="section-head"><h2><SlidersHorizontal size={18}/> Editor</h2>
+     <span className="hint">Roda tudo no seu navegador. Nada é enviado para fora.</span>
+     {sinc&&proj&&proj.clips.length>0&&<button className="subtle sm" onClick={()=>abrirEditor()} title="Joga fora a edição e começa de novo pela sincronização"><RotateCcw size={14}/> Recomeçar pela sincronização</button>}</div>
+    {!carregado?<p className="hint"><Loader2 size={14} className="spin"/> Abrindo os arquivos guardados...</p>
+     :<EditorVideo key={versao} inicial={proj||vazio} arquivos={arqs} onEnviar={(t,fs)=>enviar(t,fs,true)} onChange={(n,manual)=>{ setProj(n); salvarProj(n); if(manual&&!editado) setEditado(true); }}/>}
+   </section>
   </div>;
 }
