@@ -76,3 +76,59 @@ export function erroGemini(e:unknown){
   if(e.status===0) return e.message;
   return 'Erro do Gemini: '+e.message;
 }
+
+// ---------------------------------------------------------------- cortes direto pelo link do YouTube
+
+export type CorteLink = {inicio:number;fim:number;titulo:string;motivo:string;nota:number;gancho_texto:string};
+const SCHEMA_LINK = {type:'OBJECT',properties:{duracao_video:N,cortes:{type:'ARRAY',items:{type:'OBJECT',
+  properties:{inicio:N,fim:N,titulo:S,motivo:S,nota:N,gancho_texto:S},required:['inicio','fim','titulo','motivo','nota','gancho_texto']}}},required:['cortes']};
+
+/** O Gemini assiste o vídeo público do YouTube pelo link e devolve os melhores trechos, sem precisar baixar nada. */
+export async function acharCortesNoLink(key:string, url:string, o:{min:number;max:number;limite:number;tema?:string;pedido?:string;acao?:boolean}, onEspera?:(seg:number)=>void):Promise<CorteLink[]>{
+  const texto = `Você é um editor sênior de vídeos curtos (TikTok, Reels, Shorts). Assista a este vídeo inteiro, com imagem e áudio, e escolha os ${o.limite} melhores trechos para virar cortes.
+${o.tema?`Tema informado: ${o.tema}\n`:''}${o.pedido?`Pedido do usuário (priorize isto): ${o.pedido}\n`:''}${o.acao?'O vídeo é de gameplay ou ação: valorize jogadas, reações, sustos e viradas, mesmo com pouca fala.\n':''}
+Regras de cada corte:
+- Duração entre ${o.min} e ${o.max} segundos.
+- Quem nunca viu o vídeo entende e se importa, sem precisar do contexto anterior.
+- Começa no início de uma frase (ou da ação) e termina logo depois do fechamento: piada, lição, revelação, resposta ou reação forte. Nunca corte no meio da frase.
+- Evite abertura, despedida, propaganda, pedido de inscrição, enrolação e repetição.
+- Os cortes não podem se sobrepor. Espalhe pelo vídeo quando houver bons momentos em partes diferentes.
+- Se o vídeo tiver menos bons momentos do que o pedido, devolva menos cortes. Não invente.
+Para cada corte devolva:
+- inicio e fim: segundos desde o começo do vídeo, como número (ex.: 754.5 para 12:34,5). Não use formato de minutos.
+- nota: 0 a 99, sendo honesto (o melhor costuma ficar entre 80 e 95, os fracos abaixo de 50).
+- titulo: até 60 caracteres, em português.
+- gancho_texto: 3 a 7 palavras para aparecer escritas no topo do vídeo, sem emoji, sem hashtag.
+- motivo: 1 frase dizendo o que acontece ou é dito no trecho e por que funciona.
+Devolva também duracao_video em segundos.`;
+  const corpo = (baixa:boolean)=>({contents:[{role:'user',parts:[{file_data:{file_uri:url}},{text:texto}]}],generationConfig:{responseMimeType:'application/json',responseSchema:SCHEMA_LINK,temperature:0.3,...(baixa?{mediaResolution:'MEDIA_RESOLUTION_LOW'}:{})}});
+  const pedir = async(baixa:boolean)=>{ for(let t=0;;t++){ try{ return await chamar(key,GEMINI_MODEL+':generateContent',corpo(baixa)); }catch(e){ const ms=esperaGemini(e,t+2); if(ms==null) throw e; onEspera?.(Math.round(ms/1000)); await new Promise(r=>setTimeout(r,ms)); } } };
+  let res:any;
+  try{ res = await pedir(true); }
+  catch(e){
+    if(e instanceof ErroGemini && e.status===400 && /mediaresolution|media_resolution|unknown name/i.test(e.message)) res = await pedir(false);
+    else if(e instanceof ErroGemini && (e.status===400||e.status===403||e.status===404) && /video|youtube|url|uri|permission|private|unavailable|not found/i.test(e.message)) throw new ErroGemini(e.status,'O Gemini não conseguiu abrir este vídeo. Ele só assiste vídeos públicos do YouTube (não funciona com privado, com restrição de idade ou ao vivo em andamento). Detalhe: '+e.message.slice(0,160),'LINK');
+    else if(e instanceof ErroGemini && /token|too large|exceeds/i.test(e.message)) throw new ErroGemini(e.status,'Este vídeo é longo demais para o Gemini assistir de uma vez. Use "Mais opções" para escolher um trecho, ou baixe o vídeo e envie o arquivo.','LINK');
+    else throw e;
+  }
+  if(res.promptFeedback?.blockReason) throw new ErroGemini(200,'O Gemini recusou analisar este vídeo.','BLOCKED');
+  const cand = res.candidates?.[0];
+  const txt = (cand?.content?.parts||[]).filter((p:any)=>!p.thought).map((p:any)=>p.text||'').join('');
+  let json:any; try{ json = JSON.parse(txt); }catch{ throw new ErroGemini(200,'A resposta do Gemini veio incompleta. Tente de novo.'); }
+  return limparCortesLink(json?.cortes, o, Number(json?.duracao_video)||0);
+}
+/** Confere os tempos devolvidos pela IA: ordem, duração dentro do pedido, sem sobreposição, melhores primeiro. */
+export function limparCortesLink(lista:unknown, o:{min:number;max:number;limite:number}, duracao=0):CorteLink[]{
+  if(!Array.isArray(lista)) return [];
+  const bons:CorteLink[] = [];
+  for(const x of [...lista].sort((a:any,b:any)=>(Number(b?.nota)||0)-(Number(a?.nota)||0))){
+    let ini = Number(x?.inicio), fim = Number(x?.fim); if(!isFinite(ini)||!isFinite(fim)) continue;
+    if(duracao>0){ ini = Math.min(ini,duracao); fim = Math.min(fim,duracao); }
+    if(ini<0||fim-ini<Math.max(3,o.min*0.5)) continue;
+    if(fim-ini>o.max*1.5) fim = ini+o.max;
+    if(bons.some(b=>Math.min(b.fim,fim)-Math.max(b.inicio,ini)>2)) continue;   // já tem um corte melhor nesse pedaço
+    bons.push({inicio:+ini.toFixed(1),fim:+fim.toFixed(1),titulo:String(x.titulo||'Corte').slice(0,80),motivo:String(x.motivo||''),nota:Math.max(0,Math.min(99,Math.round(Number(x.nota)||0))),gancho_texto:String(x.gancho_texto||'')});
+    if(bons.length>=o.limite) break;
+  }
+  return bons;
+}

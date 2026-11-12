@@ -139,14 +139,14 @@ export default function Cortes(){
     return new Map(res.map(r=>[r.id,r]));
   }
 
-  function montarClips(cands:(Candidate&{id:string;titulo?:string})[],ia:Map<string,any>|null,dur:number):Clip[]{
+  function montarClips(cands:(Candidate&{id:string;titulo?:string;gancho?:string;daIA?:boolean})[],ia:Map<string,any>|null,dur:number):Clip[]{
     const out=cands.map(c=>{
       const r=ia?.get(c.id);
       const notas=r?{gancho:clamp(r.gancho),fluxo:clamp(r.fluxo),valor:clamp(r.valor),tendencia:clamp(r.tendencia)}:c.notas;
       let ini=r&&Math.abs(r.inicio-c.inicio)<=AJUSTE_MAX?Math.max(0,r.inicio):c.inicio; let fim=r&&Math.abs(r.fim-c.fim)<=AJUSTE_MAX?Math.min(dur,r.fim):c.fim;
       if(fim-ini<Math.min(5,c.fim-c.inicio)){ ini=c.inicio; fim=c.fim; }   // ajuste da IA deixou curto demais: mantém o original
       const nf=notaFinal(notas);
-      return {id:c.id,titulo:c.titulo||r?.titulo||'',marca:c.titulo,inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,nota_final:nf,nota_10:nota10(nf),motivo:r?.motivo||c.motivo,fonte:r?'ia':'heuristica',legenda:legSrc==='nenhuma'?'':settings.legendaPadrao,efeito:settings.efeitoPadrao,formato:'9:16',gancho_texto:String(r?.gancho_texto||'').replace(/[#"“”]/g,'').trim().slice(0,60)} as Clip;
+      return {id:c.id,titulo:c.titulo||r?.titulo||'',marca:c.titulo,inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,nota_final:nf,nota_10:nota10(nf),motivo:r?.motivo||c.motivo,fonte:r||c.daIA?'ia':'heuristica',legenda:legSrc==='nenhuma'?'':settings.legendaPadrao,efeito:settings.efeitoPadrao,formato:'9:16',gancho_texto:String(r?.gancho_texto||c.gancho||'').replace(/[#"“”]/g,'').trim().slice(0,60)} as Clip;
     });
     out.sort((a,b)=>b.nota_final-a.nota_final||b.notas.gancho-a.notas.gancho||a.inicio-b.inicio);
     out.forEach((c,i)=>{ if(!c.titulo) c.titulo=`Destaque ${i+1}`; });
@@ -274,7 +274,10 @@ export default function Cortes(){
       const validas=janelas.filter(m=>m.inicio<info.duration).map(m=>({...m,fim:Math.min(m.fim,info.duration)}));
       const curtas=validas.filter(m=>m.fim-m.inicio<=faixa[1]+3), longas=validas.filter(m=>m.fim-m.inicio>faixa[1]+3);
       const dasLongas=longas.flatMap(m=>gerarCandidatos(cache.energy,STEP,info.duration,modelo==='falas'?cues:cues.length?cues:[],{min:faixa[0],max:faixa[1],limite,inicio:m.inicio,fim:m.fim,sobreposicao:0.05}));
-      const cands=porMarca?[...avaliarJanelas(cache.energy,STEP,cues,curtas),...dasLongas].map(c=>({...c,id:uid()})):gerarCandidatos(cache.energy,STEP,info.duration,modelo==='falas'?cues:cues.length?cues:[],{min:faixa[0],max:faixa[1],limite,inicio:isNaN(ini)?0:ini,fim:isNaN(fimT)?0:fimT}).map(c=>({...c,id:uid()}));
+      // Trechos que a IA achou assistindo o link já vêm com nota, motivo e frase de gancho: aproveita.
+      const comLink=(l:(Candidate&{titulo?:string})[])=>manuais.length?l:l.map(c=>{ const m=marcas.find(x=>x.ia&&x.nota!=null&&Math.abs(x.inicio-c.inicio)<0.06&&Math.abs(x.fim-c.fim)<0.06); if(!m) return c; const n=m.nota!;
+        return {...c,notas:{gancho:cache.energy?Math.round((n*2+c.notas.gancho)/3):n,fluxo:n,valor:cache.energy?Math.round((n*2+c.notas.valor)/3):n,tendencia:n},motivo:m.motivo||c.motivo,gancho:m.gancho||'',daIA:true}; });
+      const cands=porMarca?[...comLink(avaliarJanelas(cache.energy,STEP,cues,curtas)),...dasLongas].map(c=>({...c,id:uid()})):gerarCandidatos(cache.energy,STEP,info.duration,modelo==='falas'?cues:cues.length?cues:[],{min:faixa[0],max:faixa[1],limite,inicio:isNaN(ini)?0:ini,fim:isNaN(fimT)?0:fimT}).map(c=>({...c,id:uid()}));
       if(!cands.length&&porMarca) throw new Error(`Os tempos ${manuais.length?'colados':'marcados'} ficam depois do fim deste vídeo (${tm(info.duration)}). Confira os tempos ou o arquivo.`);
       if(!cands.length) throw new Error('O vídeo (ou o trecho escolhido) é mais curto que a duração mínima dos cortes. Escolha uma duração menor.');
       let ia:Map<string,any>|null=null;
@@ -416,7 +419,7 @@ export default function Cortes(){
     <label className="check big auto-check"><input type="checkbox" checked={direitos} onChange={e=>setDireitos(e.target.checked)}/> <span>Declaro que tenho direito de usar e publicar os vídeos que envio (meus ou com autorização). <b>{direitos?'Pronto. Depois de escolher o vídeo, confira as opções e toque em Gerar cortes. Nada começa sozinho.':'Marque para poder gerar os cortes.'}</b></span></label>
    </section>
    <h2 className="passo-titulo">2. Envie o vídeo</h2>
-   <LinkStudio onUpload={()=>fileInput.current?.click()} onArquivo={f=>escolherArquivo(f,true)} direitos={direitos}/>
+   <LinkStudio onUpload={()=>fileInput.current?.click()} onArquivo={f=>escolherArquivo(f,true)} direitos={direitos} opcoes={{min:faixa[0],max:faixa[1],limite,tema,pedido:prompt,acao:modelo==='acao'}}/>
    
    <section className={'panel dropzone '+(drag?'drag':'')} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);escolherArquivo(e.dataTransfer.files?.[0]||null)}} onClick={()=>fileInput.current?.click()} role="button" tabIndex={0}>
     <span className="drop-icon"><Upload size={30}/></span>
