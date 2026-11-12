@@ -316,7 +316,7 @@ a.subtle.sm{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
 .vc-tema i{width:12px;height:12px;border-radius:50%;display:inline-block}
 @media(max-width:1150px){.vc-lado{position:static;order:-1}.vc{display:flex;flex-direction:column}}
 @media(max-width:600px){.vc-linha{grid-template-columns:1fr}}
-.vc-check{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#c7cde0;cursor:pointer}.vc-check input{width:18px;height:18px;accent-color:var(--brand);margin:0}
+.vc-check{display:flex;flex-direction:row;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#c7cde0;cursor:pointer}.vc-check input{width:18px;height:18px;accent-color:var(--brand);margin:0}
 /* Estúdio de vozes */
 .vozes-topo .tabs{flex-wrap:wrap}
 .fichas{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-top:12px}
@@ -346,3 +346,5 @@ a.subtle.sm{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
 .conferencia{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
 .linha-tempo{max-height:300px;overflow:auto;font-size:.88rem;display:flex;flex-direction:column;gap:4px;margin-top:6px}
 .hint.erro{color:var(--bad)}
+.vc-midia{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.vc-upload{display:inline-flex;flex-direction:row;align-items:center;gap:6px;cursor:pointer;border:1px solid var(--line2);border-radius:8px;padding:6px 10px;font-size:.85rem}

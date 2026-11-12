@@ -9,7 +9,10 @@ import { falar } from './dublagem';
 
 export const W = 1080, H = 1920, FPS = 30, RATE = 44100;
 
-export type Cena = {id:string; texto:string; destaque:string; emoji:string; numero:string; contagem:boolean};
+export type Anim = 'zoom-in'|'zoom-out'|'pan-esq'|'pan-dir'|'sobe'|'tremer'|'parado';
+export const ANIMS:[Anim,string][] = [['zoom-in','Aproximar devagar'],['zoom-out','Afastar devagar'],['pan-esq','Deslizar para a esquerda'],['pan-dir','Deslizar para a direita'],['sobe','Subir'],['tremer','Tremor (ação/susto)'],['parado','Parado']];
+export type Cena = {id:string; texto:string; destaque:string; emoji:string; numero:string; contagem:boolean; midia?:string; anim?:Anim; personagem?:string};
+export const MAX_SEG = 120;   // vídeo final e cada vídeo enviado: no máximo 2 minutos
 export type Roteiro = {titulo:string; selo:string; formato:Formato; tema:TemaId; cenas:Cena[]; legenda:string; hashtags:string[]};
 export type Formato = 'curiosidade'|'top'|'quiz'|'motivacional'|'historia'|'livre';
 export type TemaId = 'neon'|'fogo'|'oceano'|'dinheiro'|'claro';
@@ -102,20 +105,82 @@ export async function roteiroClaude(key:string,p:PedidoRoteiro,tema:TemaId){
 
 /** Narração de cada cena, com o texto e a voz usados (se o texto mudar, a voz fica velha). */
 export type Narracao = Record<string,{texto:string;voz:string;samples:Float32Array;rate:number}>;
+/** A voz de uma cena depende da voz padrão e do personagem que fala. */
+export const chaveVoz = (c:Cena,padrao:string)=>c.personagem?.trim()?`${padrao}|${c.personagem.trim().toUpperCase()}`:padrao;
+/** Gera a voz de uma cena. `falarCena` permite usar a voz do personagem (Estúdio de vozes). */
+export type FalarCena = (c:Cena,onEspera:()=>void)=>Promise<{samples:Float32Array;rate:number}>;
 
-export async function narrar(key:string,r:Roteiro,voz:string,atual:Narracao,onStatus:(s:string,pct:number)=>void):Promise<Narracao>{
+export async function narrar(key:string,r:Roteiro,voz:string,atual:Narracao,onStatus:(s:string,pct:number)=>void,falarCena?:FalarCena,refazer=false):Promise<Narracao>{
   const out:Narracao = {};
   for(let i=0;i<r.cenas.length;i++){
-    const c = r.cenas[i]; const n = atual[c.id];
-    if(n&&n.texto===c.texto&&n.voz===voz){ out[c.id]=n; continue; }
+    const c = r.cenas[i]; const n = atual[c.id]; const ch = chaveVoz(c,voz);
+    if(!refazer&&n&&n.texto===c.texto&&n.voz===ch){ out[c.id]=n; continue; }
+    if(!c.texto.trim()) continue;
     onStatus(`Gravando a voz (${i+1} de ${r.cenas.length})`,Math.round(i/r.cenas.length*100));
-    const v = await falar(key,c.texto,voz,()=>onStatus('Limite do Gemini, aguardando para continuar',Math.round(i/r.cenas.length*100)));
-    out[c.id] = {texto:c.texto,voz,samples:v.samples,rate:v.rate};
+    const espera = ()=>onStatus('Limite do Gemini, aguardando para continuar',Math.round(i/r.cenas.length*100));
+    const v = falarCena ? await falarCena(c,espera) : await falar(key,c.texto,voz,espera);
+    out[c.id] = {texto:c.texto,voz:ch,samples:v.samples,rate:v.rate};
   }
   onStatus('Voz pronta',100);
   return out;
 }
-export const vozValida = (n:Narracao|null,c:Cena,voz:string)=>!!(n&&n[c.id]&&n[c.id].texto===c.texto&&n[c.id].voz===voz);
+export const vozValida = (n:Narracao|null,c:Cena,voz:string)=>!!(n&&n[c.id]&&n[c.id].texto===c.texto&&n[c.id].voz===chaveVoz(c,voz));
+
+// ---------------------------------------------------------------- imagens e vídeos das cenas
+
+export type Midia = {id:string;nome:string;tipo:'imagem'|'video';blob:Blob;duracao:number};
+/** Imagens/vídeos carregados nesta aba, prontos para desenhar. */
+export const midias = new Map<string,{tipo:'imagem'|'video';el:HTMLImageElement|HTMLVideoElement;duracao:number;nome:string}>();
+let dbm:Promise<IDBDatabase>|null = null;
+function dbMidias(){
+  if(!dbm) dbm = new Promise((res,rej)=>{ const r=indexedDB.open('video_codigo',1); r.onupgradeneeded=()=>{ r.result.createObjectStore('midias',{keyPath:'id'}); }; r.onsuccess=()=>res(r.result); r.onerror=()=>rej(new Error('O navegador não deixou guardar as imagens (modo anônimo?).')); });
+  return dbm;
+}
+async function lojaMidia<T>(modo:IDBTransactionMode,f:(s:IDBObjectStore)=>IDBRequest|void):Promise<T>{
+  const d=await dbMidias(); return new Promise((res,rej)=>{ const t=d.transaction('midias',modo); const q=f(t.objectStore('midias')); t.oncomplete=()=>res((q as IDBRequest)?.result); t.onerror=()=>rej(t.error); });
+}
+function abrirEl(m:Midia){
+  return new Promise<{tipo:'imagem'|'video';el:HTMLImageElement|HTMLVideoElement;duracao:number;nome:string}>((res,rej)=>{
+    const url = URL.createObjectURL(m.blob);
+    if(m.tipo==='imagem'){ const i=new Image(); i.onload=()=>res({tipo:'imagem',el:i,duracao:0,nome:m.nome}); i.onerror=()=>rej(new Error('Não consegui abrir a imagem '+m.nome)); i.src=url; return; }
+    const v=document.createElement('video'); v.muted=true; v.playsInline=true; v.loop=true; v.preload='auto'; v.src=url;
+    v.onloadeddata=()=>res({tipo:'video',el:v,duracao:v.duration||m.duracao,nome:m.nome}); v.onerror=()=>rej(new Error('Não consegui abrir o vídeo '+m.nome));
+  });
+}
+/** Guarda uma imagem ou vídeo enviado (vídeo de até 2 minutos) e já deixa pronto para desenhar. */
+export async function adicionarMidia(f:File):Promise<string>{
+  const tipo = f.type.startsWith('image/')?'imagem':f.type.startsWith('video/')||/\.(mp4|mov|webm|m4v)$/i.test(f.name)?'video':null;
+  if(!tipo) throw new Error('Envie uma imagem (JPG, PNG, GIF, WEBP) ou um vídeo (MP4, MOV, WEBM).');
+  const blob = new Blob([await f.arrayBuffer()],{type:f.type||(tipo==='video'?'video/mp4':'image/png')});
+  const m:Midia = {id:novoId(),nome:f.name,tipo,blob,duracao:0};
+  const pronto = await abrirEl(m);
+  if(tipo==='video'&&pronto.duracao>MAX_SEG+0.5){ URL.revokeObjectURL(pronto.el.src); throw new Error(`O vídeo tem ${Math.round(pronto.duracao)} s. O máximo é 2 minutos.`); }
+  m.duracao = pronto.duracao;
+  await lojaMidia('readwrite',s=>{ s.put(m); });
+  midias.set(m.id,pronto);
+  return m.id;
+}
+/** Carrega do navegador as mídias usadas no roteiro (depois de recarregar a página). */
+export async function carregarMidias(r:Roteiro){
+  for(const c of r.cenas){
+    if(!c.midia||midias.has(c.midia)) continue;
+    try{ const m = await lojaMidia<Midia|undefined>('readonly',s=>s.get(c.midia!)); if(m) midias.set(m.id,await abrirEl(m)); }catch{ /* some do roteiro */ }
+  }
+}
+export const apagarMidia = (id:string)=>lojaMidia<void>('readwrite',s=>{ s.delete(id); }).then(()=>{ midias.delete(id); });
+
+/** Deixa os vídeos das cenas no ponto certo: toca o da cena atual e pausa os outros. */
+export function sincronizarMidias(r:Roteiro,ts:{ini:number;fim:number}[],t:number,tocando:boolean){
+  r.cenas.forEach((c,i)=>{
+    const m = c.midia?midias.get(c.midia):null; if(!m||m.tipo!=='video') return;
+    const v = m.el as HTMLVideoElement; const s = ts[i]; if(!s) return;
+    const atual = t>=s.ini&&t<s.fim;
+    if(!atual){ if(!v.paused) v.pause(); return; }
+    const alvo = m.duracao>0?(t-s.ini)%m.duracao:0;
+    if(tocando){ if(Math.abs(v.currentTime-alvo)>0.35) v.currentTime=alvo; if(v.paused) v.play().catch(()=>{}); }
+    else{ if(!v.paused) v.pause(); if(Math.abs(v.currentTime-alvo)>0.05) v.currentTime=alvo; }
+  });
+}
 
 /** Quanto tempo cada cena fica na tela. */
 export function tempos(r:Roteiro,nar:Narracao|null,voz:string){
@@ -123,7 +188,9 @@ export function tempos(r:Roteiro,nar:Narracao|null,voz:string){
   return r.cenas.map(c=>{
     const palavras = c.texto.split(/\s+/).filter(Boolean).length;
     const fala = vozValida(nar,c,voz) ? nar![c.id].samples.length/nar![c.id].rate : 0;
+    const m = c.midia?midias.get(c.midia):null;
     let d = fala ? fala+0.45 : Math.max(2.2,0.95+palavras*0.36);
+    if(!fala&&m?.tipo==='video') d = Math.max(d,Math.min(MAX_SEG,m.duracao));
     if(c.contagem) d = Math.max(d,fala+3.2,4.2);
     const ini = t; t += d;
     return {ini,fim:t,fala};
@@ -239,6 +306,24 @@ function caixaArredondada(ctx:CanvasRenderingContext2D,x:number,y:number,w:numbe
   ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
 }
 
+/** Imagem ou vídeo da cena, preenchendo a tela, com o movimento escolhido. */
+function desenharMidia(ctx:CanvasRenderingContext2D,el:HTMLImageElement|HTMLVideoElement,anim:Anim,lt:number,dur:number){
+  const iw = (el as HTMLVideoElement).videoWidth||(el as HTMLImageElement).naturalWidth, ih = (el as HTMLVideoElement).videoHeight||(el as HTMLImageElement).naturalHeight;
+  if(!iw||!ih) return;
+  const p = clamp01(lt/Math.max(0.1,dur));
+  let s = 1, tx = 0, ty = 0;
+  if(anim==='zoom-in') s = 1+0.16*p;
+  else if(anim==='zoom-out') s = 1.16-0.16*p;
+  else if(anim==='pan-esq'){ s = 1.18; tx = W*0.07*(1-2*p); }
+  else if(anim==='pan-dir'){ s = 1.18; tx = -W*0.07*(1-2*p); }
+  else if(anim==='sobe'){ s = 1.14; ty = H*0.05*(1-2*p); }
+  else if(anim==='tremer'){ s = 1.1; const k = Math.max(0.25,1-lt/1.2); tx = Math.sin(lt*47)*16*k; ty = Math.cos(lt*39)*12*k; }
+  const base = Math.max(W/iw,H/ih)*s; const dw = iw*base, dh = ih*base;
+  ctx.save(); ctx.globalAlpha = clamp01(lt/0.25)||0.001;
+  ctx.drawImage(el,(W-dw)/2+tx,(H-dh)/2+ty,dw,dh);
+  ctx.restore();
+}
+
 /** Desenha o quadro do tempo `t` (segundos desde o começo do vídeo). */
 export function desenhar(ctx:CanvasRenderingContext2D,r:Roteiro,ts:{ini:number;fim:number;fala:number}[],t:number,template?:Template|null,logo?:HTMLImageElement|null){
   const tm = temaDe(r.tema);
@@ -249,6 +334,13 @@ export function desenhar(ctx:CanvasRenderingContext2D,r:Roteiro,ts:{ini:number;f
   const c = r.cenas[i]; const s = ts[i];
   if(!c||!s){ ctx.restore(); return; }
   const lt = t-s.ini, dur = s.fim-s.ini;
+  const m = c.midia?midias.get(c.midia):null;
+  if(m){
+    desenharMidia(ctx,m.el,c.anim||'zoom-in',lt,dur);
+    // Escurece embaixo para a legenda ler bem.
+    const g = ctx.createLinearGradient(0,H*0.5,0,H); g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,.78)');
+    ctx.fillStyle = g; ctx.fillRect(0,H*0.5,W,H*0.5);
+  }
 
   // Barrinhas de progresso no topo (estilo stories).
   const n = ts.length, gap = 12, bx = 60, bw = (W-bx*2-gap*(n-1))/n;
@@ -275,14 +367,14 @@ export function desenhar(ctx:CanvasRenderingContext2D,r:Roteiro,ts:{ini:number;f
 
   // Número grande (Top).
   let yEmoji = H*0.33;
-  if(c.numero.trim()){
+  if(!m&&c.numero.trim()){
     ctx.save(); ctx.font = `900 230px ${FONT_STACK}`; ctx.translate(W/2,H*0.25+dy); const k = 0.6+0.4*entra; ctx.scale(k,k);
     ctx.lineWidth = 14; ctx.strokeStyle = tm.id==='claro'?'#fff':'#000'; ctx.strokeText(c.numero,0,0);
     ctx.fillStyle = tm.acento2; ctx.fillText(c.numero,0,0); ctx.restore();
     yEmoji = H*0.40;
   }
   // Emoji pulando.
-  if(c.emoji.trim()){
+  if(!m&&c.emoji.trim()){
     const pop = easeOutBack(clamp01((lt-0.05)/0.5)); const flut = Math.sin(t*2.6)*14;
     ctx.save(); ctx.translate(W/2,yEmoji+flut+dy); ctx.rotate(Math.sin(t*1.8)*0.08); ctx.scale(pop,pop);
     ctx.font = `${c.numero.trim()?190:250}px "Noto Color Emoji","Apple Color Emoji","Segoe UI Emoji",sans-serif`;
@@ -291,10 +383,17 @@ export function desenhar(ctx:CanvasRenderingContext2D,r:Roteiro,ts:{ini:number;f
 
   // Texto: palavra por palavra (no ritmo da fala, se houver).
   const ps = palavras(c);
-  let fs = 92; ctx.font = `900 ${fs}px ${FONT_STACK}`;
+  let fs = m?70:92; ctx.font = `900 ${fs}px ${FONT_STACK}`;
   let linhas = quebrar(ctx,ps,W*0.84);
-  while(linhas.length>5&&fs>56){ fs-=6; ctx.font=`900 ${fs}px ${FONT_STACK}`; linhas=quebrar(ctx,ps,W*0.84); }
-  const lh = fs*1.22, yTexto = (c.numero.trim()||c.emoji.trim()?H*0.6:H*0.48)-(linhas.length-1)*lh/2+dy;
+  while(linhas.length>(m?4:5)&&fs>(m?46:56)){ fs-=6; ctx.font=`900 ${fs}px ${FONT_STACK}`; linhas=quebrar(ctx,ps,W*0.84); }
+  const lh = fs*1.22, yTexto = m ? H*0.82-(linhas.length-1)*lh+dy : (c.numero.trim()||c.emoji.trim()?H*0.6:H*0.48)-(linhas.length-1)*lh/2+dy;
+  // Nome de quem fala, acima do texto.
+  const quem = c.personagem?.trim();
+  if(quem){
+    ctx.save(); ctx.font = `900 ${Math.round(fs*0.6)}px ${FONT_STACK}`; const nw = ctx.measureText(quem.toUpperCase()).width+44; const ny = yTexto-lh*0.95;
+    ctx.fillStyle = tm.acento2; caixaArredondada(ctx,W/2-nw/2,ny-fs*0.42,nw,fs*0.84,14); ctx.fill();
+    ctx.fillStyle = tm.id==='claro'?'#fff':'#0b0b12'; ctx.fillText(quem.toUpperCase(),W/2,ny+3); ctx.restore();
+  }
   const janela = s.fala ? s.fala*0.92 : Math.min(dur*0.55,ps.length*0.2);
   const passo = ps.length?janela/ps.length:0;
   const esp = ctx.measureText(' ').width;
@@ -382,7 +481,8 @@ export function tocar(canvas:HTMLCanvasElement,r:Roteiro,ts:{ini:number;fim:numb
   const quadro = ()=>{
     if(parado) return;
     const t = ac.currentTime-t0;
-    if(t>=total){ desenhar(ctx,r,ts,total-0.001,o.template,o.logo); gravouAteOFim = true; encerrar(); return; }
+    if(t>=total){ desenhar(ctx,r,ts,total-0.001,o.template,o.logo); gravouAteOFim = true; sincronizarMidias(r,ts,-1,false); encerrar(); return; }
+    sincronizarMidias(r,ts,Math.max(0,t),true);
     desenhar(ctx,r,ts,Math.max(0,t),o.template,o.logo); o.onTempo?.(t); o.onPct?.(Math.min(99,Math.round(t/total*100)));
   };
   const loop = ()=>{ quadro(); if(!parado) raf = requestAnimationFrame(loop); };
@@ -395,7 +495,7 @@ export function tocar(canvas:HTMLCanvasElement,r:Roteiro,ts:{ini:number;fim:numb
     t0 = ac.currentTime+0.05; fonte?.start(t0);
     loop();
   })();
-  return {parar:()=>{ encerrar(); },fim};
+  return {parar:()=>{ sincronizarMidias(r,ts,-1,false); encerrar(); },fim};
 }
 
 /** Grava o vídeo inteiro e devolve o arquivo. */

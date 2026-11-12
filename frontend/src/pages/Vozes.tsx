@@ -5,7 +5,7 @@ import { useApp } from '../state';
 import { baixar } from '../lib/exporter';
 import { uid, store } from '../lib/store';
 import {
-  EMOCOES, MODELOS_TTS, VOZES_TTS, descreverVoz, gerarVoz, lerRoteiro, listar, montarEpisodio, nomeTake, novoPersonagem, pedidoTTS, rotulo, salvar, salvarVarios, apagar, srt,
+  EMOCOES, MODELOS_TTS, vozDoNome, VOZES_TTS, descreverVoz, gerarVoz, lerRoteiro, listar, montarEpisodio, nomeTake, novoPersonagem, pedidoTTS, rotulo, salvar, salvarVarios, apagar, srt,
   type Fala, type LinhaRoteiro, type Personagem, type Projeto, type Take,
 } from '../lib/vozes';
 
@@ -233,8 +233,8 @@ function Roteiro({pid,elenco,roteiro,takes,gerando,ocupado,aplicar,mudarFala,ger
     <button className="primary mt" disabled={!texto.trim()} onClick={()=>{ toastMsg(''); ler(); }}><Wand2 size={15}/> Ler roteiro</button>
     {prev&&<div className="prev-roteiro mt">
      <h3>Prévia: {prev.filter(x=>x.tipo==='fala').length} falas, {prev.filter(x=>x.tipo==='acao').length} ações</h3>
-     <p className="hint">Confira quem fala. Nomes do roteiro que não existem no elenco viram personagens novos.</p>
-     <div className="mapa">{Object.keys(mapa).map(n=><label key={n}><b>{n}</b> ({prev.filter(x=>x.nome===n).length} falas)<select value={mapa[n]} onChange={e=>setMapa(m=>({...m,[n]:e.target.value}))}><option value="__novo">Criar personagem novo “{n}”</option>{elenco.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select></label>)}</div>
+     <p className="hint">Confira quem fala. Nome igual a um personagem do elenco usa a voz dele. Nome igual a uma voz do Gemini (ex.: CHARON) cria o personagem com essa voz. Os outros viram personagens novos.</p>
+     <div className="mapa">{Object.keys(mapa).map(n=><label key={n}><b>{n}</b> ({prev.filter(x=>x.nome===n).length} falas)<select value={mapa[n]} onChange={e=>setMapa(m=>({...m,[n]:e.target.value}))}><option value="__novo">Criar personagem novo “{n}”{vozDoNome(n)?` com a voz ${vozDoNome(n)}`:''}</option>{elenco.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select></label>)}</div>
      <div className="prev-lista">{prev.map((l,i)=><div key={i} className={'prev-linha '+l.tipo}><small>{l.cena}</small>{l.tipo==='fala'?<span><b>{l.nome}{l.direcao&&` (${l.direcao})`}:</b> {l.texto}</span>:<span className="acao">{l.texto}</span>}
       <button className="link-btn" onClick={()=>setPrev(p=>p!.map((x,j)=>j!==i?x:x.tipo==='fala'?{...x,tipo:'acao'}:{...x,tipo:'fala',nome:x.nome||'NARRADOR'}))}>{l.tipo==='fala'?'é ação':'é fala'}</button></div>)}</div>
      <div className="row-gap left mt"><button className="primary" onClick={async()=>{ await aplicar(prev,mapa); setPrev(null); setTexto(''); }}><CheckCircle2 size={15}/> {roteiro.length?'Substituir o roteiro atual':'Usar este roteiro'}</button><button className="subtle" onClick={()=>setPrev(null)}>Cancelar</button></div>

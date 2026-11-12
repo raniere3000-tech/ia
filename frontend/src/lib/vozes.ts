@@ -13,6 +13,8 @@ export const VOZES_TTS:[string,string][] = [
   ['Erinome','clara'],['Laomedeia','animada'],['Achernar','macia'],['Pulcherrima','direta'],['Vindemiatrix','gentil'],['Sulafat','calorosa'],
 ];
 export const ehVoz = (v:string)=>VOZES_TTS.some(([n])=>n===v);
+/** Se o nome do personagem for o nome de uma voz do Gemini (ex.: CHARON), devolve essa voz. */
+export const vozDoNome = (nome:string)=>VOZES_TTS.find(([n])=>n.toLowerCase()===nome.trim().toLowerCase())?.[0]||'';
 
 export type Projeto = {id:string;nome:string;criado:number};
 export type Personagem = {id:string;projetoId:string;nome:string;voz:string;modelo:string;genero:string;gravidade:number;ritmo:number;energia:number;emocao:string;sotaque:string;descricao:string;aprovada:boolean;criado:number};
@@ -29,7 +31,7 @@ const ESCALA:Record<string,string[]> = {
 export const rotulo=(k:'gravidade'|'ritmo'|'energia',n:number)=>ESCALA[k][Math.max(1,Math.min(5,n))-1];
 
 export function novoPersonagem(projetoId:string,nome:string):Personagem{
-  return {id:uid(),projetoId,nome,voz:'Charon',modelo:MODELOS_TTS[0][0],genero:'',gravidade:3,ritmo:3,energia:3,emocao:'neutra',sotaque:'brasileiro neutro',descricao:'',aprovada:false,criado:Date.now()};
+  return {id:uid(),projetoId,nome,voz:vozDoNome(nome)||'Charon',modelo:MODELOS_TTS[0][0],genero:'',gravidade:3,ritmo:3,energia:3,emocao:'neutra',sotaque:'brasileiro neutro',descricao:'',aprovada:false,criado:Date.now()};
 }
 
 /** Descrição de voz que vai para o Gemini, montada com os ajustes da ficha. */
