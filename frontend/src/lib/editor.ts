@@ -1,0 +1,158 @@
+// Editor com linha do tempo (faixas de vídeo, texto, narração, trilha e efeitos) para a Montagem manual.
+// Tudo roda no navegador: o desenho é feito num canvas e o áudio é misturado com a Web Audio API.
+import fixWebmDuration from 'fix-webm-duration';
+import { formatoSuportado } from './render';
+import { FONT_STACK } from './captions';
+import { gerarSom } from './sons';
+import { SR, TAMANHO, audioDe, cobrir, midias, quebrar, type Anim, type Arquivo, type Formato, type Opcoes, type Sinc } from './montagem';
+
+export type Faixa = 'video'|'texto'|'narracao'|'trilha'|'efeito';
+export const FAIXAS:[Faixa,string][] = [['video','Vídeo'],['texto','Texto'],['narracao','Narração'],['trilha','Trilha'],['efeito','Efeitos']];
+type Base = {id:string;ini:number;dur:number};
+export type ClipV = Base&{faixa:'video';midia:string;de:number;anim:Anim;entrada:'corte'|'fade';brilho:number;contraste:number;saturacao:number};
+export type ClipT = Base&{faixa:'texto';texto:string;pos:'topo'|'meio'|'baixo';tam:number;cor:string;fundo:boolean};
+export type ClipA = Base&{faixa:'narracao'|'trilha'|'efeito';fonte:string;nome:string;de:number;fonteDur:number;vol:number;fadeIn:number;fadeOut:number;loop:boolean};
+export type Clip = ClipV|ClipT|ClipA;
+export type Proj = {clips:Clip[];formato:Formato;abaixarTrilha:boolean};
+
+export const novoId = ()=>Math.random().toString(36).slice(2,9);
+export const fimDe = (c:Clip)=>c.ini+c.dur;
+export const totalDe = (p:Proj)=>Math.max(1,...p.clips.map(fimDe));
+export const ehAudio = (c:Clip):c is ClipA=>c.faixa==='narracao'||c.faixa==='trilha'||c.faixa==='efeito';
+
+/** Monta o projeto do editor a partir da sincronização automática. */
+export function deSinc(s:Sinc,arquivos:Arquivo[],o:Opcoes):Proj{
+  const clips:Clip[] = [];
+  const dur = (id:string)=>arquivos.find(a=>a.id===id)?.duracao||0;
+  for(const q of s.quadros){
+    clips.push({faixa:'video',id:novoId(),ini:q.ini,dur:q.dur,midia:q.midia,de:0,anim:q.anim,entrada:o.transicao==='fade'?'fade':'corte',brilho:100,contraste:100,saturacao:100});
+    if(o.legendas) for(const l of q.legenda) clips.push({faixa:'texto',id:novoId(),ini:+(q.ini+l.ini).toFixed(3),dur:+Math.max(0.3,l.fim-l.ini).toFixed(3),texto:l.texto,pos:'baixo',tam:100,cor:'#ffffff',fundo:false});
+    for(const sm of q.sons){ const fonte=sm.arquivo||'site:'+sm.desc; const d=sm.arquivo?dur(sm.arquivo):0;
+      clips.push({faixa:'efeito',id:novoId(),ini:+(q.ini+sm.em).toFixed(3),dur:d||1.5,fonte,nome:sm.desc,de:0,fonteDur:d,vol:sm.vol,fadeIn:0,fadeOut:0,loop:false}); }
+  }
+  const nars = arquivos.filter(a=>a.tipo==='narracao');
+  if(s.narracao==='unica'&&nars[0]) clips.push({faixa:'narracao',id:novoId(),ini:0,dur:nars[0].duracao,fonte:nars[0].id,nome:nars[0].nome,de:0,fonteDur:nars[0].duracao,vol:100,fadeIn:0,fadeOut:0,loop:false});
+  if(s.narracao==='separada') for(const q of s.quadros){ const a=nars.find(x=>x.id===q.narracao); if(a) clips.push({faixa:'narracao',id:novoId(),ini:+(q.ini+0.1).toFixed(3),dur:a.duracao,fonte:a.id,nome:a.nome,de:0,fonteDur:a.duracao,vol:100,fadeIn:0,fadeOut:0,loop:false}); }
+  for(const t of s.trilhas){ const a=arquivos.find(x=>x.id===t.arquivo); if(a) clips.push({faixa:'trilha',id:novoId(),ini:t.ini,dur:+(t.fim-t.ini).toFixed(3),fonte:a.id,nome:a.nome,de:0,fonteDur:a.duracao,vol:o.volTrilha,fadeIn:0.8,fadeOut:1.2,loop:true}); }
+  return {clips,formato:o.formato,abaixarTrilha:true};
+}
+
+/** O som de um clipe: arquivo enviado ou "site:descrição" (feito pelo próprio site). */
+export async function bufferDe(fonte:string,arquivos:Arquivo[]):Promise<AudioBuffer|null>{
+  if(fonte.startsWith('site:')){ const desc=fonte.slice(5); const g=await gerarSom(desc,'site'); return audioDe({id:fonte,blob:g.wav,nome:desc}); }
+  const a=arquivos.find(x=>x.id===fonte); return a?audioDe(a):null;
+}
+/** Descobre a duração dos sons feitos pelo site (para o tamanho do bloco na linha do tempo). */
+export async function acertarDuracoes(p:Proj,arquivos:Arquivo[]):Promise<Proj|null>{
+  let mudou=false; const clips:Clip[]=[];
+  for(const c of p.clips){
+    if(ehAudio(c)&&!c.fonteDur){ try{ const b=await bufferDe(c.fonte,arquivos); if(b){ mudou=true; clips.push({...c,fonteDur:b.duration,dur:c.loop?c.dur:b.duration}); continue; } }catch{ /* fica como está */ } }
+    clips.push(c);
+  }
+  return mudou?{...p,clips}:null;
+}
+
+// ---------------------------------------------------------------- edição
+
+export function dividir(p:Proj,id:string,t:number):Proj{
+  const c=p.clips.find(x=>x.id===id); if(!c||t<=c.ini+0.1||t>=fimDe(c)-0.1) return p;
+  const a={...c,dur:+(t-c.ini).toFixed(3)} as Clip; const b={...c,id:novoId(),ini:+t.toFixed(3),dur:+(fimDe(c)-t).toFixed(3)} as Clip;
+  if(b.faixa==='video') b.de=c.faixa==='video'?c.de+(t-c.ini):0;
+  if(ehAudio(b)&&ehAudio(c)){ b.de=c.de+(t-c.ini); (a as ClipA).fadeOut=0; b.fadeIn=0; }
+  return {...p,clips:p.clips.flatMap(x=>x.id===id?[a,b]:[x])};
+}
+export function duplicar(p:Proj,id:string):Proj{ const c=p.clips.find(x=>x.id===id); if(!c) return p; return {...p,clips:[...p.clips,{...c,id:novoId(),ini:+fimDe(c).toFixed(3)} as Clip]}; }
+export function apagar(p:Proj,id:string):Proj{ return {...p,clips:p.clips.filter(x=>x.id!==id)}; }
+/** Limite do corte pela direita: sons sem repetição não passam do fim do arquivo. */
+export function durMax(c:Clip){ return ehAudio(c)&&!c.loop&&c.fonteDur>0?Math.max(0.1,c.fonteDur-c.de):600; }
+
+// ---------------------------------------------------------------- desenhar
+
+const ativo = (c:Clip,t:number)=>t>=c.ini&&t<fimDe(c);
+function clipVideoEm(vs:ClipV[],t:number){ let r:ClipV|undefined; for(const c of vs) if(ativo(c,t)&&(!r||c.ini>=r.ini)) r=c; return r; }
+
+export function desenharProj(ctx:CanvasRenderingContext2D,p:Proj,t:number){
+  const W=ctx.canvas.width, H=ctx.canvas.height; ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
+  const vs=p.clips.filter((c):c is ClipV=>c.faixa==='video');
+  const pinta=(c:ClipV,alpha:number)=>{ const m=c.midia?midias.get(c.midia):undefined; const pr=Math.min(1,Math.max(0,(t-c.ini)/Math.max(0.1,c.dur)));
+    ctx.save(); ctx.filter=c.brilho!==100||c.contraste!==100||c.saturacao!==100?`brightness(${c.brilho}%) contrast(${c.contraste}%) saturate(${c.saturacao}%)`:'none';
+    if(m) cobrir(ctx,m.el,W,H,c.anim,pr,alpha); else{ ctx.globalAlpha=alpha; ctx.fillStyle='#16161d'; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; }
+    ctx.restore(); };
+  const c=clipVideoEm(vs,t);
+  if(c){ const tr=Math.min(0.4,c.dur/2); const ant=c.entrada==='fade'&&t-c.ini<tr?clipVideoEm(vs.filter(x=>x.id!==c.id),c.ini-0.001):undefined;
+    if(ant){ pinta(ant,1); pinta(c,(t-c.ini)/tr); } else pinta(c,1); }
+  for(const x of p.clips) if(x.faixa==='texto'&&ativo(x,t)&&x.texto.trim()){
+    const fs=Math.round(Math.min(W,H)*0.052*x.tam/100); ctx.font=`800 ${fs}px ${FONT_STACK}`; ctx.textAlign='center'; ctx.lineJoin='round';
+    const ls=quebrar(ctx,x.texto,W*0.84).slice(0,5); const alt=ls.length*fs*1.2;
+    const y0=x.pos==='topo'?H*0.12:x.pos==='meio'?H/2-alt/2+fs:H*(H>W?0.8:0.86)-alt+fs;
+    if(x.fundo){ const lw=Math.max(...ls.map(l=>ctx.measureText(l).width)); ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(W/2-lw/2-fs*0.4,y0-fs*1.05,lw+fs*0.8,alt+fs*0.35); }
+    ls.forEach((l,k)=>{ const y=y0+k*fs*1.2; if(!x.fundo){ ctx.lineWidth=fs*0.16; ctx.strokeStyle='rgba(0,0,0,.9)'; ctx.strokeText(l,W/2,y); } ctx.fillStyle=x.cor; ctx.fillText(l,W/2,y); });
+  }
+}
+export function sincronizarVideosProj(p:Proj,t:number,tocando:boolean){
+  for(const c of p.clips){ if(c.faixa!=='video'||!c.midia) continue; const m=midias.get(c.midia); if(!m||m.tipo!=='video') continue; const v=m.el as HTMLVideoElement;
+    const on=t>=c.ini-0.05&&t<fimDe(c)+0.45; if(!on) continue;
+    const alvo=m.duracao>0?(c.de+Math.max(0,t-c.ini))%m.duracao:0;
+    if(tocando){ if(Math.abs(v.currentTime-alvo)>0.35) v.currentTime=alvo; if(v.paused) v.play().catch(()=>{}); } else { if(!v.paused) v.pause(); if(Math.abs(v.currentTime-alvo)>0.05) v.currentTime=alvo; } }
+  if(!tocando||t<0) for(const [,m] of midias) if(m.tipo==='video'&&t<0) (m.el as HTMLVideoElement).pause();
+}
+
+// ---------------------------------------------------------------- áudio
+
+export async function mixarProj(p:Proj,arquivos:Arquivo[],onStatus:(t:string)=>void):Promise<AudioBuffer|null>{
+  const as=p.clips.filter(ehAudio); if(!as.length) return null;
+  const total=totalDe(p); const c=new OfflineAudioContext(2,Math.ceil(total*SR),SR);
+  const comp=c.createDynamicsCompressor(); comp.threshold.value=-6; comp.ratio.value=8; comp.attack.value=0.003; comp.release.value=0.2; comp.connect(c.destination);
+  const bufs=new Map<string,AudioBuffer|null>();
+  for(const a of as) if(!bufs.has(a.fonte)){ onStatus('Preparando o som: '+a.nome); try{ bufs.set(a.fonte,await bufferDe(a.fonte,arquivos)); }catch{ bufs.set(a.fonte,null); } }
+  // Onde tem voz (para abaixar a trilha).
+  const passo=0.05, nP=Math.ceil(total/passo); const fala=new Uint8Array(nP);
+  if(p.abaixarTrilha) for(const a of as.filter(x=>x.faixa==='narracao')){ const b=bufs.get(a.fonte); if(!b) continue; const d=b.getChannelData(0); const h=Math.round(passo*b.sampleRate);
+    for(let i=0;i*passo<a.dur;i++){ const s0=Math.floor((a.de+i*passo)*b.sampleRate); let m=0; for(let k=s0;k<Math.min(d.length,s0+h);k+=8) m=Math.max(m,Math.abs(d[k])); if(m>0.04){ const q=Math.floor((a.ini+i*passo)/passo); for(let x=q-3;x<=q+4;x++) if(x>=0&&x<nP) fala[x]=1; } } }
+  for(const a of as){
+    const b=bufs.get(a.fonte); if(!b||a.dur<0.05) continue;
+    const n=c.createBufferSource(); n.buffer=b; const g=c.createGain(); n.connect(g).connect(comp);
+    const vol=Math.max(0,a.vol)/100, ini=a.ini, fim=a.ini+a.dur;
+    const fi=Math.min(a.fadeIn,a.dur/2), fo=Math.min(a.fadeOut,a.dur/2);
+    g.gain.setValueAtTime(fi>0?0:vol,ini); if(fi>0) g.gain.linearRampToValueAtTime(vol,ini+fi);
+    if(a.faixa==='trilha'&&p.abaixarTrilha){ let ult=-1; for(let q=Math.ceil((ini+fi+0.05)/passo);q<Math.floor((fim-fo-0.05)/passo);q++){ const st=fala[q]; if(st!==ult){ g.gain.setTargetAtTime(st?vol*0.35:vol,q*passo,st?0.06:0.25); ult=st; } } }
+    if(fo>0){ g.gain.setTargetAtTime(0,fim-fo,fo/3); }
+    if(a.loop){ n.loop=true; n.start(ini,a.de%b.duration); n.stop(fim); } else n.start(ini,Math.min(a.de,b.duration),Math.max(0.01,a.dur));
+  }
+  onStatus('Misturando o áudio');
+  return c.startRendering();
+}
+
+// ---------------------------------------------------------------- tocar e gravar
+
+export type Sessao = {parar:()=>void;fim:Promise<void>};
+export function tocarProj(canvas:HTMLCanvasElement,p:Proj,audio:AudioBuffer|null,cb:{inicio?:number;onTempo?:(t:number)=>void;gravar?:(r:{blob:Blob;ext:string})=>void}={}):Sessao{
+  const ctx=canvas.getContext('2d')!; const total=totalDe(p); const ac=new AudioContext(); const t00=cb.gravar?0:Math.min(cb.inicio||0,Math.max(0,total-0.2));
+  let parado=false, raf=0, fonte:AudioBufferSourceNode|null=null, rec:MediaRecorder|null=null; const chunks:Blob[]=[]; let mime='';
+  let resolver:()=>void=()=>{}; const fim=new Promise<void>(r=>{ resolver=r; });
+  const destino=cb.gravar?ac.createMediaStreamDestination():null;
+  if(audio){ fonte=ac.createBufferSource(); fonte.buffer=audio; fonte.connect(destino||ac.destination); }
+  if(cb.gravar){
+    mime=formatoSuportado()||''; if(!mime){ ac.close(); throw new Error('Este navegador não grava vídeo. Use Chrome, Edge ou Safari atualizados.'); }
+    const st=canvas.captureStream(30); if(audio) destino!.stream.getAudioTracks().forEach(tk=>st.addTrack(tk));
+    rec=new MediaRecorder(st,{mimeType:mime,videoBitsPerSecond:8_000_000,audioBitsPerSecond:192_000}); rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+  }
+  let ok=false, t0=0;
+  const encerrar=async()=>{ if(parado) return; parado=true; cancelAnimationFrame(raf); clearInterval(reserva); try{ fonte?.stop(); }catch{ /* já parou */ }
+    sincronizarVideosProj(p,-1,false);
+    if(rec&&rec.state!=='inactive'){ await new Promise<void>(r=>{ rec!.onstop=()=>r(); rec!.stop(); }); rec.stream.getTracks().forEach(tk=>tk.stop());
+      const type=mime.split(';')[0]; let blob=new Blob(chunks,{type}); if(type==='video/webm'){ try{ blob=await fixWebmDuration(blob,total*1000,{logger:false}); }catch{ /* mantém */ } }
+      if(ok) cb.gravar?.({blob,ext:type==='video/mp4'?'mp4':'webm'}); }
+    ac.close().catch(()=>{}); resolver(); };
+  const passo=()=>{ if(parado) return; const t=t00+ac.currentTime-t0;
+    if(t>=total){ desenharProj(ctx,p,total-0.001); cb.onTempo?.(total); ok=true; encerrar(); return; }
+    sincronizarVideosProj(p,Math.max(0,t),true); desenharProj(ctx,p,Math.max(0,t)); cb.onTempo?.(t); };
+  const loop=()=>{ passo(); if(!parado) raf=requestAnimationFrame(loop); };
+  const reserva=setInterval(()=>{ if(document.hidden) passo(); },250);
+  (async()=>{ await ac.resume(); desenharProj(ctx,p,t00); rec?.start(1000); t0=ac.currentTime+0.05; fonte?.start(t0,t00); loop(); })();
+  return {parar:()=>{ encerrar(); },fim};
+}
+export function gravarProj(p:Proj,audio:AudioBuffer|null,onTempo:(t:number)=>void){
+  return new Promise<{blob:Blob;ext:string}>((res,rej)=>{ const [w,h]=TAMANHO[p.formato]; const cv=document.createElement('canvas'); cv.width=w; cv.height=h; let pronto=false;
+    try{ const se=tocarProj(cv,p,audio,{onTempo,gravar:x=>{ pronto=true; res(x); }}); se.fim.then(()=>{ if(!pronto) rej(new Error('A gravação foi interrompida.')); }); }catch(e){ rej(e); } });
+}

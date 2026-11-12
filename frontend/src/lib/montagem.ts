@@ -387,7 +387,7 @@ export async function mixar(s:Sinc,arquivos:Arquivo[],o:Opcoes,onStatus:(t:strin
 
 // ---------------------------------------------------------------- desenhar, tocar e gravar
 
-function cobrir(ctx:CanvasRenderingContext2D,el:HTMLImageElement|HTMLVideoElement,W:number,H:number,anim:Anim,p:number,alpha:number){
+export function cobrir(ctx:CanvasRenderingContext2D,el:HTMLImageElement|HTMLVideoElement,W:number,H:number,anim:Anim,p:number,alpha:number){
   const iw=(el as HTMLVideoElement).videoWidth||(el as HTMLImageElement).naturalWidth||W, ih=(el as HTMLVideoElement).videoHeight||(el as HTMLImageElement).naturalHeight||H;
   const base=Math.max(W/iw,H/ih); let s=1, dx=0, dy=0;
   if(anim==='zoom-in') s=1+0.12*p; else if(anim==='zoom-out') s=1.12-0.12*p;
@@ -395,7 +395,7 @@ function cobrir(ctx:CanvasRenderingContext2D,el:HTMLImageElement|HTMLVideoElemen
   else if(anim==='tremer'){ s=1.06; const f=Math.max(0,1-p*3); dx=Math.sin(p*90)*W*0.012*f; dy=Math.cos(p*77)*H*0.01*f; }
   const w=iw*base*s, h=ih*base*s; ctx.globalAlpha=alpha; ctx.drawImage(el,(W-w)/2+dx,(H-h)/2+dy,w,h); ctx.globalAlpha=1;
 }
-function quebrar(ctx:CanvasRenderingContext2D,t:string,max:number){ const out:string[]=[]; let l=''; for(const w of t.split(/\s+/)){ const x=l?l+' '+w:w; if(ctx.measureText(x).width>max&&l){ out.push(l); l=w; } else l=x; } if(l) out.push(l); return out; }
+export function quebrar(ctx:CanvasRenderingContext2D,t:string,max:number){ const out:string[]=[]; let l=''; for(const w of t.split(/\s+/)){ const x=l?l+' '+w:w; if(ctx.measureText(x).width>max&&l){ out.push(l); l=w; } else l=x; } if(l) out.push(l); return out; }
 
 export function desenhar(ctx:CanvasRenderingContext2D,s:Sinc,t:number,o:Opcoes){
   const W=ctx.canvas.width, H=ctx.canvas.height; ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);

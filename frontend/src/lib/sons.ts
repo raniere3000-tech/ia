@@ -53,10 +53,29 @@ export const RECEITAS:Receita[] = [
   {chaves:/queda|tomb|cai|caiu|desab|derrub/,nome:'queda',dur:1.2,fazer:(c,o,k)=>{ batida(c,o,0,{grave:50,corpo:500,forca:k,dur:0.4}); for(let i=0;i<5;i++) batida(c,o,0.15+i*0.11,{grave:120+Math.random()*80,corpo:1500,forca:0.3*k,dur:0.08}); }},
   {chaves:/rugid|rosna|monstro|fera|grunh|lobo/,nome:'rugido',dur:1.8,fazer:(c,o,k)=>{ const s=c.createOscillator(); s.type='sawtooth'; s.frequency.setValueAtTime(70,0); s.frequency.linearRampToValueAtTime(110,0.5); s.frequency.linearRampToValueAtTime(60,1.6); const f=filtro(c,'lowpass',700); const g=env(c,0,0.2,1.4,0.5*k); s.connect(f).connect(g).connect(o); s.start(0); s.stop(1.8); chiado(c,o,0,1.5,'bandpass',400,0.3*k,0.2); }},
   {chaves:/suspens|tens|misteri|drone|sombra/,nome:'tensão',dur:4,fazer:(c,o,k)=>{ for(const f of [55,82.4,116.5]){ const s=c.createOscillator(); s.type='sawtooth'; s.frequency.value=f; const fl=filtro(c,'lowpass',300); const g=env(c,0,1.5,2.4,0.15*k); s.connect(fl).connect(g).connect(o); s.start(0); s.stop(4); } }},
+  {chaves:/\bpop\b|bolha|estalo/,nome:'pop',dur:0.3,fazer:(c,o,k)=>{ const s=c.createOscillator(); s.frequency.setValueAtTime(380,0); s.frequency.exponentialRampToValueAtTime(1400,0.06); const g=env(c,0,0.002,0.12,0.5*k); s.connect(g).connect(o); s.start(0); s.stop(0.2); }},
+  {chaves:/clique|click|tecla|mouse/,nome:'clique',dur:0.2,fazer:(c,o,k)=>{ chiado(c,o,0,0.015,'highpass',3000,0.6*k,0.0005); ping(c,o,0,2400,0.03,0.15*k,'square'); }},
+  {chaves:/\bding\b|acerto|certo|correto|notifica|sucesso/,nome:'ding (acerto)',dur:1.2,fazer:(c,o,k)=>{ ping(c,o,0,1318,1,0.3*k); ping(c,o,0.09,1760,1,0.25*k); }},
+  {chaves:/erro|errado|buzz|falha|negad/,nome:'erro',dur:0.7,fazer:(c,o,k)=>{ for(const t of [0,0.28]) ping(c,o,t,140,0.22,0.35*k,'square'); }},
+  {chaves:/subida|riser|suspense subindo|crescend/,nome:'subida (riser)',dur:3,fazer:(c,o,k)=>{ const fl=chiado(c,o,0,2.9,'bandpass',300,0.5*k,2.6); fl.Q.value=3; fl.frequency.exponentialRampToValueAtTime(6000,2.9); const s=c.createOscillator(); s.type='sawtooth'; s.frequency.setValueAtTime(110,0); s.frequency.exponentialRampToValueAtTime(880,2.9); const g=env(c,0,2.6,0.2,0.12*k); s.connect(g).connect(o); s.start(0); s.stop(3); }},
+  {chaves:/descida|drop|queda de tom|desce/,nome:'descida (drop)',dur:1.5,fazer:(c,o,k)=>{ const s=c.createOscillator(); s.type='sine'; s.frequency.setValueAtTime(900,0); s.frequency.exponentialRampToValueAtTime(40,1.2); const g=env(c,0,0.01,1.3,0.5*k); s.connect(g).connect(o); s.start(0); s.stop(1.5); batida(c,o,1.1,{grave:40,corpo:300,forca:0.8*k,dur:0.4}); }},
+  {chaves:/glitch|falha digital|chiado|estatica|estática|interfer/,nome:'glitch',dur:0.8,fazer:(c,o,k)=>{ for(let i=0;i<10;i++){ const t=i*0.07; if(Math.random()<0.7) ping(c,o,t,200+Math.random()*3000,0.04,0.2*k,'square'); chiado(c,o,t,0.03,'bandpass',800+Math.random()*5000,0.3*k,0.001); } }},
+  {chaves:/foto|camera|câmera|flash|obturador/,nome:'foto (câmera)',dur:0.5,fazer:(c,o,k)=>{ chiado(c,o,0,0.03,'highpass',2500,0.7*k,0.001); chiado(c,o,0.12,0.05,'bandpass',1800,0.5*k,0.001); }},
+  {chaves:/coracao|coração|batimento|pulsa/,nome:'batida de coração',dur:2.4,fazer:(c,o,k)=>{ for(const t of [0,0.28,1.2,1.48]) batida(c,o,t,{grave:48,corpo:200,forca:(t%1.2===0?0.9:0.6)*k,dur:0.18}); }},
+  {chaves:/rufar|tambor|suspense de tambor|drumroll/,nome:'rufar de tambor',dur:2.6,fazer:(c,o,k)=>{ for(let i=0;i<48;i++){ const t=i*0.045; chiado(c,o,t,0.04,'bandpass',900,(0.1+0.3*i/48)*k,0.001); } batida(c,o,2.2,{grave:70,corpo:2500,forca:k,dur:0.35}); chiado(c,o,2.2,0.4,'highpass',4000,0.4*k,0.002); }},
   {chaves:/impacto|baque|boom|tum|pum/,nome:'impacto',dur:1.5,fazer:(c,o,k)=>{ batida(c,o,0,{grave:40,corpo:400,forca:k,dur:0.9}); }},
 ];
 const PADRAO = RECEITAS.find(r=>r.nome==='impacto')!;
 /** Qual som feito pelo site combina com a descrição. */
+/** Categorias para a biblioteca de efeitos. */
+export const CATEGORIAS_SOM:[string,string[]][] = [
+  ['Transição',['whoosh','subida (riser)','descida (drop)','glitch']],
+  ['Interface e redes',['pop','clique','ding (acerto)','erro','foto (câmera)']],
+  ['Ação',['soco','impacto','explosão','queda','espadas','vidro quebrando']],
+  ['Ambiente',['chuva','fogo','trovão','murmúrio de multidão','tensão']],
+  ['Objetos',['porta batendo','porta rangendo','batida na madeira','passos','moedas','sino']],
+  ['Emoção e humor',['aplausos','rufar de tambor','batida de coração','magia','rugido']],
+];
 export function receitaDe(desc:string){ const d=semAcento(desc); return RECEITAS.find(r=>r.chaves.test(d))||null; }
 export function forcaDe(desc:string){ const d=semAcento(desc); return /muito forte|enorme|gigante|alto/.test(d)?1.4:/forte|grande/.test(d)?1.15:/fraco|leve|baixo|distante|longe|suave/.test(d)?0.55:1; }
 

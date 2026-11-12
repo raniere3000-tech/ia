@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clapperboard, Download, FileText, ImagePlus, Loader2, Mic, Music, Play, Sparkles, Square, Trash2, Volume2, Wand2 } from 'lucide-react';
+import { Clapperboard, Download, FileText, ImagePlus, Loader2, Mic, Music, Play, Sparkles, Square, Trash2, Volume2, Wand2, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { useApp } from '../state';
 import { baixar } from '../lib/exporter';
 import { transcrever, transcreverGemini } from '../lib/transcribe';
 import type { Cue } from '../lib/captions';
+import EditorVideo from '../components/EditorVideo';
+import { deSinc, type Proj } from '../lib/editor';
 import {
   ANIMS, MODELO_ROTEIRO, OPCOES_PADRAO, TAMANHO, apagarArquivo, audioDe, batidas, conferirImagensIA, desenhar, gravar, guardarArquivo, lerQuadros,
   listarArquivos, midias, mixar, mono16k, prepararMidia, reencadear, sincronizar, sincronizarVideos, tocar,
@@ -29,6 +31,10 @@ export default function Manual(){
   const [sinc,setSinc]=useState<Sinc|null>(ini.sinc); const [cues,setCues]=useState<{de:string;lista:Cue[]}|null>(ini.cues?{de:ini.cuesDe,lista:ini.cues}:null);
   const [arqs,setArqs]=useState<Arquivo[]>([]); const [carregado,setCarregado]=useState(false);
   const [usarIA,setUsarIA]=useState(false); const [ocupado,setOcupado]=useState(''); const [audio,setAudio]=useState<AudioBuffer|null>(null);
+  const [proj,setProj]=useState<Proj|null>(()=>{ try{ return JSON.parse(localStorage.getItem(CHAVE+'_editor')||'null'); }catch{ return null; } });
+  const [versao,setVersao]=useState(0);
+  const salvarProj=(n:Proj|null)=>{ try{ if(n) localStorage.setItem(CHAVE+'_editor',JSON.stringify(n)); else localStorage.removeItem(CHAVE+'_editor'); }catch{ /* cheio */ } };
+  function abrirEditor(){ if(!sinc) return; parar(); const n=deSinc(sinc,arqs,o); setProj(n); salvarProj(n); setVersao(v=>v+1); setTimeout(()=>document.querySelector('.ed')?.scrollIntoView({behavior:'smooth'}),100); }
   const [tempo,setTempo]=useState(0); const [tocando,setTocando]=useState(false); const [video,setVideo]=useState<{url:string;blob:Blob;ext:string}|null>(null);
   const cv=useRef<HTMLCanvasElement>(null); const sessao=useRef<Sessao|null>(null);
   const quadros=useMemo(()=>lerQuadros(texto),[texto]);
@@ -171,6 +177,14 @@ export default function Manual(){
       </div>
      </article>; })}</div>
     {sinc.trilhas.length>0&&<p className="hint mt">Trilha: {sinc.trilhas.map(t=>`${nome(t.arquivo)} (${fmt(t.ini)}–${fmt(t.fim)})`).join(' • ')}</p>}
+   </section>}
+
+   {sinc&&<section className="panel">
+    <div className="section-head"><h2><SlidersHorizontal size={18}/> 5. Editor (linha do tempo)</h2>
+     {proj?<button className="subtle sm" onClick={abrirEditor} title="Joga fora a edição e começa de novo pela sincronização"><RotateCcw size={14}/> Recomeçar pela sincronização</button>:null}</div>
+    {!proj?<><p className="hint">Abre o vídeo sincronizado numa linha do tempo com faixas de vídeo, texto, narração, trilha e efeitos. Lá você arrasta, corta, divide, coloca efeitos sonoros prontos, textos e ajusta cada parte do jeito que quiser.</p>
+     <button className="primary lg" onClick={abrirEditor}><SlidersHorizontal size={17}/> Abrir no editor</button></>
+    :carregado&&<EditorVideo key={versao} inicial={proj} arquivos={arqs} onChange={n=>{ setProj(n); salvarProj(n); }}/>}
    </section>}
   </div>;
 }
