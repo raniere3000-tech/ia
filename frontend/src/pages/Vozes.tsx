@@ -5,8 +5,8 @@ import { useApp } from '../state';
 import { baixar } from '../lib/exporter';
 import { uid, store } from '../lib/store';
 import {
-  EMOCOES, MODELOS_TTS, vozDoNome, VOZES_TTS, descreverVoz, gerarVoz, lerRoteiro, listar, montarEpisodio, nomeTake, novoPersonagem, pedidoTTS, rotulo, salvar, salvarVarios, apagar, srt,
-  type Fala, type LinhaRoteiro, type Personagem, type Projeto, type Take,
+  EMOCOES, MODELOS_TTS, aplicarFicha, lerFichas, vozDoNome, VOZES_TTS, descreverVoz, gerarVoz, lerRoteiro, listar, montarEpisodio, nomeTake, novoPersonagem, pedidoTTS, rotulo, salvar, salvarVarios, apagar, srt,
+  type FichaLida, type Fala, type LinhaRoteiro, type Personagem, type Projeto, type Take,
 } from '../lib/vozes';
 
 type Aba = 'elenco'|'lab'|'roteiro'|'final';
@@ -70,6 +70,30 @@ export default function Vozes(){
   function mudarPersonagem(id:string,pt:Partial<Personagem>){
     setPers(x=>x.map(p=>{ if(p.id!==id) return p; const n={...p,...pt}; salvar('personagens',n); return n; }));
   }
+  async function importarFichas(fs:FichaLida[]){
+    const novos:Personagem[]=[]; let atualizados=0;
+    const lista=[...pers];
+    for(const f of fs){
+      const ja=elenco.find(p=>p.nome.trim().toUpperCase()===f.nome.toUpperCase());
+      const n=aplicarFicha(ja||novoPersonagem(pid,f.nome),f);
+      await salvar('personagens',n);
+      if(ja){ atualizados++; const i=lista.findIndex(x=>x.id===n.id); lista[i]=n; } else { novos.push(n); lista.push(n); }
+    }
+    setPers(lista);
+    toast(`${novos.length} personagens criados${atualizados?` e ${atualizados} atualizados`:''}. Teste no Laboratório: as frases de teste das fichas já estão lá.`,'ok');
+  }
+  /** Texto livre sem formato conhecido: pede ao Gemini para montar as fichas. */
+  async function fichasComIA(txt:string):Promise<FichaLida[]>{
+    if(!settings.geminiKey) throw new Error('Não reconheci fichas nesse texto. Use uma tabela (Personagem, Voz-base, Gravidade, Ritmo, Energia, Emoção) ou coloque a chave do Gemini para a IA entender texto livre.');
+    const {chamar,GEMINI_MODEL}=await import('../lib/gemini');
+    const vozes=VOZES_TTS.map(([v,d])=>`${v} (${d})`).join(', ');
+    const pedido=`Leia o texto abaixo e monte fichas de voz para cada personagem que fala. Use só estas vozes-base do Gemini: ${vozes}. Escolha a que combina com o personagem se o texto não disser. gravidade, ritmo e energia vão de 1 a 5 (1 = aguda/lenta/contida, 5 = muito grave/muito rápida/explosiva). emocao é uma palavra em português. testes são frases de teste citadas no texto (vazio se não houver). Não invente personagens.\n\nTEXTO:\n${txt.slice(0,20000)}`;
+    const SCH={type:'OBJECT',properties:{fichas:{type:'ARRAY',items:{type:'OBJECT',properties:{nome:{type:'STRING'},voz:{type:'STRING'},genero:{type:'STRING'},gravidade:{type:'INTEGER'},ritmo:{type:'INTEGER'},energia:{type:'INTEGER'},emocao:{type:'STRING'},sotaque:{type:'STRING'},descricao:{type:'STRING'},testes:{type:'ARRAY',items:{type:'STRING'}}},required:['nome','voz','gravidade','ritmo','energia','emocao','descricao','testes']}}},required:['fichas']};
+    const r=await chamar(settings.geminiKey,GEMINI_MODEL+':generateContent',{contents:[{role:'user',parts:[{text:pedido}]}],generationConfig:{responseMimeType:'application/json',responseSchema:SCH,temperature:0.3}});
+    const t=r?.candidates?.[0]?.content?.parts?.map((x:any)=>x.text||'').join('')||'{}';
+    const lim=(n:number)=>Math.max(1,Math.min(5,Math.round(n||3)));
+    return (JSON.parse(t).fichas||[]).map((f:any)=>({...f,nome:String(f.nome||'').toUpperCase(),voz:vozDoNome(f.voz)||undefined,gravidade:lim(f.gravidade),ritmo:lim(f.ritmo),energia:lim(f.energia),emocao:String(f.emocao||'').toLowerCase(),testes:f.testes||[]})).filter((f:FichaLida)=>f.nome);
+  }
   async function apagarPersonagem(p:Personagem){
     if(roteiro.some(f=>f.personagemId===p.id)){ toast('Este personagem tem falas no roteiro. Troque quem fala essas falas antes de apagar.','erro'); return; }
     await apagar('personagens',p.id); setPers(x=>x.filter(y=>y.id!==p.id));
@@ -109,7 +133,7 @@ export default function Vozes(){
    </section>
    {semChave}
    {ocupado&&<div className="dl-box"><div className="row"><Loader2 size={16} className="spin"/><span><b>{ocupado.txt}</b> {ocupado.pct}%</span><button className="subtle sm" onClick={()=>{ parar.current=true; }}>Parar</button></div><div className="dl-bar"><i style={{width:Math.max(3,ocupado.pct)+'%'}}/></div></div>}
-   {aba==='elenco'&&<Elenco elenco={elenco} add={addPersonagem} mudar={mudarPersonagem} apagar={apagarPersonagem} testar={()=>setAba('lab')}/>}
+   {aba==='elenco'&&<Elenco elenco={elenco} importar={importarFichas} comIA={fichasComIA} add={addPersonagem} mudar={mudarPersonagem} apagar={apagarPersonagem} testar={()=>setAba('lab')}/>}
    {aba==='lab'&&<Lab elenco={elenco} takes={meusTakes.filter(t=>!t.falaId)} gerando={gerando==='lab'} gerar={async(p,txt,dir,vozB)=>{
       setGerando('lab');
       try{ await gerarTake(p,txt,dir); if(vozB&&vozB!==p.voz) await gerarTake(p,txt,dir,'',vozB); toast(vozB?'Dois takes prontos para comparar.':'Take pronto. Ouça abaixo.','ok'); }
@@ -144,9 +168,28 @@ export default function Vozes(){
 }
 
 // ================= Elenco =================
-function Elenco({elenco,add,mudar,apagar,testar}:{elenco:Personagem[];add:()=>void;mudar:(id:string,p:Partial<Personagem>)=>void;apagar:(p:Personagem)=>void;testar:()=>void}){
+function Elenco({elenco,add,mudar,apagar,testar,importar,comIA}:{elenco:Personagem[];add:()=>void;mudar:(id:string,p:Partial<Personagem>)=>void;apagar:(p:Personagem)=>void;testar:()=>void;importar:(f:FichaLida[])=>Promise<void>;comIA:(t:string)=>Promise<FichaLida[]>}){
+  const {toast}=useApp();
+  const [abrir,setAbrir]=useState(!elenco.length); const [txt,setTxt]=useState(''); const [lidas,setLidas]=useState<FichaLida[]|null>(null); const [lendo,setLendo]=useState(false);
+  async function ler(){
+    setLendo(true);
+    try{ let f=lerFichas(txt); if(!f.length) f=await comIA(txt); if(!f.length) throw new Error('Não achei personagens nesse texto.'); setLidas(f); }
+    catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
+    finally{ setLendo(false); }
+  }
+  const existe=(n:string)=>elenco.some(p=>p.nome.trim().toUpperCase()===n.toUpperCase());
   return <section className="panel">
-   <div className="section-head"><h2><Users size={18}/> Elenco</h2><button className="primary sm" onClick={()=>add()}><Plus size={14}/> Novo personagem</button></div>
+   <div className="section-head"><h2><Users size={18}/> Elenco</h2><span className="row-gap"><button className="subtle sm" onClick={()=>setAbrir(!abrir)}><Wand2 size={14}/> Colar fichas</button><button className="primary sm" onClick={()=>add()}><Plus size={14}/> Novo personagem</button></span></div>
+   {abrir&&<div className="colar-fichas">
+    <p className="hint">Cole o texto com as fichas (pode ser a tabela <b>Personagem / Voz-base / Gravidade / Ritmo / Energia / Emoção</b> e os blocos com <b>Perfil —</b>, <b>Descrição e direção permanente</b> e <b>Teste — “frase”</b>). O site cria ou atualiza cada personagem e já deixa as frases de teste no Laboratório. Se o texto for livre, a IA (Gemini) monta as fichas.</p>
+    <textarea rows={6} value={txt} onChange={e=>{ setTxt(e.target.value); setLidas(null); }} placeholder={'Personagem\tVoz-base\tGravidade\tRitmo\tEnergia\tEmoção\nNarrador\tCharon\t72%\t42%\t45%\tNeutra\n\nNarrador\nPerfil — Homem maduro, contador de histórias...\nDescrição e direção permanente\nVoz encorpada, dicção clara...\nTeste — “Era uma noite tranquila na taverna.”'} aria-label="Texto das fichas"/>
+    <button className="primary mt" disabled={!txt.trim()||lendo} onClick={ler}>{lendo?<Loader2 size={15} className="spin"/>:<Wand2 size={15}/>} Ler fichas</button>
+    {lidas&&<div className="fichas-lidas mt">
+     <h3>{lidas.length} personagens encontrados</h3>
+     <ul>{lidas.map(f=><li key={f.nome}><b>{f.nome}</b> <span className={'tag '+(existe(f.nome)?'warn':'ok')}>{existe(f.nome)?'atualiza':'novo'}</span> <small>{[f.voz&&`voz ${f.voz}`,f.modelo?.includes('pro')&&'Pro',f.gravidade&&`gravidade ${rotulo('gravidade',f.gravidade)}`,f.ritmo&&`ritmo ${rotulo('ritmo',f.ritmo)}`,f.energia&&`energia ${rotulo('energia',f.energia)}`,f.emocao,f.testes.length&&`${f.testes.length} frase(s) de teste`].filter(Boolean).join(' • ')}</small></li>)}</ul>
+     <button className="primary" onClick={async()=>{ await importar(lidas); setLidas(null); setTxt(''); setAbrir(false); }}><CheckCircle2 size={15}/> Criar e configurar {lidas.length} personagens</button>
+    </div>}
+   </div>}
    <p className="hint">Cada personagem tem uma ficha de voz. Os ajustes viram uma descrição que vai junto para o Gemini em toda fala dele, então a voz fica parecida entre as falas. Teste no Laboratório e marque <b>Voz aprovada</b> quando gostar.</p>
    {!elenco.length&&<div className="empty"><Users size={30}/><strong>Nenhum personagem ainda</strong><p>Crie aqui ou cole o roteiro na aba Roteiro: os personagens são criados a partir dele.</p></div>}
    <div className="fichas">{elenco.map(p=><article key={p.id} className={'ficha '+(p.aprovada?'ok':'')}>
@@ -160,7 +203,7 @@ function Elenco({elenco,add,mudar,apagar,testar}:{elenco:Personagem[];add:()=>vo
     {(['gravidade','ritmo','energia'] as const).map(k=><label key={k} className="mt slider"><span className="label-row">{k==='gravidade'?'Gravidade (aguda ↔ grave)':k==='ritmo'?'Ritmo (lento ↔ rápido)':'Energia (contida ↔ explosiva)'}: <b>{rotulo(k,p[k])}</b></span>
      <input type="range" min={1} max={5} value={p[k]} onChange={e=>mudar(p.id,{[k]:+e.target.value} as Partial<Personagem>)}/></label>)}
     <div className="small-grid mt">
-     <label>Emoção de base<select value={p.emocao} onChange={e=>mudar(p.id,{emocao:e.target.value})}>{EMOCOES.map(x=><option key={x} value={x}>{x}</option>)}</select></label>
+     <label>Emoção de base<select value={p.emocao} onChange={e=>mudar(p.id,{emocao:e.target.value})}>{(EMOCOES.includes(p.emocao)?EMOCOES:[p.emocao,...EMOCOES]).map(x=><option key={x} value={x}>{x}</option>)}</select></label>
      <label>Sotaque<input value={p.sotaque} onChange={e=>mudar(p.id,{sotaque:e.target.value})}/></label>
     </div>
     <label className="mt">Descrição e direção permanente<textarea rows={3} value={p.descricao} placeholder="Ex.: voz encorpada e cinematográfica, ironia seca e discreta; sem tom publicitário." onChange={e=>mudar(p.id,{descricao:e.target.value})}/></label>
@@ -174,7 +217,9 @@ function Elenco({elenco,add,mudar,apagar,testar}:{elenco:Personagem[];add:()=>vo
 const FRASE_TESTE='Olá! Esta é a minha voz. Escute com atenção... porque o que vem agora vai mudar tudo.';
 function Lab({elenco,takes,gerando,gerar,aprovar,nota,apagarTake,usarAjustes,add}:{elenco:Personagem[];takes:Take[];gerando:boolean;gerar:(p:Personagem,txt:string,dir:string,vozB:string)=>void;aprovar:(t:Take)=>void;nota:(t:Take,n:string)=>void;apagarTake:(t:Take)=>void;usarAjustes:(t:Take)=>void;add:()=>void}){
   const [pid,setPid]=useState(elenco[0]?.id||''); const p=elenco.find(x=>x.id===pid)||elenco[0];
-  const [txt,setTxt]=useState(FRASE_TESTE); const [dir,setDir]=useState(''); const [vozB,setVozB]=useState('');
+  const [txt,setTxt]=useState(FRASE_TESTE);
+  useEffect(()=>{ if(p?.testes?.length) setTxt(p.testes[0]); },[p?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [dir,setDir]=useState(''); const [vozB,setVozB]=useState('');
   const [so,setSo]=useState(false);
   if(!p) return <section className="panel empty-state"><FlaskConical size={30}/><h2>Crie um personagem para testar a voz</h2><button className="primary" onClick={add}><Plus size={15}/> Novo personagem</button></section>;
   const lista=takes.filter(t=>t.personagemId===p.id&&(!so||t.aprovado));
@@ -185,6 +230,7 @@ function Lab({elenco,takes,gerando,gerar,aprovar,nota,apagarTake,usarAjustes,add
     <label>Personagem<select value={p.id} onChange={e=>setPid(e.target.value)}>{elenco.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>
     <label>Comparar com outra voz-base (opcional)<select value={vozB} onChange={e=>setVozB(e.target.value)}><option value="">Não, só a voz da ficha ({p.voz})</option>{VOZES_TTS.filter(v=>v[0]!==p.voz).map(([v,d])=><option key={v} value={v}>{v} ({d})</option>)}</select></label>
    </div>
+   {!!p.testes?.length&&<div className="chips mt">{p.testes.map(t=><button key={t} className={'chip'+(txt===t?' on':'')} onClick={()=>setTxt(t)} title="Usar esta frase de teste da ficha">“{t.length>50?t.slice(0,48)+'…':t}”</button>)}</div>}
    <label className="mt">Frase de teste<textarea rows={3} value={txt} onChange={e=>setTxt(e.target.value)}/></label>
    <label className="mt">Direção só deste teste (não é falada)<input value={dir} placeholder="Ex.: mais grave, pausa dramática antes de 'porque', tom de suspense" onChange={e=>setDir(e.target.value)}/></label>
    <p className="hint">Ficha atual: {descreverVoz(p)}</p>

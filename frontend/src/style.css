@@ -349,3 +349,4 @@ a.subtle.sm{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
 .vc-midia{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
 .vc-upload{display:inline-flex;flex-direction:row;align-items:center;gap:6px;cursor:pointer;border:1px solid var(--line2);border-radius:8px;padding:6px 10px;font-size:.85rem}
 .vc-ia{display:flex;flex-direction:column;gap:6px;margin:4px 0 8px}.vc-ia span{display:flex;gap:6px;flex-wrap:wrap}.vc-ia input{font-size:.85rem}.vc-sub{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px}
+.colar-fichas{border:1px dashed var(--line2);border-radius:12px;padding:12px;margin-bottom:14px}.fichas-lidas ul{list-style:none;padding:0;margin:6px 0 10px;display:grid;gap:6px}.fichas-lidas li small{display:block;color:#9aa3b8}

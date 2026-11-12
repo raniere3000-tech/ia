@@ -17,7 +17,7 @@ export const ehVoz = (v:string)=>VOZES_TTS.some(([n])=>n===v);
 export const vozDoNome = (nome:string)=>VOZES_TTS.find(([n])=>n.toLowerCase()===nome.trim().toLowerCase())?.[0]||'';
 
 export type Projeto = {id:string;nome:string;criado:number};
-export type Personagem = {id:string;projetoId:string;nome:string;voz:string;modelo:string;genero:string;gravidade:number;ritmo:number;energia:number;emocao:string;sotaque:string;descricao:string;aprovada:boolean;criado:number};
+export type Personagem = {id:string;projetoId:string;nome:string;voz:string;modelo:string;genero:string;gravidade:number;ritmo:number;energia:number;emocao:string;sotaque:string;descricao:string;aprovada:boolean;criado:number;testes?:string[]};
 export type Fala = {id:string;projetoId:string;ordem:number;cena:string;nomeRoteiro:string;personagemId:string;texto:string;direcao:string;pausa:number;tipo:'fala'|'acao'};
 export type Take = {id:string;projetoId:string;falaId:string;personagemId:string;texto:string;direcao:string;pedido:string;voz:string;modelo:string;ajustes:string;data:number;duracao:number;wav:Blob;aprovado:boolean;nota:string};
 export type Loja = 'projetos'|'personagens'|'falas'|'takes';
@@ -44,6 +44,84 @@ export function descreverVoz(p:Personagem){
     p.sotaque.trim()?`Sotaque: ${p.sotaque.trim()}.`:'',
     p.descricao.trim(),
   ].filter(Boolean).join(' ');
+}
+
+// ---------------- Fichas coladas (texto livre → personagens) ----------------
+export type FichaLida = {nome:string;voz?:string;modelo?:string;genero?:string;gravidade?:number;ritmo?:number;energia?:number;emocao?:string;sotaque?:string;descricao?:string;testes:string[]};
+const semAcento=(t:string)=>t.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+/** 0–100% (ou 1–5) → escala 1–5 da ficha. */
+function escala(v:string){
+  const n=parseFloat(v.replace(',','.')); if(isNaN(n)) return undefined;
+  if(/%/.test(v)||n>5) return Math.max(1,Math.min(5,Math.round(n/100*4)+1));
+  return Math.max(1,Math.min(5,Math.round(n)));
+}
+/** Lê fichas de voz escritas em texto: tabela (Personagem / Voz-base / Gravidade / Ritmo / Energia / Emoção)
+ *  e blocos por personagem com "Perfil —", "Descrição e direção permanente" e "Teste — “frase”". */
+export function lerFichas(txt:string):FichaLida[]{
+  const linhas=txt.replace(/\r/g,'').split('\n');
+  const fichas:FichaLida[]=[];
+  const achar=(nome:string)=>fichas.find(f=>semAcento(f.nome)===semAcento(nome));
+  const geral=semAcento(txt);
+  const modelo=/\bpro\b/.test(geral.split('\n').slice(0,6).join(' '))?MODELOS_TTS[1][0]:undefined;
+  const sotaque=(txt.match(/(brasileiro neutro|sotaque [^.,\n]+)/i)||[])[1];
+  // 1) Tabela: linhas com colunas separadas por tab, | ou 2+ espaços, com uma voz do Gemini na 2ª coluna.
+  let cab:string[]|null=null;
+  for(const l of linhas){
+    const cols=l.split(/\t|\s*\|\s*|\s{2,}/).map(c=>c.trim()).filter(Boolean);
+    if(cols.length<3) continue;
+    if(cols.some(c=>/voz/i.test(c))&&cols.some(c=>/gravidade|ritmo|energia/i.test(c))){ cab=cols.map(semAcento); continue; }
+    const voz=cols.map(c=>vozDoNome(c.split(/[\s(]/)[0])).find(Boolean);
+    if(!voz) continue;
+    const f:FichaLida={nome:cols[0],voz,testes:[]};
+    const col=(k:string)=>{ if(!cab) return undefined; const i=cab.findIndex(c=>c.includes(k)); return i>=0?cols[i]:undefined; };
+    const pct=cols.filter(c=>/^\d+([.,]\d+)?\s*%?$/.test(c));
+    f.gravidade=escala(col('gravidade')??pct[0]??''); f.ritmo=escala(col('ritmo')??pct[1]??''); f.energia=escala(col('energia')??pct[2]??'');
+    const em=col('emoc')??cols[cols.length-1]; if(em&&!/^\d/.test(em)&&!vozDoNome(em)) f.emocao=em.toLowerCase();
+    if(!achar(f.nome)) fichas.push(f);
+  }
+  // 2) Blocos por personagem.
+  let atual:FichaLida|null=null; let modo:''|'desc'='';
+  const ehTitulo=(l:string)=>{
+    if(l.length>60||/[“"”:]/.test(l)||/^(perfil|descri|teste)/i.test(l)) return null;
+    const base=l.split(/\s+[·•\-–—]\s+/)[0].trim();
+    const ja=fichas.find(f=>semAcento(base)===semAcento(f.nome)||semAcento(base).startsWith(semAcento(f.nome)+' '));
+    if(ja) return ja;
+    return null;
+  };
+  linhas.forEach((bruta,i)=>{
+    const l=bruta.trim(); if(!l) return;
+    const t=ehTitulo(l); if(t){ atual=t; modo=''; return; }
+    const prox=linhas.slice(i+1).find(x=>x.trim())?.trim()||'';
+    if(l.length<=60&&!/[“":]/.test(l)&&/^perfil\s*[—–:-]/i.test(prox)){ atual=null; modo=''; return; }   // personagem fora da tabela: lido abaixo
+    // bloco novo sem tabela: "Nome" seguido de "Perfil —"
+    if(!atual&&/^perfil\s*[—–:-]/i.test(l)) return;
+    if(!atual) return;
+    let m;
+    if((m=l.match(/^perfil\s*[—–:-]\s*(.+)$/i))){ atual.genero=m[1].trim().replace(/\.$/,''); modo=''; return; }
+    if(/^descri[cç][aã]o/i.test(l)){ const r=l.replace(/^descri[cç][aã]o[^—–:-]*[—–:-]?\s*/i,''); modo='desc'; if(r&&!/^e dire/i.test(r)) atual.descricao=((atual.descricao||'')+' '+r).trim(); return; }
+    if(/^teste/i.test(l)){ const f=[...l.matchAll(/[“"]([^”"]+)[”"]/g)].map(x=>x[1].trim()); atual.testes.push(...f); modo=''; return; }
+    if(modo==='desc'){ atual.descricao=((atual.descricao||'')+' '+l).trim(); }
+  });
+  // Blocos de personagens que não estavam na tabela: título seguido de "Perfil —".
+  for(let i=0;i<linhas.length-1;i++){
+    const l=linhas[i].trim(), prox=linhas.slice(i+1).find(x=>x.trim())?.trim()||'';
+    if(l&&l.length<=60&&!/[“":]/.test(l)&&/^perfil\s*[—–:-]/i.test(prox)){
+      const nome=l.split(/\s+[·•\-–—]\s+/)[0].trim();
+      if(!achar(nome)&&!fichas.some(f=>semAcento(nome).startsWith(semAcento(f.nome)+' '))){
+        const sub=lerFichas(`${nome}\tCharon\t50%\n`+linhas.slice(i).join('\n')).find(f=>semAcento(f.nome)===semAcento(nome));
+        if(sub){ sub.voz=vozDoNome(nome)||undefined; fichas.push(sub); }
+      }
+    }
+  }
+  for(const f of fichas){ if(modelo) f.modelo=modelo; if(sotaque) f.sotaque=sotaque.replace(/^sotaque\s+/i,''); f.nome=f.nome.toUpperCase(); }
+  return fichas;
+}
+/** Aplica uma ficha lida num personagem (novo ou existente). */
+export function aplicarFicha(p:Personagem,f:FichaLida):Personagem{
+  const n={...p};
+  for(const k of ['voz','modelo','genero','gravidade','ritmo','energia','emocao','sotaque','descricao'] as const){ const v=f[k]; if(v!==undefined&&v!=='') (n as any)[k]=v; }
+  if(f.testes.length) n.testes=f.testes;
+  return n;
 }
 
 // ---------------- Armazenamento (IndexedDB) ----------------
