@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Upload, Film, Sparkles, Loader2, CheckCircle2, Circle, AlertTriangle, Pencil, Download, Copy, Trash2, Undo2, FileText, Wand2, Package, Play, CalendarClock, ArrowRight, Clock } from 'lucide-react';
+import { Upload, Film, Sparkles, Loader2, CheckCircle2, Circle, AlertTriangle, Pencil, Download, Copy, Trash2, Undo2, FileText, Wand2, Package, Play, CalendarClock, ArrowRight, Clock, GitCompare, RotateCcw, X } from 'lucide-react';
 import { useApp, captionPresets, PROJETO_VAZIO, type Job } from '../state';
 import { HelpButton } from '../components/Help';
 import Editor from '../components/Editor';
@@ -12,7 +12,7 @@ import PostarLote from '../components/PostarLote';
 import { iaAtiva, nomeIA, avaliar, erroIA } from '../lib/ia';
 import { ErroGemini, erroGemini } from '../lib/gemini';
 import { videoInfo, decodeAudio, energyProfile, captureFrames, type AudioData } from '../lib/media';
-import { gerarCandidatos, avaliarJanelas, notaFinal, nota10, type Clip, type Candidate } from '../lib/analyze';
+import { gerarCandidatos, avaliarJanelas, notaFinal, nota10, cuesDe, urlDe, type Clip, type Candidate } from '../lib/analyze';
 import { parseLegendas, type Cue } from '../lib/captions';
 import { transcrever, transcreverGemini, IDIOMAS } from '../lib/transcribe';
 import { formatoSuportado } from '../lib/render';
@@ -84,6 +84,11 @@ export default function Cortes(){
   const [postarIds,setPostarIds]=useState<string[]|null>(null);
   const [agendando,setAgendando]=useState<Clip|null>(null);
   const [exp,setExp]=useState<{id:string;pct:number;fila?:string}|null>(null);
+  const [previa,setPrevia]=useState(''); const [comparar,setComparar]=useState<[string,string]|null>(null);
+  // Exportação em lote: um status por corte, para repetir só os que falharam.
+  type ItemLote={id:string;titulo:string;status:'fila'|'gravando'|'ok'|'erro';pct:number;erro?:string};
+  const [lote,setLote]=useState<{itens:ItemLote[];rodando:boolean}|null>(null);
+  const prontos=useRef(new Map<string,{nome:string;blob:Blob;srt:string}>());
   const [drag,setDrag]=useState(false);
   const [novoPrompt,setNovoPrompt]=useState('');
   const fileInput=useRef<HTMLInputElement>(null);
@@ -309,7 +314,7 @@ export default function Cortes(){
   }
 
   const atualizar=(c:Clip)=>setProjeto(p=>({...p,clips:p.clips.map(x=>x.id===c.id?c:x)}));
-  const duplicar=(c:Clip)=>{ const n:Clip={...c,id:uid(),versao_de:c.versao_de||c.id,titulo:c.titulo+' (versão 2)'}; setProjeto(p=>{ const i=p.clips.findIndex(x=>x.id===c.id); const cl=[...p.clips]; cl.splice(i+1,0,n); return {...p,clips:cl}; }); toast('Nova versão criada logo abaixo do original.','ok'); return n; };
+  const duplicar=(c:Clip)=>{ const raiz=c.versao_de||c.id; const k=projeto.clips.filter(x=>x.versao_de===raiz).length+2; const n:Clip={...c,id:uid(),versao_de:raiz,titulo:c.titulo.replace(/ \((versão|variação) \d+\)$/,'')+` (variação ${k})`}; setProjeto(p=>{ const i=p.clips.findIndex(x=>x.id===c.id); const cl=[...p.clips]; cl.splice(i+1,0,n); return {...p,clips:cl}; }); toast('Variação criada logo abaixo do original. Mude o gancho, o enquadramento ou a legenda só nela: o original fica como está.','ok'); return n; };
 
   async function exportar(c:Clip){
     if(exp) return;
@@ -321,23 +326,37 @@ export default function Cortes(){
     }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
     finally{ setExp(null); }
   }
-  async function exportarZip(){
-    const lista=escolhidos; if(!lista.length||exp) return;
-    const arquivos:{nome:string;blob:Blob}[]=[]; const extras:Record<string,string>={};
-    try{
-      for(let i=0;i<lista.length;i++){
-        const c=lista[i];
-        const {blob,ext}=await renderClip(projeto.url,c,projeto.cues,captionPresets,template,pct=>setExp({id:c.id,pct,fila:`${i+1} de ${lista.length}`}));
-        const nome=nomeArquivo(c,i,ext); arquivos.push({nome,blob});
-        const srt=srtDoCorte(c,projeto.cues); if(srt) extras[nome.replace(/\.\w+$/,'.srt')]=srt;
-      }
-      extras['cortes.csv']='arquivo;titulo;inicio;fim;nota_0_99;nota_0_10;gancho;fluxo;valor;tendencia;motivo\n'+lista.map((c,i)=>[arquivos[i].nome,c.titulo,tm(c.inicio),tm(c.fim),c.nota_final,c.nota_10,c.notas.gancho,c.notas.fluxo,c.notas.valor,c.notas.tendencia,c.motivo].map(x=>`"${String(x).replace(/"/g,'""')}"`).join(';')).join('\n');
-      setExp({id:'zip',pct:100,fila:'Compactando'});
-      baixar(await zipar(arquivos,extras),`cortes-${projeto.nome.replace(/\.\w+$/,'')}.zip`);
-      toast(`${lista.length} cortes exportados em ZIP.`,'ok');
-    }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
-    finally{ setExp(null); }
+  async function exportarZip(soFalhas=false){
+    if(exp||lote?.rodando) return;
+    const base=soFalhas&&lote?lote.itens.filter(i=>i.status==='erro').map(i=>projeto.clips.find(c=>c.id===i.id)).filter((c):c is Clip=>!!c):escolhidos;
+    if(!base.length) return;
+    if(!soFalhas) prontos.current.clear();
+    let itens:ItemLote[]=soFalhas&&lote?lote.itens.map(i=>i.status==='erro'?{...i,status:'fila' as const,pct:0,erro:undefined}:i):base.map(c=>({id:c.id,titulo:c.titulo,status:'fila' as const,pct:0}));
+    const muda=(id:string,m:Partial<ItemLote>)=>{ itens=itens.map(i=>i.id===id?{...i,...m}:i); setLote({itens,rodando:true}); };
+    setLote({itens,rodando:true});
+    for(const c of base){
+      muda(c.id,{status:'gravando',pct:0});
+      try{
+        const {blob,ext}=await renderClip(urlDe(c,projeto.url),c,cuesDe(c,projeto.cues),captionPresets,template,pct=>muda(c.id,{pct}));
+        prontos.current.set(c.id,{nome:nomeArquivo(c,itens.findIndex(i=>i.id===c.id),ext),blob,srt:srtDoCorte(c,cuesDe(c,projeto.cues))||''});
+        muda(c.id,{status:'ok',pct:100});
+      }catch(e){ muda(c.id,{status:'erro',erro:e instanceof Error?e.message:String(e)}); }
+    }
+    setLote({itens,rodando:false});
+    const falhas=itens.filter(i=>i.status==='erro').length;
+    toast(falhas?`${itens.length-falhas} corte(s) prontos e ${falhas} com falha. Você pode repetir só os que falharam.`:`${itens.length} corte(s) prontos. Baixe o ZIP.`,falhas?'info':'ok');
   }
+  async function baixarLote(){
+    if(!lote) return; const lista=lote.itens.filter(i=>i.status==='ok').map(i=>({c:projeto.clips.find(c=>c.id===i.id),p:prontos.current.get(i.id)})).filter((x):x is {c:Clip;p:{nome:string;blob:Blob;srt:string}}=>!!x.c&&!!x.p);
+    if(!lista.length) return; const extras:Record<string,string>={};
+    for(const {p} of lista) if(p.srt) extras[p.nome.replace(/\.\w+$/,'.srt')]=p.srt;
+    extras['cortes.csv']='arquivo;titulo;inicio;fim;nota_0_99;nota_0_10;gancho;fluxo;valor;tendencia;motivo\n'+lista.map(({c,p})=>[p.nome,c.titulo,tm(c.inicio),tm(c.fim),c.nota_final,c.nota_10,c.notas.gancho,c.notas.fluxo,c.notas.valor,c.notas.tendencia,c.motivo].map(x=>`"${String(x).replace(/"/g,'""')}"`).join(';')).join('\n');
+    baixar(await zipar(lista.map(x=>({nome:x.p.nome,blob:x.p.blob})),extras),`cortes-${projeto.nome.replace(/\.\w+$/,'')||'video'}.zip`);
+  }
+  /** Trecho da fala dentro do corte. */
+  const trecho=(c:Clip)=>{ const t=cuesDe(c,projeto.cues).filter(q=>q.end>c.inicio&&q.start<c.fim).map(q=>q.text.trim()).join(' ').replace(/\s+/g,' ').trim(); return t.length>170?t.slice(0,170).replace(/\s\S*$/,'')+'…':t; };
+  /** Cortes que pegam o mesmo pedaço do vídeo (30% ou mais do menor). */
+  const sobrepostos=(c:Clip)=>ativos.filter(x=>x.id!==c.id&&urlDe(x,projeto.url)===urlDe(c,projeto.url)&&x.versao_de!==c.id&&c.versao_de!==x.id&&(Math.min(x.fim,c.fim)-Math.max(x.inicio,c.inicio))>=0.3*Math.min(x.fim-x.inicio,c.fim-c.inicio));
 
   const ativos=projeto.clips.filter(c=>!c.descartado);
   const aprovados=ativos.filter(c=>c.nota_10>minimo);
@@ -441,27 +460,53 @@ export default function Cortes(){
     <div className="bulk-bar">
      <label className="check"><input type="checkbox" checked={visiveis.length>0&&visiveis.every(c=>sel.has(c.id))} onChange={e=>setSel(e.target.checked?new Set(visiveis.map(c=>c.id)):new Set())}/> Selecionar todos</label>
      <span>{sel.size} selecionado(s)</span>
-     <button className="subtle" disabled={!sel.size||!!exp||!recSupport} onClick={exportarZip}><Package size={16}/> Baixar (ZIP)</button>
+     <button className="subtle" disabled={!sel.size||!!exp||!!lote?.rodando||!recSupport} onClick={()=>exportarZip()} title={!recSupport?'Este navegador não grava vídeo':!sel.size?'Marque pelo menos um corte':'Grava cada corte no seu navegador e junta num ZIP'}><Package size={16}/> Exportar selecionados (ZIP)</button>
      <HelpButton topic="exportar"/>
      <button className="primary next-btn" disabled={!sel.size} onClick={()=>setEtapa('edicao')}>Próximo: editar {sel.size||''} corte(s) <ArrowRight size={16}/></button>
     </div>
+    {lote&&<section className="panel lote-exp">
+     <div className="section-head"><h2><Package size={17}/> Exportação em lote</h2><span className="hint">roda no seu navegador, deixe esta aba aberta{lote.rodando?'':` • ${lote.itens.filter(i=>i.status==='ok').length} de ${lote.itens.length} prontos`}</span>{!lote.rodando&&<button className="icon-btn" onClick={()=>setLote(null)} aria-label="Fechar exportação"><X size={15}/></button>}</div>
+     <ul className="lote-lista">{lote.itens.map(i=><li key={i.id} className={i.status}><span className="lote-tit">{i.titulo}</span><div className="progress"><div style={{width:(i.status==='ok'?100:i.pct)+'%'}}/></div><small>{i.status==='fila'?'na fila':i.status==='gravando'?`gravando ${i.pct}%`:i.status==='ok'?'pronto':`falhou: ${i.erro}`}</small></li>)}</ul>
+     {!lote.rodando&&<div className="row-gap left mt">
+      <button className="primary" disabled={!lote.itens.some(i=>i.status==='ok')} onClick={baixarLote}><Download size={15}/> Baixar ZIP com os {lote.itens.filter(i=>i.status==='ok').length} prontos</button>
+      {lote.itens.some(i=>i.status==='erro')&&<button className="subtle" onClick={()=>exportarZip(true)}><RotateCcw size={15}/> Repetir só os {lote.itens.filter(i=>i.status==='erro').length} que falharam</button>}
+     </div>}
+    </section>}
+    {comparar&&(()=>{ const par=comparar.map(id=>ativos.find(c=>c.id===id)).filter((c):c is Clip=>!!c); if(par.length<2) return null;
+     return <section className="panel comparar">
+      <div className="section-head"><h2><GitCompare size={17}/> Comparar trechos sobrepostos</h2><button className="icon-btn" onClick={()=>setComparar(null)} aria-label="Fechar comparação"><X size={15}/></button></div>
+      <div className="comparar-grid">{par.map((c,i)=><div key={c.id} className="comparar-lado">
+       <video src={`${urlDe(c,projeto.url)}#t=${c.inicio.toFixed(2)},${c.fim.toFixed(2)}`} controls preload="metadata" playsInline/>
+       <b>{c.titulo}</b><small>{tm(c.inicio)}–{tm(c.fim)} • {Math.round(c.fim-c.inicio)} s • nota {c.nota_10.toFixed(1)}/10</small>
+       <small>gancho {c.notas.gancho} • fluxo {c.notas.fluxo} • valor {c.notas.valor} • tendência {c.notas.tendencia}</small>
+       {trecho(c)&&<p className="trecho">“{trecho(c)}”</p>}
+       <button className="primary sm" onClick={()=>{ const outro=par[1-i]; const s2=new Set(sel); s2.add(c.id); s2.delete(outro.id); setSel(s2); setComparar(null); toast(`Ficou "${c.titulo}". O outro continua na lista, só saiu da seleção.`,'ok'); }}>Ficar com este</button>
+      </div>)}</div>
+     </section>; })()}
     {!sel.size&&visiveis.length>0&&<p className="hint">Marque os cortes que você quer usar (ou clique em Selecionar todos) e depois em <b>Próximo</b>.</p>}
     {exp&&<div className="export-bar"><Loader2 size={16} className="spin"/><span>{exp.fila?`Exportando ${exp.fila}`:'Exportando corte'} • {exp.pct}% — mantenha esta aba aberta e visível</span><div className="progress"><div style={{width:exp.pct+'%'}}/></div></div>}
 
     {visiveis.length===0?<div className="empty"><Sparkles size={30}/><strong>Nenhum corte acima da nota mínima</strong><p>Reduza a nota mínima ou clique em “Mostrar todos”. O site não inventa cortes para completar a quantidade.</p></div>
     :<div className="clip-grid">{visiveis.map(c=><article key={c.id} className={'clip-card '+(sel.has(c.id)?'selected':'')+(c.nota_10<=minimo?' below':'')}>
-      <div className="clip-thumb" onClick={()=>setEditando(c)}>{c.thumb?<img src={c.thumb} alt=""/>:<Film size={28}/>}<span className="play"><Play size={18}/></span><span className="dur">{tm(c.inicio)}–{tm(c.fim)} • {Math.round(c.fim-c.inicio)} s</span>
+      <div className="clip-thumb" onClick={()=>setPrevia(previa===c.id?'':c.id)} title="Prévia rápida do trecho">{previa===c.id?<video className="previa-rapida" src={`${urlDe(c,projeto.url)}#t=${c.inicio.toFixed(2)},${c.fim.toFixed(2)}`} autoPlay playsInline onTimeUpdate={e=>{ const v=e.currentTarget; if(v.currentTime>=c.fim){ v.pause(); setPrevia(''); } }} onClick={e=>{ e.stopPropagation(); setPrevia(''); }}/>:c.thumb?<img src={c.thumb} alt=""/>:<Film size={28}/>}{previa!==c.id&&<span className="play"><Play size={18}/></span>}<span className="dur">{tm(c.inicio)}–{tm(c.fim)} • {Math.round(c.fim-c.inicio)} s</span>
        <label className="sel" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.has(c.id)} onChange={e=>{const s=new Set(sel); e.target.checked?s.add(c.id):s.delete(c.id); setSel(s);}}/></label></div>
       <div className="clip-body">
        <div className="score-row"><div className="score big"><strong>{c.nota_10.toFixed(1)}</strong><small>/10</small></div><div className="sub-scores">{(['gancho','fluxo','valor','tendencia'] as const).map(k=><span key={k} title={`${k}: ${c.notas[k]}/99`}><i style={{width:c.notas[k]+'%'}}/>{k==='tendencia'?'tendência':k} {c.notas[k]}</span>)}</div></div>
        <input className="title-input" value={c.titulo} onChange={e=>atualizar({...c,titulo:e.target.value})} aria-label="Título"/>
-       <p className="motivo">{c.motivo} <small>Nota {c.nota_final}/99{c.versao_de?' • versão duplicada':''}</small></p>
+       <p className="motivo">{c.motivo} <small>Nota {c.nota_final}/99{c.versao_de?' • variação de outro corte':''}</small></p>
+       {trecho(c)&&<p className="trecho">“{trecho(c)}”</p>}
+       <details className="porque"><summary>Por que esta nota</summary>
+        <table><tbody>{([['gancho','Gancho (começo prende)',35],['fluxo','Fluxo (fala sem buracos)',25],['valor','Valor (conteúdo)',25],['tendencia','Tendência (potencial)',15]] as const).map(([k,n,p])=><tr key={k}><td>{n}</td><td>{c.notas[k]}</td><td>× {p}%</td><td>= {(c.notas[k]*p/100).toFixed(1)}</td></tr>)}
+         <tr className="tot"><td>Nota</td><td colSpan={3}>{c.nota_final}/99 = {c.nota_10.toFixed(1)}/10</td></tr></tbody></table>
+        <small>{c.fonte==='ia'?`Notas dadas pela IA (${nomeIA(iaAtiva(settings))||'IA'}), lendo a transcrição.`:'Notas automáticas, calculadas no seu navegador pelo volume da fala e pelas frases da legenda. Com uma chave de IA elas ficam mais precisas.'}</small>
+       </details>
+       {sobrepostos(c).length>0&&<p className="sobrepoe">Pega o mesmo trecho que {sobrepostos(c).slice(0,2).map(x=><button key={x.id} className="link-btn inline" onClick={()=>{ setComparar([c.id,x.id]); setTimeout(()=>document.querySelector('.comparar')?.scrollIntoView({behavior:'smooth',block:'center'}),80); }}>{x.titulo} ({tm(x.inicio)}–{tm(x.fim)})</button>)} <small>toque para comparar</small></p>}
        {exp?.id===c.id&&<div className="progress"><div style={{width:exp.pct+'%'}}/></div>}
        <div className="clip-actions">
         <button className="primary sm" onClick={()=>setEditando(c)}><Pencil size={14}/> Editar e ver</button>
         <button className="subtle sm" disabled={!!exp||!recSupport} onClick={()=>exportar(c)}>{exp?.id===c.id?<><Loader2 size={14} className="spin"/> {exp.pct}%</>:<><Download size={14}/> Baixar</>}</button>
         <button className="subtle sm" disabled={!!exp||!recSupport} title="Agendar nas redes" onClick={()=>setAgendando(c)}><CalendarClock size={14}/> Agendar</button>
-        <button className="icon-btn" title="Duplicar" onClick={()=>duplicar(c)}><Copy size={15}/></button>
+        <button className="icon-btn" title="Duplicar como variação (para testar outro gancho, enquadramento ou legenda)" aria-label="Duplicar como variação" onClick={()=>duplicar(c)}><Copy size={15}/></button>
         <button className="icon-btn" title="Descartar" onClick={()=>atualizar({...c,descartado:true})}><Trash2 size={15}/></button>
        </div>
       </div>
