@@ -528,3 +528,22 @@ button:focus-visible,a:focus-visible,summary:focus-visible,[role=tab]:focus-visi
 
 .mark-motivo{display:block;opacity:.75;font-size:11.5px;line-height:1.4;grid-column:1/-1;}
 .marks .primary.full{width:100%;justify-content:center;margin:8px 0 2px;}
+
+/* Gerar cortes em acordeão */
+.acordeao{display:flex;flex-direction:column;gap:12px;}
+.passo{border:1px solid var(--line);border-radius:16px;background:var(--panel);overflow:hidden;}
+.passo.aberto{border-color:#4b3f8a;}
+.passo-cab{width:100%;display:flex;align-items:center;gap:12px;padding:14px 16px;background:transparent;border:0;color:inherit;text-align:left;cursor:pointer;}
+.passo-cab:disabled{cursor:default;opacity:.55;}
+.passo-num{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#20253a;font-size:13px;font-weight:800;}
+.passo.aberto .passo-num{background:var(--brand);color:#fff;}
+.passo.feito:not(.aberto) .passo-num{background:var(--ok-soft);color:var(--ok);}
+.passo-tit{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.passo-tit b{font-family:'Space Grotesk',sans-serif;font-size:16px;}
+.passo-tit small{color:var(--muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.passo-seta{flex:none;transition:transform .2s;opacity:.7;}
+.passo.aberto .passo-seta{transform:rotate(180deg);}
+.passo-corpo{padding:4px 16px 18px;display:flex;flex-direction:column;gap:14px;}
+.passo-corpo[hidden]{display:none;}
+.passo-corpo>.panel{margin:0;}
+.passo-acao{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}

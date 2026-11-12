@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Upload, Film, Sparkles, Loader2, CheckCircle2, Circle, AlertTriangle, Pencil, Download, Copy, Trash2, Undo2, FileText, Wand2, Package, Play, CalendarClock, ArrowRight, Clock, GitCompare, RotateCcw, X } from 'lucide-react';
+import { Upload, Film, Sparkles, Loader2, CheckCircle2, Circle, AlertTriangle, Pencil, Download, Copy, Trash2, Undo2, FileText, Wand2, Package, Play, CalendarClock, ArrowRight, Clock, GitCompare, RotateCcw, X, ChevronDown } from 'lucide-react';
 import { useApp, captionPresets, PROJETO_VAZIO, type Job } from '../state';
 import { HelpButton } from '../components/Help';
 import Editor from '../components/Editor';
@@ -73,6 +73,7 @@ export default function Cortes(){
   const [mostrarTodos,setMostrarTodos]=useState(false); const [ordem,setOrdem]=useState<'nota'|'tempo'>('nota');
   const mesmo=mem.url===projeto.url&&!!projeto.url;
   const [sel,setSel]=useState<Set<string>>(()=>mesmo?mem.sel:new Set());
+  const [aberto,setAberto]=useState<'opcoes'|'video'|'cortes'>(()=>projeto.clips.length&&projeto.job.status==='pronto'?'cortes':projeto.file?'video':'opcoes');
   const [etapa,setE]=useState<Etapa>(()=>mesmo?mem.etapa:'cortes');
   const [tempos,setTempos]=useState(mem.tempos);
   const [inteiro,setInteiro]=useState(mem.inteiro);
@@ -119,7 +120,7 @@ export default function Cortes(){
     cache={file:null,audio:null,energy:null};
     const url=URL.createObjectURL(f);
     setProjeto(()=>({...PROJETO_VAZIO,file:f,url,nome:f.name}));
-    setSel(new Set()); setE('cortes'); setLegErro('');
+    setSel(new Set()); setE('cortes'); setLegErro(''); setAberto('video');
     if(iniciar&&direitos){ gerar({file:f,url}); return; }
     videoInfo(url).then(i=>setProjeto(p=>p.url===url?{...p,duracao:i.duration}:p)).catch(e=>toast(e.message,'erro'));
     toast('Vídeo carregado. Confira as opções e toque em Gerar cortes.','ok');
@@ -369,6 +370,9 @@ export default function Cortes(){
   const mudar=(ids:string[],pt:Partial<Clip>)=>{ const s=new Set(ids); setProjeto(p=>({...p,clips:p.clips.map(c=>s.has(c.id)?{...c,...pt}:c)})); };
   const renderizar=async(c:Clip,onPct:(p:number)=>void)=>{ const {blob,ext}=await renderClip(projeto.url,c,projeto.cues,captionPresets,template,onPct); return {blob,nome:nomeArquivo(c,escolhidos.indexOf(c),ext)}; };
   const temResultado=job.status==='pronto'&&projeto.clips.length>0;
+  // Quando os cortes ficam prontos, o passo 3 abre sozinho; ao escolher um vídeo novo o passo 2 abre.
+  useEffect(()=>{ if(temResultado) setAberto('cortes'); },[temResultado]);
+  useEffect(()=>{ if(!projeto.file) setAberto(a=>a==='cortes'?'opcoes':a); },[projeto.file]);
   const passo=!temResultado?1:etapa==='edicao'?3:etapa==='postar'?4:2;
   const irPasso=temResultado?(n:number)=>{ if(n===2) setEtapa('cortes'); else if(escolhidos.length){ setEtapa(n===3?'edicao':'postar'); } else toast('Escolha pelo menos um corte primeiro.','erro'); }:undefined;
 
@@ -410,43 +414,44 @@ export default function Cortes(){
     </>}
   </>;
 
-  // ---------- Tela: sem vídeo ----------
-  if(!projeto.file) return <>
-   <Stepper atual={1}/>
-   <section className="panel">
-    <div className="section-head"><h2><Sparkles size={18}/> 1. Como você quer os cortes?</h2><span>Escolha antes de enviar o vídeo</span></div>
-    {opcoes}
-    <label className="check big auto-check"><input type="checkbox" checked={direitos} onChange={e=>setDireitos(e.target.checked)}/> <span>Declaro que tenho direito de usar e publicar os vídeos que envio (meus ou com autorização). <b>{direitos?'Pronto. Depois de escolher o vídeo, confira as opções e toque em Gerar cortes. Nada começa sozinho.':'Marque para poder gerar os cortes.'}</b></span></label>
-   </section>
-   <h2 className="passo-titulo">2. Envie o vídeo</h2>
-   <LinkStudio onUpload={()=>fileInput.current?.click()} onArquivo={f=>escolherArquivo(f,true)} direitos={direitos} opcoes={{min:faixa[0],max:faixa[1],limite,tema,pedido:prompt,acao:modelo==='acao'}}/>
-   
+  // ---------- Acordeão: 1 opções → 2 vídeo → 3 cortes (edição e postagem abrem em tela própria) ----------
+  const resumoOpcoes=inteiro?'Usar o vídeo inteiro (já é curto)':[lidos.janelas.length?`${lidos.janelas.length} tempo(s) colado(s)`:`${faixa[0]} a ${faixa[1]} s por corte`,modelo==='falas'?'Falas':'Gameplay/ação',lidos.janelas.length?'':`até ${limite} cortes`].filter(Boolean).join(' • ');
+  const tocar=(k:'opcoes'|'video'|'cortes')=>setAberto(a=>a===k?a:k);
+  return <>
+   <Stepper atual={passo} onIr={irPasso}/>
+   {etapa==='edicao'&&temResultado?<>
+   <EdicaoLote clips={escolhidos} mudar={mudar} gerarLegendas={gerarLegendas} dublar={dublar} onEditar={setEditando} onVoltar={()=>setEtapa('cortes')} onProximo={ids=>{ setPostarIds(ids); setEtapa('postar'); }} onZip={exportarZip} exportando={!!exp}/>
+   </>:etapa==='postar'&&temResultado?<>
+   <PostarLote clips={postarIds?escolhidos.filter(c=>postarIds.includes(c.id)):escolhidos} tema={projeto.tema} gerar={renderizar} onVoltar={()=>setEtapa('edicao')}/>
+   </>:<div className="acordeao">
+    <Passo n={1} id="opcoes" titulo="Como você quer os cortes?" resumo={resumoOpcoes} aberto={aberto==='opcoes'} feito={!!projeto.file||temResultado} manter onToggle={()=>tocar('opcoes')}>
+     {opcoes}
+     <label className="check big auto-check"><input type="checkbox" checked={direitos} onChange={e=>setDireitos(e.target.checked)}/> <span>Declaro que tenho direito de usar e publicar os vídeos que envio (meus ou com autorização).</span></label>
+     <div className="passo-acao"><button className="primary lg" disabled={!direitos} onClick={()=>setAberto('video')}>Continuar: enviar o vídeo <ArrowRight size={17}/></button>{!direitos&&<small className="hint">Marque a declaração acima para continuar.</small>}</div>
+    </Passo>
+
+    <Passo n={2} id="video" titulo={projeto.file?'Vídeo':'Envie o vídeo'} resumo={projeto.file?`${projeto.nome}${projeto.duracao?' • '+tm(projeto.duracao):''}`:'Link do YouTube ou arquivo'} aberto={aberto==='video'} feito={!!projeto.file&&job.status!=='rodando'} manter onToggle={()=>tocar('video')}>
+     {!projeto.file?<>
+      <LinkStudio onUpload={()=>fileInput.current?.click()} onArquivo={f=>escolherArquivo(f,true)} direitos={direitos} opcoes={{min:faixa[0],max:faixa[1],limite,tema,pedido:prompt,acao:modelo==='acao'}}/>
    <section className={'panel dropzone '+(drag?'drag':'')} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);escolherArquivo(e.dataTransfer.files?.[0]||null)}} onClick={()=>fileInput.current?.click()} role="button" tabIndex={0}>
     <span className="drop-icon"><Upload size={30}/></span>
     <h2>{lendo?<><Loader2 size={18} className="spin"/> Preparando o vídeo...</>:marcas.length?`Envie o arquivo deste vídeo para cortar os ${marcas.length} trechos marcados`:'Arraste o vídeo aqui ou clique para escolher'}</h2>
     <p>MP4, MOV ou WEBM. O site analisa o áudio e as falas, dá nota a cada trecho e entrega os melhores cortes com legenda. O arquivo não sai do seu computador.</p>
     <input ref={fileInput} type="file" accept="video/*,.mkv,.mov" hidden onChange={e=>escolherArquivo(e.target.files?.[0]||null)}/>
    </section>
-   <p className="hint center">Ainda sem vídeo? Ache inspiração no <button className="link-btn inline" onClick={()=>go('radar')}>Radar</button>.</p>
-  </>;
-
-  // ---------- Tela: configurar / resultados ----------
-  return <>
-   <Stepper atual={passo} onIr={irPasso}/>
-   <section className="panel file-bar"><Film size={20}/><div className="grow"><strong>{projeto.nome}</strong><small>{projeto.duracao?`${tm(projeto.duracao)} de vídeo`:'Lendo...'}{projeto.cuesFonte&&` • ${projeto.cues.length} falas na legenda`}</small></div><button className="subtle" disabled={rodando||!!exp} onClick={()=>{ if(projeto.url) URL.revokeObjectURL(projeto.url); cache={file:null,audio:null,energy:null}; setProjeto(()=>PROJETO_VAZIO); setE('cortes'); setSel(new Set()); }}>Trocar vídeo</button></section>
+   <p className="hint center">Ainda sem vídeo? Ache inspiração no <button className="link-btn inline" onClick={()=>go('radar')}>Radar</button>.</p>     </>:<>
+   <section className="panel file-bar"><Film size={20}/><div className="grow"><strong>{projeto.nome}</strong><small>{projeto.duracao?`${tm(projeto.duracao)} de vídeo`:'Lendo...'}{projeto.cuesFonte&&` • ${projeto.cues.length} falas na legenda`}</small></div><button className="subtle" disabled={rodando||!!exp} onClick={()=>{ if(projeto.url) URL.revokeObjectURL(projeto.url); cache={file:null,audio:null,energy:null}; setProjeto(()=>PROJETO_VAZIO); setE('cortes'); setSel(new Set()); setAberto('video'); }}>Trocar vídeo</button></section>
    {legErro&&temResultado&&<div className="note-bar"><AlertTriangle size={16}/><span><b>Legenda:</b> {legErro}</span><button className="subtle sm" onClick={()=>setLegErro('')}>Ok</button></div>}
+      {!temResultado?<>
+       <button id="btn-gerar" className="primary lg full" disabled={!direitos||rodando||!projeto.duracao} onClick={()=>gerar()}>{rodando?<Loader2 size={18} className="spin"/>:<Sparkles size={18}/>} {rodando?(inteiro?'Preparando...':'Gerando cortes...'):(inteiro?'Usar o vídeo inteiro':'Gerar cortes')}</button>
+       {!direitos&&<p className="hint center">Falta marcar a declaração de direitos no passo 1. <button className="link-btn inline" onClick={()=>setAberto('opcoes')}>Abrir o passo 1</button></p>}
+       {!temIA&&<p className="hint center">Notas automáticas pelo áudio e pelas frases. Para notas e títulos feitos por IA, <button className="link-btn inline" onClick={()=>go('config')}>configure a chave do Gemini (grátis) ou da Claude</button>.</p>}
+       {job.status!=='idle'&&<JobView job={job}/>}
+      </>:<p className="hint">Os cortes já foram gerados e estão no passo 3. Para gerar de novo com outras opções, use "Alterar opções e refazer" lá.</p>}
+     </>}
+    </Passo>
 
-   {job.status!=='pronto'||!projeto.clips.length?<section className="panel">
-    <div className="section-head"><h2><Sparkles size={18}/> Como você quer os cortes?</h2></div>
-    {opcoes}
-    <label className="check big"><input type="checkbox" checked={direitos} onChange={e=>setDireitos(e.target.checked)}/> Declaro que tenho direito de usar e publicar este vídeo (é meu ou tenho autorização do dono).</label>
-    <button id="btn-gerar" className="primary lg full" disabled={!direitos||rodando||!projeto.duracao} onClick={()=>gerar()}>{rodando?<Loader2 size={18} className="spin"/>:<Sparkles size={18}/>} {rodando?(inteiro?'Preparando...':'Gerando cortes...'):(inteiro?'Usar o vídeo inteiro':'Gerar cortes')}</button>
-    {!temIA&&<p className="hint center">Notas automáticas pelo áudio e pelas frases. Para notas e títulos feitos por IA, <button className="link-btn inline" onClick={()=>go('config')}>configure a chave do Gemini (grátis) ou da Claude</button>.</p>}
-    {job.status!=='idle'&&<JobView job={job}/>}
-   </section>
-   :etapa==='edicao'?<EdicaoLote clips={escolhidos} mudar={mudar} gerarLegendas={gerarLegendas} dublar={dublar} onEditar={setEditando} onVoltar={()=>setEtapa('cortes')} onProximo={ids=>{ setPostarIds(ids); setEtapa('postar'); }} onZip={exportarZip} exportando={!!exp}/>
-   :etapa==='postar'?<PostarLote clips={postarIds?escolhidos.filter(c=>postarIds.includes(c.id)):escolhidos} tema={projeto.tema} gerar={renderizar} onVoltar={()=>setEtapa('edicao')}/>
-   :<>
+    <Passo n={3} id="cortes" titulo="Cortes" resumo={temResultado?`${aprovados.length>limite?limite:aprovados.length} aprovados de ${projeto.candidatos} candidatos`:'Aparecem aqui depois de gerar'} aberto={aberto==='cortes'&&temResultado} desabilitado={!temResultado} feito={temResultado} onToggle={()=>tocar('cortes')}>
     <section className="panel results-bar">
      <div className="result-summary"><strong>{aprovados.length>limite?limite:aprovados.length} cortes aprovados</strong> de {projeto.candidatos} candidatos • nota mínima &gt; {minimo.toFixed(1)}/10 • máximo {limite} {projeto.clips.some(c=>c.fonte==='ia')?<span className="tag ai"><Sparkles size={12}/> notas da IA</span>:<span className="tag">notas automáticas</span>}</div>
      <div className="result-controls">
@@ -454,7 +459,7 @@ export default function Cortes(){
       <label className="inline">Máximo<select value={limite} onChange={e=>setLimite(+e.target.value)}>{[3,5,10,15,20,30].map(n=><option key={n}>{n}</option>)}</select></label>
       <label className="inline">Ordenar<select value={ordem} onChange={e=>setOrdem(e.target.value as 'nota'|'tempo')}><option value="nota">Melhores notas</option><option value="tempo">Ordem no vídeo</option></select></label>
       <button className="subtle" onClick={()=>setMostrarTodos(!mostrarTodos)}>{mostrarTodos?'Só aprovados':'Mostrar todos'}</button>
-      <button className="subtle" onClick={()=>setProjeto(p=>({...p,clips:[],job:{status:'idle',etapa:'',pct:0,etapas:[]}}))}>Alterar opções e refazer</button>
+      <button className="subtle" onClick={()=>{ setProjeto(p=>({...p,clips:[],job:{status:'idle',etapa:'',pct:0,etapas:[]}})); setAberto('opcoes'); }}>Alterar opções e refazer</button>
      </div>
      {temIA&&<div className="redo"><Wand2 size={16}/><input placeholder="Refazer com outro pedido, ex.: momentos engraçados" value={novoPrompt} onChange={e=>setNovoPrompt(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')refazer()}}/><button className="subtle" disabled={!novoPrompt.trim()||rodando} onClick={refazer}>{rodando?<Loader2 size={15} className="spin"/>:null} Refazer com IA</button></div>}
      {rodando&&<JobView job={job}/>}
@@ -516,7 +521,9 @@ export default function Cortes(){
      </article>)}</div>}
     {descartados.length>0&&<details className="discarded"><summary>{descartados.length} descartado(s)</summary>{descartados.map(c=><div key={c.id} className="discard-row"><span>{c.titulo} ({tm(c.inicio)}–{tm(c.fim)})</span><button className="link-btn" onClick={()=>atualizar({...c,descartado:false})}><Undo2 size={13}/> Restaurar</button></div>)}</details>}
     {!recSupport&&<p className="hint center"><AlertTriangle size={13}/> Este navegador não grava vídeo. Use Chrome, Edge ou Safari atualizados para exportar.</p>}
-   </>}
+
+    </Passo>
+   </div>}
    {exp&&etapa==='edicao'&&temResultado&&<div className="export-bar"><Loader2 size={16} className="spin"/><span>{exp.fila?`Exportando ${exp.fila}`:'Exportando corte'} • {exp.pct}% — mantenha esta aba aberta e visível</span><div className="progress"><div style={{width:exp.pct+'%'}}/></div></div>}
    {agendando&&<AgendarPost titulo={agendando.titulo} legenda={legendaAutomatica(agendando,projeto.cues,projeto.tema)} gerar={async onPct=>{ const {blob,ext}=await renderClip(projeto.url,agendando,projeto.cues,captionPresets,template,onPct); return {blob,nome:nomeArquivo(agendando,visiveis.indexOf(agendando),ext)}; }} onClose={()=>setAgendando(null)}/>}
    {editando&&<Editor clip={editando} onClose={()=>setEditando(null)}
@@ -524,6 +531,18 @@ export default function Cortes(){
      onDuplicate={c=>{ const n=duplicar(c); setEditando(n); }}
      onExport={c=>{ setEditando(null); exportar(c); }}/>}
   </>;
+}
+
+/** Um passo do acordeão: só um fica aberto. "manter" deixa o conteúdo montado (com download ou player em andamento) mesmo fechado. */
+function Passo({n,id,titulo,resumo,aberto,feito,desabilitado,manter,onToggle,children}:{n:number;id:string;titulo:string;resumo:string;aberto:boolean;feito?:boolean;desabilitado?:boolean;manter?:boolean;onToggle:()=>void;children:React.ReactNode}){
+  return <section className={'passo'+(aberto?' aberto':'')+(feito?' feito':'')+(desabilitado?' off':'')} data-passo={id}>
+   <button className="passo-cab" onClick={onToggle} aria-expanded={aberto} disabled={desabilitado}>
+    <span className="passo-num">{feito&&!aberto?<CheckCircle2 size={16}/>:n}</span>
+    <span className="passo-tit"><b>{titulo}</b>{!aberto&&resumo&&<small>{resumo}</small>}</span>
+    <ChevronDown size={18} className="passo-seta"/>
+   </button>
+   {(aberto||manter)&&<div className="passo-corpo" hidden={!aberto}>{children}</div>}
+  </section>;
 }
 
 function clamp(n:number){ return Math.max(0,Math.min(99,Math.round(n||0))); }
