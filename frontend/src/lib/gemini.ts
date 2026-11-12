@@ -20,7 +20,7 @@ export function esperaGemini(e:unknown,tentativa:number):number|null{
 
 export async function chamar(key:string, caminho:string, body?:unknown){
   let r:Response;
-  try{ r = await fetch(API+caminho,{method:body?'POST':'GET',headers:{'x-goog-api-key':key.trim(),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined}); }
+  try{ r = await fetch(caminho.startsWith('?')?API.slice(0,-1)+caminho:API+caminho,{method:body?'POST':'GET',headers:{'x-goog-api-key':key.trim(),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined}); }
   catch{ throw new ErroGemini(0,'Não foi possível conectar ao Gemini. Verifique sua internet.'); }
   const dados = await r.json().catch(()=>({}));
   if(!r.ok){

@@ -9,6 +9,7 @@ import { VOZES } from '../lib/dublagem';
 import { loadImage } from '../lib/render';
 import { baixar } from '../lib/exporter';
 import AgendarPost from '../components/AgendarPost';
+import { criarImagemGoogle, desenharPorCodigo, modelosImagem, type ModeloG } from '../lib/googleImagem';
 import { MODELOS_ANIMAR, MODELOS_IMAGEM, baixarResultado, enviarArquivo, gerarMuapi } from '../lib/muapi';
 import {
   EXEMPLO, FORMATOS, TEMAS, W, H, cenaVazia, desenhar, gravar, mixar, narrar, nomeVideo, roteiroClaude, roteiroGemini, tempos, tocar, vozValida,
@@ -17,7 +18,7 @@ import {
 } from '../lib/videoCodigo';
 
 const CHAVE = 'studio_video_codigo';
-type Ajustes = {ideia:string;formato:Formato;cenas:number;voz:string;comVoz:boolean;batida:boolean;elenco:string;iaVideo:string;iaImagem:string;iaSeg:number};
+type Ajustes = {ideia:string;formato:Formato;cenas:number;voz:string;comVoz:boolean;batida:boolean;elenco:string;iaVideo:string;iaImagem:string;iaSeg:number;iaEstilo?:string};
 const AJUSTES:Ajustes = {ideia:'',formato:'curiosidade',cenas:6,voz:'Puck',comVoz:true,batida:true,elenco:'',iaVideo:'seedance-lite-i2v',iaImagem:'nano-banana',iaSeg:5};
 const fmt = (s:number)=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
 
@@ -57,8 +58,30 @@ export default function VideoCodigo(){
     const nomes=[...new Set(l.map(x=>x.nome))]; const sem=nomes.filter(n=>n!=='NARRADOR'&&!elenco.some(p=>p.nome.toUpperCase()===n)&&!vozDoNome(n));
     toast(`${l.length} cenas criadas.${sem.length?` Sem voz própria (vão usar a voz padrão): ${sem.join(', ')}.`:''}`,sem.length?'info':'ok');
   }
-  // Imagem e animação com IA (Muapi.ai, pago, chave do usuário).
-  const muapi=settings.muapiKey||'';
+  // Imagem com a chave do Google (desenho por código grátis, ou IA de imagem com faturamento) e imagem/animação pelo Muapi.ai (pago).
+  const muapi=settings.muapiKey||''; const gkey=settings.geminiKey||'';
+  const [modelosG,setModelosG]=useState<ModeloG[]>([]);
+  useEffect(()=>{ let vivo=true; if(gkey) modelosImagem(gkey).then(l=>{ if(vivo) setModelosG(l); }); else setModelosG([]); return ()=>{ vivo=false; }; },[gkey]);
+  // "g-svg" = desenho por código; "g:<modelo>" = IA de imagem do Google; o resto são modelos do Muapi.
+  const ehG=aj.iaImagem==='g-svg'||aj.iaImagem.startsWith('g:'); const iaImg=ehG?(gkey?aj.iaImagem:MODELOS_IMAGEM[0].id):(muapi?aj.iaImagem:gkey?'g-svg':aj.iaImagem);
+  const pedidoDe=(c:Cena)=>(c.pedidoIA||[c.texto,c.destaque].filter(Boolean).join('. ')).trim();
+  async function guardarBlob(c:Cena,b:Blob){ const ext=(b.type.split('/')[1]||'png').replace('jpeg','jpg'); const id=await adicionarMidia(new File([b],`ia-cena-${rot!.cenas.findIndex(x=>x.id===c.id)+1}.${ext}`,{type:b.type||'image/png'})); mudaCena(c.id,{midia:id,anim:c.anim||'zoom-in'}); setVersao(v=>v+1); }
+  /** Cria a imagem de uma cena pelo caminho escolhido. Devolve erro (texto) ou nada. */
+  async function fazerImagem(c:Cena,rotulo=''):Promise<void>{
+    const estilo=(aj.iaEstilo||'').trim(); const st=(t:string)=>setOcupado({txt:rotulo+t,pct:40});
+    if(iaImg==='g-svg'){ await guardarBlob(c,await desenharPorCodigo(gkey,pedidoDe(c),estilo,{onStatus:st})); return; }
+    if(iaImg.startsWith('g:')){ const prompt=`${pedidoDe(c)}. ${estilo?'Estilo: '+estilo+'. ':''}Imagem vertical 9:16 para vídeo curto, composição forte, muito detalhada, sem nenhum texto escrito.`; await guardarBlob(c,await criarImagemGoogle(gkey,prompt,iaImg.slice(2),{onStatus:st})); return; }
+    const m=MODELOS_IMAGEM.find(x=>x.id===iaImg)||MODELOS_IMAGEM[0]; st(`Criando a imagem com ${m.nome}...`);
+    const prompt=`${pedidoDe(c)}. ${estilo?'Estilo: '+estilo+'. ':''}Imagem vertical 9:16, cinematográfica, muito detalhada, sem nenhum texto escrito.`;
+    const url=await gerarMuapi(muapi,m.id,m.corpo({prompt,duracao:0}),t=>st(`${m.nome}: ${t}`),undefined,5); await guardarResultado(c,url,'imagem');
+  }
+  async function criarTodas(){
+    if(!rot) return; const faltam=rot.cenas.filter(c=>!c.midia); if(!faltam.length){ toast('Todas as cenas já têm imagem. Tire a imagem de uma cena para criar outra.','info'); return; }
+    let feitas=0;
+    try{ for(const c of faltam){ await fazerImagem(c,`Cena ${rot.cenas.findIndex(x=>x.id===c.id)+1} (${feitas+1} de ${faltam.length}): `); feitas++; } toast(`${feitas} imagens criadas. Toque em Assistir.`,'ok'); }
+    catch(e){ toast(`${feitas?feitas+' imagem(ns) criada(s), depois parou. ':''}${e instanceof Error?e.message:String(e)}`,'erro'); }
+    finally{ setOcupado(null); }
+  }
   async function guardarResultado(c:Cena,url:string,tipo:'imagem'|'video'){
     const b=await baixarResultado(url);
     if(!b){ window.open(url,'_blank','noopener'); toast('Ficou pronto, mas o site não conseguiu trazer o arquivo. Abri numa nova aba: baixe e envie pelo botão "Trocar" da cena.','info'); return; }
@@ -67,11 +90,8 @@ export default function VideoCodigo(){
     mudaCena(c.id,{midia:id,anim:tipo==='video'?'parado':c.anim||'zoom-in'}); setVersao(v=>v+1);
   }
   async function criarImagemIA(c:Cena){
-    if(!muapi){ go('config'); toast('Cole a chave do Muapi em Chaves e ajustes.','erro'); return; }
-    const m=MODELOS_IMAGEM.find(x=>x.id===aj.iaImagem)||MODELOS_IMAGEM[0];
-    const prompt=`${(c.pedidoIA||c.texto).trim()}. Imagem vertical 9:16, cinematográfica, muito detalhada, sem nenhum texto escrito.`;
-    setOcupado({txt:`Criando a imagem com ${m.nome}...`,pct:30});
-    try{ const url=await gerarMuapi(muapi,m.id,m.corpo({prompt,duracao:0}),t=>setOcupado({txt:`${m.nome}: ${t}`,pct:50}),undefined,5); await guardarResultado(c,url,'imagem'); toast('Imagem criada.','ok'); }
+    if(!gkey&&!muapi){ go('config'); toast('Cole a chave do Gemini (Google) em Chaves e ajustes.','erro'); return; }
+    try{ await fazerImagem(c); toast(iaImg==='g-svg'?'Desenho criado.':'Imagem criada.','ok'); }
     catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
     finally{ setOcupado(null); }
   }
@@ -197,10 +217,10 @@ export default function VideoCodigo(){
          <label>Movimento da imagem<select value={c.anim||'zoom-in'} disabled={!c.midia} onChange={e=>mudaCena(c.id,{anim:e.target.value as Anim})}>{ANIMS.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></label></div>
         <div className="vc-midia">{c.midia&&midias.get(c.midia)?<><span className="tag ok">{midias.get(c.midia)!.tipo==='video'?'🎬':'🖼️'} {midias.get(c.midia)!.nome}{midias.get(c.midia)!.tipo==='video'?` • ${Math.round(midias.get(c.midia)!.duracao)} s`:''}</span><button className="icon-btn" onClick={()=>mudaCena(c.id,{midia:undefined})} aria-label="Tirar imagem"><X size={14}/></button></>:c.midia?<small className="hint">Carregando a imagem...</small>:null}
          <label className="subtle sm vc-upload"><ImagePlus size={14}/> {c.midia?'Trocar':'Imagem ou vídeo'}<input type="file" accept="image/*,video/*" hidden onChange={e=>{ enviarMidia(c,e.target.files?.[0]); e.target.value=''; }}/></label></div>
-        {muapi&&<div className="vc-ia">
+        {(muapi||gkey)&&<div className="vc-ia">
          <input value={c.pedidoIA||''} onChange={e=>mudaCena(c.id,{pedidoIA:e.target.value})} placeholder="O que a IA deve mostrar (vazio = usa o texto da cena)" aria-label="Pedido para a IA"/>
-         <span><button className="subtle sm" onClick={()=>criarImagemIA(c)} disabled={!!ocupado}><Sparkles size={14}/> Criar imagem com IA</button>
-         <button className="subtle sm" onClick={()=>animarIA(c)} disabled={!!ocupado||!c.midia||midias.get(c.midia)?.tipo!=='imagem'} title={!c.midia||midias.get(c.midia)?.tipo!=='imagem'?'Coloque uma imagem na cena primeiro':''}><Wand2 size={14}/> Animar com IA</button></span>
+         <span><button className="subtle sm" onClick={()=>criarImagemIA(c)} disabled={!!ocupado}><Sparkles size={14}/> {iaImg==='g-svg'?'Desenhar com IA':'Criar imagem com IA'}</button>
+         {muapi&&<button className="subtle sm" onClick={()=>animarIA(c)} disabled={!!ocupado||!c.midia||midias.get(c.midia)?.tipo!=='imagem'} title={!c.midia||midias.get(c.midia)?.tipo!=='imagem'?'Coloque uma imagem na cena primeiro':''}><Wand2 size={14}/> Animar com IA</button>}</span>
         </div>}
         <label className="vc-check"><input type="checkbox" checked={c.contagem} onChange={e=>mudaCena(c.id,{contagem:e.target.checked})}/> Contagem regressiva (pergunta de quiz)</label>
       </div>)}</div>
@@ -222,12 +242,23 @@ export default function VideoCodigo(){
       {aj.comVoz&&semVoz>0&&<p className="hint">{nar?'Algumas cenas mudaram depois da voz. Toque em Gravar voz para atualizar só elas.':'Toque em Gravar voz. Sem voz, cada cena fica na tela pelo tempo de leitura.'}</p>}
       <div className="mt">
        <strong className="vc-sub"><Wand2 size={14}/> Imagens e animação com IA</strong>
-       {muapi?<div className="vc-linha">
-        <label>Animar imagem com<select value={aj.iaVideo} onChange={e=>muda({iaVideo:e.target.value})}>{MODELOS_ANIMAR.map(m=><option key={m.id} value={m.id}>{m.nome} ({m.dica})</option>)}</select></label>
+       {!gkey&&!muapi&&<p className="hint">Para a IA criar a imagem de cada cena, cole a chave do Gemini (Google, grátis para o desenho por código) em <button className="link-btn inline" onClick={()=>go('config')}>Chaves e ajustes</button>.</p>}
+       {(gkey||muapi)&&<div className="vc-linha">
+        <label>Criar imagem com<select value={iaImg} onChange={e=>muda({iaImagem:e.target.value})} aria-label="Criar imagem com">
+         {gkey&&<optgroup label="Google, grátis"><option value="g-svg">Desenho por código (Gemini desenha, grátis)</option></optgroup>}
+         {gkey&&<optgroup label="Google, IA de imagem (precisa de faturamento ativado)"><option value="g:auto">Automático (melhor modelo da sua chave)</option>{modelosG.map(m=><option key={m.id} value={'g:'+m.id}>{m.nome}</option>)}</optgroup>}
+         {muapi&&<optgroup label="Muapi.ai (pago por uso)">{MODELOS_IMAGEM.map(m=><option key={m.id} value={m.id}>{m.nome} ({m.dica})</option>)}</optgroup>}
+        </select></label>
+        <label>Estilo das imagens (vale para todas)<input value={aj.iaEstilo||''} onChange={e=>muda({iaEstilo:e.target.value})} placeholder="ex.: desenho animado 2D, cores fortes" aria-label="Estilo das imagens"/></label>
+       </div>}
+       {(gkey||muapi)&&<div className="row-gap left mt"><button className="primary" onClick={criarTodas} disabled={!!ocupado}>{ocupado?<Loader2 size={15} className="spin"/>:<Sparkles size={15}/>} Criar a imagem de todas as cenas{rot.cenas.some(c=>!c.midia)?` (${rot.cenas.filter(c=>!c.midia).length})`:''}</button></div>}
+       {iaImg==='g-svg'&&<p className="hint">O Gemini escreve o desenho de cada cena em código e o site transforma em imagem. Usa a cota grátis da sua chave do Google e roda no seu navegador. O resultado é uma ilustração simples, não uma foto.</p>}
+       {iaImg.startsWith('g:')&&<p className="hint">Imagem feita pelos modelos de imagem do Google com a sua chave. Na API eles não têm cota grátis: se aparecer aviso de cota, ative o faturamento no Google AI Studio ou volte para o Desenho por código.</p>}
+       {muapi&&<div className="vc-linha mt">
+        <label>Animar imagem com (Muapi)<select value={aj.iaVideo} onChange={e=>muda({iaVideo:e.target.value})}>{MODELOS_ANIMAR.map(m=><option key={m.id} value={m.id}>{m.nome} ({m.dica})</option>)}</select></label>
         <label>Duração da animação<select value={aj.iaSeg} onChange={e=>muda({iaSeg:Number(e.target.value)})}><option value={5}>5 segundos</option><option value={10}>10 segundos (custa mais)</option></select></label>
-        <label>Criar imagem com<select value={aj.iaImagem} onChange={e=>muda({iaImagem:e.target.value})}>{MODELOS_IMAGEM.map(m=><option key={m.id} value={m.id}>{m.nome} ({m.dica})</option>)}</select></label>
-       </div>:<p className="hint">Quer que a IA crie a imagem de cada cena e transforme imagens em vídeo animado? Cole a chave do Muapi.ai (pago por uso) em <button className="link-btn inline" onClick={()=>go('config')}>Chaves e ajustes</button>.</p>}
-       {muapi&&<p className="hint">Em cada cena aparecem os botões <b>Criar imagem com IA</b> e <b>Animar com IA</b>. Cada uso gasta créditos do Muapi.</p>}
+       </div>}
+       {!muapi&&gkey&&<p className="hint">Transformar a imagem em vídeo com movimento gerado ainda é só pelo Muapi.ai (pago). As imagens do Google já ganham movimento de câmera pelo site.</p>}
       </div>
       <label className="vc-check mt"><input type="checkbox" checked={aj.batida} onChange={e=>muda({batida:e.target.checked})}/> <Music size={14}/> Batida de fundo (criada pelo site, sem direitos autorais)</label>
       {template.ativo&&<p className="hint">O seu template da marca (logo e crédito) entra no vídeo.</p>}
