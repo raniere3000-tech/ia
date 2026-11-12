@@ -31,7 +31,7 @@ export const vozDoNome = (nome:string)=>VOZES_TTS.find(([n])=>n.toLowerCase()===
 
 export type Projeto = {id:string;nome:string;criado:number};
 export type Personagem = {id:string;projetoId:string;nome:string;voz:string;modelo:string;genero:string;gravidade:number;ritmo:number;energia:number;emocao:string;sotaque:string;descricao:string;aprovada:boolean;criado:number;testes?:string[];intensidade?:number;pct?:boolean};
-export type Fala = {id:string;projetoId:string;ordem:number;cena:string;nomeRoteiro:string;personagemId:string;texto:string;direcao:string;pausa:number;tipo:'fala'|'acao'};
+export type Fala = {id:string;projetoId:string;ordem:number;cena:string;nomeRoteiro:string;personagemId:string;texto:string;direcao:string;pausa:number;tipo:'fala'|'acao'|'som';volume?:number;sobrepor?:boolean;fonteSom?:'auto'|'site'|'ia'|'arquivo'};
 export type Take = {id:string;projetoId:string;falaId:string;personagemId:string;texto:string;direcao:string;pedido:string;voz:string;modelo:string;ajustes:string;data:number;duracao:number;wav:Blob;aprovado:boolean;nota:string};
 export type Loja = 'projetos'|'personagens'|'falas'|'takes';
 
@@ -170,7 +170,12 @@ export const apagar=(store:Loja,id:string)=>tx<void>(store,'readwrite',s=>{ s.de
 export const limpar=(store:Loja)=>tx<void>(store,'readwrite',s=>{ s.clear(); });
 
 // ---------------- Importação do roteiro ----------------
-export type LinhaRoteiro = {cena:string;nome:string;texto:string;direcao:string;tipo:'fala'|'acao'};
+export type LinhaRoteiro = {cena:string;nome:string;texto:string;direcao:string;tipo:'fala'|'acao'|'som'};
+/** Lê marcações de efeito sonoro: [SOM: ...], [SFX: ...], (SOM: ...), SOM: ... */
+export function lerMarcaSom(l:string){
+  const m=/^\**\s*[[(]?\s*(?:som|sfx|efeito(?: sonoro)?|ruido|ruído|barulho)\s*[:—–-]\s*(.+?)\s*[\])]?\s*\**$/i.exec(l.trim());
+  return m?m[1].replace(/\*\*/g,'').trim():'';
+}
 
 /**
  * Lê um roteiro colado ou um arquivo .md/.txt. Aceita falas como:
@@ -187,6 +192,7 @@ export function lerRoteiro(txt:string):LinhaRoteiro[]{
     if(ehCena(l)){ cena=l.replace(/^#+\s*/,'').replace(/\*\*/g,'').trim(); dentro=true; continue; }
     if(/^#{1,6}\s/.test(l)){ dentro=false; continue; }
     if(!dentro) continue;
+    const som=lerMarcaSom(l); if(som){ out.push({cena,nome:'',texto:som,direcao:'',tipo:'som'}); continue; }
     const m=/^(?:[-*•]\s+)?\**\s*([^:*\n]{1,40}?)\s*(?:\(([^)]{1,60})\))?\s*\**\s*:\s*\**\s*(.+)$/.exec(l);
     if(m){
       const nome=m[1].trim(); let texto=m[3].trim().replace(/^\*\*\s*/,'');
@@ -239,7 +245,7 @@ export async function lerWav(b:Blob){
 
 /** Junta os takes aprovados na ordem do roteiro, com a pausa de cada fala. Devolve o WAV e o manifesto. */
 export async function montarEpisodio(falas:Fala[],takes:Take[],nomes:Record<string,string>,pausaInicial=0.3){
-  const ordem=falas.filter(f=>f.tipo==='fala').sort((a,b)=>a.ordem-b.ordem);
+  const ordem=falas.filter(f=>f.tipo==='fala'||f.tipo==='som').sort((a,b)=>a.ordem-b.ordem);
   const partes:{f:Fala;t:Take;s:Float32Array;rate:number}[]=[];
   for(const f of ordem){ const t=takes.find(x=>x.falaId===f.id&&x.aprovado); if(!t) continue; const {samples,rate}=await lerWav(t.wav); partes.push({f,t,s:samples,rate}); }
   const rate=partes[0]?.rate||24000;
@@ -247,19 +253,24 @@ export async function montarEpisodio(falas:Fala[],takes:Take[],nomes:Record<stri
   for(const p of partes){ if(p.rate!==rate&&p.rate>0){ const r=p.rate/rate, n=Math.floor(p.s.length/r), o=new Float32Array(n); for(let i=0;i<n;i++) o[i]=p.s[Math.min(p.s.length-1,Math.floor(i*r))]; p.s=o; p.rate=rate; } }
   const pausa=(f:Fala)=>Number.isFinite(f.pausa)&&f.pausa>=0?f.pausa:0.4;
   pausaInicial=Number.isFinite(pausaInicial)&&pausaInicial>=0?pausaInicial:0.3;
-  let total=Math.round(pausaInicial*rate); for(const p of partes) total+=p.s.length+Math.round(pausa(p.f)*rate);
+  // Som com "toca junto" não empurra a próxima fala: começa junto com ela.
+  const avanco=(p:{f:Fala;s:Float32Array})=>(p.f.tipo==='som'&&p.f.sobrepor?0:p.s.length)+Math.round(pausa(p.f)*rate);
+  let total=Math.round(pausaInicial*rate), fimMax=0; { let o=total; for(const p of partes){ fimMax=Math.max(fimMax,o+p.s.length); o+=avanco(p); } total=Math.max(o,fimMax); }
   const out=new Float32Array(total); let off=Math.round(pausaInicial*rate);
-  const manifesto:{ordem:number;cena:string;personagem:string;texto:string;inicio:number;fim:number;duracao:number;take:string;voz:string;modelo:string;arquivo:string}[]=[];
+  const manifesto:{tipo:'fala'|'som';ordem:number;cena:string;personagem:string;texto:string;inicio:number;fim:number;duracao:number;take:string;voz:string;modelo:string;arquivo:string}[]=[];
   for(const p of partes){
-    out.set(p.s,off);
-    manifesto.push({ordem:p.f.ordem,cena:p.f.cena,personagem:nomes[p.f.personagemId]||p.f.nomeRoteiro,texto:p.f.texto,inicio:+(off/rate).toFixed(3),fim:+((off+p.s.length)/rate).toFixed(3),duracao:+(p.s.length/rate).toFixed(3),take:p.t.id,voz:p.t.voz,modelo:p.t.modelo,arquivo:nomeTake(p.f,p.t,nomes[p.f.personagemId]||p.f.nomeRoteiro)});
-    off+=p.s.length+Math.round(pausa(p.f)*rate);
+    const vol=p.f.tipo==='som'?Math.max(0,Math.min(2,(p.f.volume??70)/100)):1;
+    for(let i=0;i<p.s.length;i++) out[off+i]+=p.s[i]*vol;
+    manifesto.push({tipo:p.f.tipo==='som'?'som':'fala',ordem:p.f.ordem,cena:p.f.cena,personagem:p.f.tipo==='som'?'SOM':nomes[p.f.personagemId]||p.f.nomeRoteiro,texto:p.f.texto,inicio:+(off/rate).toFixed(3),fim:+((off+p.s.length)/rate).toFixed(3),duracao:+(p.s.length/rate).toFixed(3),take:p.t.id,voz:p.t.voz,modelo:p.t.modelo,arquivo:nomeTake(p.f,p.t,nomes[p.f.personagemId]||p.f.nomeRoteiro)});
+    off+=avanco(p);
   }
+  let pico=0; for(const v of out) pico=Math.max(pico,Math.abs(v)); if(pico>1) for(let i=0;i<out.length;i++) out[i]/=pico;
   return {wav:wav(out,rate),manifesto,duracao:total/rate,faltando:ordem.filter(f=>!partes.some(p=>p.f.id===f.id))};
 }
 
 /** Legenda .srt do episódio montado (personagem: fala). */
-export function srt(man:{personagem:string;texto:string;inicio:number;fim:number}[],comNome=true){
+export function srt(todos:{tipo?:string;personagem:string;texto:string;inicio:number;fim:number}[],comNome=true){
+  const man=todos.filter(x=>x.tipo!=='som');
   const ts=(x:number)=>{ const ms=Math.round(x*1000); const h=Math.floor(ms/3600000), m=Math.floor(ms/60000)%60, s=Math.floor(ms/1000)%60; return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')},${String(ms%1000).padStart(3,'0')}`; };
   return man.map((x,i)=>`${i+1}\n${ts(x.inicio)} --> ${ts(x.fim)}\n${comNome?x.personagem+': ':''}${x.texto}\n`).join('\n');
 }

@@ -354,3 +354,6 @@ a.subtle.sm{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
 .guia-ficha{margin-bottom:10px}.guia-ficha ul{margin:8px 0;padding-left:18px;display:grid;gap:4px;font-size:.88rem}
 .aleatoria{display:inline-flex;gap:6px;align-items:center}.aleatoria select{width:auto;padding:6px 8px}
 .erro-tela{white-space:pre-wrap;text-align:left;background:#1b1f2c;border-radius:8px;padding:10px;font-size:12px;max-width:100%;overflow:auto}
+.fala.som{border-left:3px solid var(--accent,#7c5cff);}
+.fala.som .fala-top input.grow{flex:1;min-width:0;}
+.som-prev{font-style:italic;opacity:.85;}

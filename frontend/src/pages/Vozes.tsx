@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Dices, Download, FileAudio, FileText, FlaskConical, KeyRound, Loader2, Mic, Package, Plus, RotateCcw, Star, Trash2, Upload, Users, Wand2 } from 'lucide-react';
+import { CheckCircle2, Dices, Volume2, Download, FileAudio, FileText, FlaskConical, KeyRound, Loader2, Mic, Package, Plus, RotateCcw, Star, Trash2, Upload, Users, Wand2 } from 'lucide-react';
 import JSZip from 'jszip';
 import { FICHAS_PRONTAS, GUIA_FICHA } from '../lib/fichasPadrao';
+import { gerarSom, receitaDe, type FonteSom } from '../lib/sons';
+/** Sons de fundo (ambiente) já começam tocando junto com a fala seguinte, mais baixos. */
+const AMBIENTE=/murm|multid|taverna|chuva|fogo|fogueira|vento|tens|ambiente|fundo|clima/i;
 import { useApp } from '../state';
 import { baixar } from '../lib/exporter';
 import { uid, store } from '../lib/store';
@@ -124,6 +127,15 @@ export default function Vozes(){
     await salvar('takes',t); setTakes(x=>[t,...x.map(y=>velhos.find(v=>v.id===y.id)||y)]);
     return t;
   }
+  async function gerarSomTake(f:Fala,arquivo?:File){
+    const fonte=(f.fonteSom||'auto') as FonteSom;
+    const {wav,duracao,origem}=await gerarSom(f.texto,fonte,{arquivo});
+    const jaTem=takes.some(t=>t.falaId===f.id&&t.aprovado&&t.texto===f.texto);
+    const t:Take={id:uid(),projetoId:pid,falaId:f.id,personagemId:'',texto:f.texto,direcao:'',pedido:f.texto,voz:origem,modelo:'som',ajustes:'{}',data:Date.now(),duracao,wav,aprovado:!jaTem,nota:''};
+    const velhos=t.aprovado?takes.filter(x=>x.falaId===f.id&&x.aprovado).map(x=>({...x,aprovado:false})):[];
+    if(velhos.length) await salvarVarios('takes',velhos);
+    await salvar('takes',t); setTakes(x=>[t,...x.map(y=>velhos.find(v=>v.id===y.id)||y)]);
+  }
   async function aprovarTake(t:Take){
     const mud=takes.filter(x=>x.falaId===t.falaId&&t.falaId&&x.id!==t.id&&x.aprovado).map(x=>({...x,aprovado:false}));
     const n={...t,aprovado:t.falaId?true:!t.aprovado};
@@ -159,9 +171,9 @@ export default function Vozes(){
        const criados:Record<string,string>={};
        for(const [nome,dest] of Object.entries(mapa)) criados[nome]=dest==='__novo'?(await addPersonagem(nome)).id:dest;
        for(const f of roteiro) await apagar('falas',f.id);
-       const novas:Fala[]=linhas.map((l,i)=>({id:uid(),projetoId:pid,ordem:i,cena:l.cena,nomeRoteiro:l.nome,personagemId:l.tipo==='fala'?criados[l.nome]||'':'',texto:l.texto,direcao:l.direcao,pausa:l.tipo==='fala'?0.4:0,tipo:l.tipo}));
+       const novas:Fala[]=linhas.map((l,i)=>({id:uid(),projetoId:pid,ordem:i,cena:l.cena,nomeRoteiro:l.nome,personagemId:l.tipo==='fala'?criados[l.nome]||'':'',texto:l.texto,direcao:l.direcao,pausa:l.tipo==='fala'?0.4:0,tipo:l.tipo,...(l.tipo==='som'?{volume:AMBIENTE.test(l.texto)?40:70,sobrepor:AMBIENTE.test(l.texto),fonteSom:'auto' as const}:{})}));
        await salvarVarios('falas',novas); setFalas(x=>[...x.filter(f=>f.projetoId!==pid),...novas]);
-       toast(`Roteiro aplicado: ${novas.filter(f=>f.tipo==='fala').length} falas. Agora gere as vozes.`,'ok');
+       toast(`Roteiro aplicado: ${novas.filter(f=>f.tipo==='fala').length} falas${novas.some(f=>f.tipo==='som')?` e ${novas.filter(f=>f.tipo==='som').length} efeitos sonoros`:''}. Agora gere as vozes${novas.some(f=>f.tipo==='som')?' e os sons':''}.`,'ok');
      }}
      mudarFala={async(f)=>{ setFalas(x=>x.map(y=>y.id===f.id?f:y)); await salvar('falas',f); }}
      gerar={async(f)=>{ const p=elenco.find(x=>x.id===f.personagemId); if(!p){ toast('Escolha quem fala esta fala.','erro'); return; } setGerando(f.id); try{ await gerarTake(p,f.texto,f.direcao,f.id); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } finally{ setGerando(''); } }}
@@ -177,6 +189,11 @@ export default function Vozes(){
        setOcupado(null); setGerando('');
        toast(`${ok} fala(s) geradas.${erros.length?` ${erros.length} com problema: ${erros.slice(0,2).join(' | ')}`:''}${parar.current?' Parado por você.':''}`,erros.length?'info':'ok');
      }}
+     gerarSom={async(f,arq)=>{ setGerando(f.id); try{ await gerarSomTake(f,arq); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } finally{ setGerando(''); } }}
+     loteSons={async(lista)=>{ parar.current=false; let ok=0; const erros:string[]=[];
+       for(let i=0;i<lista.length;i++){ if(parar.current) break; const f=lista[i]; if(f.fonteSom==='arquivo') continue; setOcupado({txt:`Gerando som ${i+1} de ${lista.length}: ${f.texto}`,pct:Math.round(i/lista.length*100)}); setGerando(f.id);
+         try{ await gerarSomTake(f); ok++; }catch(e){ erros.push(`${f.texto}: ${e instanceof Error?e.message:String(e)}`); } }
+       setOcupado(null); setGerando(''); toast(`${ok} som(ns) gerados.${erros.length?` ${erros.length} com problema: ${erros.slice(0,2).join(' | ')}`:''}`,erros.length?'info':'ok'); }}
      aprovar={aprovarTake} apagarTake={apagarTake}/>}
    {aba==='final'&&<Final projeto={projeto?.nome||'projeto'} elenco={elenco} roteiro={roteiro} takes={meusTakes} nomes={nomes} irRoteiro={()=>setAba('roteiro')}/>}
   </>;
@@ -284,7 +301,7 @@ function Lab({elenco,takes,gerando,gerar,aprovar,nota,apagarTake,usarAjustes,add
 }
 
 // ================= Roteiro =================
-function Roteiro({pid,elenco,roteiro,takes,gerando,ocupado,aplicar,mudarFala,gerar,lote,aprovar,apagarTake}:{pid:string;elenco:Personagem[];roteiro:Fala[];takes:Take[];gerando:string;ocupado:boolean;
+function Roteiro({pid,elenco,roteiro,takes,gerando,ocupado,aplicar,mudarFala,gerar,lote,aprovar,apagarTake,gerarSom:gerarSomF,loteSons}:{gerarSom:(f:Fala,arq?:File)=>void;loteSons:(l:Fala[])=>void;pid:string;elenco:Personagem[];roteiro:Fala[];takes:Take[];gerando:string;ocupado:boolean;
   aplicar:(l:LinhaRoteiro[],mapa:Record<string,string>)=>Promise<void>;mudarFala:(f:Fala)=>void;gerar:(f:Fala)=>void;lote:(l:Fala[])=>void;aprovar:(t:Take)=>void;apagarTake:(t:Take)=>void}){
   const [texto,setTexto]=useState(''); const [prev,setPrev]=useState<LinhaRoteiro[]|null>(null); const [mapa,setMapa]=useState<Record<string,string>>({});
   const [filtro,setFiltro]=useState(''); const [aberta,setAberta]=useState('');
@@ -301,20 +318,21 @@ function Roteiro({pid,elenco,roteiro,takes,gerando,ocupado,aplicar,mudarFala,ger
   const aprovadoDe=(f:Fala)=>takes.find(t=>t.falaId===f.id&&t.aprovado);
   const visiveis=roteiro.filter(f=>!filtro||f.personagemId===filtro||(f.tipo==='acao'&&!filtro));
   const semTake=falasR.filter(f=>(!filtro||f.personagemId===filtro)&&!takes.some(t=>t.falaId===f.id&&t.texto===f.texto));
+  const sonsR=roteiro.filter(f=>f.tipo==='som'); const sonsSem=sonsR.filter(f=>!takes.some(t=>t.falaId===f.id&&t.texto===f.texto)&&f.fonteSom!=='arquivo');
   let cenaAnt='';
   return <>
    <section className="panel">
     <div className="section-head"><h2><FileText size={18}/> {roteiro.length?'Trocar o roteiro':'Colocar o roteiro'}</h2><button className="subtle sm" onClick={()=>arq.current?.click()}><Upload size={14}/> Abrir arquivo .md ou .txt</button></div>
     <input ref={arq} type="file" accept=".md,.txt,text/plain,text/markdown" hidden onChange={async e=>{ const f=e.target.files?.[0]; if(!f) return; const t=await f.text(); setTexto(t); ler(t); e.target.value=''; }}/>
-    <p className="hint">Uma fala por linha: <code>NOME: texto</code> (também serve <code>**NOME:** “texto”</code> e <code>NOME (sussurrando): texto</code>). Títulos como <code>## Cena 1</code> separam as cenas. Linhas sem nome viram ações e não são faladas. O texto das falas é usado exatamente como está.</p>
-    <textarea rows={6} value={texto} onChange={e=>setTexto(e.target.value)} placeholder={'## Cena 1 — A taverna\nNARRADOR: Era uma noite tranquila...\nO herói entra pela porta.\nHERÓI (gritando): Quem derrubou minha cerveja?!'} aria-label="Texto do roteiro"/>
+    <p className="hint">Uma fala por linha: <code>NOME: texto</code> (também serve <code>**NOME:** “texto”</code> e <code>NOME (sussurrando): texto</code>). Títulos como <code>## Cena 1</code> separam as cenas. Linhas sem nome viram ações e não são faladas. Efeitos sonoros: uma linha <code>[SOM: porta batendo]</code> (ou <code>[SFX: ...]</code>) no ponto onde o som deve tocar; escreva <i>forte</i> ou <i>fraco</i> para mudar a força. O texto das falas é usado exatamente como está.</p>
+    <textarea rows={6} value={texto} onChange={e=>setTexto(e.target.value)} placeholder={'## Cena 1 — A taverna\n[SOM: murmúrio de taverna]\nNARRADOR: Era uma noite tranquila...\n[SOM: porta batendo, forte]\nHERÓI (gritando): Quem derrubou minha cerveja?!'} aria-label="Texto do roteiro"/>
     {aviso&&<p className="hint erro">{aviso}</p>}
     <button className="primary mt" disabled={!texto.trim()} onClick={()=>{ toastMsg(''); ler(); }}><Wand2 size={15}/> Ler roteiro</button>
     {prev&&<div className="prev-roteiro mt">
-     <h3>Prévia: {prev.filter(x=>x.tipo==='fala').length} falas, {prev.filter(x=>x.tipo==='acao').length} ações</h3>
+     <h3>Prévia: {prev.filter(x=>x.tipo==='fala').length} falas, {prev.filter(x=>x.tipo==='acao').length} ações{prev.some(x=>x.tipo==='som')?`, ${prev.filter(x=>x.tipo==='som').length} sons`:''}</h3>
      <p className="hint">Confira quem fala. Nome igual a um personagem do elenco usa a voz dele. Nome igual a uma voz do Gemini (ex.: CHARON) cria o personagem com essa voz. Os outros viram personagens novos.</p>
      <div className="mapa">{Object.keys(mapa).map(n=><label key={n}><b>{n}</b> ({prev.filter(x=>x.nome===n).length} falas)<select value={mapa[n]} onChange={e=>setMapa(m=>({...m,[n]:e.target.value}))}><option value="__novo">Criar personagem novo “{n}”{vozDoNome(n)?` com a voz ${vozDoNome(n)}`:''}</option>{elenco.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select></label>)}</div>
-     <div className="prev-lista">{prev.map((l,i)=><div key={i} className={'prev-linha '+l.tipo}><small>{l.cena}</small>{l.tipo==='fala'?<span><b>{l.nome}{l.direcao&&` (${l.direcao})`}:</b> {l.texto}</span>:<span className="acao">{l.texto}</span>}
+     <div className="prev-lista">{prev.map((l,i)=><div key={i} className={'prev-linha '+l.tipo}><small>{l.cena}</small>{l.tipo==='fala'?<span><b>{l.nome}{l.direcao&&` (${l.direcao})`}:</b> {l.texto}</span>:l.tipo==='som'?<span className="som-prev">🔊 {l.texto}</span>:<span className="acao">{l.texto}</span>}
       <button className="link-btn" onClick={()=>setPrev(p=>p!.map((x,j)=>j!==i?x:x.tipo==='fala'?{...x,tipo:'acao'}:{...x,tipo:'fala',nome:x.nome||'NARRADOR'}))}>{l.tipo==='fala'?'é ação':'é fala'}</button></div>)}</div>
      <div className="row-gap left mt"><button className="primary" onClick={async()=>{ await aplicar(prev,mapa); setPrev(null); setTexto(''); }}><CheckCircle2 size={15}/> {roteiro.length?'Substituir o roteiro atual':'Usar este roteiro'}</button><button className="subtle" onClick={()=>setPrev(null)}>Cancelar</button></div>
      {roteiro.length>0&&<p className="hint">Os takes já gerados continuam guardados, mas ficam fora do roteiro novo.</p>}
@@ -326,11 +344,30 @@ function Roteiro({pid,elenco,roteiro,takes,gerando,ocupado,aplicar,mudarFala,ger
     <div className="row-gap left">
      <label>Mostrar<select value={filtro} onChange={e=>setFiltro(e.target.value)}><option value="">Todos os personagens</option>{elenco.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select></label>
      <button className="primary" disabled={!semTake.length||ocupado} onClick={()=>lote(semTake)}><Mic size={15}/> Gerar as {semTake.length} falas sem voz</button>
+     {sonsR.length>0&&<button className="subtle" disabled={!sonsSem.length||ocupado} onClick={()=>loteSons(sonsSem)}><Volume2 size={15}/> Gerar os {sonsSem.length} sons</button>}
     </div>
     <p className="hint">Gere uma por uma ou em lote. Cada fala pode ter vários takes; o aprovado (estrela) é o que entra no arquivo final. A direção muda só a interpretação, nunca o texto.</p>
     <div className="falas">{visiveis.map(f=>{ const cab=f.cena!==cenaAnt; cenaAnt=f.cena; const ts=takes.filter(t=>t.falaId===f.id); const ap=aprovadoDe(f);
      return <div key={f.id}>{cab&&<h3 className="cena-tit">{f.cena}</h3>}
-      {f.tipo==='acao'?<p className="acao">{f.texto}</p>:<div className={'fala '+(ap?'ok':'')+(gerando===f.id?' on':'')}>
+      {f.tipo==='acao'?<p className="acao">{f.texto}</p>:f.tipo==='som'?<div className={'fala som '+(aprovadoDe(f)?'ok':'')+(gerando===f.id?' on':'')}>
+       <div className="fala-top"><span className="fala-n">{f.ordem+1}</span><Volume2 size={16}/>
+        <input className="grow" value={f.texto} onChange={e=>mudarFala({...f,texto:e.target.value})} aria-label="Descrição do som"/></div>
+       <div className="fala-ctl">
+        <select value={f.fonteSom==='arquivo'?'arquivo':'site'} onChange={e=>mudarFala({...f,fonteSom:e.target.value as FonteSom})} aria-label="Fonte do som"><option value="site">Feito pelo site (grátis){receitaDe(f.texto)?`: ${receitaDe(f.texto)!.nome}`:': impacto genérico'}</option><option value="arquivo">Meu arquivo</option></select>
+        <label className="pausa">Volume<input type="number" min={0} max={200} step={5} value={f.volume??70} onChange={e=>mudarFala({...f,volume:Math.max(0,Math.min(200,+e.target.value||0))})} aria-label="Volume do som"/>%</label>
+        <label className="pausa"><input type="checkbox" checked={!!f.sobrepor} onChange={e=>mudarFala({...f,sobrepor:e.target.checked})}/> toca junto com a próxima fala</label>
+        {f.fonteSom==='arquivo'?<label className="subtle sm vc-upload"><Upload size={13}/> Enviar som<input type="file" accept="audio/*" hidden onChange={e=>{ const a=e.target.files?.[0]; if(a) gerarSomF(f,a); e.target.value=''; }}/></label>
+         :<button className="subtle sm" disabled={!!gerando||ocupado} onClick={()=>gerarSomF(f)}>{gerando===f.id?<Loader2 size={13} className="spin"/>:<Volume2 size={13}/>} {takes.some(t=>t.falaId===f.id)?'Novo take':'Gerar som'}</button>}
+        {takes.some(t=>t.falaId===f.id)&&<button className="link-btn" onClick={()=>setAberta(a=>a===f.id?'':f.id)}>{aberta===f.id?'Fechar':'Ver'} {takes.filter(t=>t.falaId===f.id).length} take(s)</button>}
+       </div>
+       {aprovadoDe(f)&&aberta!==f.id&&<><small className="hint">{aprovadoDe(f)!.voz}</small><Audio blob={aprovadoDe(f)!.wav}/></>}
+       {aberta===f.id&&<div className="takes-grid">{takes.filter(t=>t.falaId===f.id).map((t,i)=><article key={t.id} className={'take '+(t.aprovado?'ok':'')}>
+         <div className="take-top"><b>{String.fromCharCode(65+(i%26))}</b><span>{t.voz} • {fmt(t.duracao)}</span></div>
+         <Audio blob={t.wav}/>
+         <div className="row-gap left"><button className={t.aprovado?'primary sm':'subtle sm'} onClick={()=>aprovar(t)}><Star size={13}/> {t.aprovado?'Aprovado':'Aprovar'}</button>
+          <button className="icon-btn" onClick={()=>apagarTake(t)} aria-label="Apagar take"><Trash2 size={14}/></button></div>
+       </article>)}</div>}
+      </div>:<div className={'fala '+(ap?'ok':'')+(gerando===f.id?' on':'')}>
        <div className="fala-top"><span className="fala-n">{f.ordem+1}</span>
         <select value={f.personagemId} onChange={e=>mudarFala({...f,personagemId:e.target.value})} aria-label="Quem fala"><option value="">Quem fala?</option>{elenco.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select>
         <textarea className="grow fala-txt" rows={Math.min(5,Math.max(1,Math.ceil(f.texto.length/70)))} value={f.texto} onChange={e=>mudarFala({...f,texto:e.target.value})} aria-label="Texto da fala"/></div>
@@ -391,7 +428,7 @@ function Final({projeto,elenco,roteiro,takes,nomes,irRoteiro}:{projeto:string;el
    </div>
    <button className="primary lg mt" disabled={montando||semAprov.length===falasR.length} onClick={montar}>{montando?<Loader2 size={17} className="spin"/>:<Package size={17}/>} Montar o áudio do episódio</button>
    {res&&<div className="final-ok mt">
-    <p><b>Pronto:</b> {res.manifesto.length} falas • {fmt(res.duracao)} de áudio{res.faltando.length?` • ${res.faltando.length} faltando`:''}</p>
+    <p><b>Pronto:</b> {res.manifesto.filter(m=>m.tipo!=='som').length} falas{res.manifesto.some(m=>m.tipo==='som')?` e ${res.manifesto.filter(m=>m.tipo==='som').length} sons`:''} • {fmt(res.duracao)} de áudio{res.faltando.length?` • ${res.faltando.length} faltando`:''}</p>
     <Audio blob={res.wav}/>
     <div className="row-gap left mt">
      <button className="primary" onClick={()=>baixar(res.wav,`${slug}-completo.wav`)}><Download size={15}/> Áudio completo (WAV)</button>
