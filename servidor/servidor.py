@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 import postagem as pg
 
-VERSAO = '1.3.0'
+VERSAO = '1.3.1'
 PORTA = int(os.getenv('PORT', os.getenv('PORTA', '8787')))
 HOST = os.getenv('HOST', '127.0.0.1')
 TOKEN = os.getenv('TOKEN', '').strip()
@@ -151,6 +151,10 @@ def baixar(jid: str, url: str):
     ff = ffmpeg_path()
     if ff:
         opts['ffmpeg_location'] = ff
+    else:
+        # Sem FFmpeg não dá para juntar vídeo e áudio separados: o vídeo viria MUDO.
+        # Então pede só arquivos que já trazem vídeo e som juntos.
+        opts['format'] = f'b[height<={ALTURA}][ext=mp4][acodec!=none]/b[acodec!=none][vcodec!=none]/b'
     if COOKIES.exists():
         opts['cookiefile'] = str(COOKIES)
     try:
@@ -170,7 +174,8 @@ def baixar(jid: str, url: str):
         if info is None:
             raise RuntimeError('does not pass filter')
         arquivos = sorted(pasta.glob('video.*'), key=lambda p: p.stat().st_size, reverse=True)
-        arquivos = [a for a in arquivos if a.suffix in ('.mp4', '.webm', '.mkv', '.mov')]
+        arquivos = [a for a in arquivos if a.suffix in ('.mp4', '.webm', '.mkv', '.mov') and not re.search(r'\.f\d+$', a.stem)] or \
+                   [a for a in arquivos if a.suffix in ('.mp4', '.webm', '.mkv', '.mov')]
         if not arquivos:
             longo = (info.get('duration') or 0) > MAX_MIN * 60
             raise RuntimeError('does not pass filter' if longo else 'arquivo não encontrado depois do download')

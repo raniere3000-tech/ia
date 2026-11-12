@@ -16,7 +16,7 @@ export type Fonte = {url:string;file:File;cues:Cue[];duracao:number;link?:string
 /** Legenda e vídeo que valem para este corte. */
 export const cuesDe=(c:Clip,cues:Cue[])=>c.video?.cues??cues;
 export const urlDe=(c:Clip,url:string)=>c.video?.url||url;
-export type AnalyzeOpts = {min:number;max:number;limite:number;inicio:number;fim:number};
+export type AnalyzeOpts = {min:number;max:number;limite:number;inicio:number;fim:number;sobreposicao?:number};
 
 /** Converte a nota interna 0–99 para a exibição 0–10 (arredondada em 1 casa). */
 export const nota10 = (n:number)=>Math.round(n*10/99*10)/10;
@@ -70,7 +70,7 @@ export function gerarCandidatos(energy:Float32Array|null,step:number,duration:nu
   out.sort((x,y)=>notaFinal(y.notas)-notaFinal(x.notas) || y.notas.gancho-x.notas.gancho || x.inicio-y.inicio);
   const sel:Candidate[] = [];
   for(const c of out){
-    const ok = sel.every(s=>{ const ov=Math.max(0,Math.min(s.fim,c.fim)-Math.max(s.inicio,c.inicio)); return ov/Math.min(s.fim-s.inicio,c.fim-c.inicio) <= 0.5; });
+    const ok = sel.every(s=>{ const ov=Math.max(0,Math.min(s.fim,c.fim)-Math.max(s.inicio,c.inicio)); return ov/Math.min(s.fim-s.inicio,c.fim-c.inicio) <= (o.sobreposicao??0.5); });
     if(ok) sel.push(c);
     if(sel.length>=60) break;
   }

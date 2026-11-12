@@ -265,7 +265,11 @@ export default function Cortes(){
       const manuais=lerTempos(tempos).janelas;
       const porMarca=manuais.length>0||(usarMarcas&&marcas.length>0);
       const janelas=manuais.length?manuais:marcas;
-      const cands=porMarca?avaliarJanelas(cache.energy,STEP,cues,janelas.filter(m=>m.inicio<info.duration).map(m=>({...m,fim:Math.min(m.fim,info.duration)}))).map(c=>({...c,id:uid()})):gerarCandidatos(cache.energy,STEP,info.duration,modelo==='falas'?cues:cues.length?cues:[],{min:faixa[0],max:faixa[1],limite,inicio:isNaN(ini)?0:ini,fim:isNaN(fimT)?0:fimT}).map(c=>({...c,id:uid()}));
+      // Trecho marcado/colado maior que a duração máxima escolhida = área de busca: vira vários cortes dentro dele.
+      const validas=janelas.filter(m=>m.inicio<info.duration).map(m=>({...m,fim:Math.min(m.fim,info.duration)}));
+      const curtas=validas.filter(m=>m.fim-m.inicio<=faixa[1]+3), longas=validas.filter(m=>m.fim-m.inicio>faixa[1]+3);
+      const dasLongas=longas.flatMap(m=>gerarCandidatos(cache.energy,STEP,info.duration,modelo==='falas'?cues:cues.length?cues:[],{min:faixa[0],max:faixa[1],limite,inicio:m.inicio,fim:m.fim,sobreposicao:0.05}));
+      const cands=porMarca?[...avaliarJanelas(cache.energy,STEP,cues,curtas),...dasLongas].map(c=>({...c,id:uid()})):gerarCandidatos(cache.energy,STEP,info.duration,modelo==='falas'?cues:cues.length?cues:[],{min:faixa[0],max:faixa[1],limite,inicio:isNaN(ini)?0:ini,fim:isNaN(fimT)?0:fimT}).map(c=>({...c,id:uid()}));
       if(!cands.length&&porMarca) throw new Error(`Os tempos ${manuais.length?'colados':'marcados'} ficam depois do fim deste vídeo (${tm(info.duration)}). Confira os tempos ou o arquivo.`);
       if(!cands.length) throw new Error('O vídeo (ou o trecho escolhido) é mais curto que a duração mínima dos cortes. Escolha uma duração menor.');
       let ia:Map<string,any>|null=null;
@@ -282,9 +286,9 @@ export default function Cortes(){
       clips=clips.map(c=>{ const i=top.indexOf(c); return i>=0&&thumbs[i]?{...c,thumb:thumbs[i]}:c; });
       setProjeto(p=>({...p,clips,job:{...p.job,status:'pronto',etapa:'',pct:100,erro:undefined}}));
       // Já deixa marcados os cortes que aparecem (dá para desmarcar).
-      if(porMarca){ setMostrarTodos(true); setSel(new Set(clips.map(c=>c.id))); }
+      if(porMarca&&!longas.length){ setMostrarTodos(true); setSel(new Set(clips.map(c=>c.id))); }
       else setSel(new Set(clips.filter(c=>c.nota_10>minimo).slice(0,limite).map(c=>c.id)));
-      toast(porMarca?`${cands.length} cortes prontos nos tempos que você escolheu.`:`${cands.length} trechos avaliados. Confira os melhores abaixo.`,'ok');
+      toast(porMarca&&longas.length?`${cands.length} cortes encontrados dentro do trecho que você separou, cada um com ${faixa[0]} a ${faixa[1]} s.`:porMarca?`${cands.length} cortes prontos nos tempos que você escolheu.`:`${cands.length} trechos avaliados. Confira os melhores abaixo.`,'ok');
     }catch(e){
       const msg=erroArquivo(e);
       setJob({status:'erro',erro:msg}); toast(msg,'erro');
