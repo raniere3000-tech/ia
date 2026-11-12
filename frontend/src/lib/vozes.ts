@@ -17,7 +17,7 @@ export const ehVoz = (v:string)=>VOZES_TTS.some(([n])=>n===v);
 export const vozDoNome = (nome:string)=>VOZES_TTS.find(([n])=>n.toLowerCase()===nome.trim().toLowerCase())?.[0]||'';
 
 export type Projeto = {id:string;nome:string;criado:number};
-export type Personagem = {id:string;projetoId:string;nome:string;voz:string;modelo:string;genero:string;gravidade:number;ritmo:number;energia:number;emocao:string;sotaque:string;descricao:string;aprovada:boolean;criado:number;testes?:string[]};
+export type Personagem = {id:string;projetoId:string;nome:string;voz:string;modelo:string;genero:string;gravidade:number;ritmo:number;energia:number;emocao:string;sotaque:string;descricao:string;aprovada:boolean;criado:number;testes?:string[];intensidade?:number;pct?:boolean};
 export type Fala = {id:string;projetoId:string;ordem:number;cena:string;nomeRoteiro:string;personagemId:string;texto:string;direcao:string;pausa:number;tipo:'fala'|'acao'};
 export type Take = {id:string;projetoId:string;falaId:string;personagemId:string;texto:string;direcao:string;pedido:string;voz:string;modelo:string;ajustes:string;data:number;duracao:number;wav:Blob;aprovado:boolean;nota:string};
 export type Loja = 'projetos'|'personagens'|'falas'|'takes';
@@ -28,10 +28,19 @@ const ESCALA:Record<string,string[]> = {
   ritmo:['muito lento, com pausas longas','lento e pausado','moderado','rápido','muito rápido'],
   energia:['contida, quase sussurrada','calma','natural','intensa','explosiva, gritando'],
 };
-export const rotulo=(k:'gravidade'|'ritmo'|'energia',n:number)=>ESCALA[k][Math.max(1,Math.min(5,n))-1];
+/** Valores da ficha vão de 0 a 100%. O rótulo em palavras ajuda a IA a entender o tom. */
+export const rotulo=(k:'gravidade'|'ritmo'|'energia',n:number)=>ESCALA[k][Math.max(0,Math.min(4,Math.floor(Math.min(99,Math.max(0,n))/20)))];
+const INTENS=['bem leve','leve','moderada','forte','muito forte'];
+export const rotuloIntensidade=(n:number)=>INTENS[Math.max(0,Math.min(4,Math.floor(Math.min(99,Math.max(0,n))/20)))];
+/** Fichas antigas usavam 1 a 5: converte para porcentagem. */
+export function normalizarPersonagem(p:Personagem):Personagem{
+  if(p.pct) return p.intensidade===undefined?{...p,intensidade:50}:p;
+  const c=(n:number)=>n<=5?Math.round((Math.max(1,n)-1)*25):n;
+  return {...p,gravidade:c(p.gravidade),ritmo:c(p.ritmo),energia:c(p.energia),intensidade:p.intensidade??50,pct:true};
+}
 
 export function novoPersonagem(projetoId:string,nome:string):Personagem{
-  return {id:uid(),projetoId,nome,voz:vozDoNome(nome)||'Charon',modelo:MODELOS_TTS[0][0],genero:'',gravidade:3,ritmo:3,energia:3,emocao:'neutra',sotaque:'brasileiro neutro',descricao:'',aprovada:false,criado:Date.now()};
+  return {id:uid(),projetoId,nome,voz:vozDoNome(nome)||'Charon',modelo:MODELOS_TTS[0][0],genero:'',gravidade:50,ritmo:50,energia:50,intensidade:50,pct:true,emocao:'neutra',sotaque:'brasileiro neutro',descricao:'',aprovada:false,criado:Date.now()};
 }
 
 /** Descrição de voz que vai para o Gemini, montada com os ajustes da ficha. */
@@ -39,21 +48,21 @@ export function descreverVoz(p:Personagem){
   return [
     `Personagem: ${p.nome}.`,
     p.genero.trim()?`Perfil: ${p.genero.trim()}.`:'',
-    `Voz ${rotulo('gravidade',p.gravidade)}, ritmo ${rotulo('ritmo',p.ritmo)}, energia ${rotulo('energia',p.energia)}.`,
-    p.emocao&&p.emocao!=='neutra'?`Emoção de base: ${p.emocao}.`:'',
+    `Voz ${rotulo('gravidade',p.gravidade)} (gravidade ${p.gravidade}% de 100), ritmo ${rotulo('ritmo',p.ritmo)} (${p.ritmo}%), energia ${rotulo('energia',p.energia)} (${p.energia}%).`,
+    p.emocao&&p.emocao!=='neutra'?`Emoção de base: ${p.emocao}, intensidade ${rotuloIntensidade(p.intensidade??50)} (${p.intensidade??50}%).`:'',
     p.sotaque.trim()?`Sotaque: ${p.sotaque.trim()}.`:'',
     p.descricao.trim(),
   ].filter(Boolean).join(' ');
 }
 
 // ---------------- Fichas coladas (texto livre → personagens) ----------------
-export type FichaLida = {nome:string;voz?:string;modelo?:string;genero?:string;gravidade?:number;ritmo?:number;energia?:number;emocao?:string;sotaque?:string;descricao?:string;testes:string[]};
+export type FichaLida = {nome:string;voz?:string;modelo?:string;genero?:string;intensidade?:number;gravidade?:number;ritmo?:number;energia?:number;emocao?:string;sotaque?:string;descricao?:string;testes:string[]};
 const semAcento=(t:string)=>t.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
-/** 0–100% (ou 1–5) → escala 1–5 da ficha. */
+/** 0–100% (ou 1–5, convertido) → porcentagem da ficha. */
 function escala(v:string){
   const n=parseFloat(v.replace(',','.')); if(isNaN(n)) return undefined;
-  if(/%/.test(v)||n>5) return Math.max(1,Math.min(5,Math.round(n/100*4)+1));
-  return Math.max(1,Math.min(5,Math.round(n)));
+  if(/%/.test(v)||n>5) return Math.max(0,Math.min(100,Math.round(n)));
+  return Math.round((Math.max(1,Math.min(5,n))-1)*25);
 }
 /** Lê fichas de voz escritas em texto: tabela (Personagem / Voz-base / Gravidade / Ritmo / Energia / Emoção)
  *  e blocos por personagem com "Perfil —", "Descrição e direção permanente" e "Teste — “frase”". */
@@ -76,7 +85,8 @@ export function lerFichas(txt:string):FichaLida[]{
     const col=(k:string)=>{ if(!cab) return undefined; const i=cab.findIndex(c=>c.includes(k)); return i>=0?cols[i]:undefined; };
     const pct=cols.filter(c=>/^\d+([.,]\d+)?\s*%?$/.test(c));
     f.gravidade=escala(col('gravidade')??pct[0]??''); f.ritmo=escala(col('ritmo')??pct[1]??''); f.energia=escala(col('energia')??pct[2]??'');
-    const em=col('emoc')??cols[cols.length-1]; if(em&&!/^\d/.test(em)&&!vozDoNome(em)) f.emocao=em.toLowerCase();
+    const it=col('intens'); if(it) f.intensidade=escala(it);
+    const em=col('emoc')??cols.filter(c=>!/^\d/.test(c)).slice(-1)[0]; if(em&&!/^\d/.test(em)&&!vozDoNome(em)) f.emocao=em.toLowerCase();
     if(!achar(f.nome)) fichas.push(f);
   }
   // 2) Blocos por personagem.
@@ -119,7 +129,7 @@ export function lerFichas(txt:string):FichaLida[]{
 /** Aplica uma ficha lida num personagem (novo ou existente). */
 export function aplicarFicha(p:Personagem,f:FichaLida):Personagem{
   const n={...p};
-  for(const k of ['voz','modelo','genero','gravidade','ritmo','energia','emocao','sotaque','descricao'] as const){ const v=f[k]; if(v!==undefined&&v!=='') (n as any)[k]=v; }
+  for(const k of ['voz','modelo','genero','gravidade','ritmo','energia','intensidade','emocao','sotaque','descricao'] as const){ const v=f[k]; if(v!==undefined&&v!=='') (n as any)[k]=v; }
   if(f.testes.length) n.testes=f.testes;
   return n;
 }
@@ -140,7 +150,7 @@ async function tx<T>(store:string,modo:IDBTransactionMode,f:(s:IDBObjectStore)=>
   const d=await db();
   return new Promise((res,rej)=>{ const t=d.transaction(store,modo); const r=f(t.objectStore(store)); t.oncomplete=()=>res((r as IDBRequest)?.result); t.onerror=()=>rej(t.error); });
 }
-export const listar=<T>(store:Loja)=>tx<T[]>(store,'readonly',s=>s.getAll());
+export const listar=<T>(store:Loja)=>tx<T[]>(store,'readonly',s=>s.getAll()).then(l=>store==='personagens'?(l as unknown as Personagem[]).map(normalizarPersonagem) as unknown as T[]:l);
 export const salvar=<T extends {id:string}>(store:Loja,v:T)=>tx<void>(store,'readwrite',s=>{ s.put(v); });
 export const salvarVarios=<T extends {id:string}>(store:Loja,vs:T[])=>tx<void>(store,'readwrite',s=>{ vs.forEach(v=>s.put(v)); });
 export const apagar=(store:Loja,id:string)=>tx<void>(store,'readwrite',s=>{ s.delete(id); });

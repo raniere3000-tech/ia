@@ -5,13 +5,13 @@ import { useApp } from '../state';
 import { baixar } from '../lib/exporter';
 import { uid, store } from '../lib/store';
 import {
-  EMOCOES, MODELOS_TTS, aplicarFicha, lerFichas, vozDoNome, VOZES_TTS, descreverVoz, gerarVoz, lerRoteiro, listar, montarEpisodio, nomeTake, novoPersonagem, pedidoTTS, rotulo, salvar, salvarVarios, apagar, srt,
+  EMOCOES, MODELOS_TTS, aplicarFicha, rotuloIntensidade, lerFichas, vozDoNome, VOZES_TTS, descreverVoz, gerarVoz, lerRoteiro, listar, montarEpisodio, nomeTake, novoPersonagem, pedidoTTS, rotulo, salvar, salvarVarios, apagar, srt,
   type FichaLida, type Fala, type LinhaRoteiro, type Personagem, type Projeto, type Take,
 } from '../lib/vozes';
 
 type Aba = 'elenco'|'lab'|'roteiro'|'final';
 const fmt=(s:number)=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}.${Math.floor((s%1)*10)}`;
-const AJ=['voz','modelo','genero','gravidade','ritmo','energia','emocao','sotaque','descricao'] as const;
+const AJ=['voz','modelo','genero','gravidade','ritmo','energia','intensidade','emocao','sotaque','descricao'] as const;
 const ajustesDe=(p:Personagem)=>JSON.stringify(Object.fromEntries(AJ.map(k=>[k,p[k]])));
 
 /** Player de um take guardado (cria e libera o endereço do áudio). */
@@ -87,12 +87,12 @@ export default function Vozes(){
     if(!settings.geminiKey) throw new Error('Não reconheci fichas nesse texto. Use uma tabela (Personagem, Voz-base, Gravidade, Ritmo, Energia, Emoção) ou coloque a chave do Gemini para a IA entender texto livre.');
     const {chamar,GEMINI_MODEL}=await import('../lib/gemini');
     const vozes=VOZES_TTS.map(([v,d])=>`${v} (${d})`).join(', ');
-    const pedido=`Leia o texto abaixo e monte fichas de voz para cada personagem que fala. Use só estas vozes-base do Gemini: ${vozes}. Escolha a que combina com o personagem se o texto não disser. gravidade, ritmo e energia vão de 1 a 5 (1 = aguda/lenta/contida, 5 = muito grave/muito rápida/explosiva). emocao é uma palavra em português. testes são frases de teste citadas no texto (vazio se não houver). Não invente personagens.\n\nTEXTO:\n${txt.slice(0,20000)}`;
-    const SCH={type:'OBJECT',properties:{fichas:{type:'ARRAY',items:{type:'OBJECT',properties:{nome:{type:'STRING'},voz:{type:'STRING'},genero:{type:'STRING'},gravidade:{type:'INTEGER'},ritmo:{type:'INTEGER'},energia:{type:'INTEGER'},emocao:{type:'STRING'},sotaque:{type:'STRING'},descricao:{type:'STRING'},testes:{type:'ARRAY',items:{type:'STRING'}}},required:['nome','voz','gravidade','ritmo','energia','emocao','descricao','testes']}}},required:['fichas']};
+    const pedido=`Leia o texto abaixo e monte fichas de voz para cada personagem que fala. Use só estas vozes-base do Gemini: ${vozes}. Escolha a que combina com o personagem se o texto não disser. gravidade, ritmo, energia e intensidade (da emoção) vão de 0 a 100 (0 = aguda/lenta/contida/leve, 100 = muito grave/muito rápida/explosiva/muito forte). emocao é uma palavra em português. testes são frases de teste citadas no texto (vazio se não houver). Não invente personagens.\n\nTEXTO:\n${txt.slice(0,20000)}`;
+    const SCH={type:'OBJECT',properties:{fichas:{type:'ARRAY',items:{type:'OBJECT',properties:{nome:{type:'STRING'},voz:{type:'STRING'},genero:{type:'STRING'},gravidade:{type:'INTEGER'},ritmo:{type:'INTEGER'},energia:{type:'INTEGER'},intensidade:{type:'INTEGER'},emocao:{type:'STRING'},sotaque:{type:'STRING'},descricao:{type:'STRING'},testes:{type:'ARRAY',items:{type:'STRING'}}},required:['nome','voz','gravidade','ritmo','energia','emocao','descricao','testes']}}},required:['fichas']};
     const r=await chamar(settings.geminiKey,GEMINI_MODEL+':generateContent',{contents:[{role:'user',parts:[{text:pedido}]}],generationConfig:{responseMimeType:'application/json',responseSchema:SCH,temperature:0.3}});
     const t=r?.candidates?.[0]?.content?.parts?.map((x:any)=>x.text||'').join('')||'{}';
-    const lim=(n:number)=>Math.max(1,Math.min(5,Math.round(n||3)));
-    return (JSON.parse(t).fichas||[]).map((f:any)=>({...f,nome:String(f.nome||'').toUpperCase(),voz:vozDoNome(f.voz)||undefined,gravidade:lim(f.gravidade),ritmo:lim(f.ritmo),energia:lim(f.energia),emocao:String(f.emocao||'').toLowerCase(),testes:f.testes||[]})).filter((f:FichaLida)=>f.nome);
+    const lim=(n:number)=>Math.max(0,Math.min(100,Math.round(n??50)));
+    return (JSON.parse(t).fichas||[]).map((f:any)=>({...f,nome:String(f.nome||'').toUpperCase(),voz:vozDoNome(f.voz)||undefined,gravidade:lim(f.gravidade),ritmo:lim(f.ritmo),energia:lim(f.energia),intensidade:lim(f.intensidade),emocao:String(f.emocao||'').toLowerCase(),testes:f.testes||[]})).filter((f:FichaLida)=>f.nome);
   }
   async function apagarPersonagem(p:Personagem){
     if(roteiro.some(f=>f.personagemId===p.id)){ toast('Este personagem tem falas no roteiro. Troque quem fala essas falas antes de apagar.','erro'); return; }
@@ -138,7 +138,7 @@ export default function Vozes(){
       setGerando('lab');
       try{ await gerarTake(p,txt,dir); if(vozB&&vozB!==p.voz) await gerarTake(p,txt,dir,'',vozB); toast(vozB?'Dois takes prontos para comparar.':'Take pronto. Ouça abaixo.','ok'); }
       catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } finally{ setGerando(''); }
-    }} aprovar={aprovarTake} nota={notaTake} apagarTake={apagarTake} usarAjustes={(t)=>{ try{ mudarPersonagem(t.personagemId,JSON.parse(t.ajustes)); toast('Ajustes deste take copiados para a ficha do personagem.','ok'); }catch{ /* ajustes antigos */ } }} add={()=>{ setAba('elenco'); addPersonagem(); }}/>}
+    }} aprovar={aprovarTake} nota={notaTake} apagarTake={apagarTake} usarAjustes={(t)=>{ try{ const a=JSON.parse(t.ajustes); if(!('intensidade' in a)) for(const k of ['gravidade','ritmo','energia']) if(typeof a[k]==='number'&&a[k]<=5) a[k]=Math.round((Math.max(1,a[k])-1)*25); mudarPersonagem(t.personagemId,a); toast('Ajustes deste take copiados para a ficha do personagem.','ok'); }catch{ /* ajustes antigos */ } }} add={()=>{ setAba('elenco'); addPersonagem(); }}/>}
    {aba==='roteiro'&&<Roteiro pid={pid} elenco={elenco} roteiro={roteiro} takes={meusTakes} gerando={gerando} ocupado={!!ocupado}
      aplicar={async(linhas,mapa)=>{
        const criados:Record<string,string>={};
@@ -186,7 +186,7 @@ function Elenco({elenco,add,mudar,apagar,testar,importar,comIA}:{elenco:Personag
     <button className="primary mt" disabled={!txt.trim()||lendo} onClick={ler}>{lendo?<Loader2 size={15} className="spin"/>:<Wand2 size={15}/>} Ler fichas</button>
     {lidas&&<div className="fichas-lidas mt">
      <h3>{lidas.length} personagens encontrados</h3>
-     <ul>{lidas.map(f=><li key={f.nome}><b>{f.nome}</b> <span className={'tag '+(existe(f.nome)?'warn':'ok')}>{existe(f.nome)?'atualiza':'novo'}</span> <small>{[f.voz&&`voz ${f.voz}`,f.modelo?.includes('pro')&&'Pro',f.gravidade&&`gravidade ${rotulo('gravidade',f.gravidade)}`,f.ritmo&&`ritmo ${rotulo('ritmo',f.ritmo)}`,f.energia&&`energia ${rotulo('energia',f.energia)}`,f.emocao,f.testes.length&&`${f.testes.length} frase(s) de teste`].filter(Boolean).join(' • ')}</small></li>)}</ul>
+     <ul>{lidas.map(f=><li key={f.nome}><b>{f.nome}</b> <span className={'tag '+(existe(f.nome)?'warn':'ok')}>{existe(f.nome)?'atualiza':'novo'}</span> <small>{[f.voz&&`voz ${f.voz}`,f.modelo?.includes('pro')&&'Pro',f.gravidade!==undefined&&`gravidade ${f.gravidade}%`,f.ritmo!==undefined&&`ritmo ${f.ritmo}%`,f.energia!==undefined&&`energia ${f.energia}%`,f.intensidade!==undefined&&`intensidade ${f.intensidade}%`,f.emocao,f.testes.length&&`${f.testes.length} frase(s) de teste`].filter(Boolean).join(' • ')}</small></li>)}</ul>
      <button className="primary" onClick={async()=>{ await importar(lidas); setLidas(null); setTxt(''); setAbrir(false); }}><CheckCircle2 size={15}/> Criar e configurar {lidas.length} personagens</button>
     </div>}
    </div>}
@@ -200,12 +200,14 @@ function Elenco({elenco,add,mudar,apagar,testar,importar,comIA}:{elenco:Personag
      <label>Modelo<select value={p.modelo} onChange={e=>mudar(p.id,{modelo:e.target.value})}>{MODELOS_TTS.map(([v,d])=><option key={v} value={v}>{d}</option>)}</select></label>
     </div>
     <label className="mt">Perfil (gênero, idade, jeito)<input value={p.genero} placeholder="Ex.: homem maduro, narrador de RPG experiente" onChange={e=>mudar(p.id,{genero:e.target.value})}/></label>
-    {(['gravidade','ritmo','energia'] as const).map(k=><label key={k} className="mt slider"><span className="label-row">{k==='gravidade'?'Gravidade (aguda ↔ grave)':k==='ritmo'?'Ritmo (lento ↔ rápido)':'Energia (contida ↔ explosiva)'}: <b>{rotulo(k,p[k])}</b></span>
-     <input type="range" min={1} max={5} value={p[k]} onChange={e=>mudar(p.id,{[k]:+e.target.value} as Partial<Personagem>)}/></label>)}
+    {(['gravidade','ritmo','energia'] as const).map(k=><label key={k} className="mt slider"><span className="label-row">{k==='gravidade'?'Gravidade (aguda ↔ grave)':k==='ritmo'?'Ritmo (lento ↔ rápido)':'Energia (contida ↔ explosiva)'}: <b>{p[k]}%</b> <small>({rotulo(k,p[k])})</small></span>
+     <span className="pct-row"><input type="range" min={0} max={100} step={1} value={p[k]} onChange={e=>mudar(p.id,{[k]:+e.target.value} as Partial<Personagem>)}/><input type="number" min={0} max={100} value={p[k]} onChange={e=>mudar(p.id,{[k]:Math.max(0,Math.min(100,+e.target.value||0))} as Partial<Personagem>)} aria-label={k+' em %'}/></span></label>)}
     <div className="small-grid mt">
      <label>Emoção de base<select value={p.emocao} onChange={e=>mudar(p.id,{emocao:e.target.value})}>{(EMOCOES.includes(p.emocao)?EMOCOES:[p.emocao,...EMOCOES]).map(x=><option key={x} value={x}>{x}</option>)}</select></label>
      <label>Sotaque<input value={p.sotaque} onChange={e=>mudar(p.id,{sotaque:e.target.value})}/></label>
     </div>
+    <label className="mt slider"><span className="label-row">Intensidade da emoção ({p.emocao}): <b>{p.intensidade??50}%</b> <small>({rotuloIntensidade(p.intensidade??50)})</small></span>
+     <span className="pct-row"><input type="range" min={0} max={100} step={1} value={p.intensidade??50} onChange={e=>mudar(p.id,{intensidade:+e.target.value})}/><input type="number" min={0} max={100} value={p.intensidade??50} onChange={e=>mudar(p.id,{intensidade:Math.max(0,Math.min(100,+e.target.value||0))})} aria-label="intensidade em %"/></span></label>
     <label className="mt">Descrição e direção permanente<textarea rows={3} value={p.descricao} placeholder="Ex.: voz encorpada e cinematográfica, ironia seca e discreta; sem tom publicitário." onChange={e=>mudar(p.id,{descricao:e.target.value})}/></label>
     <details className="mt"><summary>Ver o que vai para o Gemini</summary><p className="hint">{descreverVoz(p)}</p></details>
     <div className="row-gap left mt"><button className="subtle sm" onClick={testar}><FlaskConical size={14}/> Testar no Laboratório</button><button className="subtle sm" onClick={()=>apagar(p)}><Trash2 size={14}/> Apagar</button></div>
