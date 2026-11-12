@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Download, FileAudio, FileText, FlaskConical, KeyRound, Loader2, Mic, Package, Plus, RotateCcw, Star, Trash2, Upload, Users, Wand2 } from 'lucide-react';
+import { CheckCircle2, Dices, Download, FileAudio, FileText, FlaskConical, KeyRound, Loader2, Mic, Package, Plus, RotateCcw, Star, Trash2, Upload, Users, Wand2 } from 'lucide-react';
 import JSZip from 'jszip';
+import { FICHAS_PRONTAS, GUIA_FICHA } from '../lib/fichasPadrao';
 import { useApp } from '../state';
 import { baixar } from '../lib/exporter';
 import { uid, store } from '../lib/store';
 import {
-  EMOCOES, MODELOS_TTS, aplicarFicha, rotuloIntensidade, lerFichas, vozDoNome, VOZES_TTS, descreverVoz, gerarVoz, lerRoteiro, listar, montarEpisodio, nomeTake, novoPersonagem, pedidoTTS, rotulo, salvar, salvarVarios, apagar, srt,
+  EMOCOES, MODELOS_TTS, aplicarFicha, rotuloIntensidade, vozAleatoria, generoDaVoz, type Genero, lerFichas, vozDoNome, VOZES_TTS, descreverVoz, gerarVoz, lerRoteiro, listar, montarEpisodio, nomeTake, novoPersonagem, pedidoTTS, rotulo, salvar, salvarVarios, apagar, srt,
   type FichaLida, type Fala, type LinhaRoteiro, type Personagem, type Projeto, type Take,
 } from '../lib/vozes';
 
@@ -38,9 +39,20 @@ export default function Vozes(){
     try{
       const [pr,pe,fa,ta]=await Promise.all([listar<Projeto>('projetos'),listar<Personagem>('personagens'),listar<Fala>('falas'),listar<Take>('takes')]);
       let lista=pr.sort((a,b)=>a.criado-b.criado);
+      // Fichas prontas que vêm no site: cria o projeto uma vez (se apagar, não volta sozinho).
+      let selecionar='';
+      for(const m of FICHAS_PRONTAS){
+        if(store.get('studio_vozes_pronto_'+m.id)) continue;
+        if(!lista.some(p=>p.nome===m.nome)){
+          const proj={id:uid(),nome:m.nome,criado:Date.now()}; await salvar('projetos',proj); lista=[...lista,proj];
+          const t0=Date.now(); const novos=lerFichas(m.texto).map((f,i)=>({...aplicarFicha(novoPersonagem(proj.id,f.nome),f),criado:t0+i}));
+          await salvarVarios('personagens',novos); pe.push(...novos); selecionar=proj.id;
+        }
+        store.set('studio_vozes_pronto_'+m.id,'1');
+      }
       if(!lista.length){ const p={id:uid(),nome:'Meu primeiro projeto',criado:Date.now()}; await salvar('projetos',p); lista=[p]; }
       setProjetos(lista); setPers(pe); setFalas(fa); setTakes(ta.sort((a,b)=>b.data-a.data));
-      setPid(x=>lista.some(p=>p.id===x)?x:lista[0].id);
+      setPid(x=>selecionar||(lista.some(p=>p.id===x)?x:lista[0].id));
     }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
     finally{ setCarregado(true); }
   }
@@ -133,7 +145,7 @@ export default function Vozes(){
    </section>
    {semChave}
    {ocupado&&<div className="dl-box"><div className="row"><Loader2 size={16} className="spin"/><span><b>{ocupado.txt}</b> {ocupado.pct}%</span><button className="subtle sm" onClick={()=>{ parar.current=true; }}>Parar</button></div><div className="dl-bar"><i style={{width:Math.max(3,ocupado.pct)+'%'}}/></div></div>}
-   {aba==='elenco'&&<Elenco elenco={elenco} importar={importarFichas} comIA={fichasComIA} add={addPersonagem} mudar={mudarPersonagem} apagar={apagarPersonagem} testar={()=>setAba('lab')}/>}
+   {aba==='elenco'&&<Elenco elenco={elenco} aleatoria={async(g:Genero)=>{ const n=elenco.length+1; const p=await addPersonagem(g==='feminina'?`PERSONAGEM ${n} (F)`:g==='masculina'?`PERSONAGEM ${n} (M)`:`PERSONAGEM ${n}`); mudarPersonagem(p.id,{...vozAleatoria(g),genero:g==='feminina'?'mulher':g==='masculina'?'homem':''}); toast('Voz sorteada. Dê um nome e teste no Laboratório; não gostou, toque em Sortear outra.','ok'); }} importar={importarFichas} comIA={fichasComIA} add={addPersonagem} mudar={mudarPersonagem} apagar={apagarPersonagem} testar={()=>setAba('lab')}/>}
    {aba==='lab'&&<Lab elenco={elenco} takes={meusTakes.filter(t=>!t.falaId)} gerando={gerando==='lab'} gerar={async(p,txt,dir,vozB)=>{
       setGerando('lab');
       try{ await gerarTake(p,txt,dir); if(vozB&&vozB!==p.voz) await gerarTake(p,txt,dir,'',vozB); toast(vozB?'Dois takes prontos para comparar.':'Take pronto. Ouça abaixo.','ok'); }
@@ -168,19 +180,35 @@ export default function Vozes(){
 }
 
 // ================= Elenco =================
-function Elenco({elenco,add,mudar,apagar,testar,importar,comIA}:{elenco:Personagem[];add:()=>void;mudar:(id:string,p:Partial<Personagem>)=>void;apagar:(p:Personagem)=>void;testar:()=>void;importar:(f:FichaLida[])=>Promise<void>;comIA:(t:string)=>Promise<FichaLida[]>}){
+function Elenco({elenco,add,mudar,apagar,testar,importar,comIA,aleatoria}:{aleatoria:(g:Genero)=>Promise<void>;elenco:Personagem[];add:()=>void;mudar:(id:string,p:Partial<Personagem>)=>void;apagar:(p:Personagem)=>void;testar:()=>void;importar:(f:FichaLida[])=>Promise<void>;comIA:(t:string)=>Promise<FichaLida[]>}){
   const {toast}=useApp();
-  const [abrir,setAbrir]=useState(!elenco.length); const [txt,setTxt]=useState(''); const [lidas,setLidas]=useState<FichaLida[]|null>(null); const [lendo,setLendo]=useState(false);
+  const [abrir,setAbrir]=useState(false); const [txt,setTxt]=useState(''); const [lidas,setLidas]=useState<FichaLida[]|null>(null); const [lendo,setLendo]=useState(false);
   async function ler(){
     setLendo(true);
     try{ let f=lerFichas(txt); if(!f.length) f=await comIA(txt); if(!f.length) throw new Error('Não achei personagens nesse texto.'); setLidas(f); }
     catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
     finally{ setLendo(false); }
   }
+  const [gen,setGen]=useState<Genero>('masculina');
   const existe=(n:string)=>elenco.some(p=>p.nome.trim().toUpperCase()===n.toUpperCase());
   return <section className="panel">
-   <div className="section-head"><h2><Users size={18}/> Elenco</h2><span className="row-gap"><button className="subtle sm" onClick={()=>setAbrir(!abrir)}><Wand2 size={14}/> Colar fichas</button><button className="primary sm" onClick={()=>add()}><Plus size={14}/> Novo personagem</button></span></div>
-   {abrir&&<div className="colar-fichas">
+   <div className="section-head"><h2><Users size={18}/> Elenco</h2><span className="row-gap"><span className="aleatoria"><select value={gen} onChange={e=>setGen(e.target.value as Genero)} aria-label="Gênero da voz aleatória"><option value="masculina">Masculina</option><option value="feminina">Feminina</option><option value="qualquer">Qualquer</option></select><button className="subtle sm" onClick={()=>aleatoria(gen)}><Dices size={14}/> Voz aleatória</button></span><button className="subtle sm" onClick={()=>setAbrir(!abrir)}><Wand2 size={14}/> Colar fichas</button><button className="primary sm" onClick={()=>add()}><Plus size={14}/> Novo personagem</button></span></div>
+   {(abrir||!elenco.length)&&<div className="colar-fichas">
+    <details className="guia-ficha"><summary>Como escrever uma ficha (o que é necessário)</summary>
+     <ul>
+      <li><b>Nome</b> (obrigatório): igual ao do roteiro, assim cada fala acha a voz certa. Ex.: <code>NARRADOR</code>, <code>THORGAR</code>.</li>
+      <li><b>Voz-base</b>: uma das 30 vozes do Gemini (Charon, Algenib, Puck, Leda...). Se faltar, usa Charon.</li>
+      <li><b>Gravidade, Ritmo e Energia</b> em %: 0% = aguda / lenta / contida; 100% = muito grave / muito rápida / explosiva.</li>
+      <li><b>Emoção de base</b> (ex.: neutra, cansada, autoritária) e, se quiser, a <b>Intensidade</b> em %.</li>
+      <li><b>Perfil —</b> quem é o personagem (gênero, idade, jeito).</li>
+      <li><b>Descrição e direção permanente</b>: como a voz soa e como interpretar em todas as falas.</li>
+      <li><b>Teste — “frase”</b>: frases curtas que viram botões no Laboratório.</li>
+      <li>Escreva <b>Pro</b> e <b>brasileiro neutro</b> no começo do texto para usar o modelo mais expressivo e esse sotaque em todos.</li>
+     </ul>
+     <p className="hint">A tabela pode ter as colunas separadas por tabulação (copiada de planilha ou do Docs) ou por <code>|</code>. Só a linha de cada personagem é obrigatória; os blocos de perfil, direção e teste são opcionais.</p>
+     <div className="row-gap left"><button className="subtle sm" onClick={()=>{ setTxt(GUIA_FICHA); setLidas(null); }}>Usar o modelo em branco</button><button className="subtle sm" onClick={()=>navigator.clipboard?.writeText(GUIA_FICHA).then(()=>toast('Modelo copiado.','ok'),()=>{})}>Copiar o modelo</button></div>
+    </details>
+    <label className="mt">Fichas prontas<span className="row-gap left">{FICHAS_PRONTAS.map(m=><button key={m.id} className="subtle sm" onClick={()=>{ setTxt(m.texto); setLidas(null); }}>{m.nome}</button>)}</span></label>
     <p className="hint">Cole o texto com as fichas (pode ser a tabela <b>Personagem / Voz-base / Gravidade / Ritmo / Energia / Emoção</b> e os blocos com <b>Perfil —</b>, <b>Descrição e direção permanente</b> e <b>Teste — “frase”</b>). O site cria ou atualiza cada personagem e já deixa as frases de teste no Laboratório. Se o texto for livre, a IA (Gemini) monta as fichas.</p>
     <textarea rows={6} value={txt} onChange={e=>{ setTxt(e.target.value); setLidas(null); }} placeholder={'Personagem\tVoz-base\tGravidade\tRitmo\tEnergia\tEmoção\nNarrador\tCharon\t72%\t42%\t45%\tNeutra\n\nNarrador\nPerfil — Homem maduro, contador de histórias...\nDescrição e direção permanente\nVoz encorpada, dicção clara...\nTeste — “Era uma noite tranquila na taverna.”'} aria-label="Texto das fichas"/>
     <button className="primary mt" disabled={!txt.trim()||lendo} onClick={ler}>{lendo?<Loader2 size={15} className="spin"/>:<Wand2 size={15}/>} Ler fichas</button>
@@ -210,7 +238,7 @@ function Elenco({elenco,add,mudar,apagar,testar,importar,comIA}:{elenco:Personag
      <span className="pct-row"><input type="range" min={0} max={100} step={1} value={p.intensidade??50} onChange={e=>mudar(p.id,{intensidade:+e.target.value})}/><input type="number" min={0} max={100} value={p.intensidade??50} onChange={e=>mudar(p.id,{intensidade:Math.max(0,Math.min(100,+e.target.value||0))})} aria-label="intensidade em %"/></span></label>
     <label className="mt">Descrição e direção permanente<textarea rows={3} value={p.descricao} placeholder="Ex.: voz encorpada e cinematográfica, ironia seca e discreta; sem tom publicitário." onChange={e=>mudar(p.id,{descricao:e.target.value})}/></label>
     <details className="mt"><summary>Ver o que vai para o Gemini</summary><p className="hint">{descreverVoz(p)}</p></details>
-    <div className="row-gap left mt"><button className="subtle sm" onClick={testar}><FlaskConical size={14}/> Testar no Laboratório</button><button className="subtle sm" onClick={()=>apagar(p)}><Trash2 size={14}/> Apagar</button></div>
+    <div className="row-gap left mt"><button className="subtle sm" onClick={testar}><FlaskConical size={14}/> Testar no Laboratório</button><button className="subtle sm" onClick={()=>mudar(p.id,vozAleatoria(generoDaVoz(p.voz),p.voz))} title="Sorteia outra voz do mesmo gênero e novos ajustes"><Dices size={14}/> Sortear outra</button><button className="subtle sm" onClick={()=>apagar(p)}><Trash2 size={14}/> Apagar</button></div>
    </article>)}</div>
   </section>;
 }

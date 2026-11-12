@@ -12,6 +12,19 @@ export const VOZES_TTS:[string,string][] = [
   ['Sadachbia','viva'],['Kore','firme'],['Aoede','leve'],['Leda','jovem'],['Zephyr','brilhante'],['Autonoe','brilhante'],['Callirrhoe','tranquila'],['Despina','suave'],
   ['Erinome','clara'],['Laomedeia','animada'],['Achernar','macia'],['Pulcherrima','direta'],['Vindemiatrix','gentil'],['Sulafat','calorosa'],
 ];
+/** Vozes femininas do Gemini (as demais soam masculinas). */
+export const VOZES_FEMININAS=['Kore','Aoede','Leda','Zephyr','Autonoe','Callirrhoe','Despina','Erinome','Laomedeia','Achernar','Pulcherrima','Vindemiatrix','Sulafat','Gacrux'];
+export type Genero='masculina'|'feminina'|'qualquer';
+export const generoDaVoz=(v:string):Genero=>VOZES_FEMININAS.includes(v)?'feminina':'masculina';
+const sorteio=<T,>(l:T[])=>l[Math.floor(Math.random()*l.length)];
+const faixa=(a:number,b:number)=>Math.round(a+Math.random()*(b-a));
+/** Sorteia uma voz nova: voz-base do gênero pedido + gravidade, ritmo, energia, emoção e intensidade. */
+export function vozAleatoria(g:Genero,evitar=''):Partial<Personagem>{
+  const opcoes=VOZES_TTS.map(([v])=>v).filter(v=>v!==evitar&&(g==='qualquer'||generoDaVoz(v)===g));
+  const voz=sorteio(opcoes); const fem=generoDaVoz(voz)==='feminina';
+  return {voz,gravidade:fem?faixa(15,60):faixa(40,92),ritmo:faixa(30,75),energia:faixa(25,85),intensidade:faixa(30,80),
+    emocao:sorteio(['neutra','alegre','irônica','séria','misteriosa','calorosa','empolgada','sarcástica','solene','sombria'])};
+}
 export const ehVoz = (v:string)=>VOZES_TTS.some(([n])=>n===v);
 /** Se o nome do personagem for o nome de uma voz do Gemini (ex.: CHARON), devolve essa voz. */
 export const vozDoNome = (nome:string)=>VOZES_TTS.find(([n])=>n.toLowerCase()===nome.trim().toLowerCase())?.[0]||'';

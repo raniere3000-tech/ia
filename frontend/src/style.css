@@ -351,3 +351,5 @@ a.subtle.sm{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
 .vc-ia{display:flex;flex-direction:column;gap:6px;margin:4px 0 8px}.vc-ia span{display:flex;gap:6px;flex-wrap:wrap}.vc-ia input{font-size:.85rem}.vc-sub{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px}
 .colar-fichas{border:1px dashed var(--line2);border-radius:12px;padding:12px;margin-bottom:14px}.fichas-lidas ul{list-style:none;padding:0;margin:6px 0 10px;display:grid;gap:6px}.fichas-lidas li small{display:block;color:#9aa3b8}
 .pct-row{display:flex;align-items:center;gap:8px}.pct-row input[type=range]{flex:1}.pct-row input[type=number]{width:64px;padding:6px 8px}
+.guia-ficha{margin-bottom:10px}.guia-ficha ul{margin:8px 0;padding-left:18px;display:grid;gap:4px;font-size:.88rem}
+.aleatoria{display:inline-flex;gap:6px;align-items:center}.aleatoria select{width:auto;padding:6px 8px}
