@@ -17,14 +17,16 @@ import Config from './pages/Config';
 import './style.css';
 
 const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'seguir-rosto',servidor:'',servidorToken:'',servidorCanal:'',geminiKey:'',ia:''};
-const NAV:[Tab,string,typeof Home][] = [['inicio','Como funciona',Home],['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['video','Vídeo com código',Sparkles],['vozes','Estúdio de vozes',Mic],['manual','Montagem manual',Film],['agendar','Agendar posts',CalendarClock],['estilos','Legendas e efeitos',Captions],['templates','Template da marca',LayoutTemplate],['config','Chaves e ajustes',Gear]];
+const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['video','Criar vídeo animado',Sparkles],['vozes','Estúdio de vozes',Mic],['manual','Montagem manual',Film],['agendar','Agendar posts',CalendarClock],['estilos','Legendas e efeitos',Captions],['templates','Template da marca',LayoutTemplate],['config','Chaves e ajustes',Gear]];
+/** Menu por etapa do trabalho. */
+const GRUPOS:[string,Tab[]][] = [['',['inicio']],['Descobrir',['radar']],['Produzir',['cortes','video','vozes','manual','estilos','templates']],['Publicar',['agendar']],['Configurações',['config']]];
 const TITLES:Record<Tab,[string,string]> = {
   inicio:['Bem-vindo ao EstúdioClip','Descubra vídeos em alta, transforme vídeos longos em cortes curtos e exporte com legenda, tudo no navegador.'],
   radar:['Descubra vídeos em alta','Pesquise qualquer nicho no YouTube e encontre canais e vídeos com muitas visualizações.'],
   cortes:['Transforme vídeos em cortes','Envie um vídeo seu (ou autorizado), escolha a duração e receba os melhores trechos com nota.'],
   vozes:['Estúdio de vozes','Crie personagens, teste e compare vozes do Gemini, aplique no roteiro e baixe o áudio pronto para o vídeo.'],
   manual:['Montagem manual','Mande as imagens dos quadros, a narração, a trilha e os efeitos. O site lê o roteiro de quadros, sincroniza tudo e grava o vídeo.'],
-  video:['Vídeo viral com código','Digite um tema: a IA escreve o roteiro e o site monta um vídeo vertical animado, com narração e batida, pronto para postar.'],
+  video:['Criar vídeo animado','Digite um tema: a IA escreve o roteiro e o site monta um vídeo vertical animado, com narração e batida, pronto para postar.'],
   agendar:['Agendar posts','Conecte suas contas uma vez e agende os cortes no YouTube, Instagram, Facebook e TikTok. O Kwai fica com o botão de baixar.'],
   estilos:['Legendas e efeitos','Escolha o visual padrão das legendas e o efeito aplicado nos cortes.'],
   templates:['Template da marca','Logo, cor, moldura e crédito aplicados automaticamente em todos os cortes.'],
@@ -96,7 +98,7 @@ export default function App(){
    <div className="app">
     <aside className="sidebar">
      <div className="brand"><span className="brand-icon"><Clapperboard size={22}/></span><div><strong>ESTÚDIO<span>CLIP</span></strong><small>RADAR + EDITOR</small></div></div>
-     <nav>{NAV.map(([key,label,Icon])=><button key={key} className={'nav '+(tab===key?'active':'')} onClick={()=>go(key)} title={label}><Icon size={18}/><span>{label}</span>{key==='cortes'&&projeto.clips.length>0&&<em className="nav-badge">{projeto.clips.filter(c=>!c.descartado).length}</em>}</button>)}</nav>
+     <nav>{GRUPOS.map(([g,tabs])=><div key={g||'ini'} className="nav-grupo">{g&&<small className="nav-titulo">{g}</small>}{tabs.map(key=>{ const [,label,Icon]=NAV.find(n=>n[0]===key)!; return <button key={key} className={'nav '+(tab===key?'active':'')} onClick={()=>go(key)} title={label}><Icon size={18}/><span>{label}</span>{key==='cortes'&&projeto.clips.length>0&&<em className="nav-badge">{projeto.clips.filter(c=>!c.descartado).length}</em>}</button>; })}</div>)}</nav>
      <div className="sidebar-bottom">
       <div className="side-title">STATUS</div>
       {status.map(s=><button key={s.label} className={'status-row '+(s.ok?'ok':s.opt?'opt':'no')} onClick={()=>go('config')}>{s.ok?<CheckCircle2 size={14}/>:<Circle size={14}/>}<span>{s.label}</span><small>{s.ok?'pronto':s.opt?'opcional':'falta chave'}</small></button>)}

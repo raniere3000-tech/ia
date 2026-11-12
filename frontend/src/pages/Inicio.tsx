@@ -1,9 +1,21 @@
-import { Search, Upload, Sparkles, Download, KeyRound, CheckCircle2, Circle, ArrowRight, ShieldCheck, Clock } from 'lucide-react';
+import { Search, Upload, Sparkles, Download, KeyRound, CheckCircle2, Circle, ArrowRight, ShieldCheck, Clock, Clapperboard, Mic, Film, PlayCircle } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 
 export default function Inicio(){
-  const {settings,go}=useApp();
+  const {settings,go,projeto}=useApp();
+  // Trabalhos guardados neste navegador, para continuar de onde parou.
+  const ler=(k:string)=>{ try{ return JSON.parse(localStorage.getItem(k)||'null'); }catch{ return null; } };
+  const continuar:{t:string;d:string;to:'cortes'|'manual'|'vozes'|'video'}[]=[];
+  const nCortes=projeto.clips.filter(c=>!c.descartado).length; if(nCortes) continuar.push({t:'Cortes',d:`${nCortes} corte(s) prontos para editar`,to:'cortes'});
+  const man=ler('studio_manual'); if(man?.texto?.trim()) continuar.push({t:'Montagem manual',d:man.sinc?.quadros?.length?`${man.sinc.quadros.length} quadros sincronizados`:'Roteiro de quadros salvo',to:'manual'});
+  if(localStorage.getItem('studio_vozes_projeto')) continuar.push({t:'Estúdio de vozes',d:'Projeto de vozes aberto por último',to:'vozes'});
+  const vc=ler('studio_video_codigo'); if(vc?.cenas?.length) continuar.push({t:'Vídeo animado',d:`${vc.titulo||'Roteiro'} • ${vc.cenas.length} cenas`,to:'video'});
+  const entradas=[
+    {icon:Clapperboard,t:'Criar cortes',d:'Envie um vídeo longo e receba os melhores trechos com nota, legenda e efeito.',onde:'Roda no seu navegador',to:'cortes' as const},
+    {icon:Mic,t:'Montar episódio',d:'Roteiro, vozes dos personagens e montagem com imagens, trilha e efeitos.',onde:'Vozes pelo Gemini, montagem no navegador',to:'vozes' as const},
+    {icon:Film,t:'Criar vídeo animado',d:'Digite um tema e o site monta um vídeo vertical com narração e batida.',onde:'Roteiro e voz por IA, vídeo no navegador',to:'video' as const},
+  ];
   const passos=[
     {icon:KeyRound,t:'1. Cole suas chaves',d:'A chave gratuita do YouTube ativa o Radar. A chave de IA (Gemini grátis ou Claude) é opcional e deixa as notas mais inteligentes.',btn:'Abrir Chaves e ajustes',to:'config' as const},
     {icon:Search,t:'2. Ache vídeos em alta',d:'No Radar, escolha um nicho e veja vídeos e canais com mais views por dia. Use para se inspirar ou achar parceiros.',btn:'Abrir o Radar',to:'radar' as const},
@@ -16,6 +28,12 @@ export default function Inicio(){
     {ok:true,t:'Legendas automáticas (Whisper)',d:'Já funciona, sem chave. O modelo é baixado na primeira vez.',help:'whisper' as const,need:'Sem chave'},
   ];
   return <>
+   {continuar.length>0&&<section className="panel">
+    <div className="section-head"><h2><PlayCircle size={18}/> Continuar projeto</h2></div>
+    <div className="inicio-cont">{continuar.map(c=><button key={c.t} className="inicio-cont-item" onClick={()=>go(c.to)}><b>{c.t}</b><small>{c.d}</small><ArrowRight size={15}/></button>)}</div>
+   </section>}
+   <div className="inicio-entradas">{entradas.map(e=><button key={e.t} className="inicio-entrada" onClick={()=>go(e.to)}><span className="step-icon"><e.icon size={22}/></span><h3>{e.t}</h3><p>{e.d}</p><small>{e.onde}</small></button>)}</div>
+   <details className="inicio-ajuda"><summary>Ajuda: como configurar e usar, passo a passo</summary>
    <section className="hero panel">
     <div className="hero-text">
      <span className="pill"><Sparkles size={13}/> Funciona direto no navegador</span>
@@ -44,5 +62,6 @@ export default function Inicio(){
      <li>Enquanto a rede não aprova o seu app, há limites: no YouTube os vídeos sobem como privados, e no TikTok vão para os rascunhos (você toca em Postar).</li>
     </ul></section>
    </div>
+   </details>
   </>;
 }

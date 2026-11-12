@@ -31,7 +31,7 @@ export const vozDoNome = (nome:string)=>VOZES_TTS.find(([n])=>n.toLowerCase()===
 
 export type Projeto = {id:string;nome:string;criado:number};
 export type Personagem = {id:string;projetoId:string;nome:string;voz:string;modelo:string;genero:string;gravidade:number;ritmo:number;energia:number;emocao:string;sotaque:string;descricao:string;aprovada:boolean;criado:number;testes?:string[];intensidade?:number;pct?:boolean};
-export type Fala = {id:string;projetoId:string;ordem:number;cena:string;nomeRoteiro:string;personagemId:string;texto:string;direcao:string;pausa:number;tipo:'fala'|'acao'|'som';volume?:number;sobrepor?:boolean;fonteSom?:'auto'|'site'|'ia'|'arquivo'};
+export type Fala = {id:string;projetoId:string;ordem:number;cena:string;nomeRoteiro:string;personagemId:string;texto:string;direcao:string;pausa:number;tipo:'fala'|'acao'|'som';quadro?:number;volume?:number;sobrepor?:boolean;fonteSom?:'auto'|'site'|'ia'|'arquivo'};
 export type Take = {id:string;projetoId:string;falaId:string;personagemId:string;texto:string;direcao:string;pedido:string;voz:string;modelo:string;ajustes:string;data:number;duracao:number;wav:Blob;aprovado:boolean;nota:string};
 export type Loja = 'projetos'|'personagens'|'falas'|'takes';
 
@@ -170,7 +170,7 @@ export const apagar=(store:Loja,id:string)=>tx<void>(store,'readwrite',s=>{ s.de
 export const limpar=(store:Loja)=>tx<void>(store,'readwrite',s=>{ s.clear(); });
 
 // ---------------- Importação do roteiro ----------------
-export type LinhaRoteiro = {cena:string;nome:string;texto:string;direcao:string;tipo:'fala'|'acao'|'som'};
+export type LinhaRoteiro = {cena:string;nome:string;texto:string;direcao:string;tipo:'fala'|'acao'|'som';quadro?:number};
 /** Lê marcações de efeito sonoro: [SOM: ...], [SFX: ...], (SOM: ...), SOM: ... */
 export function lerMarcaSom(l:string){
   const m=/^\**\s*[[(]?\s*(?:som|sfx|efeito(?: sonoro)?|ruido|ruído|barulho)\s*[:—–-]\s*(.+?)\s*[\])]?\s*\**$/i.exec(l.trim());
@@ -186,25 +186,30 @@ export function lerMarcaSom(l:string){
 export function lerRoteiro(txt:string):LinhaRoteiro[]{
   const linhas=txt.replace(/\r/g,'').split('\n');
   const temCena=linhas.some(l=>ehCena(l.trim()));
-  const out:LinhaRoteiro[]=[]; let cena=temCena?'':'Roteiro'; let dentro=!temCena;
+  const out:LinhaRoteiro[]=[]; let cena=temCena?'':'Roteiro'; let dentro=!temCena; let quadro:number|undefined;
   for(const l0 of linhas){
     const l=l0.trim(); if(!l||/^(---|___|\*\*\*)$/.test(l)) continue;
-    if(ehCena(l)){ cena=l.replace(/^#+\s*/,'').replace(/\*\*/g,'').trim(); dentro=true; continue; }
+    if(ehCena(l)){ cena=l.replace(/^#+\s*/,'').replace(/\*\*/g,'').trim(); dentro=true; const nq=RX_QUADRO.exec(l); quadro=nq?+nq[1]:undefined; continue; }
+    if(dentro&&RX_NAO_FALA.test(l)){ out.push({cena,nome:'',texto:l.replace(/\*\*/g,''),direcao:'',tipo:'acao',quadro}); continue; }
     if(/^#{1,6}\s/.test(l)){ dentro=false; continue; }
     if(!dentro) continue;
-    const som=lerMarcaSom(l); if(som){ out.push({cena,nome:'',texto:som,direcao:'',tipo:'som'}); continue; }
+    const som=lerMarcaSom(l); if(som){ out.push({cena,nome:'',texto:som,direcao:'',tipo:'som',quadro}); continue; }
     const m=/^(?:[-*•]\s+)?\**\s*([^:*\n]{1,40}?)\s*(?:\(([^)]{1,60})\))?\s*\**\s*:\s*\**\s*(.+)$/.exec(l);
     if(m){
       const nome=m[1].trim(); let texto=m[3].trim().replace(/^\*\*\s*/,'');
       const aspas=/^[“"«](.*)[”"»]\s*$/.exec(texto);
       const maiusc=nome===nome.toUpperCase()&&/[A-ZÀ-Ú]/.test(nome);
-      if(aspas||maiusc){ out.push({cena,nome:nome.toUpperCase(),texto:aspas?aspas[1]:texto,direcao:m[2]?.trim()||'',tipo:'fala'}); continue; }
+      if(aspas||maiusc){ out.push({cena,nome:nome.toUpperCase(),texto:aspas?aspas[1]:texto,direcao:m[2]?.trim()||'',tipo:'fala',quadro}); continue; }
     }
-    out.push({cena,nome:'',texto:l.replace(/\*\*/g,''),direcao:'',tipo:'acao'});
+    out.push({cena,nome:'',texto:l.replace(/\*\*/g,''),direcao:'',tipo:'acao',quadro});
   }
   return out;
 }
-function ehCena(l:string){ return /^#{1,4}\s*(cena|scene|parte|ato)\b/i.test(l)||/^\**\s*(CENA|Cena|SCENE)\s*\d+/.test(l); }
+function ehCena(l:string){ return /^#{1,4}\s*(cena|scene|parte|ato)\b/i.test(l)||/^\**\s*(CENA|Cena|SCENE)\s*\d+/.test(l)||RX_QUADRO.test(l); }
+/** Cabeçalho do roteiro de quadros: "QUADRO 3", "## Quadro 3 (0:04–0:09)", "FRAME 3". */
+const RX_QUADRO=/^\s*(?:#+\s*)?\**\s*(?:quadro|frame|plano|take)\s*(?:n[ºo°.]?\s*)?(\d+)/i;
+/** Linhas do roteiro de quadros que não são falas: descrição, movimento, tempo, trilha. */
+const RX_NAO_FALA=/^\s*(?:[-*•]\s+)?\**\s*[[(]?\s*(visual|imagem|descri[cç][aã]o|tela|cen[aá]rio|a[cç][aã]o|texto na tela|obs|observa[cç][aã]o|movimento|c[aâ]mera|anim|anima[cç][aã]o|efeito visual|transi[cç][aã]o|tempo|dura[cç][aã]o|tempo de tela|timing|trilha|trilha sonora|m[uú]sica|bgm|fundo musical)\s*\**\s*:/i;
 
 // ---------------- Geração de voz ----------------
 /** Monta o pedido separando a direção (não falada) do texto que deve ser dito exatamente. */

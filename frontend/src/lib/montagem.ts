@@ -14,10 +14,11 @@ export type Formato = '9:16'|'16:9'|'1:1';
 export const TAMANHO:Record<Formato,[number,number]> = {'9:16':[1080,1920],'16:9':[1920,1080],'1:1':[1080,1080]};
 
 export type TipoArq = 'quadro'|'narracao'|'trilha'|'efeito';
-export type Arquivo = {id:string;nome:string;tipo:TipoArq;blob:Blob;midia?:'imagem'|'video';duracao:number;criado:number};
+export type MetaVoz = {origem:'vozes';quadro:number;pos:number;texto:string;personagem:string;pausa:number;revisar?:boolean};
+export type Arquivo = {id:string;nome:string;tipo:TipoArq;blob:Blob;midia?:'imagem'|'video';duracao:number;criado:number;meta?:MetaVoz};
 export type QuadroRot = {n:number;titulo:string;visual:string;falas:{nome:string;texto:string}[];sons:{desc:string;pos:number;offset?:number}[];trilha?:string;anim?:Anim;ini?:number;fim?:number;dur?:number;linhas:number};
 export type SomSinc = {desc:string;arquivo:string;em:number;vol:number};
-export type QuadroSinc = {n:number;titulo:string;visual:string;midia:string;ini:number;dur:number;anim:Anim;sons:SomSinc[];legenda:{ini:number;fim:number;texto:string}[];narracao?:string};
+export type QuadroSinc = {n:number;titulo:string;visual:string;midia:string;ini:number;dur:number;anim:Anim;sons:SomSinc[];legenda:{ini:number;fim:number;texto:string}[];narracao?:string;narracoes?:{arquivo:string;em:number;texto:string}[];avisos?:string[];fonteDur?:string;origemMidia?:string};
 export type Sinc = {quadros:QuadroSinc[];trilhas:{arquivo:string;ini:number;fim:number}[];narracao:'unica'|'separada'|'nenhuma';total:number;notas:string[]};
 export type Opcoes = {durPadrao:number;naBatida:boolean;legendas:boolean;volTrilha:number;volEfeitos:number;transicao:'corte'|'fade';formato:Formato};
 export const OPCOES_PADRAO:Opcoes = {durPadrao:3,naBatida:true,legendas:true,volTrilha:30,volEfeitos:80,transicao:'fade',formato:'9:16'};
@@ -171,6 +172,14 @@ export async function guardarArquivo(f:File,tipo:TipoArq):Promise<Arquivo>{
   return a;
 }
 
+/** Recebe os takes aprovados do Estúdio de vozes: troca as narrações que tinham vindo de lá e guarda as novas. */
+export async function receberVozes(itens:{nome:string;wav:Blob;duracao:number;meta:MetaVoz}[]):Promise<number>{
+  const atuais=await listarArquivos();
+  for(const a of atuais.filter(x=>x.tipo==='narracao'&&x.meta?.origem==='vozes')) await apagarArquivo(a.id);
+  let i=0; for(const it of itens){ const a:Arquivo={id:uid(),nome:it.nome,tipo:'narracao',blob:it.wav,duracao:it.duracao,criado:Date.now()+(i++)/1000,meta:it.meta}; await loja('readwrite',s=>{ s.put(a); }); }
+  return itens.length;
+}
+
 // ---------------------------------------------------------------- análise
 
 /** Número do quadro no nome do arquivo: "quadro-03.png", "frame_3.jpg", "03 porta.png", "3.jpg". */
@@ -182,6 +191,9 @@ export function numeroDoNome(nome:string){
   return 0;
 }
 const ordemNatural=(a:string,b:string)=>a.localeCompare(b,'pt-BR',{numeric:true,sensitivity:'base'});
+
+/** O arquivo tem um número que não é de nenhum quadro do roteiro (ex.: quadro-40 num roteiro de 31)? Então não entra "pela ordem". */
+function numeroForaDoRoteiro(nome:string,qs:QuadroRot[]){ const n=numeroDoNome(nome); return n>0&&!qs.some(q=>q.n===n); }
 
 /** Áudio mono 16 kHz para transcrever. */
 export async function mono16k(b:AudioBuffer){
@@ -221,36 +233,51 @@ function ancorasDasFalas(qs:QuadroRot[],cues:Cue[]){
 }
 const palavrasFala=(s:string)=>semAcento(s).replace(/[^a-z0-9]+/g,' ').split(' ').filter(w=>w.length>=2);
 
-export type Entrada = {quadros:QuadroRot[];arquivos:Arquivo[];cues:Cue[]|null;batidas:number[]|null;opcoes:Opcoes;imagensIA?:Map<number,string>};
+export type Entrada = {quadros:QuadroRot[];arquivos:Arquivo[];cues:Cue[]|null;batidas:number[]|null;opcoes:Opcoes;imagensIA?:Map<number,string>;manual?:{midia?:Record<number,string>}};
 
 /** Junta tudo: qual imagem vai em cada quadro, quando cada quadro começa, onde entra cada som e cada trilha. */
 export function sincronizar(e:Entrada):Sinc{
   const {quadros:qs,arquivos,opcoes:o}=e; const notas:string[]=[];
   const imgs=arquivos.filter(a=>a.tipo==='quadro'), nars=arquivos.filter(a=>a.tipo==='narracao'), trs=arquivos.filter(a=>a.tipo==='trilha'), efs=arquivos.filter(a=>a.tipo==='efeito');
-  // 1) Imagem de cada quadro: IA > número no nome > ordem.
+  const avisos:string[][]=qs.map(()=>[]); const origem:string[]=qs.map(()=>'');
+  // 1) Imagem de cada quadro: escolha manual > IA > número no nome > ordem.
   const midiaDe=new Map<number,string>(); const usadas=new Set<string>();
-  if(e.imagensIA) for(const [qi,id] of e.imagensIA) if(qs[qi]&&imgs.some(a=>a.id===id)){ midiaDe.set(qi,id); usadas.add(id); }
-  for(const a of [...imgs].sort((x,y)=>ordemNatural(x.nome,y.nome))){ if(usadas.has(a.id)) continue; const n=numeroDoNome(a.nome); const qi=qs.findIndex(q=>q.n===n); if(n&&qi>=0&&!midiaDe.has(qi)){ midiaDe.set(qi,a.id); usadas.add(a.id); } }
-  const sobra=imgs.filter(a=>!usadas.has(a.id)).sort((x,y)=>ordemNatural(x.nome,y.nome));
-  qs.forEach((_,qi)=>{ if(!midiaDe.has(qi)&&sobra.length){ const a=sobra.shift()!; midiaDe.set(qi,a.id); usadas.add(a.id); } });
-  if(sobra.length) notas.push(`${sobra.length} imagem(ns) sobraram (mais imagens do que quadros): ${sobra.slice(0,4).map(a=>a.nome).join(', ')}.`);
-  const semImg=qs.filter((_,qi)=>!midiaDe.has(qi)); if(semImg.length) notas.push(`Quadro(s) sem imagem: ${semImg.map(q=>q.n).join(', ')}.`);
-  // 2) Narração separada (um arquivo por quadro com fala) ou única (um arquivo para tudo).
-  const modo:Sinc['narracao']=nars.length>1?'separada':nars.length===1?'unica':'nenhuma';
-  const narDe=new Map<number,string>();
+  const man=e.manual?.midia||{};
+  qs.forEach((q,qi)=>{ const id=man[q.n]; if(id==null) return; if(id==='-'){ midiaDe.set(qi,''); origem[qi]='você deixou sem imagem'; } else if(imgs.some(a=>a.id===id)){ midiaDe.set(qi,id); usadas.add(id); origem[qi]='escolhida por você'; } });
+  if(e.imagensIA) for(const [qi,id] of e.imagensIA) if(qs[qi]&&!midiaDe.has(qi)&&!usadas.has(id)&&imgs.some(a=>a.id===id)){ midiaDe.set(qi,id); usadas.add(id); origem[qi]='escolhida pela IA'; }
+  const duplicadas=new Set<string>();
+  for(const q of qs){ const qi=qs.indexOf(q); const cands=imgs.filter(a=>numeroDoNome(a.nome)===q.n).sort((x,y)=>ordemNatural(x.nome,y.nome)); if(!cands.length) continue;
+    if(cands.length>1){ cands.forEach(a=>duplicadas.add(a.id)); if(!midiaDe.has(qi)||cands.some(a=>a.id===midiaDe.get(qi))) avisos[qi].push(`${cands.length} arquivos com o número ${q.n}: ${cands.map(a=>a.nome).join(', ')}. Confira qual é o certo.`); }
+    if(midiaDe.has(qi)) continue; const a=cands.find(x=>!usadas.has(x.id)); if(a){ midiaDe.set(qi,a.id); usadas.add(a.id); origem[qi]=cands.length>1?'número no nome (havia mais de um)':'número no nome'; } }
+  const sobra=imgs.filter(a=>!usadas.has(a.id)&&!duplicadas.has(a.id)&&!numeroForaDoRoteiro(a.nome,qs)).sort((x,y)=>ordemNatural(x.nome,y.nome));
+  qs.forEach((_,qi)=>{ if(!midiaDe.has(qi)&&sobra.length){ const a=sobra.shift()!; midiaDe.set(qi,a.id); usadas.add(a.id); origem[qi]='ordem dos arquivos'; } });
+  const fora=imgs.filter(a=>!usadas.has(a.id)); if(fora.length) notas.push(`${fora.length} imagem(ns) enviada(s) não entraram em nenhum quadro: ${fora.slice(0,5).map(a=>a.nome).join(', ')}.`);
+  qs.forEach((_,qi)=>{ if(!midiaDe.get(qi)&&origem[qi]!=='você deixou sem imagem') avisos[qi].push('Sem imagem. Escolha um arquivo ou envie um com o número deste quadro.'); });
+  const semImg=qs.filter((_,qi)=>!midiaDe.get(qi)); if(semImg.length) notas.push(`Quadro(s) sem imagem: ${semImg.map(q=>q.n).join(', ')}.`);
+  // 2) Narração: única (um arquivo para tudo) ou separada (um arquivo por fala, por quadro e posição).
+  const modo:Sinc['narracao']=nars.length>1||nars.some(a=>a.meta)?'separada':nars.length===1?'unica':'nenhuma';
+  const narsDe=new Map<number,Arquivo[]>(); const poe=(qi:number,a:Arquivo)=>{ narsDe.set(qi,[...(narsDe.get(qi)||[]),a]); };
   if(modo==='separada'){
-    const comFala=qs.map((q,qi)=>({q,qi})).filter(x=>x.q.falas.length);
-    const alvo=comFala.length?comFala:qs.map((q,qi)=>({q,qi}));
-    const livres=[...nars].sort((x,y)=>ordemNatural(x.nome,y.nome)); const usados=new Set<string>();
-    for(const a of livres){ const n=numeroDoNome(a.nome); const x=n?alvo.find(y=>y.q.n===n&&!narDe.has(y.qi)):undefined; if(x){ narDe.set(x.qi,a.id); usados.add(a.id); } }
-    for(const x of alvo){ if(narDe.has(x.qi)) continue; const a=livres.find(y=>!usados.has(y.id)); if(a){ narDe.set(x.qi,a.id); usados.add(a.id); } }
-    if(livres.some(a=>!usados.has(a.id))) notas.push('Sobrou arquivo de narração sem quadro com fala.');
+    const usados=new Set<string>(); const cabe=(qi:number)=>(narsDe.get(qi)?.length||0)<Math.max(1,qs[qi].falas.length);
+    // a) vindas do Estúdio de vozes: quadro e posição da fala já vêm marcados.
+    for(const a of nars.filter(x=>x.meta).sort((x,y)=>x.meta!.quadro-y.meta!.quadro||x.meta!.pos-y.meta!.pos)){ const qi=qs.findIndex(q=>q.n===a.meta!.quadro); if(qi>=0){ poe(qi,a); usados.add(a.id); } }
+    // b) pelo número no nome (vários arquivos do mesmo quadro entram na ordem do nome, um por fala).
+    const livres=nars.filter(a=>!usados.has(a.id)).sort((x,y)=>ordemNatural(x.nome,y.nome));
+    for(const a of livres){ const n=numeroDoNome(a.nome); const qi=n?qs.findIndex(q=>q.n===n):-1; if(qi<0) continue;
+      if(cabe(qi)){ poe(qi,a); usados.add(a.id); } else { usados.add(a.id); avisos[qi].push(`O áudio ${a.nome} tem o número deste quadro, mas todas as falas já têm áudio. Ficou de fora.`); } }
+    // c) o resto, na ordem, nas falas que ainda não têm áudio.
+    for(let qi=0;qi<qs.length;qi++){ while(qs[qi].falas.length&&cabe(qi)){ const a=livres.find(y=>!usados.has(y.id)); if(!a) break; poe(qi,a); usados.add(a.id); } }
+    const resto=nars.filter(a=>!usados.has(a.id)); if(resto.length) notas.push(`Áudio(s) de narração sem quadro: ${resto.slice(0,4).map(a=>a.nome).join(', ')}.`);
+    qs.forEach((q,qi)=>{ const tem=narsDe.get(qi)?.length||0; if(q.falas.length>tem) avisos[qi].push(tem?`Falta o áudio de ${q.falas.length-tem} das ${q.falas.length} falas.`:q.falas.length>1?`Faltam os áudios das ${q.falas.length} falas.`:'Falta o áudio da fala.');
+      for(const a of narsDe.get(qi)||[]) if(a.meta?.revisar) avisos[qi].push(`O texto da fala de ${a.meta.personagem} mudou depois do take. Gere de novo no Estúdio de vozes.`); });
   }
+  const PAUSA=0.35; const durNar=(qi:number)=>{ const l=narsDe.get(qi); return l?.length?0.1+l.reduce((t,a)=>t+a.duracao+(a.meta?.pausa??PAUSA),0):0; };
+  const fonteDur:string[]=qs.map(()=>'');
   // 3) Tempo de cada quadro.
-  const durPropria=(qi:number)=>{ const q=qs[qi]; if(q.dur) return q.dur; if(q.ini!=null&&q.fim!=null) return q.fim-q.ini;
-    const n=narDe.get(qi); if(n){ const a=nars.find(x=>x.id===n); if(a) return a.duracao+0.35; }
-    const m=midiaDe.get(qi); const ar=m?imgs.find(x=>x.id===m):undefined; if(ar?.midia==='video'&&ar.duracao>0) return Math.min(ar.duracao,30);
-    return Math.max(0.5,o.durPadrao); };
+  const durPropria=(qi:number)=>{ const q=qs[qi]; if(q.dur){ fonteDur[qi]='roteiro'; return q.dur; } if(q.ini!=null&&q.fim!=null){ fonteDur[qi]='roteiro'; return q.fim-q.ini; }
+    const dn=durNar(qi); if(dn){ fonteDur[qi]='áudio'; return dn; }
+    const m=midiaDe.get(qi); const ar=m?imgs.find(x=>x.id===m):undefined; if(ar?.midia==='video'&&ar.duracao>0){ fonteDur[qi]='vídeo'; return Math.min(ar.duracao,30); }
+    fonteDur[qi]='padrão'; return Math.max(0.5,o.durPadrao); };
   const inicio:(number|undefined)[]=qs.map(q=>q.ini);
   if(modo==='unica'&&e.cues?.length){ const anc=ancorasDasFalas(qs,e.cues); anc.forEach((t,qi)=>{ if(inicio[qi]==null) inicio[qi]=t; });
     const falando=qs.filter(q=>q.falas.length).length; if(anc.size<falando) notas.push(`Achei na narração o começo de ${anc.size} de ${falando} quadros com fala; os outros ficaram no meio do caminho. Confira e ajuste se precisar.`); }
@@ -268,7 +295,8 @@ export function sincronizar(e:Entrada):Sinc{
     }
     ini[i]=i?Math.max(ant,ini[i-1]+0.3):0;
   }
-  for(let i=0;i<qs.length;i++) dur[i]=i<qs.length-1?ini[i+1]-ini[i]:durPropria(i);
+  for(let i=0;i<qs.length;i++){ const propria=durPropria(i); dur[i]=i<qs.length-1?ini[i+1]-ini[i]:propria; if(qs[i].ini!=null) fonteDur[i]='roteiro'; else if(modo==='unica'&&e.cues?.length&&fonteDur[i]!=='roteiro') fonteDur[i]='narração'; }
+  qs.forEach((_,i)=>{ const dn=durNar(i); if(dn>dur[i]+0.3) avisos[i].push(`O áudio das falas (${dn.toFixed(1)} s) é maior que a duração do quadro (${dur[i].toFixed(1)} s). A fala vai invadir o próximo quadro.`); });
   // Último quadro: vai até o fim da narração única.
   if(modo==='unica'&&qs.length){ const n=nars[0]; const fimN=(e.cues?.length?Math.max(n.duracao,...e.cues.map(c=>c.end)):n.duracao)+0.5; const ul=qs.length-1; if(qs[ul].fim==null&&!qs[ul].dur) dur[ul]=Math.max(dur[ul],fimN-ini[ul],1); }
   // Cortes na batida da música (só quando a fala não manda no tempo).
@@ -288,10 +316,12 @@ export function sincronizar(e:Entrada):Sinc{
       if(!arq) pendentes.push(som); return som;
     });
     // Legenda: trechos transcritos dentro do quadro, ou o texto das falas dividido no tempo.
-    let legenda:QuadroSinc['legenda']=[];
+    let legenda:QuadroSinc['legenda']=[]; let narracoes:NonNullable<QuadroSinc['narracoes']>=[];
     if(modo==='unica'&&e.cues?.length) legenda=e.cues.filter(c=>c.start>=ini[i]-0.2&&c.start<ini[i]+dur[i]-0.1).map(c=>({ini:Math.max(0,c.start-ini[i]),fim:Math.min(dur[i],c.end-ini[i]),texto:c.text.trim()}));
+    else if(narsDe.get(i)?.length){ let t=0.1; narracoes=narsDe.get(i)!.map((a,k)=>{ const x={arquivo:a.id,em:+t.toFixed(3),texto:a.meta?.texto||q.falas[k]?.texto||''}; t+=a.duracao+(a.meta?.pausa??PAUSA); return x; });
+      legenda=narracoes.filter(x=>x.texto).map((x,k)=>({ini:x.em,fim:Math.min(dur[i],x.em+narsDe.get(i)![k].duracao+0.15),texto:x.texto})); }
     else if(q.falas.length){ const tot=q.falas.reduce((a,f)=>a+f.texto.length,0)||1; let t=0; legenda=q.falas.map(f=>{ const d=dur[i]*f.texto.length/tot; const x={ini:t,fim:t+d,texto:f.texto}; t+=d; return x; }); }
-    return {n:q.n,titulo:q.titulo,visual:q.visual,midia:midiaDe.get(i)||'',ini:+ini[i].toFixed(3),dur:+dur[i].toFixed(3),anim:q.anim||(['zoom-in','zoom-out','pan-dir','pan-esq'] as Anim[])[i%4],sons,legenda,narracao:narDe.get(i)};
+    return {n:q.n,titulo:q.titulo,visual:q.visual,midia:midiaDe.get(i)||'',ini:+ini[i].toFixed(3),dur:+dur[i].toFixed(3),anim:q.anim||(['zoom-in','zoom-out','pan-dir','pan-esq'] as Anim[])[i%4],sons,legenda,narracoes,avisos:avisos[i],fonteDur:fonteDur[i],origemMidia:origem[i]};
   });
   const efLivres=efs.filter(a=>!efUsado.has(a.id)).sort((x,y)=>ordemNatural(x.nome,y.nome));
   let pelaOrdem=0; for(const s of pendentes){ const a=efLivres.shift(); if(!a) break; s.arquivo=a.id; pelaOrdem++; }
@@ -343,6 +373,9 @@ async function miniatura(b:Blob){
   return c.toDataURL('image/jpeg',0.6).split(',')[1];
 }
 
+/** As narrações de um quadro (aceita sincronizações antigas, que guardavam só uma). */
+export const narracoesDe=(q:QuadroSinc)=>q.narracoes?.length?q.narracoes:q.narracao?[{arquivo:q.narracao,em:0.1,texto:''}]:[];
+
 // ---------------------------------------------------------------- áudio final
 
 /** Mistura narração, efeitos e trilha (com a trilha baixando quando alguém fala). */
@@ -354,7 +387,7 @@ export async function mixar(s:Sinc,arquivos:Arquivo[],o:Opcoes,onStatus:(t:strin
   // Narração
   const voz:{b:AudioBuffer;em:number}[]=[];
   if(s.narracao==='unica'){ const a=arquivos.find(x=>x.tipo==='narracao'); if(a) voz.push({b:await audioDe(a),em:0}); }
-  else if(s.narracao==='separada') for(const q of s.quadros){ const a=q.narracao?por(q.narracao):undefined; if(a) voz.push({b:await audioDe(a),em:q.ini+0.1}); }
+  else if(s.narracao==='separada') for(const q of s.quadros) for(const n of narracoesDe(q)){ const a=por(n.arquivo); if(a) voz.push({b:await audioDe(a),em:q.ini+n.em}); }
   for(const v of voz){ const n=c.createBufferSource(); n.buffer=v.b; n.connect(comp); n.start(v.em); algo=true; }
   // Efeitos
   const feitos=new Map<string,AudioBuffer>();

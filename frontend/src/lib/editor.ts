@@ -4,7 +4,7 @@ import fixWebmDuration from 'fix-webm-duration';
 import { formatoSuportado } from './render';
 import { FONT_STACK } from './captions';
 import { gerarSom } from './sons';
-import { SR, TAMANHO, audioDe, cobrir, midias, quebrar, type Anim, type Arquivo, type Formato, type Opcoes, type Sinc } from './montagem';
+import { SR, TAMANHO, audioDe, cobrir, midias, narracoesDe, quebrar, type Anim, type Arquivo, type Formato, type Opcoes, type Sinc } from './montagem';
 
 export type Faixa = 'video'|'texto'|'narracao'|'trilha'|'efeito';
 export const FAIXAS:[Faixa,string][] = [['video','Vídeo'],['texto','Texto'],['narracao','Narração'],['trilha','Trilha'],['efeito','Efeitos']];
@@ -32,7 +32,7 @@ export function deSinc(s:Sinc,arquivos:Arquivo[],o:Opcoes):Proj{
   }
   const nars = arquivos.filter(a=>a.tipo==='narracao');
   if(s.narracao==='unica'&&nars[0]) clips.push({faixa:'narracao',id:novoId(),ini:0,dur:nars[0].duracao,fonte:nars[0].id,nome:nars[0].nome,de:0,fonteDur:nars[0].duracao,vol:100,fadeIn:0,fadeOut:0,loop:false});
-  if(s.narracao==='separada') for(const q of s.quadros){ const a=nars.find(x=>x.id===q.narracao); if(a) clips.push({faixa:'narracao',id:novoId(),ini:+(q.ini+0.1).toFixed(3),dur:a.duracao,fonte:a.id,nome:a.nome,de:0,fonteDur:a.duracao,vol:100,fadeIn:0,fadeOut:0,loop:false}); }
+  if(s.narracao==='separada') for(const q of s.quadros) for(const n of narracoesDe(q)){ const a=nars.find(x=>x.id===n.arquivo); if(a) clips.push({faixa:'narracao',id:novoId(),ini:+(q.ini+n.em).toFixed(3),dur:a.duracao,fonte:a.id,nome:a.nome,de:0,fonteDur:a.duracao,vol:100,fadeIn:0,fadeOut:0,loop:false}); }
   for(const t of s.trilhas){ const a=arquivos.find(x=>x.id===t.arquivo); if(a) clips.push({faixa:'trilha',id:novoId(),ini:t.ini,dur:+(t.fim-t.ini).toFixed(3),fonte:a.id,nome:a.nome,de:0,fonteDur:a.duracao,vol:o.volTrilha,fadeIn:0.8,fadeOut:1.2,loop:true}); }
   return {clips,formato:o.formato,abaixarTrilha:true};
 }

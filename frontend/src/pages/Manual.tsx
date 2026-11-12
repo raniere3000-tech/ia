@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clapperboard, Download, FileText, ImagePlus, Loader2, Mic, Music, Play, Sparkles, Square, Trash2, Volume2, Wand2, SlidersHorizontal, RotateCcw } from 'lucide-react';
+import { Clapperboard, Download, FileText, ImagePlus, Loader2, Mic, Music, Play, Sparkles, Square, Trash2, Volume2, Wand2, SlidersHorizontal, RotateCcw, ListChecks } from 'lucide-react';
 import { useApp } from '../state';
 import { baixar } from '../lib/exporter';
 import { transcrever, transcreverGemini } from '../lib/transcribe';
@@ -8,7 +8,7 @@ import EditorVideo from '../components/EditorVideo';
 import { deSinc, type Proj } from '../lib/editor';
 import {
   ANIMS, MODELO_ROTEIRO, OPCOES_PADRAO, TAMANHO, apagarArquivo, audioDe, batidas, conferirImagensIA, desenhar, gravar, guardarArquivo, lerQuadros,
-  listarArquivos, midias, mixar, mono16k, prepararMidia, reencadear, sincronizar, sincronizarVideos, tocar,
+  listarArquivos, midias, mixar, mono16k, narracoesDe, prepararMidia, reencadear, sincronizar, sincronizarVideos, tocar,
   type Anim, type Arquivo, type Formato, type Opcoes, type Sessao, type Sinc, type TipoArq,
 } from '../lib/montagem';
 
@@ -19,7 +19,7 @@ const fmt=(s:number)=>{ s=Math.max(0,s); const m=Math.floor(s/60); const x=s-m*6
 
 const AREAS:[TipoArq,string,string,string,typeof ImagePlus][]=[
   ['quadro','Imagens e vídeos dos quadros','image/*,video/*','Dê nomes com o número do quadro (quadro-01.png, 2.jpg...). Sem número, entram na ordem.',ImagePlus],
-  ['narracao','Narração / vozes','audio/*,video/*','Um arquivo só (o site transcreve e acha onde cada quadro começa) ou um por quadro com fala (quadro-01.mp3...).',Mic],
+  ['narracao','Narração / vozes','audio/*,video/*','Um arquivo só (o site transcreve e acha onde cada quadro começa), um por fala (quadro-01.mp3, quadro-02-a.mp3...) ou os takes enviados pelo Estúdio de vozes.',Mic],
   ['trilha','Trilha sonora','audio/*','Toca do começo ao fim e abaixa sozinha quando alguém fala. Com [TRILHA: nome] no roteiro, troca de música naquele quadro.',Music],
   ['efeito','Efeitos sonoros','audio/*','O nome do arquivo é comparado com as marcações [SOM: ...] (ex.: porta-batendo.mp3). O que faltar, o site cria.',Volume2],
 ];
@@ -38,6 +38,17 @@ export default function Manual(){
   const [tempo,setTempo]=useState(0); const [tocando,setTocando]=useState(false); const [video,setVideo]=useState<{url:string;blob:Blob;ext:string}|null>(null);
   const cv=useRef<HTMLCanvasElement>(null); const sessao=useRef<Sessao|null>(null);
   const quadros=useMemo(()=>lerQuadros(texto),[texto]);
+  // Associações escolhidas à mão na conferência (por número do quadro). "-" = sem imagem.
+  const [manual,setManual]=useState<Record<number,string>>(()=>{ try{ return JSON.parse(localStorage.getItem(CHAVE+'_manual')||'{}')||{}; }catch{ return {}; } });
+  useEffect(()=>{ try{ localStorage.setItem(CHAVE+'_manual',JSON.stringify(manual)); }catch{ /* cheio */ } },[manual]);
+  const [soAvisos,setSoAvisos]=useState(false);
+  const narUnica=arqs.filter(a=>a.tipo==='narracao'); const cuesOk=narUnica.length===1&&cues?.de===narUnica[0].id?cues.lista:null;
+  // Conferência: a mesma conta da sincronização, feita na hora, sem ouvir a narração.
+  const rascunho=useMemo(()=>carregado&&quadros.length?sincronizar({quadros,arquivos:arqs,cues:cuesOk,batidas:null,opcoes:o,manual:{midia:manual}}):null,[carregado,quadros,arqs,cuesOk,o,manual]);
+  const assinatura=JSON.stringify([texto,arqs.map(a=>a.id),manual,o.durPadrao]);
+  const [assinaturaSinc,setAssinaturaSinc]=useState(()=>{ try{ return localStorage.getItem(CHAVE+'_ass')||''; }catch{ return ''; } });
+  const tocarArq=(id:string)=>{ const a=arqs.find(x=>x.id===id); if(!a) return; ouvindo.current?.pause(); const el=new Audio(URL.createObjectURL(a.blob)); ouvindo.current=el; el.play().catch(()=>{}); };
+  const ouvindo=useRef<HTMLAudioElement|null>(null);
 
   useEffect(()=>{ (async()=>{ try{ const l=await listarArquivos(); for(const a of l) if(a.tipo==='quadro'){ try{ await prepararMidia(a); }catch{ /* arquivo estragado */ } } setArqs(l); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } setCarregado(true); })(); },[]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{ try{ localStorage.setItem(CHAVE,JSON.stringify({texto,o,sinc,cues:cues?.lista||null,cuesDe:cues?.de||''})); }catch{ /* cheio */ } },[texto,o,sinc,cues]);
@@ -75,9 +86,9 @@ export default function Manual(){
       let ia:Map<number,string>|undefined;
       if(usarIA){ if(!settings.geminiKey) toast('Para a IA conferir as imagens, coloque a chave do Gemini em Chaves e ajustes.','info');
         else{ setOcupado('A IA está olhando as imagens'); try{ ia=await conferirImagensIA(settings.geminiKey,quadros,arqs.filter(a=>a.tipo==='quadro')); }catch(e){ toast('A IA não conseguiu conferir as imagens: '+(e instanceof Error?e.message:String(e)),'info'); } } }
-      const s=sincronizar({quadros,arquivos:arqs,cues:lista,batidas:bt,opcoes:o,imagensIA:ia});
+      const s=sincronizar({quadros,arquivos:arqs,cues:lista,batidas:bt,opcoes:o,imagensIA:ia,manual:{midia:manual}});
       if(ia?.size) s.notas.unshift(`A IA escolheu a imagem de ${ia.size} quadro(s) pelo que aparece nelas.`);
-      setSinc(s); setTempo(0); setVideo(null);
+      setSinc(s); setTempo(0); setVideo(null); setAssinaturaSinc(assinatura); try{ localStorage.setItem(CHAVE+'_ass',assinatura); }catch{ /* cheio */ }
       toast(`Pronto: ${s.quadros.length} quadros em ${fmt(s.total)}. Confira a linha do tempo e toque em Prévia.`,'ok');
     }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
     finally{ setOcupado(''); }
@@ -123,8 +134,32 @@ export default function Manual(){
     </div>; })}</div>
    </section>
 
+   {rascunho&&<section className="panel">
+    <div className="section-head"><h2><ListChecks size={18}/> 3. Conferência por quadro</h2>
+     <span className="hint">{rascunho.quadros.length} quadros • {rascunho.quadros.filter(q=>q.avisos?.length).length} com aviso</span></div>
+    <p className="hint">Veja o que vai em cada quadro antes de sincronizar. Para trocar a imagem, escolha outra na lista: não precisa renomear nem enviar de novo. A prévia e o vídeo final usam exatamente estas escolhas.</p>
+    <div className="row-gap left"><label className="check"><input type="checkbox" checked={soAvisos} onChange={e=>setSoAvisos(e.target.checked)}/> Mostrar só os quadros com aviso</label>
+     {Object.keys(manual).length>0&&<button className="link-btn" onClick={()=>setManual({})}>Voltar tudo para o automático</button>}</div>
+    {rascunho.narracao==='unica'&&!cuesOk&&<p className="hint">Com uma narração só, o tempo de cada quadro com fala é calculado ao sincronizar (o site ouve a narração). Aqui aparece a duração provisória.</p>}
+    <div className="conf-lista">{rascunho.quadros.filter(q=>!soAvisos||q.avisos?.length).map(q=>{ const rot=quadros.find(x=>x.n===q.n); const m=q.midia?midias.get(q.midia):undefined; const nars=narracoesDe(q);
+     return <article key={q.n} className={'conf-q'+(q.avisos?.length?' aviso':'')} data-quadro={q.n}>
+      <div className="conf-thumb">{m?.tipo==='imagem'?<img src={(m.el as HTMLImageElement).src} alt=""/>:m?<span>vídeo</span>:<span>sem imagem</span>}</div>
+      <div className="conf-info">
+       <b>Quadro {q.n}{q.titulo?` — ${q.titulo}`:''}</b>
+       <div className="conf-linha"><span className="conf-rot">Imagem</span>
+        <select value={manual[q.n]??''} onChange={e=>setManual(x=>{ const n={...x}; if(e.target.value) n[q.n]=e.target.value; else delete n[q.n]; return n; })} aria-label={`Arquivo do quadro ${q.n}`}>
+         <option value="">Automático{q.midia&&manual[q.n]==null?`: ${nome(q.midia)}`:''}</option>{imgs.map(a=><option key={a.id} value={a.id}>{a.nome}</option>)}<option value="-">Sem imagem</option></select>
+        {q.origemMidia&&<small className="conf-origem">{q.origemMidia}</small>}</div>
+       {(rot?.falas.length||0)>0&&<div className="conf-linha"><span className="conf-rot">Fala</span><span className="conf-falas">{rot!.falas.map((f,k)=><span key={k} className={nars[k]||rascunho.narracao!=='separada'?'':'falta'}><b>{f.nome}:</b> {f.texto}{nars[k]&&<button className="icon-btn" onClick={()=>tocarArq(nars[k].arquivo)} aria-label={`Ouvir fala ${k+1} do quadro ${q.n}`} title={nome(nars[k].arquivo)}><Play size={11}/></button>}</span>)}</span></div>}
+       <div className="conf-linha"><span className="conf-rot">Duração</span><span>{q.dur.toFixed(1)} s <small className="conf-origem">{rascunho.narracao==='unica'&&!cuesOk&&q.fonteDur!=='roteiro'?'provisória':`veio do ${q.fonteDur==='narração'?'tempo da narração':q.fonteDur==='áudio'?'áudio das falas':q.fonteDur||'padrão'}`}</small></span></div>
+       {q.sons.length>0&&<div className="conf-linha"><span className="conf-rot">Efeitos</span><span>{q.sons.map(s=>`${s.desc} (${s.arquivo?nome(s.arquivo):'feito pelo site'})`).join(' • ')}</span></div>}
+       {q.avisos?.map(a=><p key={a} className="conf-aviso">⚠ {a}</p>)}
+      </div>
+     </article>; })}</div>
+   </section>}
+
    <section className="panel">
-    <div className="section-head"><h2><Wand2 size={18}/> 3. Analisar e sincronizar</h2></div>
+    <div className="section-head"><h2><Wand2 size={18}/> 4. Analisar e sincronizar</h2></div>
     <div className="small-grid">
      <label>Formato<select value={o.formato} onChange={e=>setO({...o,formato:e.target.value as Formato})}><option value="9:16">Vertical 9:16 (Reels, TikTok, Shorts)</option><option value="16:9">Horizontal 16:9 (YouTube)</option><option value="1:1">Quadrado 1:1</option></select></label>
      <label>Duração padrão do quadro (s)<input type="number" min={0.5} max={60} step={0.5} value={o.durPadrao} onChange={e=>setO({...o,durPadrao:Math.max(0.5,+e.target.value||3)})}/></label>
@@ -139,11 +174,12 @@ export default function Manual(){
     </div>
     <button className="primary lg mt" disabled={!!ocupado||!quadros.length} onClick={analisar}>{ocupado?<Loader2 size={17} className="spin"/>:<Wand2 size={17}/>} Analisar e sincronizar</button>
     {ocupado&&<p className="hint mt"><Loader2 size={14} className="spin"/> {ocupado}</p>}
+    {sinc&&assinaturaSinc&&assinaturaSinc!==assinatura&&<p className="conf-aviso mt">⚠ O roteiro, os arquivos ou as escolhas mudaram depois da última sincronização. Toque em Analisar e sincronizar de novo para a prévia e o vídeo usarem o que está na conferência.</p>}
     {sinc&&sinc.notas.length>0&&<ul className="manual-notas">{sinc.notas.map(n=><li key={n}>{n}</li>)}</ul>}
    </section>
 
    {sinc&&<section className="panel">
-    <div className="section-head"><h2><Clapperboard size={18}/> 4. Linha do tempo e vídeo</h2><span className="hint">{sinc.quadros.length} quadros • {fmt(sinc.total)}{sinc.narracao!=='nenhuma'?` • narração ${sinc.narracao==='unica'?'em um arquivo':'por quadro'}`:''}{sinc.trilhas.length?` • ${sinc.trilhas.length} trilha(s)`:''}</span></div>
+    <div className="section-head"><h2><Clapperboard size={18}/> 5. Linha do tempo e vídeo</h2><span className="hint">{sinc.quadros.length} quadros • {fmt(sinc.total)}{sinc.narracao!=='nenhuma'?` • narração ${sinc.narracao==='unica'?'em um arquivo':'por quadro'}`:''}{sinc.trilhas.length?` • ${sinc.trilhas.length} trilha(s)`:''}</span></div>
     <div className="manual-player">
      <canvas ref={cv} className={'manual-canvas f'+o.formato.replace(':','x')}/>
      <div className="manual-ctl">
@@ -180,7 +216,7 @@ export default function Manual(){
    </section>}
 
    {sinc&&<section className="panel">
-    <div className="section-head"><h2><SlidersHorizontal size={18}/> 5. Editor (linha do tempo)</h2>
+    <div className="section-head"><h2><SlidersHorizontal size={18}/> 6. Editor (linha do tempo)</h2>
      {proj?<button className="subtle sm" onClick={abrirEditor} title="Joga fora a edição e começa de novo pela sincronização"><RotateCcw size={14}/> Recomeçar pela sincronização</button>:null}</div>
     {!proj?<><p className="hint">Abre o vídeo sincronizado numa linha do tempo com faixas de vídeo, texto, narração, trilha e efeitos. Lá você arrasta, corta, divide, coloca efeitos sonoros prontos, textos e ajusta cada parte do jeito que quiser.</p>
      <button className="primary lg" onClick={abrirEditor}><SlidersHorizontal size={17}/> Abrir no editor</button></>

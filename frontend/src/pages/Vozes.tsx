@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Dices, Volume2, Download, FileAudio, FileText, FlaskConical, KeyRound, Loader2, Mic, Package, Plus, RotateCcw, Star, Trash2, Upload, Users, Wand2 } from 'lucide-react';
+import { CheckCircle2, Clapperboard, Dices, Volume2, Download, FileAudio, FileText, FlaskConical, KeyRound, Loader2, Mic, Package, Plus, RotateCcw, Star, Trash2, Upload, Users, Wand2 } from 'lucide-react';
 import JSZip from 'jszip';
 import { FICHAS_PRONTAS, GUIA_FICHA } from '../lib/fichasPadrao';
 import { gerarSom, receitaDe, type FonteSom } from '../lib/sons';
+import { receberVozes, type MetaVoz } from '../lib/montagem';
 /** Sons de fundo (ambiente) já começam tocando junto com a fala seguinte, mais baixos. */
 const AMBIENTE=/murm|multid|taverna|chuva|fogo|fogueira|vento|tens|ambiente|fundo|clima/i;
 import { useApp } from '../state';
@@ -136,6 +137,32 @@ export default function Vozes(){
     if(velhos.length) await salvarVarios('takes',velhos);
     await salvar('takes',t); setTakes(x=>[t,...x.map(y=>velhos.find(v=>v.id===y.id)||y)]);
   }
+  /** Manda os takes aprovados para a Montagem manual, cada um no seu quadro e na posição da fala. */
+  async function enviarMontagem(){
+    const ord=[...roteiro].sort((a,b)=>a.ordem-b.ordem); const temQuadro=ord.some(f=>f.quadro!=null);
+    const linhas:string[]=[]; const itens:{nome:string;wav:Blob;duracao:number;meta:MetaVoz}[]=[]; const pos=new Map<number,number>();
+    let q=0, cab='', pend:string[]=[]; let semTake=0, revisar=0;
+    for(const f of ord){
+      const nomeP=(nomes[f.personagemId]||f.nomeRoteiro||'NARRADOR').toUpperCase();
+      if(temQuadro){ if(f.quadro==null) continue; if(f.cena!==cab){ cab=f.cena; linhas.push('',cab); } q=f.quadro; }
+      if(f.tipo==='acao'){ if(temQuadro) linhas.push(f.texto); else pend.push('VISUAL: '+f.texto); continue; }
+      if(f.tipo==='som'){ const l=`[SOM: ${f.texto}]`; if(temQuadro) linhas.push(l); else pend.push(l); continue; }
+      if(!temQuadro){ q++; linhas.push('',`QUADRO ${q}`,...pend); pend=[]; }
+      linhas.push(`${nomeP}${f.direcao?` (${f.direcao})`:''}: ${f.texto}`);
+      const k=pos.get(q)||0; pos.set(q,k+1);
+      const t=takes.find(x=>x.falaId===f.id&&x.aprovado); if(!t){ semTake++; continue; }
+      const mudou=t.texto!==f.texto; if(mudou) revisar++;
+      itens.push({nome:`quadro-${String(q).padStart(2,'0')}-fala-${k+1}-${nomeP.toLowerCase().replace(/[^a-z0-9à-ú]+/g,'-')}.wav`,wav:t.wav,duracao:t.duracao,meta:{origem:'vozes',quadro:q,pos:k,texto:t.texto,personagem:nomeP,pausa:Number.isFinite(f.pausa)?f.pausa:0.4,...(mudou?{revisar:true}:{})}});
+    }
+    if(!itens.length){ toast('Nenhuma fala tem take aprovado ainda. Gere as vozes no Roteiro primeiro.','erro'); return; }
+    try{
+      await receberVozes(itens);
+      let salvo:Record<string,unknown>={}; try{ salvo=JSON.parse(localStorage.getItem('studio_manual')||'{}')||{}; }catch{ /* vazio */ }
+      localStorage.setItem('studio_manual',JSON.stringify({...salvo,texto:linhas.join('\n').trim(),sinc:null,cues:null,cuesDe:''}));
+      toast(`${itens.length} fala(s) enviadas para a Montagem manual${semTake?`, ${semTake} ainda sem take`:''}${revisar?`, ${revisar} com texto mudado para revisar`:''}.`,semTake||revisar?'info':'ok');
+      go('manual');
+    }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
+  }
   async function aprovarTake(t:Take){
     const mud=takes.filter(x=>x.falaId===t.falaId&&t.falaId&&x.id!==t.id&&x.aprovado).map(x=>({...x,aprovado:false}));
     const n={...t,aprovado:t.falaId?true:!t.aprovado};
@@ -171,7 +198,7 @@ export default function Vozes(){
        const criados:Record<string,string>={};
        for(const [nome,dest] of Object.entries(mapa)) criados[nome]=dest==='__novo'?(await addPersonagem(nome)).id:dest;
        for(const f of roteiro) await apagar('falas',f.id);
-       const novas:Fala[]=linhas.map((l,i)=>({id:uid(),projetoId:pid,ordem:i,cena:l.cena,nomeRoteiro:l.nome,personagemId:l.tipo==='fala'?criados[l.nome]||'':'',texto:l.texto,direcao:l.direcao,pausa:l.tipo==='fala'?0.4:0,tipo:l.tipo,...(l.tipo==='som'?{volume:AMBIENTE.test(l.texto)?40:70,sobrepor:AMBIENTE.test(l.texto),fonteSom:'auto' as const}:{})}));
+       const novas:Fala[]=linhas.map((l,i)=>({id:uid(),projetoId:pid,ordem:i,cena:l.cena,nomeRoteiro:l.nome,personagemId:l.tipo==='fala'?criados[l.nome]||'':'',texto:l.texto,direcao:l.direcao,pausa:l.tipo==='fala'?0.4:0,tipo:l.tipo,...(l.quadro!=null?{quadro:l.quadro}:{}),...(l.tipo==='som'?{volume:AMBIENTE.test(l.texto)?40:70,sobrepor:AMBIENTE.test(l.texto),fonteSom:'auto' as const}:{})}));
        await salvarVarios('falas',novas); setFalas(x=>[...x.filter(f=>f.projetoId!==pid),...novas]);
        toast(`Roteiro aplicado: ${novas.filter(f=>f.tipo==='fala').length} falas${novas.some(f=>f.tipo==='som')?` e ${novas.filter(f=>f.tipo==='som').length} efeitos sonoros`:''}. Agora gere as vozes${novas.some(f=>f.tipo==='som')?' e os sons':''}.`,'ok');
      }}
@@ -195,7 +222,7 @@ export default function Vozes(){
          try{ await gerarSomTake(f); ok++; }catch(e){ erros.push(`${f.texto}: ${e instanceof Error?e.message:String(e)}`); } }
        setOcupado(null); setGerando(''); toast(`${ok} som(ns) gerados.${erros.length?` ${erros.length} com problema: ${erros.slice(0,2).join(' | ')}`:''}`,erros.length?'info':'ok'); }}
      aprovar={aprovarTake} apagarTake={apagarTake}/>}
-   {aba==='final'&&<Final projeto={projeto?.nome||'projeto'} elenco={elenco} roteiro={roteiro} takes={meusTakes} nomes={nomes} irRoteiro={()=>setAba('roteiro')}/>}
+   {aba==='final'&&<Final projeto={projeto?.nome||'projeto'} elenco={elenco} roteiro={roteiro} takes={meusTakes} nomes={nomes} irRoteiro={()=>setAba('roteiro')} enviar={enviarMontagem}/>}
   </>;
 }
 
@@ -395,7 +422,7 @@ function Roteiro({pid,elenco,roteiro,takes,gerando,ocupado,aplicar,mudarFala,ger
 // ================= Arquivo final =================
 /** Lê "10", "9:30" ou "9,5" como segundos. */
 function lerTempo(t:string){ const v=t.trim().replace(',','.'); if(!v) return 0; const m=v.match(/^(\d+):(\d{1,2})$/); if(m) return +m[1]*60+ +m[2]; const n=parseFloat(v); return Number.isFinite(n)&&n>0?n*60:0; }
-function Final({projeto,elenco,roteiro,takes,nomes,irRoteiro}:{projeto:string;elenco:Personagem[];roteiro:Fala[];takes:Take[];nomes:Record<string,string>;irRoteiro:()=>void}){
+function Final({projeto,elenco,roteiro,takes,nomes,irRoteiro,enviar}:{enviar:()=>void;projeto:string;elenco:Personagem[];roteiro:Fala[];takes:Take[];nomes:Record<string,string>;irRoteiro:()=>void}){
   const {toast}=useApp();
   const [pausaIni,setPausaIni]=useState(0.3); const [comNome,setComNome]=useState(true);
   const [res,setRes]=useState<Awaited<ReturnType<typeof montarEpisodio>>|null>(null); const [montando,setMontando]=useState(false);
@@ -436,6 +463,12 @@ function Final({projeto,elenco,roteiro,takes,nomes,irRoteiro}:{projeto:string;el
    <div className="small-grid mt">
     <label>Silêncio no começo (s)<input type="number" min={0} max={10} step={0.1} value={pausaIni} onChange={e=>setPausaIni(Math.max(0,+e.target.value))}/></label>
     <label className="check"><input type="checkbox" checked={comNome} onChange={e=>setComNome(e.target.checked)}/> Legenda com o nome de quem fala</label>
+   </div>
+   <div className="tempo-meta mt">
+    <h3>Montar o vídeo com imagens</h3>
+    <p className="hint">Manda o roteiro e o take aprovado de cada fala para a Montagem manual. Cada áudio já vai no quadro certo e na ordem das falas, mesmo quando o mesmo personagem fala mais de uma vez no quadro. Lá você só envia as imagens, a trilha e os efeitos.{roteiro.some(f=>f.quadro!=null)?'':' Como este roteiro não tem QUADRO 1, QUADRO 2..., cada fala vira um quadro.'}</p>
+    <button className="primary" disabled={semAprov.length===falasR.length} onClick={enviar}><Clapperboard size={15}/> Enviar takes aprovados para a Montagem manual</button>
+    {semAprov.length>0&&semAprov.length<falasR.length&&<small className="hint"> {semAprov.length} fala(s) ainda sem take aprovado vão aparecer com aviso lá.</small>}
    </div>
    <div className="tempo-meta mt">
     <h3>Tempo do vídeo</h3>
