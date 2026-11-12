@@ -1,6 +1,6 @@
 // Estúdio de vozes: elenco de personagens, roteiro (falas), takes gerados pelo Gemini TTS
 // e montagem do episódio. Tudo fica guardado no próprio navegador (IndexedDB), inclusive os WAVs.
-import { chamar, ErroGemini } from './gemini';
+import { chamar, esperaGemini } from './gemini';
 import { pcmParaFloat } from './dublagem';
 import { uid } from './store';
 
@@ -213,12 +213,12 @@ export function pedidoTTS(p:Personagem|null,texto:string,direcao:string){
   return `${instr?'Instruções de interpretação (não leia em voz alta):\n'+instr+'\n\n':''}Fale somente o texto entre <fala> e </fala>, exatamente como está escrito, sem ler as instruções e sem acrescentar nada.\n<fala>${texto}</fala>`;
 }
 
-export async function gerarVoz(key:string,modelo:string,voz:string,pedido:string,onEspera?:()=>void){
+export async function gerarVoz(key:string,modelo:string,voz:string,pedido:string,onEspera?:(seg:number)=>void){
   const corpo={contents:[{role:'user',parts:[{text:pedido}]}],generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:voz}}}}};
   let res:any;
   for(let t=0;;t++){
     try{ res=await chamar(key,modelo+':generateContent',corpo); break; }
-    catch(e){ if(e instanceof ErroGemini&&(e.status===429||e.status>=500)&&t<3){ onEspera?.(); await new Promise(r=>setTimeout(r,25000*(t+1))); continue; } throw e; }
+    catch(e){ const ms=esperaGemini(e,t); if(ms!=null){ onEspera?.(Math.round(ms/1000)); await new Promise(r=>setTimeout(r,ms)); continue; } throw e; }
   }
   const p=(res?.candidates?.[0]?.content?.parts||[]).find((x:any)=>x.inlineData?.data||x.inline_data?.data);
   const d=p?.inlineData||p?.inline_data;

@@ -6,7 +6,17 @@ import { instrucoes, textoCandidato, type AvaliacaoIA, type OptsIA } from './pro
 export const GEMINI_MODEL = 'gemini-flash-latest';
 const API = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
-export class ErroGemini extends Error { constructor(public status:number, msg:string, public motivo=''){ super(msg); } }
+export class ErroGemini extends Error { constructor(public status:number, msg:string, public motivo='', public esperaSeg=0, public diario=false){ super(msg); } }
+
+/** Depois de um erro do Gemini: quantos ms esperar antes de tentar de novo, ou null se não adianta esperar. */
+export function esperaGemini(e:unknown,tentativa:number):number|null{
+  if(!(e instanceof ErroGemini)) return null;
+  if(e.status===429&&e.diario) return null;
+  if(e.status!==429&&e.status<500) return null;
+  if(tentativa>=4) return null;
+  const s=e.esperaSeg>0?e.esperaSeg+2:20*(tentativa+1);
+  return Math.min(90,s)*1000;
+}
 
 export async function chamar(key:string, caminho:string, body?:unknown){
   let r:Response;
@@ -14,8 +24,12 @@ export async function chamar(key:string, caminho:string, body?:unknown){
   catch{ throw new ErroGemini(0,'Não foi possível conectar ao Gemini. Verifique sua internet.'); }
   const dados = await r.json().catch(()=>({}));
   if(!r.ok){
-    const e = dados?.error||{}; const motivo = (e.details||[]).map((d:any)=>d.reason).filter(Boolean).join(',') || e.status || '';
-    throw new ErroGemini(r.status, e.message||`Erro ${r.status} do Gemini.`, motivo);
+    const e = dados?.error||{}; const det:any[] = e.details||[]; const motivo = det.map((d:any)=>d.reason).filter(Boolean).join(',') || e.status || '';
+    const atraso = det.find((d:any)=>d.retryDelay)?.retryDelay; const esperaSeg = atraso?parseFloat(String(atraso))||0:0;
+    const cotas = det.flatMap((d:any)=>d.violations||[]).map((v:any)=>String(v.quotaId||v.quotaMetric||''));
+    const diario = r.status===429 && (cotas.some(c=>/PerDay/i.test(c)) || /per day|daily/i.test(String(e.message||'')));
+    if(diario) throw new ErroGemini(429,'Acabou a cota grátis de hoje deste modelo do Gemini. Ela volta por volta das 5h da manhã (horário de Brasília). Para continuar agora: troque o modelo da voz (Flash e Pro têm cotas separadas) ou ative o faturamento no Google AI Studio.',motivo,0,true);
+    throw new ErroGemini(r.status, e.message||`Erro ${r.status} do Gemini.`, motivo, esperaSeg);
   }
   return dados;
 }

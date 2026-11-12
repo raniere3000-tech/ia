@@ -117,7 +117,7 @@ export async function narrar(key:string,r:Roteiro,voz:string,atual:Narracao,onSt
     if(!refazer&&n&&n.texto===c.texto&&n.voz===ch){ out[c.id]=n; continue; }
     if(!c.texto.trim()) continue;
     onStatus(`Gravando a voz (${i+1} de ${r.cenas.length})`,Math.round(i/r.cenas.length*100));
-    const espera = ()=>onStatus('Limite do Gemini, aguardando para continuar',Math.round(i/r.cenas.length*100));
+    const espera = ()=>onStatus('O Gemini pediu uma pausa (limite de pedidos por minuto do plano grátis). Continuo sozinho em instantes',Math.round(i/r.cenas.length*100));
     const v = falarCena ? await falarCena(c,espera) : await falar(key,c.texto,voz,espera);
     out[c.id] = {texto:c.texto,voz:ch,samples:v.samples,rate:v.rate};
   }

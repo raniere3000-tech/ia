@@ -1,7 +1,7 @@
 // Dublagem em português: o Gemini traduz a fala de cada corte e lê em voz alta (TTS).
 // A voz é misturada por cima do áudio original abaixado na hora de exportar o vídeo.
 import type { Cue } from './captions';
-import { chamar, ErroGemini, GEMINI_MODEL } from './gemini';
+import { chamar, esperaGemini, GEMINI_MODEL } from './gemini';
 
 export const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 export const VOZES:[string,string][] = [['Kore','Feminina firme'],['Aoede','Feminina leve'],['Leda','Feminina jovem'],['Puck','Masculina animada'],['Charon','Masculina informativa'],['Fenrir','Masculina empolgada'],['Orus','Masculina grave']];
@@ -18,7 +18,7 @@ async function comRetentativa<T>(f:()=>Promise<T>,onEspera:()=>void):Promise<T>{
   for(let t=0;;t++){
     try{ return await f(); }
     catch(e){
-      if(e instanceof ErroGemini && (e.status===429||e.status>=500) && t<3){ onEspera(); await espera(25000*(t+1)); continue; }
+      const ms=esperaGemini(e,t); if(ms!=null){ onEspera(); await espera(ms); continue; }
       throw e;
     }
   }
@@ -83,7 +83,7 @@ export async function dublarCorte(key:string,clip:{id:string;inicio:number;fim:n
   const dur = clip.fim-clip.inicio;
   const cues = cuesAbs.filter(c=>c.end>clip.inicio&&c.start<clip.fim).map(c=>({start:Math.max(0,c.start-clip.inicio),end:Math.min(dur,c.end-clip.inicio),text:c.text}));
   if(!cues.length) throw new Error('Este corte ainda não tem legenda. Gere a legenda primeiro.');
-  const aguardando = ()=>onStatus('Limite do Gemini, aguardando para continuar',0);
+  const aguardando = ()=>onStatus('O Gemini pediu uma pausa (limite de pedidos por minuto do plano grátis). Continuo sozinho em instantes',0);
   onStatus('Traduzindo a fala',5);
   const pt = await traduzirFrases(key,cues.map(c=>c.text),aguardando);
   const trad = cues.map((c,i)=>({...c,text:pt[i]}));

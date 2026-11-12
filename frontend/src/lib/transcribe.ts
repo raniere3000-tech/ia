@@ -1,5 +1,5 @@
 import type { Cue } from './captions';
-import { chamar, GEMINI_MODEL, ErroGemini } from './gemini';
+import { chamar, GEMINI_MODEL, esperaGemini } from './gemini';
 
 export const WHISPER_MODELS = [
   {id:'onnx-community/whisper-tiny',nome:'Rápido (tiny, ~40 MB)'},
@@ -106,7 +106,7 @@ export async function transcreverGemini(samples:Float32Array,key:string,language
     for(let t=0;t<4&&!res;t++){
       try{ res = await chamar(key,GEMINI_MODEL+':generateContent',corpo); }
       catch(e){
-        if(e instanceof ErroGemini && (e.status===429||e.status>=500) && t<3){ onStatus('Limite do Gemini, aguardando para continuar',Math.round(i/total*100)); await espera(20000*(t+1)); continue; }
+        const ms=esperaGemini(e,t); if(ms!=null){ onStatus(`O Gemini pediu uma pausa (limite por minuto). Continuo em ${Math.round(ms/1000)} s`,Math.round(i/total*100)); await espera(ms); continue; }
         throw e;
       }
     }

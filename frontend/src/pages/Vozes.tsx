@@ -118,7 +118,7 @@ export default function Vozes(){
   async function gerarTake(p:Personagem,texto:string,direcao:string,falaId='',vozOutra=''){
     if(!settings.geminiKey) throw new Error('Coloque a chave do Gemini em Chaves e ajustes.');
     const voz=vozOutra||p.voz; const pedido=pedidoTTS(p,texto,direcao);
-    const {wav,duracao}=await gerarVoz(settings.geminiKey,p.modelo,voz,pedido,()=>setOcupado(o=>o?{...o,txt:'Limite do Gemini, aguardando para continuar'}:o));
+    const {wav,duracao}=await gerarVoz(settings.geminiKey,p.modelo,voz,pedido,(seg)=>setOcupado(o=>o?{...o,txt:`O Gemini pediu uma pausa (limite de pedidos por minuto do plano grátis). Continuo sozinho em ${seg} s`}:o));
     // Aprova sozinho o primeiro take da fala, ou o primeiro depois de o texto da fala ser editado.
     const jaTem=falaId&&takes.some(t=>t.falaId===falaId&&t.aprovado&&t.texto===texto);
     const t:Take={id:uid(),projetoId:pid,falaId,personagemId:p.id,texto,direcao,pedido,voz,modelo:p.modelo,ajustes:ajustesDe({...p,voz}),data:Date.now(),duracao,wav,aprovado:!!falaId&&!jaTem,nota:''};
@@ -184,7 +184,7 @@ export default function Vozes(){
          if(parar.current) break;
          const f=lista[i]; const p=elenco.find(x=>x.id===f.personagemId); if(!p){ erros.push(`Fala ${f.ordem+1}: sem personagem`); continue; }
          setOcupado({txt:`Gerando fala ${i+1} de ${lista.length} (${p.nome})`,pct:Math.round(i/lista.length*100)}); setGerando(f.id);
-         try{ await gerarTake(p,f.texto,f.direcao,f.id); ok++; }catch(e){ erros.push(`Fala ${f.ordem+1}: ${e instanceof Error?e.message:String(e)}`); if(/chave|inválida|limite/i.test(String(e))) break; }
+         try{ await gerarTake(p,f.texto,f.direcao,f.id); ok++; }catch(e){ erros.push(`Fala ${f.ordem+1}: ${e instanceof Error?e.message:String(e)}`); if(/chave|inválida|limite|cota/i.test(String(e))) break; }
        }
        setOcupado(null); setGerando('');
        toast(`${ok} fala(s) geradas.${erros.length?` ${erros.length} com problema: ${erros.slice(0,2).join(' | ')}`:''}${parar.current?' Parado por você.':''}`,erros.length?'info':'ok');
