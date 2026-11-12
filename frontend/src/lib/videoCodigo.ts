@@ -11,7 +11,7 @@ export const W = 1080, H = 1920, FPS = 30, RATE = 44100;
 
 export type Anim = 'zoom-in'|'zoom-out'|'pan-esq'|'pan-dir'|'sobe'|'tremer'|'parado';
 export const ANIMS:[Anim,string][] = [['zoom-in','Aproximar devagar'],['zoom-out','Afastar devagar'],['pan-esq','Deslizar para a esquerda'],['pan-dir','Deslizar para a direita'],['sobe','Subir'],['tremer','Tremor (ação/susto)'],['parado','Parado']];
-export type Cena = {id:string; texto:string; destaque:string; emoji:string; numero:string; contagem:boolean; midia?:string; anim?:Anim; personagem?:string};
+export type Cena = {id:string; texto:string; destaque:string; emoji:string; numero:string; contagem:boolean; midia?:string; anim?:Anim; personagem?:string; pedidoIA?:string};
 export const MAX_SEG = 120;   // vídeo final e cada vídeo enviado: no máximo 2 minutos
 export type Roteiro = {titulo:string; selo:string; formato:Formato; tema:TemaId; cenas:Cena[]; legenda:string; hashtags:string[]};
 export type Formato = 'curiosidade'|'top'|'quiz'|'motivacional'|'historia'|'livre';
@@ -167,6 +167,8 @@ export async function carregarMidias(r:Roteiro){
     try{ const m = await lojaMidia<Midia|undefined>('readonly',s=>s.get(c.midia!)); if(m) midias.set(m.id,await abrirEl(m)); }catch{ /* some do roteiro */ }
   }
 }
+/** O arquivo original guardado de uma mídia (para enviar à IA). */
+export const blobDaMidia = (id:string)=>lojaMidia<Midia|undefined>('readonly',s=>s.get(id)).then(m=>m?.blob||null);
 export const apagarMidia = (id:string)=>lojaMidia<void>('readwrite',s=>{ s.delete(id); }).then(()=>{ midias.delete(id); });
 
 /** Deixa os vídeos das cenas no ponto certo: toca o da cena atual e pausa os outros. */

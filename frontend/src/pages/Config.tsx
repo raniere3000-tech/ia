@@ -7,7 +7,7 @@ import { WHISPER_MODELS, IDIOMAS } from '../lib/transcribe';
 import { testarServidor, enviarCookies } from '../lib/servidor';
 import { iaAtiva } from '../lib/ia';
 
-function KeyField({label,value,placeholder,onSave,onTest,help,link,linkLabel}:{label:string;value:string;placeholder:string;onSave:(v:string)=>void;onTest:(v:string)=>Promise<void>;help:'youtube'|'claude'|'gemini';link:string;linkLabel:string}){
+function KeyField({label,value,placeholder,onSave,onTest,help,link,linkLabel}:{label:string;value:string;placeholder:string;onSave:(v:string)=>void;onTest:(v:string)=>Promise<void>;help:'youtube'|'claude'|'gemini'|'muapi';link:string;linkLabel:string}){
   const {toast}=useApp();
   const [v,setV]=useState(value); const [show,setShow]=useState(false); const [busy,setBusy]=useState(false);
   const [estado,setEstado]=useState<''|'ok'|'erro'>('');
@@ -87,6 +87,15 @@ export default function Config(){
      <KeyField label="Chave do Gemini (Google AI Studio)" value={settings.geminiKey} placeholder="Cole aqui a chave do Gemini (começa com AIza...)" onSave={v=>setSettings({geminiKey:v})} onTest={async k=>{ const {testarChaveGemini,erroGemini}=await import('../lib/gemini'); try{ await testarChaveGemini(k); }catch(e){ throw new Error(erroGemini(e)); } }} help="gemini" link="https://aistudio.google.com/apikey" linkLabel="Abrir Google AI Studio"/>
      <KeyField label="Chave da API da Claude" value={settings.claudeKey} placeholder="Cole aqui a chave que começa com sk-ant-..." onSave={v=>setSettings({claudeKey:v})} onTest={async k=>{ const {testarChaveClaude,erroAmigavel}=await import('../lib/ai'); try{ await testarChaveClaude(k); }catch(e){ throw new Error(erroAmigavel(e)); } }} help="claude" link="https://console.anthropic.com/settings/keys" linkLabel="Abrir console da Anthropic"/>
      {settings.geminiKey&&settings.claudeKey&&<label className="mt">Qual IA dá as notas?<select value={iaAtiva(settings)||''} onChange={e=>setSettings({ia:e.target.value as 'gemini'|'claude'})}><option value="gemini">Gemini (Google)</option><option value="claude">Claude (Anthropic)</option></select></label>}
+    </div>
+   </section>
+
+   <section className="panel config-card">
+    <div className="config-icon ai"><Sparkles size={22}/></div>
+    <div className="config-body">
+     <div className="section-head"><h2>Imagens e animação com IA <span className="tag">opcional, pago</span></h2></div>
+     <p className="subtitle">Usado no <b>Vídeo com código</b> para criar a imagem de cada cena a partir do texto e para <b>animar uma imagem</b> (ela vira um vídeo de verdade, com movimento gerado). Funciona pelo <b>Muapi.ai</b>, que dá acesso a Seedance, Kling, Wan, Nano Banana e Seedream. Cada geração gasta créditos da sua conta lá.</p>
+     <KeyField label="Chave do Muapi.ai" value={settings.muapiKey||''} placeholder="Cole aqui a chave do Muapi" onSave={v=>setSettings({muapiKey:v})} onTest={async k=>{ const {testarChaveMuapi}=await import('../lib/muapi'); await testarChaveMuapi(k); }} help="muapi" link="https://muapi.ai" linkLabel="Abrir muapi.ai"/>
     </div>
    </section>
 

@@ -9,15 +9,16 @@ import { VOZES } from '../lib/dublagem';
 import { loadImage } from '../lib/render';
 import { baixar } from '../lib/exporter';
 import AgendarPost from '../components/AgendarPost';
+import { MODELOS_ANIMAR, MODELOS_IMAGEM, baixarResultado, enviarArquivo, gerarMuapi } from '../lib/muapi';
 import {
   EXEMPLO, FORMATOS, TEMAS, W, H, cenaVazia, desenhar, gravar, mixar, narrar, nomeVideo, roteiroClaude, roteiroGemini, tempos, tocar, vozValida,
-  ANIMS, MAX_SEG, adicionarMidia, carregarMidias, midias, sincronizarMidias,
+  ANIMS, MAX_SEG, adicionarMidia, blobDaMidia, carregarMidias, midias, sincronizarMidias,
   type Anim, type Cena, type FalarCena, type Formato, type Narracao, type Roteiro, type Sessao,
 } from '../lib/videoCodigo';
 
 const CHAVE = 'studio_video_codigo';
-type Ajustes = {ideia:string;formato:Formato;cenas:number;voz:string;comVoz:boolean;batida:boolean;elenco:string};
-const AJUSTES:Ajustes = {ideia:'',formato:'curiosidade',cenas:6,voz:'Puck',comVoz:true,batida:true,elenco:''};
+type Ajustes = {ideia:string;formato:Formato;cenas:number;voz:string;comVoz:boolean;batida:boolean;elenco:string;iaVideo:string;iaImagem:string;iaSeg:number};
+const AJUSTES:Ajustes = {ideia:'',formato:'curiosidade',cenas:6,voz:'Puck',comVoz:true,batida:true,elenco:'',iaVideo:'seedance-lite-i2v',iaImagem:'nano-banana',iaSeg:5};
 const fmt = (s:number)=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
 
 export default function VideoCodigo(){
@@ -55,6 +56,39 @@ export default function VideoCodigo(){
     setRot({...base,cenas:l.map(x=>cenaVazia({texto:x.texto,personagem:x.nome==='NARRADOR'&&!elenco.some(p=>p.nome.toUpperCase()==='NARRADOR')?'':x.nome}))}); setNar(null); setTempo(0);
     const nomes=[...new Set(l.map(x=>x.nome))]; const sem=nomes.filter(n=>n!=='NARRADOR'&&!elenco.some(p=>p.nome.toUpperCase()===n)&&!vozDoNome(n));
     toast(`${l.length} cenas criadas.${sem.length?` Sem voz própria (vão usar a voz padrão): ${sem.join(', ')}.`:''}`,sem.length?'info':'ok');
+  }
+  // Imagem e animação com IA (Muapi.ai, pago, chave do usuário).
+  const muapi=settings.muapiKey||'';
+  async function guardarResultado(c:Cena,url:string,tipo:'imagem'|'video'){
+    const b=await baixarResultado(url);
+    if(!b){ window.open(url,'_blank','noopener'); toast('Ficou pronto, mas o site não conseguiu trazer o arquivo. Abri numa nova aba: baixe e envie pelo botão "Trocar" da cena.','info'); return; }
+    const ext=tipo==='video'?'mp4':(b.type.split('/')[1]||'png').replace('jpeg','jpg');
+    const id=await adicionarMidia(new File([b],`ia-cena-${rot!.cenas.findIndex(x=>x.id===c.id)+1}.${ext}`,{type:b.type||(tipo==='video'?'video/mp4':'image/png')}));
+    mudaCena(c.id,{midia:id,anim:tipo==='video'?'parado':c.anim||'zoom-in'}); setVersao(v=>v+1);
+  }
+  async function criarImagemIA(c:Cena){
+    if(!muapi){ go('config'); toast('Cole a chave do Muapi em Chaves e ajustes.','erro'); return; }
+    const m=MODELOS_IMAGEM.find(x=>x.id===aj.iaImagem)||MODELOS_IMAGEM[0];
+    const prompt=`${(c.pedidoIA||c.texto).trim()}. Imagem vertical 9:16, cinematográfica, muito detalhada, sem nenhum texto escrito.`;
+    setOcupado({txt:`Criando a imagem com ${m.nome}...`,pct:30});
+    try{ const url=await gerarMuapi(muapi,m.id,m.corpo({prompt,duracao:0}),t=>setOcupado({txt:`${m.nome}: ${t}`,pct:50}),undefined,5); await guardarResultado(c,url,'imagem'); toast('Imagem criada.','ok'); }
+    catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
+    finally{ setOcupado(null); }
+  }
+  async function animarIA(c:Cena){
+    if(!muapi){ go('config'); toast('Cole a chave do Muapi em Chaves e ajustes.','erro'); return; }
+    if(!c.midia||midias.get(c.midia)?.tipo!=='imagem'){ toast('Coloque uma imagem na cena primeiro.','erro'); return; }
+    const m=MODELOS_ANIMAR.find(x=>x.id===aj.iaVideo)||MODELOS_ANIMAR[0];
+    setOcupado({txt:'Enviando a imagem para o Muapi...',pct:10});
+    try{
+      const b=await blobDaMidia(c.midia); if(!b) throw new Error('Não achei a imagem desta cena. Envie de novo.');
+      const img=await enviarArquivo(muapi,b,midias.get(c.midia)?.nome||'cena.png');
+      const prompt=`${(c.pedidoIA||c.texto).trim()}. Movimento cinematográfico suave, câmera viva, personagens se mexendo de forma natural.`;
+      const url=await gerarMuapi(muapi,m.id,m.corpo({prompt,imagem:img,duracao:aj.iaSeg}),t=>setOcupado({txt:`Animando com ${m.nome}: ${t} (pode levar alguns minutos)`,pct:50}));
+      setOcupado({txt:'Trazendo o vídeo animado...',pct:90});
+      await guardarResultado(c,url,'video'); toast('Cena animada! Toque em Assistir.','ok');
+    }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
+    finally{ setOcupado(null); }
   }
   async function enviarMidia(c:Cena,f:File|undefined){
     if(!f) return;
@@ -163,6 +197,11 @@ export default function VideoCodigo(){
          <label>Movimento da imagem<select value={c.anim||'zoom-in'} disabled={!c.midia} onChange={e=>mudaCena(c.id,{anim:e.target.value as Anim})}>{ANIMS.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></label></div>
         <div className="vc-midia">{c.midia&&midias.get(c.midia)?<><span className="tag ok">{midias.get(c.midia)!.tipo==='video'?'🎬':'🖼️'} {midias.get(c.midia)!.nome}{midias.get(c.midia)!.tipo==='video'?` • ${Math.round(midias.get(c.midia)!.duracao)} s`:''}</span><button className="icon-btn" onClick={()=>mudaCena(c.id,{midia:undefined})} aria-label="Tirar imagem"><X size={14}/></button></>:c.midia?<small className="hint">Carregando a imagem...</small>:null}
          <label className="subtle sm vc-upload"><ImagePlus size={14}/> {c.midia?'Trocar':'Imagem ou vídeo'}<input type="file" accept="image/*,video/*" hidden onChange={e=>{ enviarMidia(c,e.target.files?.[0]); e.target.value=''; }}/></label></div>
+        {muapi&&<div className="vc-ia">
+         <input value={c.pedidoIA||''} onChange={e=>mudaCena(c.id,{pedidoIA:e.target.value})} placeholder="O que a IA deve mostrar (vazio = usa o texto da cena)" aria-label="Pedido para a IA"/>
+         <span><button className="subtle sm" onClick={()=>criarImagemIA(c)} disabled={!!ocupado}><Sparkles size={14}/> Criar imagem com IA</button>
+         <button className="subtle sm" onClick={()=>animarIA(c)} disabled={!!ocupado||!c.midia||midias.get(c.midia)?.tipo!=='imagem'} title={!c.midia||midias.get(c.midia)?.tipo!=='imagem'?'Coloque uma imagem na cena primeiro':''}><Wand2 size={14}/> Animar com IA</button></span>
+        </div>}
         <label className="vc-check"><input type="checkbox" checked={c.contagem} onChange={e=>mudaCena(c.id,{contagem:e.target.checked})}/> Contagem regressiva (pergunta de quiz)</label>
       </div>)}</div>
       <datalist id="vc-quem">{elenco.map(p=><option key={p.id} value={p.nome}/>)}{VOZES_TTS.map(([v])=><option key={v} value={v.toUpperCase()}/>)}</datalist>
@@ -181,6 +220,15 @@ export default function VideoCodigo(){
       {aj.comVoz&&<label className="mt">Vozes dos personagens (projeto do Estúdio de vozes)<select value={elencoProj} onChange={e=>muda({elenco:e.target.value})}>{!projVoz.length&&<option value="">Nenhum projeto ainda</option>}{projVoz.map(p=><option key={p.id} value={p.id}>{p.nome} ({todosPers.filter(x=>x.projetoId===p.id).length} personagens)</option>)}</select></label>}
       {aj.comVoz&&rot.cenas.some(c=>c.personagem?.trim())&&<p className="hint">A voz escolhida acima é a padrão (narrador e cenas sem personagem). As cenas com "Quem fala" usam a voz do personagem.</p>}
       {aj.comVoz&&semVoz>0&&<p className="hint">{nar?'Algumas cenas mudaram depois da voz. Toque em Gravar voz para atualizar só elas.':'Toque em Gravar voz. Sem voz, cada cena fica na tela pelo tempo de leitura.'}</p>}
+      <div className="mt">
+       <strong className="vc-sub"><Wand2 size={14}/> Imagens e animação com IA</strong>
+       {muapi?<div className="vc-linha">
+        <label>Animar imagem com<select value={aj.iaVideo} onChange={e=>muda({iaVideo:e.target.value})}>{MODELOS_ANIMAR.map(m=><option key={m.id} value={m.id}>{m.nome} ({m.dica})</option>)}</select></label>
+        <label>Duração da animação<select value={aj.iaSeg} onChange={e=>muda({iaSeg:Number(e.target.value)})}><option value={5}>5 segundos</option><option value={10}>10 segundos (custa mais)</option></select></label>
+        <label>Criar imagem com<select value={aj.iaImagem} onChange={e=>muda({iaImagem:e.target.value})}>{MODELOS_IMAGEM.map(m=><option key={m.id} value={m.id}>{m.nome} ({m.dica})</option>)}</select></label>
+       </div>:<p className="hint">Quer que a IA crie a imagem de cada cena e transforme imagens em vídeo animado? Cole a chave do Muapi.ai (pago por uso) em <button className="link-btn inline" onClick={()=>go('config')}>Chaves e ajustes</button>.</p>}
+       {muapi&&<p className="hint">Em cada cena aparecem os botões <b>Criar imagem com IA</b> e <b>Animar com IA</b>. Cada uso gasta créditos do Muapi.</p>}
+      </div>
       <label className="vc-check mt"><input type="checkbox" checked={aj.batida} onChange={e=>muda({batida:e.target.checked})}/> <Music size={14}/> Batida de fundo (criada pelo site, sem direitos autorais)</label>
       {template.ativo&&<p className="hint">O seu template da marca (logo e crédito) entra no vídeo.</p>}
      </section>}

@@ -28,6 +28,17 @@ export const TOPICS:Record<string,Topic> = {
     <p>Já tem uma chave do Gemini em outro projeto? Pode usar a mesma.</p>
     <p className="help-note">A chave fica só neste navegador e vai direto para o Google. Na cota grátis, o Google pode usar o que é enviado para melhorar os modelos. Se a chave tiver restrição de site no Google Cloud, adicione <code>raniere3000-tech.github.io</code>.</p>
   </>},
+  muapi:{titulo:'Como conseguir a chave do Muapi.ai (imagens e animação com IA)',corpo:<>
+    <p>O Muapi é um serviço <b>pago por uso</b> que reúne vários modelos de imagem e vídeo (Seedance, Kling, Wan, Nano Banana, Seedream). O site usa ele para criar a imagem de uma cena e para transformar uma imagem em vídeo animado.</p>
+    <ol>
+      <li>Entre em <L href="https://muapi.ai">muapi.ai</L> e crie uma conta.</li>
+      <li>Coloque créditos na conta (veja os preços de cada modelo no site deles).</li>
+      <li>Abra a área de <b>API Keys</b> do painel, crie uma chave e copie.</li>
+      <li>Cole no campo desta página e clique em <b>Testar e salvar</b>.</li>
+    </ol>
+    <p>Dica: teste primeiro com o <b>Seedance Lite</b>, que é o mais barato.</p>
+    <p className="help-note">A chave fica só neste navegador e vai direto para o Muapi. As imagens que você anima são enviadas para eles.</p>
+  </>},
   app_google:{titulo:'YouTube: criar o acesso para postar (no mesmo projeto da agendinha)',corpo:<>
     <ol>
       <li>Abra o <L href="https://console.cloud.google.com/">Google Cloud</L> e selecione o <b>projeto da agendinha</b> no topo.</li>
