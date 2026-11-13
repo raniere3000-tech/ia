@@ -81,6 +81,7 @@ export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZi
      </div>
      <Preview key={atual.id} url={atual.video?.url||projeto.url} inicio={atual.inicio} fim={atual.fim} formato={atual.formato} opts={opts}/>
      <label className="mt">Título deste corte<input value={atual.titulo} maxLength={100} onChange={e=>mudar([atual.id],{titulo:e.target.value})}/></label>
+     <label className="mt">Hashtags do post<input value={(atual.hashtags||[]).join(' ')} placeholder="#shorts #reels" onChange={e=>mudar([atual.id],{hashtags:e.target.value.split(/\s+/).filter(Boolean).map(h=>h.startsWith('#')?h:'#'+h)})}/></label>
      <label className="mt">Texto de gancho no topo (opcional)<input value={atual.gancho_texto} maxLength={60} placeholder="Ex.: ELE NÃO ESPERAVA ISSO" onChange={e=>mudar([atual.id],{gancho_texto:e.target.value})}/></label>
      <button className="subtle mt" onClick={()=>onEditar(atual)}><Pencil size={14}/> Ajustar início, fim e legenda deste corte</button>
      <div className="tira-head"><span><b>{marcados.length} de {clips.length}</b> marcados para mudar em lote e postar</span><button className="link-btn" onClick={()=>setFora(new Set())}>Marcar todos</button><button className="link-btn" onClick={()=>setFora(new Set(clips.map(c=>c.id)))}>Desmarcar todos</button></div>

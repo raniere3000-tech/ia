@@ -11,6 +11,8 @@ export type Clip = {
   id:string; titulo:string; inicio:number; fim:number;
   nota_final:number; nota_10:number; notas:Notas; motivo:string; fonte:'heuristica'|'ia';
   legenda:string; efeito:string; formato:Formato; gancho_texto:string;
+  /** Hashtags sugeridas para o post (com #, sem acento). */
+  hashtags?:string[];
   versao_de?:string; descartado?:boolean; thumb?:string; marca?:string; legendaOk?:boolean; dublado?:boolean; semTemplate?:boolean; tarja?:Tarja|null;
   /** Vídeo próprio do corte (ex.: vários Shorts do Radar no mesmo lote). Sem isso, usa o vídeo do projeto. */
   video?:Fonte;
@@ -39,12 +41,12 @@ export function faixaNota(n:number){ return n>=80?{id:'alta',nome:'Alto potencia
 /** Parte de cada corte que cai em cima do outro, em relação ao menor dos dois (0 a 1). */
 export function sobrepoe(a:{inicio:number;fim:number},b:{inicio:number;fim:number}){ const ov=Math.max(0,Math.min(a.fim,b.fim)-Math.max(a.inicio,b.inicio)); return ov/Math.max(0.01,Math.min(a.fim-a.inicio,b.fim-b.inicio)); }
 
-export type Escolhido = Candidate&{titulo:string;gancho:string};
+export type Escolhido = Candidate&{titulo:string;gancho:string;hashtags:string[]};
 /**
  * Confere os trechos que a IA escolheu lendo a transcrição: encaixa início e fim no começo e no fim de uma fala,
  * conserta a duração fora do pedido, descarta o que não existe no vídeo e tira os repetidos (fica o de maior nota).
  */
-export function validarEscolhidos(lista:{inicio:number;fim:number;gancho:number;fluxo:number;valor:number;tendencia:number;titulo?:string;motivo?:string;gancho_texto?:string}[],cues:Cue[],o:{min:number;max:number;duracao:number;ini?:number;fim?:number}):Escolhido[]{
+export function validarEscolhidos(lista:{inicio:number;fim:number;gancho:number;fluxo:number;valor:number;tendencia:number;titulo?:string;motivo?:string;gancho_texto?:string;hashtags?:string[]}[],cues:Cue[],o:{min:number;max:number;duracao:number;ini?:number;fim?:number}):Escolhido[]{
   const k=fatorEscala(lista.flatMap(x=>[x.gancho,x.fluxo,x.valor,x.tendencia]));
   const cl=(v:number)=>Math.max(0,Math.min(99,Math.round((Number(v)||0)*k)));
   const a=o.ini||0, b=o.fim&&o.fim>0?Math.min(o.fim,o.duracao):o.duracao;
@@ -65,7 +67,7 @@ export function validarEscolhidos(lista:{inicio:number;fim:number;gancho:number;
     }
     if(fim-ini<Math.min(o.min*0.6,b-a)) continue;
     const notas={gancho:cl(x.gancho),fluxo:cl(x.fluxo),valor:cl(x.valor),tendencia:cl(x.tendencia)};
-    out.push({inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,motivo:String(x.motivo||'').trim()||'Escolhido pela IA lendo a transcrição.',titulo:String(x.titulo||'').trim().slice(0,90),gancho:String(x.gancho_texto||'')});
+    out.push({inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,motivo:String(x.motivo||'').trim()||'Escolhido pela IA lendo a transcrição.',titulo:String(x.titulo||'').trim().slice(0,90),gancho:String(x.gancho_texto||''),hashtags:Array.isArray(x.hashtags)?x.hashtags.map(String):[]});
   }
   out.sort((x,y)=>notaFinal(y.notas)-notaFinal(x.notas));
   const sel:Escolhido[]=[]; for(const c of out) if(sel.every(s=>sobrepoe(s,c)<=0.5)) sel.push(c);

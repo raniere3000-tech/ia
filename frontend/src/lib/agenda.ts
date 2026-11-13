@@ -1,7 +1,7 @@
 // Cliente do agendador que roda no servidor (celular/PC): contas, envio do vídeo e posts.
 export type Prov = 'google'|'meta'|'tiktok';
 export type Rede = 'youtube'|'facebook'|'instagram'|'tiktok'|'kwai';
-export type Conta = {app:boolean;conectado:boolean;nome:string;client_id:string;paginas:{id:string;nome:string;instagram:string}[];pagina:string;erro:string};
+export type Conta = {app:boolean;conectado:boolean;nome:string;client_id:string;paginas:{id:string;nome:string;instagram:string}[];pagina:string;erro:string;verificado?:number};
 export type Contas = Record<Prov,Conta>;
 export type StatusRede = {status:'agendado'|'postando'|'postado'|'erro'|'manual';link:string;erro:string};
 export type Post = {id:string;video:string;criado:number;quando:number;titulo:string;legenda:string;opcoes:{youtube_privacidade:string;tiktok_modo:string};redes:Partial<Record<Rede,StatusRede>>;preparando?:boolean};
@@ -30,6 +30,8 @@ async function chamar<T=any>(cfg:Cfg,metodo:string,caminho:string,corpo?:unknown
   return j as T;
 }
 
+/** Pede para o servidor conferir agora se os logins ainda valem. */
+export const verificarContas=(c:Cfg)=>chamar<Contas>(c,'POST','/contas/verificar',{});
 export const lerContas=(c:Cfg)=>chamar<Contas>(c,'GET','/contas');
 export const salvarApp=(c:Cfg,p:Prov,client_id:string,client_secret:string)=>chamar(c,'POST',`/contas/${p}/app`,{client_id,client_secret});
 /** Abre o login da rede numa janelinha, para não perder os cortes que estão nesta aba. */

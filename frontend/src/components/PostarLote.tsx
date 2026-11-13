@@ -81,6 +81,8 @@ export default function PostarLote({clips,tema,gerar,onVoltar}:Props){
     {!contas?<p className="hint"><Loader2 size={14} className="spin"/> Lendo suas contas...</p>:<div className="agendar-form">
      <div className="field-label">Onde postar</div>
      <div className="redes-grid">{REDES.map(r=>{ const ok=disponivel(r); return <label key={r.id} className={'rede-opt '+(ok?'':'off')}><input type="checkbox" disabled={!ok||!!prog} checked={sel.has(r.id)} onChange={e=>{ const n=new Set(sel); e.target.checked?n.add(r.id):n.delete(r.id); setRedes(n); }}/> <span>{r.nome}{!ok&&<small> (entre na conta acima)</small>}{r.id==='kwai'&&<small> você baixa e posta no app</small>}</span></label>; })}</div>
+     {REDES.filter(r=>r.prov&&sel.has(r.id)&&contas[r.prov].erro).map(r=><p key={r.id} className="hint bad"><b>{r.nome}:</b> {contas[r.prov!].erro} Sem isso o post desta rede vai falhar.</p>)}
+     {sel.has('kwai')&&<p className="hint">O Kwai não tem como postar automático: na hora marcada o vídeo fica pronto na agenda para você baixar e postar no app.</p>}
      <div className="small-grid mt">
       <label className="check"><input type="checkbox" checked={agora} onChange={e=>setAgora(e.target.checked)}/> Começar agora</label>
       {!agora&&<label>Primeiro post<input type="datetime-local" value={quando} onChange={e=>setQuando(e.target.value)}/></label>}

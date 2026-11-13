@@ -41,7 +41,7 @@ export async function testarChaveGemini(key:string){
 
 const N = {type:'NUMBER'}, S = {type:'STRING'};
 const SCHEMA = {type:'OBJECT',properties:{cortes:{type:'ARRAY',items:{type:'OBJECT',
-  properties:{id:S,gancho:N,fluxo:N,valor:N,tendencia:N,titulo:S,motivo:S,inicio:N,fim:N,gancho_texto:S},
+  properties:{id:S,gancho:N,fluxo:N,valor:N,tendencia:N,titulo:S,motivo:S,inicio:N,fim:N,gancho_texto:S,hashtags:{type:'ARRAY',items:S}},
   required:['id','gancho','fluxo','valor','tendencia','titulo','motivo','inicio','fim','gancho_texto']}}},required:['cortes']};
 
 export async function avaliarComGemini(key:string, cands:(Candidate&{id:string})[], cues:Cue[], opts:OptsIA):Promise<AvaliacaoIA[]>{
@@ -79,9 +79,9 @@ export function erroGemini(e:unknown){
 
 // ---------------------------------------------------------------- cortes direto pelo link do YouTube
 
-export type CorteLink = {inicio:number;fim:number;titulo:string;motivo:string;nota:number;gancho_texto:string};
+export type CorteLink = {inicio:number;fim:number;titulo:string;motivo:string;nota:number;gancho_texto:string;hashtags:string[]};
 const SCHEMA_LINK = {type:'OBJECT',properties:{duracao_video:N,cortes:{type:'ARRAY',items:{type:'OBJECT',
-  properties:{inicio:N,fim:N,titulo:S,motivo:S,nota:N,gancho_texto:S},required:['inicio','fim','titulo','motivo','nota','gancho_texto']}}},required:['cortes']};
+  properties:{inicio:N,fim:N,titulo:S,motivo:S,nota:N,gancho_texto:S,hashtags:{type:'ARRAY',items:S}},required:['inicio','fim','titulo','motivo','nota','gancho_texto']}}},required:['cortes']};
 
 /** O Gemini assiste o vídeo público do YouTube pelo link e devolve os melhores trechos, sem precisar baixar nada. */
 export async function acharCortesNoLink(key:string, url:string, o:{min:number;max:number;limite:number;tema?:string;pedido?:string;acao?:boolean}, onEspera?:(seg:number)=>void):Promise<CorteLink[]>{
@@ -100,6 +100,7 @@ Para cada corte devolva:
 - titulo: até 60 caracteres, em português.
 - gancho_texto: 3 a 7 palavras para aparecer escritas no topo do vídeo, sem emoji, sem hashtag.
 - motivo: 1 frase dizendo o que acontece ou é dito no trecho e por que funciona.
+- hashtags: de 5 a 8 hashtags para o post, com #, minúsculas e sem acento. Misture as específicas do assunto do trecho com 2 ou 3 amplas de vídeo curto (ex.: #shorts, #reels, #fyp).
 Devolva também duracao_video em segundos.`;
   const corpo = (baixa:boolean)=>({contents:[{role:'user',parts:[{file_data:{file_uri:url}},{text:texto}]}],generationConfig:{responseMimeType:'application/json',responseSchema:SCHEMA_LINK,temperature:0.3,...(baixa?{mediaResolution:'MEDIA_RESOLUTION_LOW'}:{})}});
   const pedir = async(baixa:boolean)=>{ for(let t=0;;t++){ try{ return await chamar(key,GEMINI_MODEL+':generateContent',corpo(baixa)); }catch(e){ const ms=esperaGemini(e,t+2); if(ms==null) throw e; onEspera?.(Math.round(ms/1000)); await new Promise(r=>setTimeout(r,ms)); } } };
@@ -128,7 +129,7 @@ export function limparCortesLink(lista:unknown, o:{min:number;max:number;limite:
     if(ini<0||fim-ini<Math.max(3,o.min*0.5)) continue;
     if(fim-ini>o.max*1.5) fim = ini+o.max;
     if(bons.some(b=>Math.min(b.fim,fim)-Math.max(b.inicio,ini)>2)) continue;   // já tem um corte melhor nesse pedaço
-    bons.push({inicio:+ini.toFixed(1),fim:+fim.toFixed(1),titulo:String(x.titulo||'Corte').slice(0,80),motivo:String(x.motivo||''),nota:Math.max(0,Math.min(99,Math.round((Number(x.nota)||0)*k))),gancho_texto:String(x.gancho_texto||'')});
+    bons.push({inicio:+ini.toFixed(1),fim:+fim.toFixed(1),titulo:String(x.titulo||'Corte').slice(0,80),motivo:String(x.motivo||''),nota:Math.max(0,Math.min(99,Math.round((Number(x.nota)||0)*k))),gancho_texto:String(x.gancho_texto||''),hashtags:Array.isArray(x.hashtags)?x.hashtags.map(String):[]});
     if(bons.length>=o.limite) break;
   }
   return bons;

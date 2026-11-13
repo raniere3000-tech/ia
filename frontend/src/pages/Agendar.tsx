@@ -3,7 +3,7 @@ import { Youtube, Instagram, Music2, CalendarClock, LogIn, LogOut, Loader2, Serv
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import AgendarPost from '../components/AgendarPost';
-import { REDES, lerContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, cancelarPost, marcarFeito, linkVideo, enderecoRetorno, type Contas, type Prov, type Post, type Rede } from '../lib/agenda';
+import { REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, cancelarPost, marcarFeito, linkVideo, enderecoRetorno, type Contas, type Prov, type Post, type Rede } from '../lib/agenda';
 
 const PROVS:{id:Prov;nome:string;redes:string;icone:typeof Youtube;help:'app_google'|'app_meta'|'app_tiktok';idLabel:string;segLabel:string}[] = [
   {id:'google',nome:'YouTube',redes:'Shorts no seu canal',icone:Youtube,help:'app_google',idLabel:'ID do cliente OAuth',segLabel:'Chave secreta do cliente'},
@@ -21,7 +21,7 @@ function ContaCard({p,conta,recarregar}:{p:typeof PROVS[number];conta:Contas[Pro
   const Icone=p.icone;
   return <article className={'conta-card '+(conta.conectado?'on':'')}>
    <div className="conta-head"><span className={'conta-ic '+p.id}><Icone size={20}/></span><div className="grow"><strong>{p.nome}</strong><small>{p.redes}</small></div>
-    {conta.conectado?<span className="tag ok"><CheckCircle2 size={12}/> Conectado</span>:conta.app?<span className="tag warn">Falta entrar</span>:<span className="tag">Falta o app</span>}</div>
+    {conta.conectado&&conta.erro?<span className="tag bad"><AlertTriangle size={12}/> Entrar de novo</span>:conta.conectado?<span className="tag ok"><CheckCircle2 size={12}/> Conectado</span>:conta.app?<span className="tag warn">Falta entrar</span>:<span className="tag">Falta o app</span>}</div>
    {conta.erro&&<p className="hint bad"><AlertTriangle size={13}/> {conta.erro}</p>}
    {conta.conectado&&<p className="conta-nome">Conta: <b>{conta.nome}</b></p>}
    {p.id==='meta'&&conta.conectado&&<label className="mt">Página usada<select value={conta.pagina} onChange={e=>run(()=>escolherPagina(settings,e.target.value),'Página escolhida.')}>{conta.paginas.map(pg=><option key={pg.id} value={pg.id}>{pg.nome}{pg.instagram?` + Instagram @${pg.instagram}`:' (sem Instagram ligado)'}</option>)}</select></label>}
@@ -32,7 +32,7 @@ function ContaCard({p,conta,recarregar}:{p:typeof PROVS[number];conta:Contas[Pro
      <button className="primary sm" disabled={busy||!id.trim()||!seg.trim()} onClick={()=>run(async()=>{ await salvarApp(settings,p.id,id,seg); setId(''); setSeg(''); setEditar(false); },'App salvo no servidor. Agora clique em Entrar.')}>Salvar no servidor</button>
    </div>}
    <div className="conta-acoes">
-    {conta.app&&!conta.conectado&&<button className="primary sm" disabled={busy} onClick={()=>run(()=>entrar(settings,p.id))}>{busy?<Loader2 size={14} className="spin"/>:<LogIn size={14}/>} Entrar com minha conta</button>}
+    {conta.app&&(!conta.conectado||!!conta.erro)&&<button className="primary sm" disabled={busy} onClick={()=>run(()=>entrar(settings,p.id))}>{busy?<Loader2 size={14} className="spin"/>:<LogIn size={14}/>} {conta.conectado?'Entrar de novo':'Entrar com minha conta'}</button>}
     {conta.conectado&&<button className="subtle sm" disabled={busy} onClick={()=>run(()=>sair(settings,p.id),'Desconectado.')}><LogOut size={14}/> Sair</button>}
     {conta.app&&!editar&&<button className="link-btn" onClick={()=>setEditar(true)}>Trocar app</button>}
     {conta.app&&<HelpButton topic={p.help}/>}
@@ -43,7 +43,7 @@ function ContaCard({p,conta,recarregar}:{p:typeof PROVS[number];conta:Contas[Pro
 /** Painel com as contas das redes (login e app). Usado na aba Agendar e na etapa Postar dos cortes. */
 export function ContasPainel({aoMudar,onContas}:{aoMudar?:()=>void;onContas?:(c:Contas)=>void}){
   const {settings,toast}=useApp();
-  const [contas,setContas]=useState<Contas|null>(null); const [erro,setErro]=useState('');
+  const [contas,setContas]=useState<Contas|null>(null); const [erro,setErro]=useState(''); const [conferindo,setConferindo]=useState(false);
   const recarregar=useCallback(()=>{
     if(!settings.servidor) return;
     lerContas(settings).then(c=>{ setContas(c); onContas?.(c); setErro(''); }).catch(e=>setErro(e.message));
@@ -59,7 +59,7 @@ export function ContasPainel({aoMudar,onContas}:{aoMudar?:()=>void;onContas?:(c:
   },[recarregar,toast]);
   return <section className="panel">
     {erro&&<div className="note-bar"><AlertTriangle size={16}/><span>{erro}</span><button className="subtle sm" onClick={recarregar}><RefreshCw size={14}/> Tentar de novo</button></div>}
-    <div className="section-head"><h2><LogIn size={18}/> Suas contas</h2><button className="subtle sm" onClick={recarregar}><RefreshCw size={14}/> Atualizar</button></div>
+    <div className="section-head"><h2><LogIn size={18}/> Suas contas</h2><button className="subtle sm" disabled={conferindo} onClick={async()=>{ setConferindo(true); try{ const c=await verificarContas(settings); setContas(c); onContas?.(c); const ruins=(Object.values(c) as Contas[Prov][]).filter(x=>x.conectado&&x.erro).length; toast(ruins?`${ruins} conexão(ões) precisam de novo login.`:'Conexões conferidas: tudo certo para postar.',ruins?'erro':'ok'); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }finally{ setConferindo(false); } }}>{conferindo?<Loader2 size={14} className="spin"/>:<RefreshCw size={14}/>} Conferir conexões</button></div>
     <p className="subtitle">Para postar na sua conta, cada rede pede um "app de desenvolvedor" seu (grátis e só para você). Faça uma vez: clique em <b>Como criar?</b>, siga o passo a passo, cole os dados e clique em <b>Entrar com minha conta</b>. O login abre numa janelinha, e o seu trabalho continua aqui.</p>
     <div className="retorno"><span>Endereço de retorno (cole no app de cada rede):</span><code>{enderecoRetorno()}</code><button className="icon-btn" title="Copiar" onClick={()=>{ navigator.clipboard?.writeText(enderecoRetorno()); toast('Copiado.','ok'); }}><Copy size={14}/></button></div>
     {!contas?<p className="hint"><Loader2 size={14} className="spin"/> Lendo contas do servidor...</p>
@@ -95,7 +95,7 @@ export default function Agendar(){
     <div className="section-head"><h2><CalendarClock size={18}/> Agenda de posts</h2>
      <button className="primary sm" onClick={()=>arq.current?.click()}><Upload size={14}/> Agendar vídeo pronto</button>
      <input ref={arq} type="file" accept="video/*" hidden onChange={e=>{ const f=e.target.files?.[0]; if(f) setNovo(f); e.target.value=''; }}/></div>
-    <p className="subtitle">Para agendar um corte, use o botão <b>Agendar</b> em cada corte, na aba Gerar cortes. Aqui você confere tudo o que está marcado.</p>
+    <p className="subtitle">O servidor posta sozinho na hora marcada. Se a internet ou a rede falhar, ele tenta de novo até 4 vezes antes de pedir sua ajuda. Para agendar um corte, use o botão <b>Agendar</b> em cada corte, na aba Gerar cortes. Aqui você confere tudo o que está marcado.</p>
     {!posts?<p className="hint"><Loader2 size={14} className="spin"/> Carregando...</p>
     :!posts.length?<p className="hint center">Nenhum post agendado ainda.</p>
     :[...porDia].map(([d,lista])=><div key={d} className="agenda-dia"><h3>{d}</h3>{lista.map(p=><div key={p.id} className="post-row">
@@ -103,7 +103,7 @@ export default function Agendar(){
        <div className="post-info"><strong>{p.titulo||p.legenda.slice(0,60)||'Sem título'}</strong>
         {p.preparando&&<p className="hint"><Loader2 size={13} className="spin"/> Preparando o vídeo no servidor (convertendo para MP4). No celular isso pode levar alguns minutos.</p>}
         <div className="post-redes">{(Object.entries(p.redes) as [Rede,NonNullable<Post['redes'][Rede]>][]).map(([r,s])=><span key={r} className={'tag '+ST[s.status][1]} title={s.erro||s.link}>{REDES.find(x=>x.id===r)?.nome.replace(' (manual)','')}: {ST[s.status][0]}{s.status==='postado'&&s.link.startsWith('http')&&<a href={s.link.split(' ')[0]} target="_blank" rel="noreferrer"> <ExternalLink size={11}/></a>}</span>)}</div>
-        {Object.entries(p.redes).filter(([,s])=>s.status==='erro'||(s.status==='postado'&&!s.link.startsWith('http'))||s.link.includes('(')).map(([r,s])=><p key={r} className={'hint '+(s.status==='erro'?'bad':'')}><b>{REDES.find(x=>x.id===r)?.nome}:</b> {s.erro||s.link}</p>)}
+        {Object.entries(p.redes).filter(([,s])=>s.status==='erro'||(s.status==='agendado'&&!!s.erro)||(s.status==='postado'&&!s.link.startsWith('http'))||s.link.includes('(')).map(([r,s])=><p key={r} className={'hint '+(s.status==='erro'?'bad':s.status==='agendado'?'warn':'')}><b>{REDES.find(x=>x.id===r)?.nome}:</b> {s.erro||s.link}</p>)}
        </div>
        <div className="post-acoes">
         {Object.values(p.redes).some(s=>s.status==='agendado'||s.status==='erro')&&<button className="subtle sm" onClick={()=>acao(()=>postarAgora(settings,p.id),'Postando agora...')}>{Object.values(p.redes).some(s=>s.status==='erro')?<><RefreshCw size={14}/> Tentar de novo</>:<><Send size={14}/> Postar agora</>}</button>}

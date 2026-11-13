@@ -59,7 +59,7 @@ export default function LinkStudio({onUpload,onArquivo,direitos,opcoes}:{onUploa
       try{
         const l=await acharCortesNoLink(settings.geminiKey,'https://www.youtube.com/watch?v='+id,opcoes,s=>setIa(`O Gemini pediu para esperar ${s} s e continua sozinho`));
         if(!l.length){ toast('A IA não achou trechos bons com essa duração. Tente outra duração ou outro pedido nas opções acima.','info'); return; }
-        setMarcas(m=>[...m.filter(x=>!x.ia),...l.map(c=>({id:uid(),inicio:c.inicio,fim:c.fim,titulo:c.titulo,nota:c.nota,motivo:c.motivo,gancho:c.gancho_texto,ia:true}))]);
+        setMarcas(m=>[...m.filter(x=>!x.ia),...l.map(c=>({id:uid(),inicio:c.inicio,fim:c.fim,titulo:c.titulo,nota:c.nota,motivo:c.motivo,gancho:c.gancho_texto,hashtags:c.hashtags,ia:true}))]);
         toast(`A IA achou ${l.length} cortes. Assista cada um no ▶ e apague os que não quiser.`,'ok');
       }catch(e){ toast(erroGemini(e),'erro'); }
     }finally{ setIa(''); }

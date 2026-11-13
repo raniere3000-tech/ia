@@ -21,8 +21,16 @@ export function falaDoCorte(c:Clip,cues:Cue[],max=180){
   return (fim>60?corte.slice(0,fim+1):corte.slice(0,corte.lastIndexOf(' '))+'...');
 }
 
+/** Arruma uma lista de hashtags: com #, sem acento, sem repetir. */
+export function limparHashtags(l:unknown,max=10){
+  const txt=Array.isArray(l)?l.join(' '):String(l||'');
+  const out:string[]=[]; for(const t of txt.split(/[\s,;]+/)){ const h=hashtag(t.replace(/^#+/,'')); if(h&&!out.includes(h)) out.push(h); }
+  return out.slice(0,max);
+}
+
 /** Hashtags a partir do tema, do título e da fala, mais as gerais de vídeo curto. */
 export function hashtagsDoCorte(c:Clip,cues:Cue[],tema:string,max=8){
+  if(c.hashtags?.length) return c.hashtags.slice(0,Math.max(max,c.hashtags.length));
   const tags:string[]=[];
   const add=(t:string)=>{ const h=hashtag(t); if(h&&!tags.includes(h)) tags.push(h); };
   if(tema.trim()){ add(tema); tema.split(/[\s,;#]+/).forEach(add); }

@@ -49,6 +49,14 @@ class ErroRede(Exception):
     pass
 
 
+class ErroTemporario(ErroRede):
+    """Falha que costuma passar sozinha (internet caiu, rede fora do ar, limite por minuto): o agendador tenta de novo."""
+
+
+# Esperas, em minutos, antes de cada nova tentativa automática de um post que falhou por motivo passageiro.
+ESPERAS = [float(x) for x in os.getenv('ESPERAS_TENTATIVA', '2,10,30,120').split(',') if x.strip()]
+
+
 # ---------------------------------------------------------------- armazenamento
 def _ler(arq: Path, padrao):
     try:
@@ -110,7 +118,9 @@ def http(metodo: str, url: str, *, dados: bytes | None = None, form: dict | None
         corpo = e.read()
         return e.code, dict(e.headers or {}), _json(corpo)
     except urllib.error.URLError as e:
-        raise ErroRede(f'Sem conexão com {urllib.parse.urlparse(url).netloc}: {e.reason}')
+        raise ErroTemporario(f'Sem conexão com {urllib.parse.urlparse(url).netloc}: {e.reason}')
+    except OSError as e:   # queda no meio do envio, tempo esgotado
+        raise ErroTemporario(f'A conexão com {urllib.parse.urlparse(url).netloc} caiu no meio: {e}')
 
 
 def _json(b: bytes):
@@ -132,6 +142,8 @@ def _msg(j) -> str:
 
 
 def _ok(st, j, oque):
+    if st >= 500 or st == 429:
+        raise ErroTemporario(f'{oque} (erro {st}, a rede está instável ou pediu para esperar): {_msg(j)}')
     if st >= 300:
         raise ErroRede(f'{oque}: {_msg(j)}')
     return j
@@ -154,7 +166,7 @@ def status_contas() -> dict:
         out[prov] = {'app': bool(d.get('client_id') and d.get('client_secret')), 'conectado': bool(d.get('token')),
                      'nome': d.get('nome', ''), 'client_id': d.get('client_id', ''), 'paginas': [
                          {'id': p['id'], 'nome': p['nome'], 'instagram': p.get('ig_usuario', '')} for p in d.get('paginas', [])],
-                     'pagina': d.get('pagina', ''), 'erro': d.get('erro', '')}
+                     'pagina': d.get('pagina', ''), 'erro': d.get('erro', ''), 'verificado': d.get('verificado', 0)}
     return out
 
 
@@ -327,6 +339,38 @@ def _pagina_meta() -> dict:
     raise ErroRede('Escolha a Página do Facebook em "Agendar posts".')
 
 
+def verificar_contas() -> dict:
+    """Confere se o login de cada rede ainda vale (renova o que dá) para avisar antes da hora do post."""
+    for prov in ('google', 'meta', 'tiktok'):
+        if not contas().get(prov, {}).get('token'):
+            continue
+        erro = ''
+        try:
+            if prov == 'google':
+                _token_google()
+            elif prov == 'tiktok':
+                _token_tiktok()
+            else:
+                d = contas()['meta']
+                st, _, j = http('GET', f"{URL['graph']}/{GRAPH_V}/me?fields=id&access_token=" + urllib.parse.quote(d['token']['usuario']), tempo=30)
+                if 400 <= st < 500:
+                    erro = 'O Facebook não aceita mais este login (' + _msg(j)[:120] + '). Entre de novo.'
+        except ErroTemporario:
+            continue   # sem internet agora: não dá para saber, confere na próxima
+        except ErroRede as e:
+            erro = str(e)
+        c = contas()
+        d = c.get(prov, {})
+        if erro:
+            d['erro'] = erro
+        else:
+            d.pop('erro', None)
+        d['verificado'] = agora()
+        c[prov] = d
+        salvar_contas(c)
+    return status_contas()
+
+
 # ---------------------------------------------------------------- vídeos
 def receber_pedaco(vid: str | None, offset: int, dados: bytes, nome: str) -> dict:
     if vid is None:
@@ -463,8 +507,8 @@ def postar_agora(pid: str):
     def f(p):
         p['quando'] = agora()
         for r in p['redes'].values():
-            if r['status'] == 'erro':
-                r.update(status='agendado', erro='')
+            if r['status'] in ('erro', 'agendado'):
+                r.update(status='agendado', erro='', tentativas=0, proxima=0)
     _mudar(pid, f)
     acordar()
 
@@ -590,9 +634,30 @@ def postar_tiktok(p: dict, arq: Path) -> str:
                                                                           'Content-Range': f'bytes {ini}-{fim}/{tam}'}, tempo=1800)
             if st >= 300:
                 raise ErroRede('TikTok recusou o envio do vídeo: ' + _msg(jj))
+    _conferir_tiktok(dados.get('publish_id'), cab)
     if direto:
         return 'Enviado ao TikTok' + ('' if priv == 'PUBLIC_TO_EVERYONE' else ' como "Só eu" (app ainda não aprovado pelo TikTok)')
     return 'Está nos rascunhos/notificações do TikTok: abra o app e toque em Postar'
+
+
+def _conferir_tiktok(publish_id, cab):
+    """Depois do envio, pergunta ao TikTok se ele aceitou o vídeo (ele recusa formato ou duração depois de receber)."""
+    if not publish_id:
+        return
+    for _ in range(int(os.getenv('CONFERE_TIKTOK', '24'))):
+        try:
+            st, _, j = http('POST', URL['tiktok_api'] + '/v2/post/publish/status/fetch/', js={'publish_id': publish_id}, cab=cab, tempo=30)
+        except ErroRede:
+            return
+        if st >= 300:
+            return
+        d = j.get('data') or {}
+        estado = d.get('status')
+        if estado == 'FAILED':
+            raise ErroRede('O TikTok recebeu mas recusou o vídeo: ' + str(d.get('fail_reason') or 'motivo não informado'))
+        if estado in ('PUBLISH_COMPLETE', 'SEND_TO_USER_INBOX') or not estado:
+            return
+        time.sleep(float(os.getenv('ESPERA_TIKTOK', '5')))
 
 
 PUBLICAR = {'youtube': postar_youtube, 'facebook': postar_facebook, 'instagram': postar_instagram, 'tiktok': postar_tiktok}
@@ -613,6 +678,15 @@ def _publicar_um(pid: str, rede: str):
     try:
         link = PUBLICAR[rede](p, video_path(p['video']))
         _mudar(pid, lambda q: q['redes'][rede].update(status='postado', link=link, erro='', feito=agora()))
+    except ErroTemporario as e:
+        n = int(p['redes'][rede].get('tentativas', 0))
+        if n < len(ESPERAS):
+            prox = agora() + ESPERAS[n] * 60
+            hora = datetime.fromtimestamp(prox).strftime('%H:%M')
+            _mudar(pid, lambda q: q['redes'][rede].update(status='agendado', tentativas=n + 1, proxima=prox,
+                                                         erro=f'{str(e)[:380]} O servidor tenta de novo sozinho às {hora} (tentativa {n + 2} de {len(ESPERAS) + 1}).'))
+        else:
+            _mudar(pid, lambda q: q['redes'][rede].update(status='erro', erro=(str(e)[:400] + f' Tentei {n + 1} vezes. Clique em Tentar de novo.')))
     except Exception as e:  # noqa: BLE001
         msg = str(e) if isinstance(e, ErroRede) else f'Erro inesperado: {e}'
         _mudar(pid, lambda q: q['redes'][rede].update(status='erro', erro=msg[:500]))
@@ -625,7 +699,8 @@ def ciclo():
             continue
         for rede, r in p['redes'].items():
             if r['status'] == 'agendado':
-                _publicar_um(p['id'], rede)
+                if agora() >= r.get('proxima', 0):
+                    _publicar_um(p['id'], rede)
             elif r['status'] == 'postando' and agora() - r.get('inicio', 0) > 3600:
                 _mudar(p['id'], lambda q, rede=rede: q['redes'][rede].update(status='erro', erro='O envio foi interrompido (servidor desligou?). Clique em Tentar de novo.'))
 
@@ -641,8 +716,13 @@ def iniciar_relogio():
         salvar_posts(ps)
 
     def laco():
+        conferido = 0.0
         while True:
             try:
+                # De 6 em 6 horas confere os logins, para o aviso aparecer antes da hora do post.
+                if agora() - conferido > float(os.getenv('CONFERE_CONTAS_H', '6')) * 3600:
+                    conferido = agora()
+                    verificar_contas()
                 ciclo()
             except Exception as e:  # noqa: BLE001
                 print('agendador:', e)

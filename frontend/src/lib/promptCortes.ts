@@ -5,7 +5,7 @@ import type { Candidate } from './analyze';
 export type OptsIA = {prompt:string;tema:string;frames?:Record<string,string[]>;semFala?:boolean;
   /** Texto pronto para a IA escolher os cortes direto na transcrição (em vez de avaliar candidatos). */
   escolha?:string};
-export type AvaliacaoIA = {id:string;gancho:number;fluxo:number;valor:number;tendencia:number;titulo:string;motivo:string;inicio:number;fim:number;gancho_texto?:string};
+export type AvaliacaoIA = {id:string;gancho:number;fluxo:number;valor:number;tendencia:number;titulo:string;motivo:string;inicio:number;fim:number;gancho_texto?:string;hashtags?:string[]};
 
 const tt = (s:number)=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
 
@@ -39,6 +39,7 @@ Escreva também:
 - titulo: título em português de até 60 caracteres para o post.
 - gancho_texto: frase curta de 3 a 7 palavras para aparecer escrita no topo do vídeo, que faça parar de rolar (promessa, curiosidade, número ou tensão tirados do próprio trecho). Sem hashtag, sem emoji, sem aspas, sem inventar nada. Não repita a primeira fala; transforme em manchete.
 - motivo: 1 frase explicando a nota com base no que realmente é dito.
+- hashtags: de 5 a 8 hashtags para o post, com #, minúsculas e sem acento. Misture as específicas do assunto do trecho com 2 ou 3 amplas de vídeo curto (ex.: #shorts, #reels, #fyp).
 Não invente fatos que não estejam nas falas. Responda para todos os candidatos, usando o mesmo id.${opts.semFala?`
 Atenção: este vídeo está sem transcrição. Avalie pelos quadros e pelos sinais de áudio. Não dê nota baixa só porque a fala não veio escrita; compare os candidatos entre si e use a escala inteira de 0 a 99.`:''}`;
 }
@@ -74,6 +75,7 @@ Para cada corte escreva também:
 - titulo: título em português de até 60 caracteres para o post.
 - gancho_texto: 3 a 7 palavras para aparecer escritas no topo do vídeo, sem emoji, sem hashtag, sem aspas. Uma manchete, não a primeira fala.
 - motivo: 1 frase dizendo o que é dito no trecho e por que funciona.
+- hashtags: de 5 a 8 hashtags para o post, com #, minúsculas e sem acento. Misture as específicas do assunto do trecho com 2 ou 3 amplas de vídeo curto (ex.: #shorts, #reels, #fyp).
 Não invente nada que não esteja na transcrição.
 
 Transcrição:

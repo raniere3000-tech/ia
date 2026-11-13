@@ -7,7 +7,7 @@ import LinkStudio from '../components/LinkStudio';
 import AgendarPost from '../components/AgendarPost';
 import EdicaoLote from '../components/EdicaoLote';
 import { dublarCorte } from '../lib/dublagem';
-import { legendaAutomatica } from '../lib/legendasPost';
+import { legendaAutomatica, hashtagsDoCorte, limparHashtags } from '../lib/legendasPost';
 import PostarLote from '../components/PostarLote';
 import { iaAtiva, nomeIA, avaliar, erroIA, escolherNaTranscricao } from '../lib/ia';
 import { ErroGemini, erroGemini } from '../lib/gemini';
@@ -143,19 +143,21 @@ export default function Cortes(){
     return new Map(res.map(r=>[r.id,k===1?r:{...r,gancho:r.gancho*k,fluxo:r.fluxo*k,valor:r.valor*k,tendencia:r.tendencia*k}]));
   }
 
-  function montarClips(cands:(Candidate&{id:string;titulo?:string;tituloIA?:string;gancho?:string;daIA?:boolean})[],ia:Map<string,any>|null,dur:number):Clip[]{
+  function montarClips(cands:(Candidate&{id:string;titulo?:string;tituloIA?:string;gancho?:string;daIA?:boolean;hashtags?:string[]})[],ia:Map<string,any>|null,dur:number,cuesProj:Cue[],temaTxt:string):Clip[]{
     const out=cands.map(c=>{
       const r=ia?.get(c.id);
       const notas=r?{gancho:clamp(r.gancho),fluxo:clamp(r.fluxo),valor:clamp(r.valor),tendencia:clamp(r.tendencia)}:c.notas;
       let ini=r&&Math.abs(r.inicio-c.inicio)<=AJUSTE_MAX?Math.max(0,r.inicio):c.inicio; let fim=r&&Math.abs(r.fim-c.fim)<=AJUSTE_MAX?Math.min(dur,r.fim):c.fim;
       if(fim-ini<Math.min(5,c.fim-c.inicio)){ ini=c.inicio; fim=c.fim; }   // ajuste da IA deixou curto demais: mantém o original
       const nf=notaFinal(notas);
-      return {id:c.id,titulo:c.titulo||c.tituloIA||r?.titulo||'',marca:c.titulo,inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,nota_final:nf,nota_10:nota10(nf),motivo:r?.motivo||c.motivo,fonte:r||c.daIA?'ia':'heuristica',legenda:legSrc==='nenhuma'?'':settings.legendaPadrao,efeito:settings.efeitoPadrao,formato:'9:16',gancho_texto:String(r?.gancho_texto||c.gancho||'').replace(/[#"“”]/g,'').trim().slice(0,60)} as Clip;
+      return {id:c.id,titulo:c.titulo||c.tituloIA||r?.titulo||'',marca:c.titulo,inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,nota_final:nf,nota_10:nota10(nf),motivo:r?.motivo||c.motivo,fonte:r||c.daIA?'ia':'heuristica',legenda:legSrc==='nenhuma'?'':settings.legendaPadrao,efeito:settings.efeitoPadrao,formato:'9:16',gancho_texto:String(r?.gancho_texto||c.gancho||'').replace(/[#"“”]/g,'').trim().slice(0,60),hashtags:limparHashtags(r?.hashtags?.length?r.hashtags:c.hashtags)} as Clip;
     });
     // Os avaliados pela IA vêm antes dos que só têm a nota automática do áudio.
     const daIA=(c:Clip)=>c.fonte==='ia'?1:0;
     out.sort((a,b)=>daIA(b)-daIA(a)||b.nota_final-a.nota_final||b.notas.gancho-a.notas.gancho||a.inicio-b.inicio);
     out.forEach((c,i)=>{ if(!c.titulo) c.titulo=`Destaque ${i+1}`; });
+    // Sem IA (ou se ela não mandou), as hashtags saem do tema, do título e da fala do trecho.
+    out.forEach(c=>{ if(!c.hashtags?.length) c.hashtags=hashtagsDoCorte({...c,hashtags:undefined},cuesProj,temaTxt); });
     return out;
   }
 
@@ -285,10 +287,10 @@ export default function Cortes(){
       const dasLongas=longas.flatMap(m=>gerarCandidatos(cache.energy,STEP,info.duration,modelo==='falas'?cues:cues.length?cues:[],{min:faixa[0],max:faixa[1],limite,inicio:m.inicio,fim:m.fim,sobreposicao:0.05}));
       // Trechos que a IA achou assistindo o link já vêm com nota, motivo e frase de gancho: aproveita.
       const comLink=(l:(Candidate&{titulo?:string})[])=>manuais.length?l:l.map(c=>{ const m=marcas.find(x=>x.ia&&x.nota!=null&&Math.abs(x.inicio-c.inicio)<0.06&&Math.abs(x.fim-c.fim)<0.06); if(!m) return c; const n=m.nota!;
-        return {...c,notas:{gancho:cache.energy?Math.round((n*2+c.notas.gancho)/3):n,fluxo:n,valor:cache.energy?Math.round((n*2+c.notas.valor)/3):n,tendencia:n},motivo:m.motivo||c.motivo,gancho:m.gancho||'',daIA:true}; });
+        return {...c,notas:{gancho:cache.energy?Math.round((n*2+c.notas.gancho)/3):n,fluxo:n,valor:cache.energy?Math.round((n*2+c.notas.valor)/3):n,tendencia:n},motivo:m.motivo||c.motivo,gancho:m.gancho||'',hashtags:m.hashtags,daIA:true}; });
       const a0=isNaN(ini)?0:ini, b0=isNaN(fimT)?0:fimT;
       const auto=()=>gerarCandidatos(cache.energy,STEP,info.duration,cues,{min:faixa[0],max:faixa[1],limite,inicio:porMarca?0:a0,fim:porMarca?0:b0});
-      type Cand=Candidate&{id:string;titulo?:string;tituloIA?:string;gancho?:string;daIA?:boolean};
+      type Cand=Candidate&{id:string;titulo?:string;tituloIA?:string;gancho?:string;daIA?:boolean;hashtags?:string[]};
       let cands:Cand[]; let completou=false; let jaAvaliados=0;
       if(porMarca){
         let l:(Candidate&{titulo?:string})[]=[...comLink(avaliarJanelas(cache.energy,STEP,cues,curtas)),...dasLongas];
@@ -316,7 +318,7 @@ export default function Cortes(){
         try{ if(jaAvaliados<limite) ia=await avaliarIA(cands.slice(jaAvaliados),cues,prompt,tema,url); }
         catch(e){ toast('A avaliação com IA falhou, usando notas automáticas. '+await erroIA(settings,e),'erro'); }
       }
-      let clips=montarClips(cands,ia,info.duration);
+      let clips=montarClips(cands,ia,info.duration,cues,tema);
       setProjeto(p=>({...p,clips,candidatos:cands.length}));
       setJob({etapa:'Gerando miniaturas'});
       const top=clips.slice(0,30);
@@ -340,7 +342,7 @@ export default function Cortes(){
     setJob({status:'rodando',etapa:rotuloIA,etapas:[rotuloIA],pct:0});
     try{
       const ia=await avaliarIA(cands,projeto.cues,novoPrompt,projeto.tema);
-      const clips=montarClips(cands,ia,projeto.duracao).map(c=>({...c,thumb:prev.get(c.id)?.thumb,legenda:prev.get(c.id)?.legenda??c.legenda,efeito:prev.get(c.id)?.efeito??c.efeito,formato:prev.get(c.id)?.formato??c.formato}));
+      const clips=montarClips(cands,ia,projeto.duracao,projeto.cues,projeto.tema).map(c=>({...c,thumb:prev.get(c.id)?.thumb,legenda:prev.get(c.id)?.legenda??c.legenda,efeito:prev.get(c.id)?.efeito??c.efeito,formato:prev.get(c.id)?.formato??c.formato}));
       setProjeto(p=>({...p,clips,prompt:novoPrompt,job:{...p.job,status:'pronto',etapa:''}}));
       toast('Cortes reavaliados com o novo pedido.','ok');
     }catch(e){ setJob({status:'pronto'}); toast(await erroIA(settings,e),'erro'); }
@@ -383,7 +385,7 @@ export default function Cortes(){
     if(!lote) return; const lista=lote.itens.filter(i=>i.status==='ok').map(i=>({c:projeto.clips.find(c=>c.id===i.id),p:prontos.current.get(i.id)})).filter((x):x is {c:Clip;p:{nome:string;blob:Blob;srt:string}}=>!!x.c&&!!x.p);
     if(!lista.length) return; const extras:Record<string,string>={};
     for(const {p} of lista) if(p.srt) extras[p.nome.replace(/\.\w+$/,'.srt')]=p.srt;
-    extras['cortes.csv']='arquivo;titulo;inicio;fim;nota_0_99;nota_0_10;gancho;fluxo;valor;tendencia;motivo\n'+lista.map(({c,p})=>[p.nome,c.titulo,tm(c.inicio),tm(c.fim),c.nota_final,c.nota_10,c.notas.gancho,c.notas.fluxo,c.notas.valor,c.notas.tendencia,c.motivo].map(x=>`"${String(x).replace(/"/g,'""')}"`).join(';')).join('\n');
+    extras['cortes.csv']='arquivo;titulo;inicio;fim;nota_0_99;nota_0_10;gancho;fluxo;valor;tendencia;motivo;hashtags\n'+lista.map(({c,p})=>[p.nome,c.titulo,tm(c.inicio),tm(c.fim),c.nota_final,c.nota_10,c.notas.gancho,c.notas.fluxo,c.notas.valor,c.notas.tendencia,c.motivo,(c.hashtags||[]).join(' ')].map(x=>`"${String(x).replace(/"/g,'""')}"`).join(';')).join('\n');
     baixar(await zipar(lista.map(x=>({nome:x.p.nome,blob:x.p.blob})),extras),`cortes-${projeto.nome.replace(/\.\w+$/,'')||'video'}.zip`);
   }
   /** Trecho da fala dentro do corte. */
@@ -534,6 +536,7 @@ export default function Cortes(){
        <input className="title-input" value={c.titulo} onChange={e=>atualizar({...c,titulo:e.target.value})} aria-label="Título"/>
        <p className="motivo">{c.motivo} <small>Nota {c.nota_final}/99{c.versao_de?' • variação de outro corte':''}</small></p>
        {trecho(c)&&<p className="trecho">“{trecho(c)}”</p>}
+       {!!c.hashtags?.length&&<p className="hashtags" title="Hashtags sugeridas para o post">{c.hashtags.map(h=><span key={h}>{h}</span>)}<button className="icon-btn" title="Copiar título e hashtags" aria-label="Copiar título e hashtags" onClick={()=>{ navigator.clipboard?.writeText(c.titulo+'\n\n'+c.hashtags!.join(' ')); toast('Título e hashtags copiados.','ok'); }}><Copy size={13}/></button></p>}
        <details className="porque"><summary>Por que esta pontuação</summary>
         <table><tbody>{([['gancho','Gancho (a abertura prende)',35],['fluxo','Fluxo (anda bem e fecha a ideia)',25],['valor','Valor (ensina, diverte ou emociona)',25],['tendencia','Tendência (assunto em alta)',15]] as const).map(([k,n,p])=><tr key={k}><td>{n}</td><td>{c.notas[k]}</td><td>× {p}%</td><td>= {(c.notas[k]*p/100).toFixed(1)}</td></tr>)}
          <tr className="tot"><td>Pontuação de viralidade</td><td colSpan={3}>{c.nota_final}/99 ({faixaNota(c.nota_final).nome.toLowerCase()})</td></tr></tbody></table>

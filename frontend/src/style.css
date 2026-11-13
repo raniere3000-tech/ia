@@ -140,6 +140,7 @@ input[type=range]{padding:0;accent-color:var(--brand2);border:0;background:trans
 .field.more{grid-column:1/-1;background:#121623;border:1px solid var(--line);border-radius:12px;padding:14px 16px}.field.more summary{cursor:pointer;font-weight:700;font-size:13px;color:#c5b6ff}
 .seg{display:flex;flex-wrap:wrap;gap:6px}.seg button{background:#151a27;border:1px solid var(--line2);color:#b8bfd1;border-radius:10px;padding:9px 13px;font-size:12.5px;font-weight:700}
 .seg button:hover{border-color:#5a4fa0}.seg button.on{background:var(--brand-soft);border-color:var(--brand2);color:#fff}
+.hashtags{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:6px 0 0}.hashtags span{font-size:11.5px;color:#9db4ff;background:#161d33;border-radius:999px;padding:2px 8px}.hashtags .icon-btn{min-width:28px;min-height:28px}
 .leg-tipos{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px}.leg-tipo{display:flex;flex-direction:column;gap:6px;align-items:stretch;background:#151a27;border:1px solid var(--line2);border-radius:12px;padding:8px;text-align:center;min-height:44px}.leg-tipo:hover{border-color:#5a4fa0}.leg-tipo.on{border-color:var(--brand2);box-shadow:0 0 0 1px var(--brand2);background:var(--brand-soft)}.leg-amostra{display:block;background:linear-gradient(135deg,#3a4a5c,#1d2531);border-radius:8px;padding:12px 4px;font-size:14px;line-height:1.1;white-space:nowrap;overflow:hidden;paint-order:stroke fill}.leg-amostra i{font-style:normal}.leg-amostra.sem{color:#7c8498}.leg-tipo small{font-size:11.5px;color:#b8bfd1;font-weight:600}.tarjas input[type=color]{width:100%;height:40px;padding:2px;border-radius:10px;background:#151a27;border:1px solid var(--line2)}
 .seg.big button{flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;text-align:left}.seg.big small{font-weight:500;color:var(--muted);font-size:11.5px}
 .job-status{padding:16px 18px;background:#151a28;border:1px solid var(--line);border-radius:12px;margin-top:16px}
@@ -242,7 +243,7 @@ label.inline select{max-width:180px}.label-row .help-btn{height:20px;min-width:2
 
 /* Agendar posts */
 .tag.info{color:#9ec5ff;background:#15233d;border-color:#26406b}
-.hint.bad{color:var(--bad)}
+.hint.bad{color:var(--bad)}.hint.warn{color:#f0c36b}
 textarea{width:100%;background:#0d111b;border:1px solid var(--line2);border-radius:10px;color:var(--text);padding:10px 12px;font:inherit;font-size:13.5px;resize:vertical}
 .empty-state{text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px}.empty-state p{max-width:520px;color:var(--muted)}
 .retorno{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#141a2b;border:1px solid #2f3a5c;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#b5bccf;margin:12px 0 16px}.retorno code{color:var(--brand2);word-break:break-all;flex:1;min-width:200px}

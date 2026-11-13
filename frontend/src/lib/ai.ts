@@ -12,7 +12,7 @@ const Avaliacao = z.object({
   cortes: z.array(z.object({
     id: z.string(),
     gancho: z.number(), fluxo: z.number(), valor: z.number(), tendencia: z.number(),
-    titulo: z.string(), motivo: z.string(), inicio: z.number(), fim: z.number(), gancho_texto: z.string(),
+    titulo: z.string(), motivo: z.string(), inicio: z.number(), fim: z.number(), gancho_texto: z.string(), hashtags: z.array(z.string()),
   })),
 });
 

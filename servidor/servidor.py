@@ -347,6 +347,8 @@ def _rotas_agenda(self, caminho: str):
     q = parse_qs(urlparse(self.path).query)
     if caminho == '/contas/codigo':
         return {'rede': pg.receber_codigo(str(d.get('code', '')), str(d.get('state', '')))}
+    if caminho == '/contas/verificar':
+        return pg.verificar_contas()
     if caminho == '/contas/meta/pagina':
         return pg.escolher_pagina(str(d.get('pagina', '')))
     m = re.fullmatch(r'/contas/(google|meta|tiktok)/(app|login|sair)', caminho)
