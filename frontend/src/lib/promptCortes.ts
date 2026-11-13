@@ -2,7 +2,9 @@
 import type { Cue } from './captions';
 import type { Candidate } from './analyze';
 
-export type OptsIA = {prompt:string;tema:string;frames?:Record<string,string[]>};
+export type OptsIA = {prompt:string;tema:string;frames?:Record<string,string[]>;semFala?:boolean;
+  /** Texto pronto para a IA escolher os cortes direto na transcrição (em vez de avaliar candidatos). */
+  escolha?:string};
 export type AvaliacaoIA = {id:string;gancho:number;fluxo:number;valor:number;tendencia:number;titulo:string;motivo:string;inicio:number;fim:number;gancho_texto?:string};
 
 const tt = (s:number)=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
@@ -37,7 +39,45 @@ Escreva também:
 - titulo: título em português de até 60 caracteres para o post.
 - gancho_texto: frase curta de 3 a 7 palavras para aparecer escrita no topo do vídeo, que faça parar de rolar (promessa, curiosidade, número ou tensão tirados do próprio trecho). Sem hashtag, sem emoji, sem aspas, sem inventar nada. Não repita a primeira fala; transforme em manchete.
 - motivo: 1 frase explicando a nota com base no que realmente é dito.
-Não invente fatos que não estejam nas falas. Responda para todos os candidatos, usando o mesmo id.`;
+Não invente fatos que não estejam nas falas. Responda para todos os candidatos, usando o mesmo id.${opts.semFala?`
+Atenção: este vídeo está sem transcrição. Avalie pelos quadros e pelos sinais de áudio. Não dê nota baixa só porque a fala não veio escrita; compare os candidatos entre si e use a escala inteira de 0 a 99.`:''}`;
+}
+
+const CRITERIOS = `Pontuação de viralidade, quatro notas de 0 a 99 (use números inteiros de 0 a 99, não de 0 a 10):
+- gancho: a abertura prende a atenção nos 2 ou 3 primeiros segundos e tem a ver com o assunto do trecho?
+- fluxo: o trecho anda de forma lógica do começo ao fim e termina com um fechamento que satisfaz?
+- valor: entrega algo (ensina, diverte, surpreende), emociona e cria ligação com quem assiste?
+- tendencia: tem a ver com assuntos em alta e com o que o público quer ver e compartilhar?
+O melhor trecho costuma ficar entre 80 e 95. Um trecho só razoável fica entre 55 e 70. Abaixo de 40 só para trecho ruim de verdade.`;
+
+/** Um pedaço da transcrição com horário em segundos, pronto para a IA escolher os cortes. */
+export function textoTranscricao(cues:Cue[]){ return cues.map(q=>`[${q.start.toFixed(1)}-${q.end.toFixed(1)}] ${q.text.trim()}`).join('\n'); }
+
+/** Pede para a IA ler a transcrição e escolher os melhores trechos (é assim que os apps de corte trabalham). */
+export function instrucoesEscolha(o:{quantos:number;min:number;max:number;tema?:string;prompt?:string;de:number;ate:number},transcricao:string){
+  return `Você é um editor sênior de vídeos curtos (TikTok, Reels, Shorts). Abaixo está a transcrição, com horário em segundos, de um pedaço de um vídeo longo (de ${tt(o.de)} até ${tt(o.ate)}). Leia tudo e escolha os ${o.quantos} melhores trechos para virar cortes.
+${o.tema?`Gênero ou tema informado: ${o.tema}\n`:''}${o.prompt?`Momentos que o usuário quer (priorize, e dê nota maior a quem atende): ${o.prompt}\n`:''}
+Procure: ganchos fortes, opinião forte, revelação, história com começo e fim, conflito, humor, emoção, frase marcante, dica prática, número surpreendente.
+Evite: abertura, despedida, propaganda, pedido de inscrição, enrolação, repetição e trecho que depende do que veio antes.
+
+Regras de cada corte:
+- Duração entre ${o.min} e ${o.max} segundos. Prefira um trecho completo (preparação e desfecho) a um trecho no tamanho exato.
+- inicio é o horário de início de uma fala da transcrição e fim é o horário de fim de uma fala. Use os números que aparecem entre colchetes, em segundos (ex.: 754.5). Não use minutos.
+- Começa no início de uma frase que se entende sozinha e termina depois do fechamento da ideia.
+- Os cortes não se sobrepõem. Espalhe pelo pedaço inteiro: não pegue tudo do começo.
+- Devolva exatamente ${o.quantos} cortes. Só devolva menos se a transcrição for curta demais para caber. Os mais fracos entram com nota menor.
+
+${CRITERIOS}
+
+Para cada corte escreva também:
+- id: um número de ordem (1, 2, 3...).
+- titulo: título em português de até 60 caracteres para o post.
+- gancho_texto: 3 a 7 palavras para aparecer escritas no topo do vídeo, sem emoji, sem hashtag, sem aspas. Uma manchete, não a primeira fala.
+- motivo: 1 frase dizendo o que é dito no trecho e por que funciona.
+Não invente nada que não esteja na transcrição.
+
+Transcrição:
+${transcricao}`;
 }
 
 export function textoCandidato(c:Candidate&{id:string},cues:Cue[]){

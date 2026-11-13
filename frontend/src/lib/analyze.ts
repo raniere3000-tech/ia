@@ -27,6 +27,55 @@ function maxOf(a:Float32Array,i:number,j:number){ let m=0; for(let k=Math.max(i,
 
 export type Candidate = {inicio:number;fim:number;notas:Notas;motivo:string};
 
+/** A IA às vezes responde de 0 a 10 (ou de 0 a 1) em vez de 0 a 99: devolve o fator que conserta a escala. */
+export function fatorEscala(valores:number[]){ const m=Math.max(0,...valores.filter(v=>isFinite(v))); return m<=0?1:m<=1?99:m<=10?9.9:1; }
+
+/** Faixa da pontuação de viralidade (0 a 99), no estilo dos apps de corte. */
+export function faixaNota(n:number){ return n>=80?{id:'alta',nome:'Alto potencial'}:n>=60?{id:'boa',nome:'Bom potencial'}:n>=40?{id:'media',nome:'Potencial médio'}:{id:'baixa',nome:'Potencial baixo'}; }
+
+/** Parte de cada corte que cai em cima do outro, em relação ao menor dos dois (0 a 1). */
+export function sobrepoe(a:{inicio:number;fim:number},b:{inicio:number;fim:number}){ const ov=Math.max(0,Math.min(a.fim,b.fim)-Math.max(a.inicio,b.inicio)); return ov/Math.max(0.01,Math.min(a.fim-a.inicio,b.fim-b.inicio)); }
+
+export type Escolhido = Candidate&{titulo:string;gancho:string};
+/**
+ * Confere os trechos que a IA escolheu lendo a transcrição: encaixa início e fim no começo e no fim de uma fala,
+ * conserta a duração fora do pedido, descarta o que não existe no vídeo e tira os repetidos (fica o de maior nota).
+ */
+export function validarEscolhidos(lista:{inicio:number;fim:number;gancho:number;fluxo:number;valor:number;tendencia:number;titulo?:string;motivo?:string;gancho_texto?:string}[],cues:Cue[],o:{min:number;max:number;duracao:number;ini?:number;fim?:number}):Escolhido[]{
+  const k=fatorEscala(lista.flatMap(x=>[x.gancho,x.fluxo,x.valor,x.tendencia]));
+  const cl=(v:number)=>Math.max(0,Math.min(99,Math.round((Number(v)||0)*k)));
+  const a=o.ini||0, b=o.fim&&o.fim>0?Math.min(o.fim,o.duracao):o.duracao;
+  const out:Escolhido[]=[];
+  for(const x of lista){
+    let ini=Number(x.inicio), fim=Number(x.fim);
+    if(!isFinite(ini)||!isFinite(fim)||fim<=ini||ini<a-1||ini>=b) continue;
+    // Encaixa no começo da fala mais próxima (até 4 s) e no fim da fala mais próxima.
+    const cs=cues.reduce<Cue|null>((m,c)=>Math.abs(c.start-ini)<=4&&(!m||Math.abs(c.start-ini)<Math.abs(m.start-ini))?c:m,null); if(cs) ini=cs.start;
+    const ce=cues.reduce<Cue|null>((m,c)=>Math.abs(c.end-fim)<=4&&c.end>ini&&(!m||Math.abs(c.end-fim)<Math.abs(m.end-fim))?c:m,null); if(ce) fim=ce.end;
+    fim=Math.min(fim,b); ini=Math.max(a,ini);
+    if(fim-ini>o.max+1){   // longo demais: termina na última fala que cabe
+      const ult=[...cues].reverse().find(c=>c.end<=ini+o.max&&c.end>=ini+o.min); fim=ult?ult.end:ini+o.max;
+    }
+    if(fim-ini<o.min-1){   // curto demais: estica até a fala que completa o mínimo
+      const prox=cues.find(c=>c.end>=ini+o.min&&c.end<=ini+o.max); fim=Math.min(b,prox?prox.end:ini+o.min);
+      if(fim-ini<o.min-1) ini=Math.max(a,fim-o.min);
+    }
+    if(fim-ini<Math.min(o.min*0.6,b-a)) continue;
+    const notas={gancho:cl(x.gancho),fluxo:cl(x.fluxo),valor:cl(x.valor),tendencia:cl(x.tendencia)};
+    out.push({inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,motivo:String(x.motivo||'').trim()||'Escolhido pela IA lendo a transcrição.',titulo:String(x.titulo||'').trim().slice(0,90),gancho:String(x.gancho_texto||'')});
+  }
+  out.sort((x,y)=>notaFinal(y.notas)-notaFinal(x.notas));
+  const sel:Escolhido[]=[]; for(const c of out) if(sel.every(s=>sobrepoe(s,c)<=0.5)) sel.push(c);
+  return sel;
+}
+
+/** Completa a lista até a quantidade pedida com os melhores candidatos automáticos que não repetem os já escolhidos. */
+export function completar<T extends {inicio:number;fim:number}>(base:T[],reserva:Candidate[],quantos:number,maxSobre=0.3):(T|Candidate)[]{
+  const out:(T|Candidate)[]=[...base];
+  for(const c of reserva){ if(out.length>=quantos) break; if(out.every(s=>sobrepoe(s,c)<=maxSobre)) out.push(c); }
+  return out;
+}
+
 const FRACAS = /^(e|mas|então|entao|aí|ai|daí|dai|porque|pq|tipo|né|ne|sim|não|nao|isso|é|eh|ah|hum|uhum|tá|ta|ok|beleza|exato|claro|só que|so que|and|but|so|yeah|yes|right|um|uh|like)\b[\s,.!?]/i;
 /** Primeira fala começa com palavra que só faz sentido com o que veio antes? */
 export function aberturaFraca(t:string){ const s=t.trim().toLowerCase(); return FRACAS.test(s+' ')||/^[^\s]+[.!?]?$/.test(s); }

@@ -9,10 +9,10 @@ import EdicaoLote from '../components/EdicaoLote';
 import { dublarCorte } from '../lib/dublagem';
 import { legendaAutomatica } from '../lib/legendasPost';
 import PostarLote from '../components/PostarLote';
-import { iaAtiva, nomeIA, avaliar, erroIA } from '../lib/ia';
+import { iaAtiva, nomeIA, avaliar, erroIA, escolherNaTranscricao } from '../lib/ia';
 import { ErroGemini, erroGemini } from '../lib/gemini';
 import { videoInfo, decodeAudio, energyProfile, captureFrames, type AudioData } from '../lib/media';
-import { gerarCandidatos, avaliarJanelas, notaFinal, nota10, cuesDe, urlDe, type Clip, type Candidate } from '../lib/analyze';
+import { gerarCandidatos, avaliarJanelas, notaFinal, nota10, cuesDe, urlDe, fatorEscala, faixaNota, sobrepoe, completar, type Clip, type Candidate, type Escolhido } from '../lib/analyze';
 import { parseLegendas, type Cue } from '../lib/captions';
 import { transcrever, transcreverGemini, IDIOMAS } from '../lib/transcribe';
 import { formatoSuportado } from '../lib/render';
@@ -66,7 +66,7 @@ export default function Cortes(){
   const [faixa,setFaixa]=useState<[number,number]>([30,60]);
   const [custom,setCustom]=useState(false);
   const [trechoIni,setTrechoIni]=useState(''); const [trechoFim,setTrechoFim]=useState('');
-  const [limite,setLimite]=useState(15); const [minimo,setMinimo]=useState(3);
+  const [limite,setLimite]=useState(15); const [minimo,setMinimo]=useState(30);
   const [legSrc,setLegSrc]=useState<'depois'|'auto'|'gemini'|'arquivo'|'nenhuma'>('depois'); const [idioma,setIdioma]=useState(settings.idioma);
   const [prompt,setPrompt]=useState(''); const [tema,setTema]=useState('');
   const [srtFile,setSrtFile]=useState<File|null>(null);
@@ -131,25 +131,30 @@ export default function Cortes(){
 
   async function avaliarIA(cands:(Candidate&{id:string})[],cues:Cue[],promptTxt:string,temaTxt:string,url=projeto.url){
     const top=cands.slice(0,Math.min(30,Math.max(10,limite*2)));
+    if(!top.length) return new Map<string,any>();
     let frames:Record<string,string[]>|undefined;
-    if(modelo==='acao'){
+    // Sem transcrição a IA não tem o que ler: manda quadros do vídeo para ela julgar pela imagem.
+    if(modelo==='acao'||!cues.length){
       frames={};
       for(const c of top.slice(0,20)){ frames[c.id]=await captureFrames(url,[c.inicio+(c.fim-c.inicio)*0.25,c.inicio+(c.fim-c.inicio)*0.65],512); }
     }
-    const res=await avaliar(settings,top,cues,{prompt:promptTxt,tema:temaTxt,frames});
-    return new Map(res.map(r=>[r.id,r]));
+    const res=await avaliar(settings,top,cues,{prompt:promptTxt,tema:temaTxt,frames,semFala:!cues.length});
+    const k=fatorEscala(res.flatMap(r=>[r.gancho,r.fluxo,r.valor,r.tendencia]));   // resposta em escala de 0 a 10 vira 0 a 99
+    return new Map(res.map(r=>[r.id,k===1?r:{...r,gancho:r.gancho*k,fluxo:r.fluxo*k,valor:r.valor*k,tendencia:r.tendencia*k}]));
   }
 
-  function montarClips(cands:(Candidate&{id:string;titulo?:string;gancho?:string;daIA?:boolean})[],ia:Map<string,any>|null,dur:number):Clip[]{
+  function montarClips(cands:(Candidate&{id:string;titulo?:string;tituloIA?:string;gancho?:string;daIA?:boolean})[],ia:Map<string,any>|null,dur:number):Clip[]{
     const out=cands.map(c=>{
       const r=ia?.get(c.id);
       const notas=r?{gancho:clamp(r.gancho),fluxo:clamp(r.fluxo),valor:clamp(r.valor),tendencia:clamp(r.tendencia)}:c.notas;
       let ini=r&&Math.abs(r.inicio-c.inicio)<=AJUSTE_MAX?Math.max(0,r.inicio):c.inicio; let fim=r&&Math.abs(r.fim-c.fim)<=AJUSTE_MAX?Math.min(dur,r.fim):c.fim;
       if(fim-ini<Math.min(5,c.fim-c.inicio)){ ini=c.inicio; fim=c.fim; }   // ajuste da IA deixou curto demais: mantém o original
       const nf=notaFinal(notas);
-      return {id:c.id,titulo:c.titulo||r?.titulo||'',marca:c.titulo,inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,nota_final:nf,nota_10:nota10(nf),motivo:r?.motivo||c.motivo,fonte:r||c.daIA?'ia':'heuristica',legenda:legSrc==='nenhuma'?'':settings.legendaPadrao,efeito:settings.efeitoPadrao,formato:'9:16',gancho_texto:String(r?.gancho_texto||c.gancho||'').replace(/[#"“”]/g,'').trim().slice(0,60)} as Clip;
+      return {id:c.id,titulo:c.titulo||c.tituloIA||r?.titulo||'',marca:c.titulo,inicio:+ini.toFixed(2),fim:+fim.toFixed(2),notas,nota_final:nf,nota_10:nota10(nf),motivo:r?.motivo||c.motivo,fonte:r||c.daIA?'ia':'heuristica',legenda:legSrc==='nenhuma'?'':settings.legendaPadrao,efeito:settings.efeitoPadrao,formato:'9:16',gancho_texto:String(r?.gancho_texto||c.gancho||'').replace(/[#"“”]/g,'').trim().slice(0,60)} as Clip;
     });
-    out.sort((a,b)=>b.nota_final-a.nota_final||b.notas.gancho-a.notas.gancho||a.inicio-b.inicio);
+    // Os avaliados pela IA vêm antes dos que só têm a nota automática do áudio.
+    const daIA=(c:Clip)=>c.fonte==='ia'?1:0;
+    out.sort((a,b)=>daIA(b)-daIA(a)||b.nota_final-a.nota_final||b.notas.gancho-a.notas.gancho||a.inicio-b.inicio);
     out.forEach((c,i)=>{ if(!c.titulo) c.titulo=`Destaque ${i+1}`; });
     return out;
   }
@@ -229,7 +234,10 @@ export default function Cortes(){
     const file=src?.file??projeto.file, url=src?.url??projeto.url;
     if(!file||!direitos) return;
     if(inteiro){ await usarInteiro(file,url); return; }
-    const etapas=['Lendo o vídeo','Analisando o áudio',...(legSrc!=='nenhuma'&&legSrc!=='depois'?['Preparando a legenda']:[]),'Montando candidatos',...(temIA?[rotuloIA]:[]),'Gerando miniaturas'];
+    // Com IA, o site ouve as falas antes: é lendo a transcrição que a IA acha os melhores momentos.
+    const ouvir=legSrc==='depois'&&temIA&&!!settings.geminiKey&&!lerTempos(tempos).janelas.length&&!(usarMarcas&&marcas.length>0);
+    const etapaLeg=ouvir?'Ouvindo as falas para escolher os cortes':'Preparando a legenda';
+    const etapas=['Lendo o vídeo','Analisando o áudio',...(ouvir||legSrc!=='nenhuma'&&legSrc!=='depois'?[etapaLeg]:[]),'Montando candidatos',...(temIA?[rotuloIA]:[]),'Gerando miniaturas'];
     setProjeto(p=>({...p,clips:[],candidatos:0,prompt,tema,job:{status:'rodando',etapa:etapas[0],pct:0,etapas}}));
     setSel(new Set()); setE('cortes'); setLegErro('');
     try{
@@ -242,13 +250,13 @@ export default function Cortes(){
         if(!srtFile) throw new Error('Escolha o arquivo de legenda (.srt ou .vtt) ou mude a opção de legenda.');
         setJob({etapa:'Preparando a legenda'}); cues=parseLegendas(await srtFile.text()); fonte='arquivo';
         if(!cues.length) toast('Não encontramos falas no arquivo de legenda.','erro');
-      }else if((legSrc==='auto'||legSrc==='gemini') && cache.audio && fonte!=='whisper' && fonte!=='gemini'){
-        setJob({etapa:'Preparando a legenda',pct:0});
+      }else if((legSrc==='auto'||legSrc==='gemini'||ouvir) && cache.audio && fonte!=='whisper' && fonte!=='gemini'){
+        setJob({etapa:etapaLeg,pct:0});
         const audio=cache.audio;
-        const status=(st:string,pct:number)=>setJob({etapa:'Preparando a legenda',pct,erro:st});
+        const status=(st:string,pct:number)=>setJob({etapa:etapaLeg,pct,erro:st});
         const viaGemini=async()=>{ cues=await transcreverGemini(audio.samples,settings.geminiKey,idioma,status); fonte='gemini'; };
         try{
-          if(legSrc==='gemini') await viaGemini();
+          if(legSrc==='gemini'||ouvir) await viaGemini();
           else{
             try{ cues=await transcrever(audio.samples,settings.whisperModel,idioma,status); fonte='whisper'; }
             catch(e){
@@ -260,8 +268,8 @@ export default function Cortes(){
         }catch(e){
           cues=[]; fonte='';
           const msg=e instanceof ErroGemini?erroGemini(e):e instanceof Error?e.message:String(e);
-          setLegErro(msg);
-          toast(msg+' Os cortes serão gerados sem legenda.','erro');
+          if(ouvir) toast('Não deu para ouvir as falas agora ('+msg+'). Os cortes serão escolhidos pelo áudio e pela imagem.','info');
+          else{ setLegErro(msg); toast(msg+' Os cortes serão gerados sem legenda.','erro'); }
         }
       }else if(legSrc==='nenhuma'){ cues=[]; fonte=''; }
       if((legSrc==='auto'||legSrc==='gemini')&&!cache.audio) setLegErro('O navegador não conseguiu ler o áudio deste arquivo, então não deu para fazer a legenda. Isso costuma acontecer com vídeos muito grandes no celular: tente pelo computador, um vídeo menor, ou envie um .srt.');
@@ -278,13 +286,34 @@ export default function Cortes(){
       // Trechos que a IA achou assistindo o link já vêm com nota, motivo e frase de gancho: aproveita.
       const comLink=(l:(Candidate&{titulo?:string})[])=>manuais.length?l:l.map(c=>{ const m=marcas.find(x=>x.ia&&x.nota!=null&&Math.abs(x.inicio-c.inicio)<0.06&&Math.abs(x.fim-c.fim)<0.06); if(!m) return c; const n=m.nota!;
         return {...c,notas:{gancho:cache.energy?Math.round((n*2+c.notas.gancho)/3):n,fluxo:n,valor:cache.energy?Math.round((n*2+c.notas.valor)/3):n,tendencia:n},motivo:m.motivo||c.motivo,gancho:m.gancho||'',daIA:true}; });
-      const cands=porMarca?[...comLink(avaliarJanelas(cache.energy,STEP,cues,curtas)),...dasLongas].map(c=>({...c,id:uid()})):gerarCandidatos(cache.energy,STEP,info.duration,modelo==='falas'?cues:cues.length?cues:[],{min:faixa[0],max:faixa[1],limite,inicio:isNaN(ini)?0:ini,fim:isNaN(fimT)?0:fimT}).map(c=>({...c,id:uid()}));
+      const a0=isNaN(ini)?0:ini, b0=isNaN(fimT)?0:fimT;
+      const auto=()=>gerarCandidatos(cache.energy,STEP,info.duration,cues,{min:faixa[0],max:faixa[1],limite,inicio:porMarca?0:a0,fim:porMarca?0:b0});
+      type Cand=Candidate&{id:string;titulo?:string;tituloIA?:string;gancho?:string;daIA?:boolean};
+      let cands:Cand[]; let completou=false; let jaAvaliados=0;
+      if(porMarca){
+        let l:(Candidate&{titulo?:string})[]=[...comLink(avaliarJanelas(cache.energy,STEP,cues,curtas)),...dasLongas];
+        // A IA do link devolveu menos trechos do que o pedido: completa com os melhores momentos do resto do vídeo.
+        if(!manuais.length&&l.length>0&&l.length<limite&&marcas.every(m=>m.ia)){ const n=l.length; l=completar(l,auto(),limite); completou=l.length>n; }
+        cands=l.map(c=>({...c,id:uid()}));
+      }else{
+        const heur=auto();
+        let lidos2:Escolhido[]=[];
+        if(temIA&&cues.length>=6){
+          setJob({etapa:rotuloIA,pct:0});
+          try{ lidos2=await escolherNaTranscricao(settings,cues,{limite,min:faixa[0],max:faixa[1],tema,prompt,ini:a0,fim:b0,duracao:info.duration},p=>setJob({etapa:rotuloIA,pct:p})); }
+          catch(e){ toast('A IA não conseguiu ler a transcrição agora. '+await erroIA(settings,e),'erro'); }
+        }
+        const base:Cand[]=lidos2.map(c=>({...c,titulo:undefined,tituloIA:c.titulo,daIA:true,id:uid()}));
+        jaAvaliados=base.length;
+        cands=[...base,...heur.filter(h=>base.every(s=>sobrepoe(s,h)<=0.3)).map(c=>({...c,id:uid()}))];
+      }
       if(!cands.length&&porMarca) throw new Error(`Os tempos ${manuais.length?'colados':'marcados'} ficam depois do fim deste vídeo (${tm(info.duration)}). Confira os tempos ou o arquivo.`);
       if(!cands.length) throw new Error('O vídeo (ou o trecho escolhido) é mais curto que a duração mínima dos cortes. Escolha uma duração menor.');
       let ia:Map<string,any>|null=null;
       if(temIA){
         setJob({etapa:rotuloIA});
-        try{ ia=await avaliarIA(cands,cues,prompt,tema,url); }
+        // Só avalia o que a IA ainda não escolheu, e só se faltar corte para a quantidade pedida.
+        try{ if(jaAvaliados<limite) ia=await avaliarIA(cands.slice(jaAvaliados),cues,prompt,tema,url); }
         catch(e){ toast('A avaliação com IA falhou, usando notas automáticas. '+await erroIA(settings,e),'erro'); }
       }
       let clips=montarClips(cands,ia,info.duration);
@@ -295,8 +324,8 @@ export default function Cortes(){
       clips=clips.map(c=>{ const i=top.indexOf(c); return i>=0&&thumbs[i]?{...c,thumb:thumbs[i]}:c; });
       setProjeto(p=>({...p,clips,job:{...p.job,status:'pronto',etapa:'',pct:100,erro:undefined}}));
       // Já deixa marcados os cortes que aparecem (dá para desmarcar).
-      if(porMarca&&!longas.length){ setMostrarTodos(true); setSel(new Set(clips.map(c=>c.id))); }
-      else setSel(new Set(clips.filter(c=>c.nota_10>minimo).slice(0,limite).map(c=>c.id)));
+      if(porMarca&&!longas.length&&!completou){ setMostrarTodos(true); setSel(new Set(clips.map(c=>c.id))); }
+      else{ const topo=clips.slice(0,limite), bons=topo.filter(c=>c.nota_final>minimo); setSel(new Set((bons.length?bons:topo).map(c=>c.id))); }
       toast(porMarca&&longas.length?`${cands.length} cortes encontrados dentro do trecho que você separou, cada um com ${faixa[0]} a ${faixa[1]} s.`:porMarca?`${cands.length} cortes prontos nos tempos que você escolheu.`:`${cands.length} trechos avaliados. Confira os melhores abaixo.`,'ok');
     }catch(e){
       const msg=erroArquivo(e);
@@ -363,8 +392,10 @@ export default function Cortes(){
   const sobrepostos=(c:Clip)=>ativos.filter(x=>x.id!==c.id&&urlDe(x,projeto.url)===urlDe(c,projeto.url)&&x.versao_de!==c.id&&c.versao_de!==x.id&&(Math.min(x.fim,c.fim)-Math.max(x.inicio,c.inicio))>=0.3*Math.min(x.fim-x.inicio,c.fim-c.inicio));
 
   const ativos=projeto.clips.filter(c=>!c.descartado);
-  const aprovados=ativos.filter(c=>c.nota_10>minimo);
-  const visiveis=useMemo(()=>{ let l=mostrarTodos?ativos:aprovados.slice(0,limite); if(!mostrarTodos){ const ids=new Set(l.map(c=>c.id)); l=[...l,...ativos.filter(c=>c.versao_de&&ids.has(c.versao_de)&&!ids.has(c.id))]; } return ordem==='tempo'?[...l].sort((a,b)=>a.inicio-b.inicio):l; },[ativos,aprovados,mostrarTodos,limite,ordem]);
+  // Sempre mostra a quantidade pedida; a pontuação mínima só avisa quais ficaram fracos.
+  const topo=ativos.slice(0,limite);
+  const aprovados=topo.filter(c=>c.nota_final>minimo);
+  const visiveis=useMemo(()=>{ let l=mostrarTodos?ativos:topo; if(!mostrarTodos){ const ids=new Set(l.map(c=>c.id)); l=[...l,...ativos.filter(c=>c.versao_de&&ids.has(c.versao_de)&&!ids.has(c.id))]; } return ordem==='tempo'?[...l].sort((a,b)=>a.inicio-b.inicio):l; },[ativos,mostrarTodos,limite,ordem]);
   const descartados=projeto.clips.filter(c=>c.descartado);
   const escolhidos=[...visiveis.filter(c=>sel.has(c.id)),...ativos.filter(c=>sel.has(c.id)&&!visiveis.includes(c))];
   const mudar=(ids:string[],pt:Partial<Clip>)=>{ const s=new Set(ids); setProjeto(p=>({...p,clips:p.clips.map(c=>s.has(c.id)?{...c,...pt}:c)})); };
@@ -403,12 +434,12 @@ export default function Cortes(){
       {legSrc==='arquivo'&&<label className="mt"><span className="label-row">Arquivo de legenda <HelpButton topic="srt"/></span><input type="file" accept=".srt,.vtt" onChange={e=>setSrtFile(e.target.files?.[0]||null)}/></label>}
      </div>
      <div className={'field '+(lidos.janelas.length?'off':'')}><span className="field-label">Quantidade e qualidade <HelpButton topic="nota"/></span><div className="small-grid">
-      <label>Máximo de cortes<select value={limite} onChange={e=>setLimite(+e.target.value)}>{[3,5,10,15,20,30].map(n=><option key={n} value={n}>{n}</option>)}</select></label>
-      <label>Nota mínima (0–10)<input type="number" min={0} max={10} step={0.5} value={minimo} onChange={e=>setMinimo(Math.min(10,Math.max(0,+e.target.value)))}/></label></div></div>
-     <details className="field more"><summary>Mais opções: trecho do vídeo, tema e pedido para a IA</summary>
+      <label>Quantidade de cortes<select value={limite} onChange={e=>setLimite(+e.target.value)}>{[3,5,10,15,20,30].map(n=><option key={n} value={n}>{n}</option>)}</select></label>
+      <label>Pontuação mínima (0–99)<input type="number" min={0} max={99} step={5} value={minimo} onChange={e=>setMinimo(Math.min(99,Math.max(0,+e.target.value)))}/></label></div></div>
+     <details className="field more"><summary>Mais opções: trecho do vídeo, gênero e momentos específicos</summary>
       <div className="small-grid mt"><label>Começar em (min:seg)<input placeholder="0:00" value={trechoIni} onChange={e=>setTrechoIni(e.target.value)}/></label><label>Terminar em (min:seg)<input placeholder={projeto.duracao?tm(projeto.duracao):'fim'} value={trechoFim} onChange={e=>setTrechoFim(e.target.value)}/></label></div>
-      <label className="mt">Tema do vídeo<input placeholder="Ex.: GTA RP, podcast de finanças" value={tema} onChange={e=>setTema(e.target.value)}/></label>
-      <label className="mt"><span className="label-row">Pedido para a IA {!temIA&&<span className="tag">precisa de uma chave de IA</span>}</span><input disabled={!temIA} placeholder={temIA?'Ex.: ache onde ele fala de preço; perseguições policiais':'Configure uma chave de IA para usar'} value={prompt} onChange={e=>setPrompt(e.target.value)}/></label>
+      <label className="mt">Gênero ou tema do vídeo<input placeholder="Ex.: GTA RP, podcast de finanças" value={tema} onChange={e=>setTema(e.target.value)}/></label>
+      <label className="mt"><span className="label-row">Incluir momentos específicos {!temIA&&<span className="tag">precisa de uma chave de IA</span>}</span><input disabled={!temIA} placeholder={temIA?'Ex.: ache onde ele fala de preço; perseguições policiais':'Configure uma chave de IA para usar'} value={prompt} onChange={e=>setPrompt(e.target.value)}/></label>
      </details>
     </div>
     </>}
@@ -451,14 +482,14 @@ export default function Cortes(){
      </>}
     </Passo>
 
-    <Passo n={3} id="cortes" titulo="Cortes" resumo={temResultado?`${aprovados.length>limite?limite:aprovados.length} aprovados de ${projeto.candidatos} candidatos`:'Aparecem aqui depois de gerar'} aberto={aberto==='cortes'&&temResultado} desabilitado={!temResultado} feito={temResultado} onToggle={()=>tocar('cortes')}>
+    <Passo n={3} id="cortes" titulo="Cortes" resumo={temResultado?`${topo.length} cortes de ${projeto.candidatos} trechos analisados`:'Aparecem aqui depois de gerar'} aberto={aberto==='cortes'&&temResultado} desabilitado={!temResultado} feito={temResultado} onToggle={()=>tocar('cortes')}>
     <section className="panel results-bar">
-     <div className="result-summary"><strong>{aprovados.length>limite?limite:aprovados.length} cortes aprovados</strong> de {projeto.candidatos} candidatos • nota mínima &gt; {minimo.toFixed(1)}/10 • máximo {limite} {projeto.clips.some(c=>c.fonte==='ia')?<span className="tag ai"><Sparkles size={12}/> notas da IA</span>:<span className="tag">notas automáticas</span>}</div>
+     <div className="result-summary"><strong>{topo.length} cortes</strong> de {projeto.candidatos} trechos analisados • {aprovados.length} acima da pontuação mínima ({minimo}/99) {projeto.clips.some(c=>c.fonte==='ia')?<span className="tag ai"><Sparkles size={12}/> pontuação da IA</span>:<span className="tag">pontuação automática</span>}</div>
      <div className="result-controls">
-      <label className="inline">Nota mínima<input type="number" min={0} max={10} step={0.5} value={minimo} onChange={e=>setMinimo(Math.min(10,Math.max(0,+e.target.value)))}/></label>
+      <label className="inline">Pontuação mínima<input type="number" min={0} max={99} step={5} value={minimo} onChange={e=>setMinimo(Math.min(99,Math.max(0,+e.target.value)))}/></label>
       <label className="inline">Máximo<select value={limite} onChange={e=>setLimite(+e.target.value)}>{[3,5,10,15,20,30].map(n=><option key={n}>{n}</option>)}</select></label>
-      <label className="inline">Ordenar<select value={ordem} onChange={e=>setOrdem(e.target.value as 'nota'|'tempo')}><option value="nota">Melhores notas</option><option value="tempo">Ordem no vídeo</option></select></label>
-      <button className="subtle" onClick={()=>setMostrarTodos(!mostrarTodos)}>{mostrarTodos?'Só aprovados':'Mostrar todos'}</button>
+      <label className="inline">Ordenar<select value={ordem} onChange={e=>setOrdem(e.target.value as 'nota'|'tempo')}><option value="nota">Maior pontuação</option><option value="tempo">Ordem no vídeo</option></select></label>
+      <button className="subtle" onClick={()=>setMostrarTodos(!mostrarTodos)}>{mostrarTodos?`Só os ${limite} melhores`:'Mostrar todos'}</button>
       <button className="subtle" onClick={()=>{ setProjeto(p=>({...p,clips:[],job:{status:'idle',etapa:'',pct:0,etapas:[]}})); setAberto('opcoes'); }}>Alterar opções e refazer</button>
      </div>
      {temIA&&<div className="redo"><Wand2 size={16}/><input placeholder="Refazer com outro pedido, ex.: momentos engraçados" value={novoPrompt} onChange={e=>setNovoPrompt(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')refazer()}}/><button className="subtle" disabled={!novoPrompt.trim()||rodando} onClick={refazer}>{rodando?<Loader2 size={15} className="spin"/>:null} Refazer com IA</button></div>}
@@ -485,7 +516,7 @@ export default function Cortes(){
       <div className="section-head"><h2><GitCompare size={17}/> Comparar trechos sobrepostos</h2><button className="icon-btn" onClick={()=>setComparar(null)} aria-label="Fechar comparação"><X size={15}/></button></div>
       <div className="comparar-grid">{par.map((c,i)=><div key={c.id} className="comparar-lado">
        <video src={`${urlDe(c,projeto.url)}#t=${c.inicio.toFixed(2)},${c.fim.toFixed(2)}`} controls preload="metadata" playsInline/>
-       <b>{c.titulo}</b><small>{tm(c.inicio)}–{tm(c.fim)} • {Math.round(c.fim-c.inicio)} s • nota {c.nota_10.toFixed(1)}/10</small>
+       <b>{c.titulo}</b><small>{tm(c.inicio)}–{tm(c.fim)} • {Math.round(c.fim-c.inicio)} s • pontuação {c.nota_final}/99</small>
        <small>gancho {c.notas.gancho} • fluxo {c.notas.fluxo} • valor {c.notas.valor} • tendência {c.notas.tendencia}</small>
        {trecho(c)&&<p className="trecho">“{trecho(c)}”</p>}
        <button className="primary sm" onClick={()=>{ const outro=par[1-i]; const s2=new Set(sel); s2.add(c.id); s2.delete(outro.id); setSel(s2); setComparar(null); toast(`Ficou "${c.titulo}". O outro continua na lista, só saiu da seleção.`,'ok'); }}>Ficar com este</button>
@@ -494,18 +525,18 @@ export default function Cortes(){
     {!sel.size&&visiveis.length>0&&<p className="hint">Marque os cortes que você quer usar (ou clique em Selecionar todos) e depois em <b>Próximo</b>.</p>}
     {exp&&<div className="export-bar"><Loader2 size={16} className="spin"/><span>{exp.fila?`Exportando ${exp.fila}`:'Exportando corte'} • {exp.pct}% — mantenha esta aba aberta e visível</span><div className="progress"><div style={{width:exp.pct+'%'}}/></div></div>}
 
-    {visiveis.length===0?<div className="empty"><Sparkles size={30}/><strong>Nenhum corte acima da nota mínima</strong><p>Reduza a nota mínima ou clique em “Mostrar todos”. O site não inventa cortes para completar a quantidade.</p></div>
-    :<div className="clip-grid">{visiveis.map(c=><article key={c.id} className={'clip-card '+(sel.has(c.id)?'selected':'')+(c.nota_10<=minimo?' below':'')}>
+    {visiveis.length===0?<div className="empty"><Sparkles size={30}/><strong>Nenhum corte para mostrar</strong><p>Clique em “Mostrar todos” ou em “Alterar opções e refazer”.</p></div>
+    :<div className="clip-grid">{visiveis.map(c=><article key={c.id} className={'clip-card '+(sel.has(c.id)?'selected':'')+(c.nota_final<=minimo?' below':'')}>
       <div className="clip-thumb" onClick={()=>setPrevia(previa===c.id?'':c.id)} title="Prévia rápida do trecho">{previa===c.id?<video className="previa-rapida" src={`${urlDe(c,projeto.url)}#t=${c.inicio.toFixed(2)},${c.fim.toFixed(2)}`} autoPlay playsInline onTimeUpdate={e=>{ const v=e.currentTarget; if(v.currentTime>=c.fim){ v.pause(); setPrevia(''); } }} onClick={e=>{ e.stopPropagation(); setPrevia(''); }}/>:c.thumb?<img src={c.thumb} alt=""/>:<Film size={28}/>}{previa!==c.id&&<span className="play"><Play size={18}/></span>}<span className="dur">{tm(c.inicio)}–{tm(c.fim)} • {Math.round(c.fim-c.inicio)} s</span>
        <label className="sel" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.has(c.id)} onChange={e=>{const s=new Set(sel); e.target.checked?s.add(c.id):s.delete(c.id); setSel(s);}}/></label></div>
       <div className="clip-body">
-       <div className="score-row"><div className="score big"><strong>{c.nota_10.toFixed(1)}</strong><small>/10</small></div><div className="sub-scores">{(['gancho','fluxo','valor','tendencia'] as const).map(k=><span key={k} title={`${k}: ${c.notas[k]}/99`}><i style={{width:c.notas[k]+'%'}}/>{k==='tendencia'?'tendência':k} {c.notas[k]}</span>)}</div></div>
+       <div className="score-row"><div className={'score big '+faixaNota(c.nota_final).id} title="Pontuação de viralidade, de 0 a 99"><strong>{c.nota_final}</strong><small>/99</small><em>{faixaNota(c.nota_final).nome}</em></div><div className="sub-scores">{(['gancho','fluxo','valor','tendencia'] as const).map(k=><span key={k} title={`${k}: ${c.notas[k]}/99`}><i style={{width:c.notas[k]+'%'}}/>{k==='tendencia'?'tendência':k} {c.notas[k]}</span>)}</div></div>
        <input className="title-input" value={c.titulo} onChange={e=>atualizar({...c,titulo:e.target.value})} aria-label="Título"/>
        <p className="motivo">{c.motivo} <small>Nota {c.nota_final}/99{c.versao_de?' • variação de outro corte':''}</small></p>
        {trecho(c)&&<p className="trecho">“{trecho(c)}”</p>}
-       <details className="porque"><summary>Por que esta nota</summary>
-        <table><tbody>{([['gancho','Gancho (começo prende)',35],['fluxo','Fluxo (fala sem buracos)',25],['valor','Valor (conteúdo)',25],['tendencia','Tendência (potencial)',15]] as const).map(([k,n,p])=><tr key={k}><td>{n}</td><td>{c.notas[k]}</td><td>× {p}%</td><td>= {(c.notas[k]*p/100).toFixed(1)}</td></tr>)}
-         <tr className="tot"><td>Nota</td><td colSpan={3}>{c.nota_final}/99 = {c.nota_10.toFixed(1)}/10</td></tr></tbody></table>
+       <details className="porque"><summary>Por que esta pontuação</summary>
+        <table><tbody>{([['gancho','Gancho (a abertura prende)',35],['fluxo','Fluxo (anda bem e fecha a ideia)',25],['valor','Valor (ensina, diverte ou emociona)',25],['tendencia','Tendência (assunto em alta)',15]] as const).map(([k,n,p])=><tr key={k}><td>{n}</td><td>{c.notas[k]}</td><td>× {p}%</td><td>= {(c.notas[k]*p/100).toFixed(1)}</td></tr>)}
+         <tr className="tot"><td>Pontuação de viralidade</td><td colSpan={3}>{c.nota_final}/99 ({faixaNota(c.nota_final).nome.toLowerCase()})</td></tr></tbody></table>
         <small>{c.fonte==='ia'?`Notas dadas pela IA (${nomeIA(iaAtiva(settings))||'IA'}), lendo a transcrição.`:'Notas automáticas, calculadas no seu navegador pelo volume da fala e pelas frases da legenda. Com uma chave de IA elas ficam mais precisas.'}</small>
        </details>
        {sobrepostos(c).length>0&&<p className="sobrepoe">Pega o mesmo trecho que {sobrepostos(c).slice(0,2).map(x=><button key={x.id} className="link-btn inline" onClick={()=>{ setComparar([c.id,x.id]); setTimeout(()=>document.querySelector('.comparar')?.scrollIntoView({behavior:'smooth',block:'center'}),80); }}>{x.titulo} ({tm(x.inicio)}–{tm(x.fim)})</button>)} <small>toque para comparar</small></p>}

@@ -108,10 +108,11 @@ export const TOPICS:Record<string,Topic> = {
   srt:{titulo:'O que é um arquivo .srt ou .vtt?',corpo:<>
     <p>São arquivos de texto com as falas e os horários. Você pode baixar a legenda de um vídeo seu no <L href="https://studio.youtube.com/">YouTube Studio</L> (Legendas → ⋮ → Baixar → .srt) ou gerar em editores como CapCut.</p>
   </>},
-  nota:{titulo:'Como a nota funciona',corpo:<>
-    <p>Cada corte recebe uma nota interna de <b>0 a 99</b>, mostrada também de 0 a 10 (nota × 10 ÷ 99). Ela é a média ponderada de quatro critérios:</p>
-    <ul><li><b>Gancho (35%)</b>: os 3 primeiros segundos prendem?</li><li><b>Fluxo (25%)</b>: começa e termina em frase completa?</li><li><b>Valor (25%)</b>: diverte, surpreende ou ensina?</li><li><b>Tendência (15%)</b>: tem a ver com o que está em alta?</li></ul>
-    <p>Sem a chave da Claude, as notas vêm dos sinais de áudio e das frases da transcrição (tendência fica neutra, 50). Com a chave, a IA avalia o conteúdo. A nota é uma lista de prioridade, <b>não uma previsão de viralização</b>.</p>
+  nota:{titulo:'Como a pontuação de viralidade funciona',corpo:<>
+    <p>Cada corte recebe uma <b>pontuação de viralidade de 0 a 99</b>. Quanto maior, maior a chance de prender e ser compartilhado. Ela junta quatro critérios:</p>
+    <ul><li><b>Gancho (35%)</b>: a abertura prende nos primeiros segundos e tem a ver com o assunto?</li><li><b>Fluxo (25%)</b>: o trecho anda de forma lógica e fecha a ideia?</li><li><b>Valor (25%)</b>: ensina, diverte ou emociona?</li><li><b>Tendência (15%)</b>: tem a ver com o que está em alta?</li></ul>
+    <p><b>80 ou mais</b> é alto potencial, <b>60 a 79</b> é bom, <b>40 a 59</b> é médio e abaixo disso é baixo.</p>
+    <p>Com uma chave de IA, o site ouve as falas, a IA lê a transcrição inteira e escolhe os melhores trechos. Sem chave, a pontuação vem do áudio e das frases (tendência fica neutra, 50). O site sempre entrega a quantidade de cortes pedida; a pontuação mínima só marca os mais fracos. A pontuação é uma lista de prioridade, <b>não uma garantia de viralização</b>.</p>
   </>},
   velocidade:{titulo:'O que é “views por dia”',corpo:<>
     <p>É uma média: total de visualizações ÷ dias desde a publicação. Não é a velocidade de agora nem previsão de viralização, e os números públicos podem estar defasados.</p>

@@ -105,7 +105,7 @@ export default function LinkStudio({onUpload,onArquivo,direitos,opcoes}:{onUploa
      {marcas.length===0?<p className="hint">Ou assista e use <b>Marcar início</b> / <b>Marcar fim</b> nos momentos que quer cortar.</p>
      :marcas.map(m=><div key={m.id} className="mark-row">
        <input value={m.titulo} onChange={e=>setMarcas(ms=>ms.map(x=>x.id===m.id?{...x,titulo:e.target.value}:x))} aria-label="Nome do trecho"/>
-       <small>{m.nota!=null&&<span className="tag ai">nota {(m.nota/10).toFixed(1)}</span>} {tm(m.inicio)}–{tm(m.fim)} • {Math.round(m.fim-m.inicio)} s</small>
+       <small>{m.nota!=null&&<span className="tag ai">pontuação {m.nota}/99</span>} {tm(m.inicio)}–{tm(m.fim)} • {Math.round(m.fim-m.inicio)} s</small>
        {m.motivo&&<small className="mark-motivo">{m.motivo}</small>}
        <div className="mark-actions"><button className="icon-btn" title="Assistir trecho" onClick={()=>{ player.current?.seekTo?.(m.inicio,true); player.current?.playVideo?.(); }}><Play size={14}/></button>
        <a className="icon-btn" title="Abrir no YouTube neste ponto" href={`https://www.youtube.com/watch?v=${id}&t=${Math.floor(m.inicio)}s`} target="_blank" rel="noreferrer"><ExternalLink size={14}/></a>

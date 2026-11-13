@@ -23,8 +23,8 @@ export async function testarChaveClaude(key:string){
 }
 
 export async function avaliarComIA(key:string, cands:(Candidate&{id:string})[], cues:Cue[], opts:OptsIA){
-  const content:Anthropic.Beta.BetaContentBlockParam[] = [{type:'text',text:instrucoes(opts)}];
-  for(const c of cands){
+  const content:Anthropic.Beta.BetaContentBlockParam[] = [{type:'text',text:opts.escolha??instrucoes(opts)}];
+  for(const c of opts.escolha?[]:cands){
     content.push({type:'text',text:textoCandidato(c,cues)});
     for(const f of opts.frames?.[c.id]||[]) content.push({type:'image',source:{type:'base64',media_type:'image/jpeg',data:f.split(',')[1]}});
   }

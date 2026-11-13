@@ -1,6 +1,6 @@
 // Avaliação dos cortes com o Gemini (Google AI Studio), chave do próprio usuário, direto do navegador.
 import type { Cue } from './captions';
-import type { Candidate } from './analyze';
+import { fatorEscala, type Candidate } from './analyze';
 import { instrucoes, textoCandidato, type AvaliacaoIA, type OptsIA } from './promptCortes';
 
 export const GEMINI_MODEL = 'gemini-flash-latest';
@@ -45,8 +45,8 @@ const SCHEMA = {type:'OBJECT',properties:{cortes:{type:'ARRAY',items:{type:'OBJE
   required:['id','gancho','fluxo','valor','tendencia','titulo','motivo','inicio','fim','gancho_texto']}}},required:['cortes']};
 
 export async function avaliarComGemini(key:string, cands:(Candidate&{id:string})[], cues:Cue[], opts:OptsIA):Promise<AvaliacaoIA[]>{
-  const parts:any[] = [{text:instrucoes(opts)}];
-  for(const c of cands){
+  const parts:any[] = [{text:opts.escolha??instrucoes(opts)}];
+  for(const c of opts.escolha?[]:cands){
     parts.push({text:textoCandidato(c,cues)});
     for(const f of opts.frames?.[c.id]||[]) parts.push({inline_data:{mime_type:'image/jpeg',data:f.split(',')[1]}});
   }
@@ -93,10 +93,10 @@ Regras de cada corte:
 - Começa no início de uma frase (ou da ação) e termina logo depois do fechamento: piada, lição, revelação, resposta ou reação forte. Nunca corte no meio da frase.
 - Evite abertura, despedida, propaganda, pedido de inscrição, enrolação e repetição.
 - Os cortes não podem se sobrepor. Espalhe pelo vídeo quando houver bons momentos em partes diferentes.
-- Se o vídeo tiver menos bons momentos do que o pedido, devolva menos cortes. Não invente.
+- Devolva exatamente ${o.limite} cortes sempre que o vídeo tiver duração para isso. Os mais fracos entram com nota menor. Não invente falas nem cenas.
 Para cada corte devolva:
 - inicio e fim: segundos desde o começo do vídeo, como número (ex.: 754.5 para 12:34,5). Não use formato de minutos.
-- nota: 0 a 99, sendo honesto (o melhor costuma ficar entre 80 e 95, os fracos abaixo de 50).
+- nota: pontuação de viralidade, número inteiro de 0 a 99 (não use escala de 0 a 10). O melhor costuma ficar entre 80 e 95, um razoável entre 55 e 70.
 - titulo: até 60 caracteres, em português.
 - gancho_texto: 3 a 7 palavras para aparecer escritas no topo do vídeo, sem emoji, sem hashtag.
 - motivo: 1 frase dizendo o que acontece ou é dito no trecho e por que funciona.
@@ -120,6 +120,7 @@ Devolva também duracao_video em segundos.`;
 /** Confere os tempos devolvidos pela IA: ordem, duração dentro do pedido, sem sobreposição, melhores primeiro. */
 export function limparCortesLink(lista:unknown, o:{min:number;max:number;limite:number}, duracao=0):CorteLink[]{
   if(!Array.isArray(lista)) return [];
+  const k = fatorEscala(lista.map((x:any)=>Number(x?.nota)));   // a IA às vezes responde de 0 a 10
   const bons:CorteLink[] = [];
   for(const x of [...lista].sort((a:any,b:any)=>(Number(b?.nota)||0)-(Number(a?.nota)||0))){
     let ini = Number(x?.inicio), fim = Number(x?.fim); if(!isFinite(ini)||!isFinite(fim)) continue;
@@ -127,7 +128,7 @@ export function limparCortesLink(lista:unknown, o:{min:number;max:number;limite:
     if(ini<0||fim-ini<Math.max(3,o.min*0.5)) continue;
     if(fim-ini>o.max*1.5) fim = ini+o.max;
     if(bons.some(b=>Math.min(b.fim,fim)-Math.max(b.inicio,ini)>2)) continue;   // já tem um corte melhor nesse pedaço
-    bons.push({inicio:+ini.toFixed(1),fim:+fim.toFixed(1),titulo:String(x.titulo||'Corte').slice(0,80),motivo:String(x.motivo||''),nota:Math.max(0,Math.min(99,Math.round(Number(x.nota)||0))),gancho_texto:String(x.gancho_texto||'')});
+    bons.push({inicio:+ini.toFixed(1),fim:+fim.toFixed(1),titulo:String(x.titulo||'Corte').slice(0,80),motivo:String(x.motivo||''),nota:Math.max(0,Math.min(99,Math.round((Number(x.nota)||0)*k))),gancho_texto:String(x.gancho_texto||'')});
     if(bons.length>=o.limite) break;
   }
   return bons;
