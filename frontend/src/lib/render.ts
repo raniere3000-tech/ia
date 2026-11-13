@@ -1,6 +1,6 @@
 // Renderização dos cortes no navegador (canvas + MediaRecorder): prévia e exportação.
 import { drawCaption, drawHook, FONT_STACK, type Cue, type Preset } from './captions';
-import type { Formato } from './analyze';
+import type { Formato, Tarja } from './analyze';
 import fixWebmDuration from 'fix-webm-duration';
 
 export const FPS = 30;
@@ -10,7 +10,7 @@ export type Template = {ativo:boolean; logo:string; logoPos:'top-left'|'top-righ
 export const TEMPLATE_PADRAO:Template = {ativo:false,logo:'',logoPos:'top-right',credito:'',cor:'#7758ef',moldura:false};
 
 import { posicao, type Trilha } from './rosto';
-export type RenderOpts = {legenda:Preset|null; efeito:string; cues:Cue[]; gancho:string; accent:string; template:Template; logoImg?:HTMLImageElement|null; rosto?:Trilha|null};
+export type RenderOpts = {legenda:Preset|null; efeito:string; cues:Cue[]; gancho:string; accent:string; template:Template; logoImg?:HTMLImageElement|null; rosto?:Trilha|null; tarja?:Tarja|null};
 
 export function formatoSuportado(){
   if(typeof MediaRecorder==='undefined') return null;
@@ -48,12 +48,31 @@ export function drawFrame(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,small:
     ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,0,W,H);
     const w=vw*fit*z, h=vh*fit*z; ctx.drawImage(v,(W-w)/2+dx,(H-h)/2+dy,w,h);
   }
+  const hTarja=o.tarja?drawTarjas(ctx,o.tarja,W,H):0;
   if(o.legenda){ const cue=o.cues.find(c=>t>=c.start&&t<c.end); if(cue) drawCaption(ctx,o.legenda,cue.text,t-cue.start,cue.end-cue.start,W,H); }
-  drawHook(ctx,o.gancho,o.accent,W);
+  drawHook(ctx,o.gancho,o.accent,W,o.tarja?.topo?hTarja:0);
   if(o.template.ativo) drawTemplate(ctx,o.template,o.logoImg||null,W,H);
   if(o.efeito==='transicao-fade'){ const a=Math.max(0,1-t/0.4,1-(dur-t)/0.4); if(a>0){ ctx.fillStyle=`rgba(0,0,0,${Math.min(1,a)})`; ctx.fillRect(0,0,W,H);} }
   if(o.efeito==='virada-cena' && t<0.35){ ctx.fillStyle=`rgba(255,255,255,${1-t/0.35})`; ctx.fillRect(0,0,W,H); }
   ctx.restore();
+}
+
+/** Tarjas (faixas) em cima e embaixo do vídeo. Devolve a altura de cada faixa em pixels. */
+export function drawTarjas(ctx:CanvasRenderingContext2D,tj:Tarja,W:number,H:number){
+  const h=Math.round(H*Math.max(4,Math.min(25,tj.altura||12))/100);
+  const faixa=(y:number,texto:string)=>{
+    ctx.fillStyle=tj.cor; ctx.fillRect(0,y,W,h);
+    const txt=texto.trim(); if(!txt) return;
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle=tj.corTexto;
+    let fs=Math.round(h*0.42); ctx.font=`800 ${fs}px ${FONT_STACK}`;
+    const larg=ctx.measureText(txt).width; if(larg>W*0.92){ fs=Math.max(14,Math.floor(fs*W*0.92/larg)); ctx.font=`800 ${fs}px ${FONT_STACK}`; }
+    ctx.fillText(txt,W/2,y+h/2,W*0.94);
+  };
+  ctx.save();
+  if(tj.topo) faixa(0,tj.textoTopo);
+  if(tj.base) faixa(H-h,tj.textoBase);
+  ctx.restore();
+  return h;
 }
 
 export function drawTemplate(ctx:CanvasRenderingContext2D,tp:Template,logo:HTMLImageElement|null,W:number,H:number){

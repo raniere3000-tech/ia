@@ -94,12 +94,12 @@ export function drawCaption(ctx:CanvasRenderingContext2D,p:Preset,text:string,t:
 }
 
 /** Texto de gancho fixo no topo do vídeo. */
-export function drawHook(ctx:CanvasRenderingContext2D,text:string,accent:string,W:number){
+export function drawHook(ctx:CanvasRenderingContext2D,text:string,accent:string,W:number,descer=0){
   if(!text.trim()) return;
   ctx.save();
   ctx.font = `800 64px ${FONT_STACK}`; ctx.textBaseline='middle'; ctx.textAlign='center';
   const lines = wrap(ctx,text.trim().toUpperCase().split(/\s+/),W*0.8).slice(0,3).map(l=>l.join(' '));
-  const lh = 78; const top = 190;
+  const lh = 78; const top = 190+(descer>110?descer-110:0);   // com tarja em cima, o gancho fica logo abaixo dela
   const wmax = Math.max(...lines.map(l=>ctx.measureText(l).width));
   ctx.fillStyle = 'rgba(255,255,255,.96)'; roundRect(ctx,W/2-wmax/2-34,top-lh/2-16,wmax+68,lines.length*lh+32,20); ctx.fill();
   ctx.fillStyle = accent==='#FFFFFF' ? '#111' : '#111';

@@ -16,7 +16,7 @@ export default function Editor({clip,onClose,onSave,onDuplicate,onExport}:{clip:
   const setIni=(v:number)=>set({inicio:Math.max(0,Math.min(v,c.fim-1))});
   const setFim=(v:number)=>set({fim:Math.min(dur,Math.max(v,c.inicio+1))});
   const legenda=captionPresets.find(p=>p.id===c.legenda)||null;
-  const opts=useMemo(()=>({legenda,efeito:c.efeito,cues,gancho:c.gancho_texto,accent:legenda?.highlightColor||template.cor,template}),[legenda,c.efeito,cues,c.gancho_texto,template]);
+  const opts=useMemo(()=>({legenda,efeito:c.efeito,cues,gancho:c.gancho_texto,accent:legenda?.highlightColor||template.cor,template,tarja:c.tarja}),[c.tarja,legenda,c.efeito,cues,c.gancho_texto,template]);
   const falas=cues.map((q,i)=>({q,i})).filter(({q})=>q.end>c.inicio&&q.start<c.fim);
   const salvar=()=>{ onSave({...c,nota_final:notaFinal(c.notas),nota_10:nota10(notaFinal(c.notas))},cues); };
   const TimeInput=({label,value,onChange}:{label:string;value:number;onChange:(v:number)=>void})=><label>{label}<div className="time-row"><button className="icon-btn" onClick={()=>onChange(value-1)} aria-label="Menos 1 segundo"><Minus size={14}/></button><input key={value} defaultValue={tm(value)} onBlur={e=>{const v=parseTime(e.target.value); if(!isNaN(v)) onChange(v);}} onKeyDown={e=>{if(e.key==='Enter')(e.target as HTMLInputElement).blur()}}/><button className="icon-btn" onClick={()=>onChange(value+1)} aria-label="Mais 1 segundo"><Plus size={14}/></button></div></label>;

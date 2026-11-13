@@ -21,7 +21,7 @@ export async function renderClip(urlProj:string,c:Clip,cuesProj:Cue[],presets:Pr
     catch(e){ console.warn('Segue o rosto: falhou, usando fundo desfocado.',e); rosto=null; }
   }
   const k=c.efeito==='seguir-rosto'?0.75:1, base=c.efeito==='seguir-rosto'?25:0;
-  return exportarCorte(url,{inicio:c.inicio,fim:c.fim,formato:c.formato},cues,{legenda,efeito:c.efeito,gancho:c.gancho_texto,accent:legenda?.highlightColor||template.cor,template,logoImg,rosto},p=>progress(p>=100?100:Math.round(base+p*k)),pegarDub(c.id));
+  return exportarCorte(url,{inicio:c.inicio,fim:c.fim,formato:c.formato},cues,{legenda,efeito:c.efeito,gancho:c.gancho_texto,accent:legenda?.highlightColor||template.cor,template,logoImg,rosto,tarja:c.tarja},p=>progress(p>=100?100:Math.round(base+p*k)),pegarDub(c.id));
 }
 
 export function baixar(blob:Blob,nome:string){

@@ -4,11 +4,14 @@ import type { Cue } from './captions';
 
 export type Notas = {gancho:number;fluxo:number;valor:number;tendencia:number};
 export type Formato = '9:16'|'1:1'|'16:9';
+/** Faixas de cor em cima e embaixo do vídeo, com texto opcional. altura = % da altura do vídeo. */
+export type Tarja = {topo:boolean;base:boolean;textoTopo:string;textoBase:string;cor:string;corTexto:string;altura:number};
+export const TARJA_PADRAO:Tarja = {topo:true,base:true,textoTopo:'',textoBase:'',cor:'#000000',corTexto:'#FFFFFF',altura:12};
 export type Clip = {
   id:string; titulo:string; inicio:number; fim:number;
   nota_final:number; nota_10:number; notas:Notas; motivo:string; fonte:'heuristica'|'ia';
   legenda:string; efeito:string; formato:Formato; gancho_texto:string;
-  versao_de?:string; descartado?:boolean; thumb?:string; marca?:string; legendaOk?:boolean; dublado?:boolean; semTemplate?:boolean;
+  versao_de?:string; descartado?:boolean; thumb?:string; marca?:string; legendaOk?:boolean; dublado?:boolean; semTemplate?:boolean; tarja?:Tarja|null;
   /** Vídeo próprio do corte (ex.: vários Shorts do Radar no mesmo lote). Sem isso, usa o vídeo do projeto. */
   video?:Fonte;
 };
