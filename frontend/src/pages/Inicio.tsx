@@ -1,3 +1,4 @@
+import InstalarApp from '../components/InstalarApp';
 import { Search, Upload, Sparkles, Download, KeyRound, CheckCircle2, Circle, ArrowRight, ShieldCheck, Clock, Clapperboard, Mic, Film, PlayCircle } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
@@ -33,6 +34,7 @@ export default function Inicio(){
     <div className="inicio-cont">{continuar.map(c=><button key={c.t} className="inicio-cont-item" onClick={()=>go(c.to)}><b>{c.t}</b><small>{c.d}</small><ArrowRight size={15}/></button>)}</div>
    </section>}
    <div className="inicio-entradas">{entradas.map(e=><button key={e.t} className="inicio-entrada" onClick={()=>go(e.to)}><span className="step-icon"><e.icon size={22}/></span><h3>{e.t}</h3><p>{e.d}</p><small>{e.onde}</small></button>)}</div>
+   <InstalarApp/>
    <details className="inicio-ajuda"><summary>Ajuda: como configurar e usar, passo a passo</summary>
    <section className="hero panel">
     <div className="hero-text">
