@@ -49,13 +49,24 @@ export async function enviarCookies(url:string,token:string,texto:string|null):P
 }
 
 /** Endereço atual do servidor, avisado por ele mesmo num canal do ntfy.sh toda vez que liga. */
-export async function enderecoDoCanal(canal:string):Promise<string|null>{
+async function assinaturaOk(url:string,mac:string,senha:string):Promise<boolean>{
+  if(!senha||!/^[0-9a-f]{64}$/.test(mac)||!crypto?.subtle) return false;
+  const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(senha),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  const s=new Uint8Array(await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(url)));
+  let hex=''; for(const b of s) hex+=b.toString(16).padStart(2,'0');
+  let dif=0; for(let i=0;i<64;i++) dif|=hex.charCodeAt(i)^mac.charCodeAt(i);
+  return dif===0;
+}
+/** O canal é público: só vale o aviso assinado com a senha do servidor. Aviso sem assinatura (servidor antigo) só confirma o endereço que já estava salvo, nunca troca. */
+export async function enderecoDoCanal(canal:string,senha='',atual=''):Promise<string|null>{
   if(!/^[A-Za-z0-9]{8,64}$/.test(canal)) return null;
   const r=await fetch(`https://ntfy.sh/estudioclip-${canal}/json?poll=1&since=all`);
   if(!r.ok) return null;
   let ultimo:string|null=null;
   for(const linha of (await r.text()).split('\n')){
-    try{ const m=JSON.parse(linha); const u=String(m.message||'').trim(); if(m.event==='message'&&/^https:\/\/[a-z0-9.-]+$/i.test(u)) ultimo=u; }catch{ /* linha vazia */ }
+    try{ const m=JSON.parse(linha); if(m.event!=='message') continue; const [u,mac='']=String(m.message||'').trim().split('|');
+      if(!/^https:\/\/[a-z0-9.-]+$/i.test(u)) continue;
+      if(mac?await assinaturaOk(u,mac,senha):u===atual) ultimo=u; }catch{ /* linha vazia */ }
   }
   return ultimo;
 }

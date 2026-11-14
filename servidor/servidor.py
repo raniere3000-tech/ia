@@ -7,6 +7,7 @@ Rodar:  python servidor.py   (abre em http://localhost:8787)
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import re
@@ -19,10 +20,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import cofre
 import postagem as pg
 import agente as ag
 
-VERSAO = '1.4.0'
+VERSAO = '1.5.0'
 PORTA = int(os.getenv('PORT', os.getenv('PORTA', '8787')))
 HOST = os.getenv('HOST', '127.0.0.1')
 TOKEN = os.getenv('TOKEN', '').strip()
@@ -35,9 +37,39 @@ PASTA.mkdir(parents=True, exist_ok=True)
 YT = re.compile(r'^https?://(www\.|m\.|music\.)?(youtube\.com|youtu\.be)/', re.I)
 TT = re.compile(r'^https?://([a-z]+\.)?tiktok\.com/', re.I)  # TikTok (vídeo público)
 
-COOKIES = pg.DADOS / 'youtube-cookies.txt'  # cookies do YouTube enviados pelo site (opcional)
+COOKIES = pg.DADOS / 'youtube-cookies.cofre'  # cookies do YouTube enviados pelo site (opcional), guardados criptografados
+_COOKIES_ANTIGO = pg.DADOS / 'youtube-cookies.txt'
+try:
+    os.chmod(pg.DADOS, 0o700)
+except OSError:
+    pass
+if _COOKIES_ANTIGO.exists():      # versão antiga guardava em texto puro: cifra e apaga o original
+    try:
+        COOKIES.write_bytes(cofre.cifrar(_COOKIES_ANTIGO.read_bytes()))
+        os.chmod(COOKIES, 0o600)
+        _COOKIES_ANTIGO.unlink()
+    except (OSError, cofre.ErroCofre) as _e:
+        print('cookies:', _e)
+
+
+def cookies_para(pasta: Path) -> str | None:
+    """O yt-dlp só lê cookies de arquivo: abre o cofre num arquivo temporário dentro da pasta do download."""
+    if not COOKIES.exists():
+        return None
+    try:
+        claro = cofre.decifrar(COOKIES.read_bytes().strip())
+    except (OSError, cofre.ErroCofre) as e:
+        print('cookies:', e)
+        return None
+    arq = pasta / 'cookies.tmp'
+    fd = os.open(arq, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'wb') as f:
+        f.write(claro)
+    return str(arq)
 JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
+FALHAS: dict[str, list] = {}     # quem errou a senha -> horários dos erros (trava tentativa em massa)
+MAX_FALHAS, JANELA_FALHAS = int(os.getenv('MAX_FALHAS', '8')), 600
 
 
 class Erro(Exception):
@@ -113,7 +145,7 @@ def salvar_cookies(corpo: bytes | None) -> dict:
     if not any('youtube.com' in ln for ln in linhas):
         raise Erro(400, 'Esse arquivo não tem cookies do YouTube. Exporte com a extensão "Get cookies.txt LOCALLY" estando na página do youtube.com e logado.')
     COOKIES.parent.mkdir(parents=True, exist_ok=True)
-    COOKIES.write_text('# Netscape HTTP Cookie File\n' + '\n'.join(linhas) + '\n', encoding='utf-8')
+    COOKIES.write_bytes(cofre.cifrar(('# Netscape HTTP Cookie File\n' + '\n'.join(linhas) + '\n').encode('utf-8')))
     try:
         os.chmod(COOKIES, 0o600)
     except OSError:
@@ -156,8 +188,9 @@ def baixar(jid: str, url: str):
         # Sem FFmpeg não dá para juntar vídeo e áudio separados: o vídeo viria MUDO.
         # Então pede só arquivos que já trazem vídeo e som juntos.
         opts['format'] = f'b[height<={ALTURA}][ext=mp4][acodec!=none]/b[acodec!=none][vcodec!=none]/b'
-    if COOKIES.exists():
-        opts['cookiefile'] = str(COOKIES)
+    ck = cookies_para(pasta)
+    if ck:
+        opts['cookiefile'] = ck
     try:
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -180,6 +213,7 @@ def baixar(jid: str, url: str):
         if not arquivos:
             longo = (info.get('duration') or 0) > MAX_MIN * 60
             raise RuntimeError('does not pass filter' if longo else 'arquivo não encontrado depois do download')
+        (pasta / 'cookies.tmp').unlink(missing_ok=True)
         j.update(status='pronto', pct=100, arquivo=str(arquivos[0]), titulo=info.get('title') or 'video',
                  duracao=info.get('duration'), tamanho=arquivos[0].stat().st_size)
     except Exception as e:  # noqa: BLE001
@@ -214,8 +248,9 @@ def baixar_para_agente(url: str, pasta: Path, idioma: str, progresso):
     ff = ffmpeg_path()
     if ff:
         opts['ffmpeg_location'] = ff
-    if COOKIES.exists():
-        opts['cookiefile'] = str(COOKIES)
+    ck = cookies_para(pasta)
+    if ck:
+        opts['cookiefile'] = ck
     try:
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -234,6 +269,8 @@ def baixar_para_agente(url: str, pasta: Path, idioma: str, progresso):
                 info = ydl.extract_info(url, download=True)
     except Exception as e:  # noqa: BLE001
         raise ag.ErroAgente(erro_amigavel(str(e)))
+    finally:
+        (pasta / 'cookies.tmp').unlink(missing_ok=True)
     if info is None:
         raise ag.ErroAgente(f'O vídeo passa de {int(MAX_MIN)} minutos ou é uma live.')
     videos = sorted((a for a in pasta.glob('video.*') if a.suffix in ('.mp4', '.webm', '.mkv', '.mov')), key=lambda p: p.stat().st_size, reverse=True)
@@ -269,13 +306,31 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.cors()
         self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Referrer-Policy', 'no-referrer')
         self.send_header('Content-Length', str(len(corpo)))
         self.end_headers()
         self.wfile.write(corpo)
 
     def token_ok(self):
-        tok = self.headers.get('X-Token') or parse_qs(urlparse(self.path).query).get('token', [''])[0]
-        if TOKEN and tok != TOKEN:
+        if not TOKEN:
+            return
+        # Pelo túnel todo pedido chega de 127.0.0.1; o Cloudflare informa o endereço real de quem pediu.
+        quem = self.headers.get('CF-Connecting-IP') or self.client_address[0]
+        agora = time.time()
+        with LOCK:
+            erros = [t for t in FALHAS.get(quem, []) if agora - t < JANELA_FALHAS]
+            FALHAS[quem] = erros
+            if len(FALHAS) > 5000:
+                FALHAS.clear()
+        if len(erros) >= MAX_FALHAS:
+            raise Erro(429, 'Muitas tentativas com a senha errada. Espere 10 minutos.')
+        tok = self.headers.get('X-Token') or ''
+        if not hmac.compare_digest(tok.encode(), TOKEN.encode()):
+            with LOCK:
+                FALHAS.setdefault(quem, []).append(agora)
+            time.sleep(0.4)
             raise Erro(401, 'Senha do servidor errada. Confira em Chaves e ajustes.')
 
     def do_OPTIONS(self):
@@ -306,7 +361,8 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as e:  # noqa: BLE001
-            self.json(500, {'detail': f'Erro interno: {e}'})
+            print('erro interno:', repr(e))   # o detalhe fica só no terminal do servidor
+            self.json(500, {'detail': 'Erro interno no servidor. Veja o terminal do servidor para o detalhe.'})
 
     # ---- rotas ----
     def get(self, caminho: str):
@@ -375,6 +431,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'video/mp4' if caminho_arq.suffix == '.mp4' else 'video/webm')
         self.send_header('Content-Length', str(tamanho))
         self.send_header('Content-Disposition', f'attachment; filename="{nome}{caminho_arq.suffix}"')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Cache-Control', 'no-store')
         self.end_headers()
         with open(caminho_arq, 'rb') as f:
             shutil.copyfileobj(f, self.wfile, 1024 * 1024)
@@ -476,6 +534,11 @@ def main():
         raise SystemExit(1)
     if not shutil.which('ffmpeg') and not ffmpeg_path():
         print('Aviso: FFmpeg não encontrado. Vídeos acima de 360p podem falhar. (Termux: pkg install ffmpeg)')
+    if HOST not in ('127.0.0.1', 'localhost', '::1') and not TOKEN:
+        print('Por segurança o servidor não abre para a rede sem senha. Defina TOKEN=suasenha (ou use iniciar-termux.sh link).')
+        raise SystemExit(1)
+    if TOKEN and len(TOKEN) < 10:
+        print('Aviso: a senha do servidor é curta. Use pelo menos 10 letras e números (bash iniciar-termux.sh senha).')
     pg.iniciar_relogio()
     ag.iniciar()
     srv = ThreadingHTTPServer((HOST, PORTA), Handler)

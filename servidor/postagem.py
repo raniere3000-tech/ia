@@ -20,6 +20,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import cofre
+
 DADOS = Path(os.getenv('DADOS', str(Path.home() / '.estudioclip')))
 VIDEOS = DADOS / 'videos'
 VIDEOS.mkdir(parents=True, exist_ok=True)
@@ -77,12 +79,12 @@ def _gravar(arq: Path, dados):
 
 def contas() -> dict:
     with LOCK:
-        return _ler(ARQ_CONTAS, {})
+        return cofre.ler_json(ARQ_CONTAS, {})
 
 
 def salvar_contas(c: dict):
     with LOCK:
-        _gravar(ARQ_CONTAS, c)
+        cofre.gravar_json(ARQ_CONTAS, c)
 
 
 def posts() -> list:

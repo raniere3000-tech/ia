@@ -87,3 +87,12 @@ Tem `Dockerfile` nesta pasta. Defina `TOKEN`. Atenção: o YouTube costuma bloqu
 servidores de nuvem ("Sign in to confirm you're not a bot"). No seu computador funciona melhor.
 
 Se um vídeo parar de baixar, atualize o yt-dlp abrindo o iniciador de novo (ele roda `pip install -U`).
+
+## Segurança
+
+- **Senhas e chaves criptografadas no servidor.** Os logins das redes (`contas.json`), as chaves do agente (`agente_segredos.json`) e os cookies do YouTube ficam cifrados em disco. A chave-mestra fica em `~/.estudioclip-chave`, criada sozinha na primeira vez. Arquivos antigos em texto puro são convertidos na primeira leitura. Se apagar a chave-mestra, é preciso refazer os logins e as chaves.
+- **Limite honesto:** a chave-mestra fica no mesmo aparelho. Isso protege contra cópia dos arquivos, backup e envio acidental, mas não contra quem tem acesso total ao celular desbloqueado. Use bloqueio de tela.
+- **Senha do servidor:** mínimo de 10 caracteres (`bash iniciar-termux.sh senha`). Ela só é aceita no cabeçalho, nunca no endereço. Depois de 8 senhas erradas em 10 minutos o visitante fica bloqueado.
+- **Link fixo assinado:** o endereço anunciado no canal vai assinado com a senha, e o site só troca de endereço sozinho se a assinatura conferir. O link fixo leva a senha depois do `#`, que não é enviado para nenhum servidor.
+- **Sem senha, só local:** o servidor se recusa a abrir para a rede sem `TOKEN`.
+- **No site:** em Chaves e ajustes, "Proteger as chaves com PIN" cifra as chaves guardadas no navegador (AES-GCM, PIN esticado com PBKDF2). Sem o PIN não há como recuperar: é preciso colar as chaves de novo.

@@ -3,6 +3,8 @@ import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useState, type C
 import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, Film, Bot, CheckCircle2, AlertTriangle, Info, X, Circle } from 'lucide-react';
 import { AppCtx, PROJETO_VAZIO, type Marca, type Projeto, type Settings, type Tab } from './state';
 import { store } from './lib/store';
+import { salvos, temCofre, cofreAberto, separar, atualizarCofre } from './lib/cofre';
+import Cadeado from './components/Cadeado';
 import { TEMPLATE_PADRAO, type Template } from './lib/render';
 import Inicio from './pages/Inicio';
 
@@ -43,8 +45,12 @@ const TITLES:Record<Tab,[string,string]> = {
 };
 
 export default function App(){
-  const [settings,setS]=useState<Settings>(()=>{ const saved=store.json<Partial<Settings>>('studio_settings',{}); return {...SETTINGS_PADRAO,...saved,ytKey:saved.ytKey||store.get('studio_yt_key')||''}; });
-  const setSettings=useCallback((p:Partial<Settings>)=>setS(s=>{ const n={...s,...p}; store.setJson('studio_settings',n); return n; }),[]);
+  const [settings,setS]=useState<Settings>(()=>{ const saved=salvos(); return {...SETTINGS_PADRAO,...saved,ytKey:saved.ytKey||(temCofre()?'':store.get('studio_yt_key'))||''}; });
+  const [trancado,setTrancado]=useState(()=>temCofre()&&!cofreAberto());
+  const setSettings=useCallback((p:Partial<Settings>)=>setS(s=>{ const n={...s,...p};
+    // Com o cofre ligado, as chaves nunca vão em texto puro para o armazenamento do navegador.
+    if(temCofre()){ store.setJson('studio_settings',separar(n).publico); atualizarCofre(n); } else store.setJson('studio_settings',n);
+    return n; }),[]);
   const [tab,setTab]=useState<Tab>(()=>{ const h=location.hash.slice(1) as Tab; return NAV.some(n=>n[0]===h)?h:'inicio'; });
   const go=useCallback((t:Tab)=>{ setTab(t); history.replaceState(null,'','#'+t); window.scrollTo({top:0}); },[]);
   const [toasts,setToasts]=useState<{id:number;msg:string;kind:string}[]>([]);
@@ -73,7 +79,7 @@ export default function App(){
       setTimeout(()=>{ try{ window.close(); }catch{ /* ignora */ } },msg.tipo==='erro'?4000:800);
     };
     if(!code){ const t='Login cancelado'+(erro?': '+erro:'.'); toast(t,'erro'); fim({tipo:'erro',msg:t}); return; }
-    const cfg=store.json<Partial<Settings>>('studio_settings',{});
+    const cfg=salvos();
     import('./lib/agenda').then(({enviarCodigo})=>enviarCodigo({servidor:cfg.servidor||'',servidorToken:cfg.servidorToken||''},code,state))
       .then(()=>{ toast(nome+' conectado!'+(ehJanela?' Pode fechar esta janela.':''),'ok'); fim({tipo:'conectado',nome}); })
       .catch(e=>{ const t=e instanceof Error?e.message:String(e); toast(t,'erro'); fim({tipo:'erro',msg:t}); });
@@ -82,15 +88,21 @@ export default function App(){
   // Com o "canal", o site acha sozinho o endereço novo do servidor toda vez que ele reinicia (link fixo).
   useEffect(()=>{
     const q=new URLSearchParams(location.search); const srv=q.get('servidor'); const canalQ=q.get('canal');
-    if(srv||canalQ) history.replaceState(null,'',location.pathname+location.hash);
-    const atual=store.json<Partial<Settings>>('studio_settings',{});
-    const canal=canalQ||atual.servidorCanal||''; const senha=q.get('senha')??atual.servidorToken??'';
+    // A senha vem depois do # (não é enviada a nenhum servidor). Links antigos traziam em ?senha=.
+    const noHash=/^#senha=(.*)$/.exec(location.hash); const senhaLink=noHash?decodeURIComponent(noHash[1]):q.get('senha');
+    if(srv||canalQ||noHash) history.replaceState(null,'',location.pathname+(noHash?'':location.hash));
+    const atual=salvos();
+    // Um link não troca o servidor escondido: quem recebe um link de outra pessoa precisa confirmar.
+    const troca=!!(srv||canalQ)&&((!!srv&&srv.replace(/\/+$/,'')!==atual.servidor)||(!!canalQ&&canalQ!==atual.servidorCanal));
+    if(troca&&!window.confirm('Este link quer ligar o aplicativo a um servidor'+(atual.servidor?' DIFERENTE do que você usa hoje':'')+'.\n\nSó aceite se o link foi gerado pelo SEU servidor (no seu Termux ou computador). Um link de outra pessoa pode receber seus vídeos e suas chaves.\n\nLigar a este servidor?')) return;
+    if(srv&&!/^https:\/\/[a-z0-9.-]+(:\d+)?$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(srv.replace(/\/+$/,''))){ toast('O endereço do servidor neste link não é válido.','erro'); return; }
+    const canal=canalQ||atual.servidorCanal||''; const senha=senhaLink??atual.servidorToken??'';
     const doLink=!!(srv||canalQ);
     if(!srv&&!canal) return;
     (async()=>{
       const {testarServidor,enderecoDoCanal}=await import('./lib/servidor');
       let url=srv?srv.replace(/\/+$/,''):'';
-      if(canal){ const u=await enderecoDoCanal(canal).catch(()=>null); if(u) url=u; }
+      if(canal){ const u=await enderecoDoCanal(canal,senha,atual.servidor||'').catch(()=>null); if(u) url=u; }
       if(!url){ if(doLink) toast('O servidor do celular ainda não avisou o endereço. Ligue o servidor no Termux e abra o link de novo.','erro'); return; }
       if(!doLink&&url===atual.servidor) return;
       try{
@@ -104,6 +116,7 @@ export default function App(){
   const status=[{ok:!!settings.ytKey,label:'Radar (YouTube)',opt:false},{ok:true,label:'Cortes e exportação',opt:false},{ok:!!(settings.claudeKey||settings.geminiKey),label:'Notas com IA',opt:true},{ok:!!settings.servidor,label:'Cortes pelo link',opt:true}];
   const [t,sub]=TITLES[tab];
   return <AppCtx.Provider value={ctx}>
+   {trancado&&<Cadeado aoAbrir={seg=>{ setS(s=>({...s,...seg})); setTrancado(false); }} aoPular={()=>setTrancado(false)}/>}
    <div className="app">
     <aside className="sidebar">
      <div className="brand"><span className="brand-icon"><Clapperboard size={22}/></span><div><strong>ESTÚDIO<span>CLIP</span></strong><small>RADAR + EDITOR</small></div></div>

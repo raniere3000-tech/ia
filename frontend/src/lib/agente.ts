@@ -14,7 +14,7 @@ export type CorteAgente = {id:string;video:string;titulo:string;gancho:string;ha
 export type VisaoAgente = {
   config:ConfigAgente; chaves:{gemini:boolean;youtube:boolean;email_senha:boolean}; canais:Canal[]; cortes:CorteAgente[];
   log:{t:number;tipo:string;texto:string}[]; gasto:{reais:number;chamadas:number}; semana:number; horarios:Record<string,{n:number;views:number}>;
-  atual:{etapa:string;pct:number;ocupado:boolean}; opcoes:{nichos:string[];proibidos:string[];variacoes:Record<string,string>;motivos:string[]}; ffmpeg:boolean; agora:number;
+  atual:{etapa:string;pct:number;ocupado:boolean}; opcoes:{idiomas:Record<string,string>;paises:Record<string,string>;nichos:string[];proibidos:string[];variacoes:Record<string,string>;motivos:string[]}; ffmpeg:boolean; agora:number;
 };
 type Parcial<T> = {[K in keyof T]?:T[K] extends (infer _U)[]?T[K]:T[K] extends object?Parcial<T[K]>:T[K]};
 

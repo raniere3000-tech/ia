@@ -3,7 +3,7 @@ import { Youtube, Instagram, Music2, CalendarClock, LogIn, LogOut, Loader2, Serv
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import AgendarPost from '../components/AgendarPost';
-import { REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, cancelarPost, marcarFeito, linkVideo, enderecoRetorno, type Contas, type Prov, type Post, type Rede } from '../lib/agenda';
+import { REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, cancelarPost, marcarFeito, baixarVideoPost, enderecoRetorno, type Contas, type Prov, type Post, type Rede } from '../lib/agenda';
 
 const PROVS:{id:Prov;nome:string;redes:string;icone:typeof Youtube;help:'app_google'|'app_meta'|'app_tiktok';idLabel:string;segLabel:string}[] = [
   {id:'google',nome:'YouTube',redes:'Shorts no seu canal',icone:Youtube,help:'app_google',idLabel:'ID do cliente OAuth',segLabel:'Chave secreta do cliente'},
@@ -107,7 +107,7 @@ export default function Agendar(){
        </div>
        <div className="post-acoes">
         {Object.values(p.redes).some(s=>s.status==='agendado'||s.status==='erro')&&<button className="subtle sm" onClick={()=>acao(()=>postarAgora(settings,p.id),'Postando agora...')}>{Object.values(p.redes).some(s=>s.status==='erro')?<><RefreshCw size={14}/> Tentar de novo</>:<><Send size={14}/> Postar agora</>}</button>}
-        <a className="subtle sm" href={linkVideo(settings,p.id)}><Download size={14}/> Baixar vídeo</a>
+        <button className="subtle sm" onClick={()=>acao(()=>baixarVideoPost(settings,p.id,p.titulo||'corte'),'Vídeo baixado.')}><Download size={14}/> Baixar vídeo</button>
         {p.redes.kwai?.status==='manual'&&<button className="subtle sm" onClick={()=>acao(()=>marcarFeito(settings,p.id,'kwai'),'Kwai marcado como postado.')}><CheckCircle2 size={14}/> Já postei no Kwai</button>}
         <button className="icon-btn" title="Cancelar e apagar" onClick={()=>{ if(window.confirm('Cancelar este post e apagar o vídeo do servidor?')) acao(()=>cancelarPost(settings,p.id),'Post cancelado.'); }}><Trash2 size={15}/></button>
        </div>

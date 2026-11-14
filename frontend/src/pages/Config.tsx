@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
-import { KeyRound, Youtube, Sparkles, Captions, Server, CheckCircle2, Loader2, Eye, EyeOff, Trash2, ExternalLink, Upload } from 'lucide-react';
+import { Lock, KeyRound, Youtube, Sparkles, Captions, Server, CheckCircle2, Loader2, Eye, EyeOff, Trash2, ExternalLink, Upload } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { testarChaveYouTube } from '../lib/radar';
 import { WHISPER_MODELS, IDIOMAS } from '../lib/transcribe';
 import { testarServidor, enviarCookies } from '../lib/servidor';
 import { iaAtiva } from '../lib/ia';
+import { temCofre, cofreAberto, podeCofre, criarCofre, removerCofre, trancarCofre } from '../lib/cofre';
 
 function KeyField({label,value,placeholder,onSave,onTest,help,link,linkLabel}:{label:string;value:string;placeholder:string;onSave:(v:string)=>void;onTest:(v:string)=>Promise<void>;help:'youtube'|'claude'|'gemini'|'muapi';link:string;linkLabel:string}){
   const {toast}=useApp();
   const [v,setV]=useState(value); const [show,setShow]=useState(false); const [busy,setBusy]=useState(false);
   const [estado,setEstado]=useState<''|'ok'|'erro'>('');
+  useEffect(()=>{ setV(value); },[value]);
   async function salvar(){
     const k=v.trim(); setBusy(true); setEstado('');
     try{ await onTest(k); onSave(k); setEstado('ok'); toast('Chave testada e salva neste navegador.','ok'); }
@@ -26,6 +28,22 @@ function KeyField({label,value,placeholder,onSave,onTest,help,link,linkLabel}:{l
    </div>
    <div className="key-foot">{value?<span className="tag ok">Chave salva</span>:<span className="tag warn">Nenhuma chave salva</span>}{estado==='erro'&&<span className="tag bad">Não funcionou</span>}<a href={link} target="_blank" rel="noreferrer" className="help-link">{linkLabel} <ExternalLink size={12}/></a></div>
   </div>;
+}
+
+function CofreCard(){
+  const {settings,toast}=useApp();
+  const [pin,setPin]=useState(''); const [pin2,setPin2]=useState(''); const [busy,setBusy]=useState(false);
+  const ligado=temCofre(), aberto=cofreAberto();
+  const criar=async()=>{ setBusy(true); try{ if(pin!==pin2) throw new Error('Os dois PINs não são iguais.'); await criarCofre(pin,settings); location.reload(); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); setBusy(false); } };
+  return <section className="panel cofre-card">
+    <div className="section-head"><h2><Lock size={18}/> Proteger as chaves com PIN {ligado?<span className="tag ok">ligado</span>:<span className="tag">desligado</span>}</h2></div>
+    <p className="subtitle">Com o PIN, as chaves de API e a senha do servidor ficam criptografadas neste aparelho. Quem pegar o seu telefone ou uma cópia dos dados do navegador não consegue ler. Você digita o PIN uma vez cada vez que abre o aplicativo.</p>
+    {!podeCofre()?<p className="hint warn">Este navegador não oferece a criptografia necessária. Abra o site pelo endereço https.</p>
+    :!ligado?<div className="key-row cofre-linha"><input type="password" autoComplete="new-password" placeholder="Crie um PIN ou frase (mínimo 6)" value={pin} onChange={e=>setPin(e.target.value)}/><input type="password" autoComplete="new-password" placeholder="Repita o PIN" value={pin2} onChange={e=>setPin2(e.target.value)}/><button className="primary" disabled={busy||pin.length<6||!pin2} onClick={criar}>{busy?<Loader2 size={15} className="spin"/>:<Lock size={15}/>} Ligar proteção</button></div>
+    :aberto?<div className="row-gap left"><button className="subtle" onClick={()=>{ trancarCofre(); location.reload(); }}><Lock size={15}/> Trancar agora</button><button className="subtle" onClick={()=>{ if(window.confirm('Tirar a proteção? As chaves voltam a ficar guardadas sem PIN neste aparelho.')){ removerCofre(settings); location.reload(); } }}>Tirar a proteção</button></div>
+    :<p className="hint warn">As chaves estão trancadas. Recarregue a página e digite o PIN para usar ou trocar as chaves. O que você colar agora não fica guardado.</p>}
+    <p className="hint">Não existe recuperação: se esquecer o PIN, as chaves são apagadas e você cola de novo. O PIN não sai deste aparelho.</p>
+  </section>;
 }
 
 function ServidorCard(){
@@ -112,6 +130,6 @@ export default function Config(){
      </div>
     </div>
    </section>
-
+   <CofreCard/>
   </>;
 }

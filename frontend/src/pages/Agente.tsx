@@ -162,11 +162,14 @@ export default function Agente(){
         <h3>O que procurar</h3>
         <Lista titulo="Nichos" escolhidos={co.nichos} sugestoes={v.opcoes.nichos} mudar={l=>salvar({cortes:{nichos:l}})} placeholder="Outro nicho"/>
         <div className="ag-grade">
+          <label>Idioma dos canais<select value={co.idioma} onChange={e=>salvar({cortes:{idioma:e.target.value}})}>{Object.entries(v.opcoes.idiomas||{pt:'Português'}).map(([k,t])=><option key={k} value={k}>{t}</option>)}</select></label>
+          <label>País dos canais<select value={co.regiao} onChange={e=>salvar({cortes:{regiao:e.target.value}})}>{Object.entries(v.opcoes.paises||{BR:'Brasil'}).map(([k,t])=><option key={k} value={k}>{t}</option>)}</select></label>
           <label>Média mínima de visualizações na semana<Campo tipo="number" min={0} step={50000} valor={co.min_views} salvar={x=>salvar({cortes:{min_views:+x}})}/></label>
           <label>Vídeos de até quantos dias atrás<Campo tipo="number" min={1} max={90} valor={co.dias_video} salvar={x=>salvar({cortes:{dias_video:+x}})}/></label>
           <label>Duração do vídeo de origem, mínimo (min)<Campo tipo="number" min={1} valor={co.video_min} salvar={x=>salvar({cortes:{video_min:+x}})}/></label>
           <label>Duração do vídeo de origem, máximo (min)<Campo tipo="number" min={2} valor={co.video_max} salvar={x=>salvar({cortes:{video_max:+x}})}/></label>
         </div>
+        <p className="hint">O idioma vale para a busca de canais, para a leitura da fala e para a legenda dos cortes. O YouTube trata o idioma como preferência: confira o canal antes de aprovar.</p>
         <Lista titulo="Nunca postar (assuntos e palavras proibidas)" escolhidos={co.proibidos} sugestoes={v.opcoes.proibidos} mudar={l=>salvar({cortes:{proibidos:l}})} placeholder="Outra palavra ou assunto"/>
       </section>
       <section className="panel">

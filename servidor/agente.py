@@ -32,6 +32,7 @@ from datetime import datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
 
+import cofre
 import postagem as pg
 
 ARQ_CFG = pg.DADOS / 'agente.json'
@@ -54,6 +55,8 @@ NICHOS = ['Games', 'Podcast', 'Humor', 'Finanças', 'Esportes', 'Futebol', 'Not�
           'Motivação', 'Curiosidades', 'Música', 'Culinária', 'Carros', 'Saúde e treino', 'Educação']
 PROIBIDOS = ['palavrão', 'violência', 'política', 'conteúdo adulto', 'apostas', 'saúde sem fonte', 'menores de idade',
              'drogas', 'armas', 'discurso de ódio', 'acusação a pessoas', 'tragédias']
+IDIOMAS = {'pt': 'Português', 'en': 'Inglês', 'es': 'Espanhol', 'fr': 'Francês', 'de': 'Alemão', 'it': 'Italiano', 'ja': 'Japonês', 'ko': 'Coreano', 'hi': 'Hindi', 'ru': 'Russo', 'ar': 'Árabe', 'id': 'Indonésio', 'tr': 'Turco'}
+PAISES = {'': 'Qualquer país', 'BR': 'Brasil', 'PT': 'Portugal', 'US': 'Estados Unidos', 'GB': 'Reino Unido', 'ES': 'Espanha', 'MX': 'México', 'AR': 'Argentina', 'FR': 'França', 'DE': 'Alemanha', 'IT': 'Itália', 'JP': 'Japão', 'KR': 'Coreia do Sul', 'IN': 'Índia'}
 VARIACOES = {'cor_destaque': 'Cor da palavra em destaque', 'gancho_pos': 'Posição do gancho', 'zoom': 'Zoom do vídeo',
              'cor_tarja': 'Cor das tarjas', 'legenda_pos': 'Altura da legenda'}
 PALETA = ['#FFE14D', '#5CE1E6', '#7CFF6B', '#FF8A3D', '#FF6BD6', '#FFFFFF']
@@ -123,6 +126,8 @@ def _limpar_cfg(c: dict) -> dict:
     co['nichos'] = [str(x).strip()[:40] for x in co['nichos'] if str(x).strip()][:8]
     co['proibidos'] = [str(x).strip()[:60] for x in co['proibidos'] if str(x).strip()][:40]
     co['variar'] = [v for v in co['variar'] if v in VARIACOES][:3]
+    co['idioma'] = co['idioma'].lower() if re.fullmatch(r'[A-Za-z]{2}', co['idioma']) else 'pt'
+    co['regiao'] = co['regiao'].upper() if re.fullmatch(r'[A-Za-z]{2}', co['regiao']) else ''
     co['por_semana'] = max(1, min(21, co['por_semana']))
     co['por_video'] = max(1, min(6, co['por_video']))
     co['dur_min'] = max(8, min(170, co['dur_min']))
@@ -156,7 +161,7 @@ def salvar_config(novo: dict) -> dict:
 
 def segredos() -> dict:
     with LOCK:
-        s = pg._ler(ARQ_SEG, {})
+        s = cofre.ler_json(ARQ_SEG, {})
         return {k: str(s.get(k, '')) for k in ('gemini', 'youtube', 'email_senha')}
 
 
@@ -166,7 +171,7 @@ def salvar_segredos(novo: dict):
         for k in s:
             if k in novo and novo[k] is not None:
                 s[k] = str(novo[k]).strip()[:300]
-        pg._gravar(ARQ_SEG, s)
+        cofre.gravar_json(ARQ_SEG, s)
 
 
 def estado() -> dict:
@@ -272,7 +277,8 @@ def _detalhes(ids: list) -> dict:
             sn, stt = it.get('snippet', {}), it.get('statistics', {})
             out[it['id']] = {'id': it['id'], 'titulo': sn.get('title', ''), 'canal': sn.get('channelId', ''), 'canal_nome': sn.get('channelTitle', ''),
                              'views': int(stt.get('viewCount') or 0), 'dur': _iso_dur(it.get('contentDetails', {}).get('duration', '')),
-                             'publicado': sn.get('publishedAt', '')}
+                             'publicado': sn.get('publishedAt', ''),
+                             'idioma': (sn.get('defaultAudioLanguage') or sn.get('defaultLanguage') or '').lower()[:2]}
     return out
 
 
@@ -285,10 +291,14 @@ def buscar_canais() -> int:
         etapa(f'Procurando canais em alta: {nicho}')
         ids = []
         for dur in ('medium', 'long'):
-            j = yt('search', part='snippet', q=nicho, type='video', order='viewCount', publishedAfter=desde, maxResults=50,
-                   regionCode=co['regiao'], relevanceLanguage=co['idioma'], videoDuration=dur)
+            filtro = {'relevanceLanguage': co['idioma']}
+            if co['regiao']:
+                filtro['regionCode'] = co['regiao']
+            j = yt('search', part='snippet', q=nicho, type='video', order='viewCount', publishedAfter=desde, maxResults=50, videoDuration=dur, **filtro)
             ids += [it['id']['videoId'] for it in j.get('items', []) if it.get('id', {}).get('videoId')]
         for v in _detalhes(list(dict.fromkeys(ids))).values():
+            if v['idioma'] and v['idioma'] != co['idioma']:
+                continue      # o vídeo declara outro idioma: fica de fora
             v['nicho'] = nicho
             por_canal.setdefault(v['canal'], []).append(v)
     conhecidos = {c['id'] for c in estado()['canais']}
@@ -435,7 +445,7 @@ def transcrever_ia(video: Path, dur: float, pasta: Path, idioma: str) -> list:
         etapa(f'Ouvindo a fala ({i + 1} de {n})', 20 + 25 * i / n)
         mp3 = pasta / f'audio{i}.mp3'
         _audio(video, ini, d, mp3)
-        nome = {'pt': 'português', 'en': 'inglês', 'es': 'espanhol'}.get(idioma, 'o idioma falado')
+        nome = IDIOMAS.get(idioma, 'o idioma falado').lower()
         r = gemini([
             {'text': f'Transcreva a fala deste áudio de {d:.0f} segundos em {nome}, palavra por palavra, sem resumir. Divida em frases curtas '
                      f'(no máximo 12 palavras cada) e devolva uma lista JSON de objetos {{"inicio": segundos, "fim": segundos, "texto": "..."}}, '
@@ -504,12 +514,19 @@ def escolher(frs: list, titulo: str, n: int, co: dict) -> list:
             'Dê a cada um uma pontuação de viralidade de 0 a 99 pesando: gancho nos 3 primeiros segundos (35), fluxo e clareza (25), '
             'valor ou emoção (25) e tendência do assunto (15).\n'
             f'Assuntos proibidos: {", ".join(co["proibidos"]) or "nenhum"}. Se o trecho tocar em um assunto proibido, marque "proibido": true.\n'
+            f'Escreva título, gancho, hashtags e motivo em {IDIOMAS.get(co["idioma"], "português").lower()}, sem links e sem citar perfis.\n'
             'Responda só com uma lista JSON de objetos: {"inicio": segundo, "fim": segundo, "nota": 0-99, "titulo": "até 70 letras, sem clickbait falso", '
             '"gancho": "frase curta de até 6 palavras para aparecer na tela", "hashtags": ["#tag", ...] (4 a 6), "motivo": "uma frase", "proibido": false}.\n\n'
             + linhas)
         r = gemini([{'text': prompt}])
         achados += r if isinstance(r, list) else r.get('cortes', []) if isinstance(r, dict) else []
     return validar(achados, frs, co)[:n]
+
+
+def _sem_link(s) -> str:
+    """Texto vindo da IA vai para posts públicos: tira links, @menções e quebras de linha."""
+    s = re.sub(r'(https?://|www\.)\S+|\b[\w-]+\.(com|net|org|br|io|ly|me|gg|xyz|link)\b\S*', '', str(s or ''), flags=re.I)
+    return re.sub(r'\s+', ' ', re.sub(r'[\x00-\x1f@<>]', ' ', s)).strip()
 
 
 def validar(achados: list, frs: list, co: dict) -> list:
@@ -548,8 +565,8 @@ def validar(achados: list, frs: list, co: dict) -> list:
         tags = [re.sub(r'[^\w#]', '', str(h)) for h in (a.get('hashtags') or []) if isinstance(h, str)]
         tags = [h if h.startswith('#') else '#' + h for h in tags if len(h) > 1][:6]
         out.append({'ini': round(max(0, ini - 0.15), 2), 'fim': round(fim + 0.25, 2), 'nota': int(max(0, min(99, round(nota)))),
-                    'titulo': str(a.get('titulo', '')).strip()[:90] or texto[:60], 'gancho': str(a.get('gancho', '')).strip()[:60],
-                    'hashtags': tags, 'motivo': str(a.get('motivo', '')).strip()[:200], 'texto': texto[:600]})
+                    'titulo': _sem_link(a.get('titulo', ''))[:90] or texto[:60], 'gancho': _sem_link(a.get('gancho', ''))[:60],
+                    'hashtags': tags, 'motivo': _sem_link(a.get('motivo', ''))[:200], 'texto': texto[:600]})
     out.sort(key=lambda c: -c['nota'])
     limpos = []
     for c in out:
@@ -710,7 +727,7 @@ def enviar_email(assunto: str, corpo: str, anexo: Path | None = None, nome_anexo
         raise ErroAgente('Preencha o e-mail que recebe, o e-mail que envia e a senha de aplicativo na aba Agente.')
     host, porta = _smtp(cfg)
     m = EmailMessage()
-    m['Subject'] = ('EstúdioClip: ' + assunto)[:200]
+    m['Subject'] = re.sub(r'[\r\n\x00-\x1f]+', ' ', 'EstúdioClip: ' + assunto)[:200]
     m['From'] = cfg['de']
     m['To'] = cfg['para']
     m.set_content(corpo + '\n\nEnviado pelo agente do EstúdioClip no seu servidor.')
@@ -1066,7 +1083,7 @@ def ver() -> dict:
         'cortes': [{k: v for k, v in x.items() if k != 'chave'} for x in sorted(e['cortes'], key=lambda x: -x['criado'])][:80],
         'log': e['log'][-40:][::-1], 'gasto': gasto_mes(), 'semana': cortes_da_semana(),
         'horarios': e['horarios'], 'atual': dict(ATUAL, ocupado=OCUPADO.locked()),
-        'opcoes': {'nichos': NICHOS, 'proibidos': PROIBIDOS, 'variacoes': VARIACOES, 'motivos': MOTIVOS},
+        'opcoes': {'idiomas': IDIOMAS, 'paises': PAISES, 'nichos': NICHOS, 'proibidos': PROIBIDOS, 'variacoes': VARIACOES, 'motivos': MOTIVOS},
         'ffmpeg': bool(shutil.which('ffmpeg')), 'agora': time.time(),
     }
 

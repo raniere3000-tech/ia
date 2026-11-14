@@ -6,9 +6,9 @@
 set -e
 cd "$(dirname "$0")"
 if [ "$1" = "senha" ]; then
-  read -r -p "Digite a nova senha (só letras e números, mínimo 6): " NOVA
-  if ! echo "$NOVA" | grep -Eq '^[A-Za-z0-9]{6,40}$'; then echo "Senha inválida. Use só letras e números, de 6 a 40."; exit 1; fi
-  printf '%s' "$NOVA" > .senha
+  read -r -s -p "Digite a nova senha (só letras e números, mínimo 10): " NOVA; echo
+  if ! echo "$NOVA" | grep -Eq '^[A-Za-z0-9]{10,60}$'; then echo "Senha inválida. Use só letras e números, de 10 a 60."; exit 1; fi
+  ( umask 077; printf '%s' "$NOVA" > .senha ); chmod 600 .senha
   echo "Senha salva. Agora rode:  bash iniciar-termux.sh link   e abra o link novo que aparecer."
   exit 0
 fi
@@ -39,16 +39,20 @@ command -v termux-wake-lock >/dev/null && termux-wake-lock || true   # não deix
 if [ "$1" = "link" ]; then
   command -v cloudflared >/dev/null || pkg install -y cloudflared
   if [ -z "$TOKEN" ]; then
-    [ -f .senha ] || head -c 9 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' > .senha
+    [ -f .senha ] || ( umask 077; head -c 24 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 24 > .senha )
+    chmod 600 .senha
     export TOKEN="$(cat .senha)"
   fi
   command -v curl >/dev/null || pkg install -y curl
   # Canal fixo: o servidor avisa o endereço novo nele toda vez que liga, e o site acha sozinho.
-  [ -f .canal ] || head -c 30 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 20 > .canal
+  [ -f .canal ] || ( umask 077; head -c 30 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 20 > .canal )
+  chmod 600 .canal
   CANAL="$(cat .canal)"
   TOPICO="https://ntfy.sh/estudioclip-${CANAL}"
   SITE="${SITE:-https://raniere3000-tech.github.io/ia/}"
-  LINK_FIXO="${SITE}?canal=${CANAL}&senha=${TOKEN}"
+  LINK_FIXO="${SITE}?canal=${CANAL}#senha=${TOKEN}"
+  # O aviso do endereço vai assinado com a senha: quem descobrir o canal não consegue apontar o site para outro servidor.
+  assinar() { python -c 'import hmac,hashlib,sys; print(sys.argv[1]+"|"+hmac.new(sys.argv[2].encode(),sys.argv[1].encode(),hashlib.sha256).hexdigest())' "$1" "$TOKEN"; }
   echo
   echo "  SENHA do servidor: $TOKEN"
   echo "  Criando o endereço https (leva uns segundos)..."
@@ -58,7 +62,7 @@ if [ "$1" = "link" ]; then
   bash -c 'while true; do python servidor.py; sleep 5; done # vigia-estudioclip' &
   SRV=$!
   # Repete o aviso a cada 6 horas (o canal esquece mensagens depois de 12 horas).
-  ( while sleep 21600; do [ -f .url_atual ] && curl -s -m 20 -d "$(cat .url_atual)" "$TOPICO" >/dev/null; done ) &
+  ( while sleep 21600; do [ -f .url_atual ] && curl -s -m 20 -d "$(assinar "$(cat .url_atual)")" "$TOPICO" >/dev/null; done ) &
   PUB=$!
   trap 'kill $SRV $PUB 2>/dev/null; pkill -f "python servidor.py" 2>/dev/null' EXIT
   sleep 2
@@ -67,7 +71,7 @@ if [ "$1" = "link" ]; then
     if [ -n "$URL" ]; then
       echo "$URL" > .url_atual
       sleep 3
-      if curl -s -m 20 -d "$URL" "$TOPICO" >/dev/null; then AVISO="ok"; else AVISO=""; fi
+      if curl -s -m 20 -d "$(assinar "$URL")" "$TOPICO" >/dev/null; then AVISO="ok"; else AVISO=""; fi
       echo
       echo "  ============================================================"
       echo "  Servidor no ar: $URL"
@@ -79,7 +83,7 @@ if [ "$1" = "link" ]; then
       echo "  Abra em qualquer aparelho. Mesmo quando o servidor reinicia,"
       echo "  é só abrir ou recarregar o site que ele acha o servidor sozinho."
       [ -z "$AVISO" ] && echo "  (Aviso: não consegui publicar o endereço no canal. Use este link desta vez:"
-      [ -z "$AVISO" ] && echo "   ${SITE}?servidor=${URL}&senha=${TOKEN} )"
+      [ -z "$AVISO" ] && echo "   ${SITE}?servidor=${URL}#senha=${TOKEN} )"
       echo "  ============================================================"
       command -v termux-clipboard-set >/dev/null && echo "${LINK_FIXO}" | termux-clipboard-set && echo "  (link copiado)"
     fi

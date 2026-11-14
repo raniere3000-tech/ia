@@ -68,4 +68,10 @@ export const listarPosts=(c:Cfg)=>chamar<{posts:Post[];agora:number}>(c,'GET','/
 export const postarAgora=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/agora`,{});
 export const cancelarPost=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/cancelar`,{});
 export const marcarFeito=(c:Cfg,id:string,rede:Rede)=>chamar(c,'POST',`/posts/${id}/feito`,{rede});
-export const linkVideo=(c:Cfg,id:string)=>`${c.servidor}/posts/${id}/video${c.servidorToken?'?token='+encodeURIComponent(c.servidorToken):''}`;
+/** Baixa o vídeo do post. A senha vai no cabeçalho, nunca no endereço (endereços ficam no histórico). */
+export async function baixarVideoPost(c:Cfg,id:string,nome:string){
+  const h:Record<string,string>={}; if(c.servidorToken) h['X-Token']=c.servidorToken;
+  const r=await fetch(`${c.servidor}/posts/${id}/video`,{headers:h}).catch(()=>null);
+  if(!r||!r.ok) throw new Error('Não consegui baixar o vídeo do servidor.');
+  const u=URL.createObjectURL(await r.blob()); const a=document.createElement('a'); a.href=u; a.download=(nome.replace(/[\\/:*?"<>|]+/g,'').slice(0,60)||'corte')+'.mp4'; a.click(); setTimeout(()=>URL.revokeObjectURL(u),30000);
+}
