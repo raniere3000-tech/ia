@@ -1,5 +1,6 @@
 // Cliente dos agentes que rodam no servidor (celular/PC): agente de cortes e agente de postagem.
 import type { Rede } from './agenda';
+import { cabAuth } from './api';
 
 export type Template = {legenda:'destaque'|'simples'|'caixa'|'nenhuma';cor:string;cor_destaque:string;maiusculas:boolean;tamanho:'pequeno'|'medio'|'grande';legenda_pos:'baixo'|'meio';enquadramento:'desfoque'|'cortar';zoom:number;gancho:boolean;gancho_pos:'topo'|'alto';tarja_topo:string;tarja_base:string;cor_tarja:string;cor_tarja_texto:string;qualidade:number};
 export type Faixa = {dia:number;hora:string};
@@ -29,7 +30,7 @@ type Parcial<T> = {[K in keyof T]?:T[K] extends (infer _U)[]?T[K]:T[K] extends o
 type Cfg = {servidor:string;servidorToken:string};
 async function chamar<T=VisaoAgente>(cfg:Cfg,metodo:string,caminho:string,corpo?:unknown):Promise<T>{
   if(!cfg.servidor) throw new Error('Ligue o servidor primeiro (Chaves e ajustes > Cortes direto pelo link).');
-  const h:Record<string,string>={}; if(cfg.servidorToken) h['X-Token']=cfg.servidorToken;
+  const h:Record<string,string>={}; Object.assign(h,cabAuth(cfg.servidorToken));
   if(corpo!==undefined) h['Content-Type']='application/json';
   let r:Response;
   try{ r=await fetch(cfg.servidor+caminho,{method:metodo,headers:h,body:corpo!==undefined?JSON.stringify(corpo):undefined}); }
@@ -56,7 +57,7 @@ export const testarEmail=(c:Cfg)=>chamar<{ok:boolean}>(c,'POST','/agente/email/t
 export const acaoCorte=(c:Cfg,id:string,acao:'descartar'|'agendar'|'email')=>chamar(c,'POST',`/agente/cortes/${id}/${acao}`,{});
 /** Traz o arquivo do corte para o navegador (para ver ou baixar). */
 export async function videoDoCorte(c:Cfg,id:string):Promise<Blob>{
-  const h:Record<string,string>={}; if(c.servidorToken) h['X-Token']=c.servidorToken;
+  const h:Record<string,string>={}; Object.assign(h,cabAuth(c.servidorToken));
   const r=await fetch(`${c.servidor}/agente/cortes/${id}/video`,{headers:h}).catch(()=>null);
   if(!r||!r.ok) throw new Error('Não consegui trazer o vídeo do servidor.');
   return r.blob();

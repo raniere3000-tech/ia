@@ -3,6 +3,7 @@ import type { Clip, Formato, Tarja } from './analyze';
 import type { Cue, Preset } from './captions';
 import { TEMPLATE_PADRAO, type RenderOpts, type Regiao, type Saida, type Template, type Visual } from './render';
 import { store } from './store';
+import { cabAuth } from './api';
 
 export type Layout = Visual['layout'];
 export type Qualidade = 'alta'|'media'|'leve';
@@ -76,7 +77,7 @@ export function gravarModelos(b:Biblioteca){
 
 type Cfg = {servidor:string;servidorToken:string};
 async function chamar(cfg:Cfg,metodo:string,corpo?:unknown):Promise<Biblioteca>{
-  const h:Record<string,string>={}; if(cfg.servidorToken) h['X-Token']=cfg.servidorToken;
+  const h:Record<string,string>={}; Object.assign(h,cabAuth(cfg.servidorToken));
   if(corpo!==undefined) h['Content-Type']='application/json';
   const r=await fetch(cfg.servidor+'/modelos',{method:metodo,headers:h,body:corpo!==undefined?JSON.stringify(corpo):undefined});
   const j=await r.json().catch(()=>({}));

@@ -4,7 +4,7 @@
 import { store } from './store';
 import type { Settings } from '../state';
 
-export const SEGREDOS = ['ytKey','claudeKey','geminiKey','muapiKey','servidorToken'] as const;
+export const SEGREDOS = ['ytKey','claudeKey','geminiKey','muapiKey','servidorToken','servidorSessao','servidorAnuncio'] as const;
 export type Segredos = Partial<Record<typeof SEGREDOS[number],string>>;
 type Guardado = {v:1;salt:string;iv:string;dados:string};
 const CHAVE='studio_cofre', SESSAO='studio_aberto', VOLTAS=600000;

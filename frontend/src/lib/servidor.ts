@@ -1,8 +1,9 @@
 // Cliente do servidor opcional (pasta servidor/) que baixa o vídeo do YouTube pelo link.
+import { cabAuth } from './api';
 export type Saude = {ok:boolean;versao:string;yt_dlp:string;senha:boolean;max_minutos:number;cookies?:boolean};
 
 const base=(u:string)=>u.trim().replace(/\/+$/,'');
-function headers(token:string){ const h:Record<string,string>={'Content-Type':'application/json'}; if(token) h['X-Token']=token; return h; }
+function headers(token:string){ return {'Content-Type':'application/json',...cabAuth(token)}; }
 
 async function pedir(url:string,init?:RequestInit){
   let r:Response;
@@ -44,7 +45,7 @@ export async function baixarPeloServidor(url:string,token:string,link:string,onP
 
 /** Guarda no servidor os cookies do YouTube (arquivo cookies.txt), para quando o YouTube pede login. */
 export async function enviarCookies(url:string,token:string,texto:string|null):Promise<{cookies:boolean;linhas?:number}>{
-  const h:Record<string,string>={'Content-Type':'text/plain'}; if(token) h['X-Token']=token;
+  const h:Record<string,string>={'Content-Type':'text/plain',...cabAuth(token)};
   return (await pedir(base(url)+(texto===null?'/cookies/apagar':'/cookies'),{method:'POST',headers:h,body:texto??''})).json();
 }
 
@@ -57,16 +58,18 @@ async function assinaturaOk(url:string,mac:string,senha:string):Promise<boolean>
   let dif=0; for(let i=0;i<64;i++) dif|=hex.charCodeAt(i)^mac.charCodeAt(i);
   return dif===0;
 }
-/** O canal é público: só vale o aviso assinado com a senha do servidor. Aviso sem assinatura (servidor antigo) só confirma o endereço que já estava salvo, nunca troca. */
-export async function enderecoDoCanal(canal:string,senha='',atual=''):Promise<string|null>{
+/** O canal é público: só vale o aviso assinado (com a senha ou com o segredo dado aos aparelhos pareados). Aviso sem assinatura (servidor antigo) só confirma o endereço que já estava salvo, nunca troca. */
+export async function enderecoDoCanal(canal:string,senha='',atual='',anuncio=''):Promise<string|null>{
   if(!/^[A-Za-z0-9]{8,64}$/.test(canal)) return null;
   const r=await fetch(`https://ntfy.sh/estudioclip-${canal}/json?poll=1&since=all`);
   if(!r.ok) return null;
   let ultimo:string|null=null;
   for(const linha of (await r.text()).split('\n')){
-    try{ const m=JSON.parse(linha); if(m.event!=='message') continue; const [u,mac='']=String(m.message||'').trim().split('|');
+    try{ const m=JSON.parse(linha); if(m.event!=='message') continue; const [u,mac='',mac2='']=String(m.message||'').trim().split('|');
       if(!/^https:\/\/[a-z0-9.-]+$/i.test(u)) continue;
-      if(mac?await assinaturaOk(u,mac,senha):u===atual) ultimo=u; }catch{ /* linha vazia */ }
+      // Aparelho pareado confere com o segredo do aviso; aparelho antigo, com a senha.
+      const ok=(mac2&&anuncio&&await assinaturaOk(u,mac2,anuncio))||(mac&&senha&&await assinaturaOk(u,mac,senha))||(!mac&&u===atual);
+      if(ok) ultimo=u; }catch{ /* linha vazia */ }
   }
   return ultimo;
 }

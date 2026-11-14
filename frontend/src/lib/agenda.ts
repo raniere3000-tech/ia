@@ -1,4 +1,5 @@
 // Cliente do agendador que roda no servidor (celular/PC): contas, envio do vídeo e posts.
+import { cabAuth } from './api';
 export type Prov = 'google'|'meta'|'tiktok';
 export type Rede = 'youtube'|'facebook'|'instagram'|'tiktok'|'kwai';
 export type Conta = {app:boolean;conectado:boolean;nome:string;client_id:string;paginas:{id:string;nome:string;instagram:string}[];pagina:string;erro:string;verificado?:number};
@@ -20,7 +21,7 @@ export const enderecoRetorno = ()=>location.origin+location.pathname;
 type Cfg = {servidor:string;servidorToken:string};
 async function chamar<T=any>(cfg:Cfg,metodo:string,caminho:string,corpo?:unknown,raw?:Blob):Promise<T>{
   if(!cfg.servidor) throw new Error('Ligue o servidor primeiro (Chaves e ajustes > Cortes direto pelo link).');
-  const h:Record<string,string>={}; if(cfg.servidorToken) h['X-Token']=cfg.servidorToken;
+  const h:Record<string,string>={}; Object.assign(h,cabAuth(cfg.servidorToken));
   if(corpo!==undefined) h['Content-Type']='application/json';
   let r:Response;
   try{ r=await fetch(cfg.servidor+caminho,{method:metodo,headers:h,body:raw??(corpo!==undefined?JSON.stringify(corpo):undefined)}); }
@@ -70,7 +71,7 @@ export const cancelarPost=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/cance
 export const marcarFeito=(c:Cfg,id:string,rede:Rede)=>chamar(c,'POST',`/posts/${id}/feito`,{rede});
 /** Baixa o vídeo do post. A senha vai no cabeçalho, nunca no endereço (endereços ficam no histórico). */
 export async function baixarVideoPost(c:Cfg,id:string,nome:string){
-  const h:Record<string,string>={}; if(c.servidorToken) h['X-Token']=c.servidorToken;
+  const h:Record<string,string>={}; Object.assign(h,cabAuth(c.servidorToken));
   const r=await fetch(`${c.servidor}/posts/${id}/video`,{headers:h}).catch(()=>null);
   if(!r||!r.ok) throw new Error('Não consegui baixar o vídeo do servidor.');
   const u=URL.createObjectURL(await r.blob()); const a=document.createElement('a'); a.href=u; a.download=(nome.replace(/[\\/:*?"<>|]+/g,'').slice(0,60)||'corte')+'.mp4'; a.click(); setTimeout(()=>URL.revokeObjectURL(u),30000);

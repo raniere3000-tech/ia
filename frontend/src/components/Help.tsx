@@ -129,6 +129,36 @@ export const TOPICS:Record<string,Topic> = {
     <p><b>No celular Android (Termux):</b> rode <code>pkg install -y git && git clone https://github.com/raniere3000-tech/ia && cd ia/servidor && bash iniciar-termux.sh link</code>. O terminal mostra um link do site já ligado ao celular: abra esse link em qualquer aparelho, de qualquer lugar.</p>
     <p className="hint">Dá para hospedar o servidor na nuvem (tem Dockerfile na pasta), mas o YouTube costuma bloquear servidores de nuvem. No seu computador funciona melhor. Se hospedar, defina uma senha (variável <code>TOKEN</code>) e cole a mesma senha aqui.</p>
   </>},
+  fila:{titulo:'Fila e aprovações',corpo:<>
+    <p>Tudo que o servidor do celular faz entra numa fila: vídeos do Agente 3, cortes do Agente 1 e demonstrações de estilo. Roda <b>um trabalho pesado por vez</b> (render, cortes) e até dois leves (roteiro, narração), para o celular não travar.</p>
+    <ul><li><b>Tempo decorrido</b> é quanto já trabalhou. <b>Previsão</b> é calculada com medidas reais deste celular; enquanto não há medida, aparece "estimativa inicial".</li>
+    <li>Pausar para no próximo ponto seguro. Cancelar não apaga o que já foi feito. Tentar de novo continua da etapa que falhou.</li>
+    <li>Se o servidor reiniciar, o trabalho volta para a fila sozinho.</li></ul>
+  </>},
+  aprovacao:{titulo:'Como aprovar um vídeo',corpo:<>
+    <p>Nada do Agente 3 é publicado sem você aprovar <b>a versão final exata</b> do vídeo.</p>
+    <ol><li>Assista em <b>Fila e aprovações</b> (ou pelo link do e-mail, que só abre a tela de revisão).</li>
+    <li>Toque em <b>Aprovar e agendar</b>, <b>Pedir correção</b> (a IA muda só o que você pedir) ou <b>Rejeitar</b>.</li>
+    <li>Pelo e-mail: responda com <code>APROVAR VID-XXXXXX CÓDIGO</code>. O código vale uma vez, por 7 dias, só para aquela versão. Se sair uma versão nova, o código antigo deixa de valer.</li></ol>
+    <p className="help-note">Para ler as respostas do e-mail, ligue a leitura (IMAP) na parte de baixo da Fila. Usa a mesma senha de aplicativo do envio.</p>
+  </>},
+  storyboard:{titulo:'Roteiro e storyboard',corpo:<>
+    <p>Cada cena tem título, texto narrado, destaque (palavra grande na tela) e duração. Você pode editar, mover, duplicar, apagar e <b>bloquear</b> uma cena: cena bloqueada não muda quando você pede correção à IA.</p>
+    <p>Ao produzir, o servidor narra e renderiza cena por cena. Se você muda uma cena depois, só ela é refeita.</p>
+  </>},
+  estilos3:{titulo:'Estilos de animação',corpo:<>
+    <p>Os estilos <b>operacionais</b> são desenhados por código no servidor do celular (FFmpeg): não gastam IA. Os <b>beta</b> funcionam com limitações. Os <b>indisponíveis</b> (3D e mapas) ainda não rodam no Android e não são trocados por outro estilo escondido.</p>
+    <p>Toque em <b>Ver demonstração</b> para o servidor renderizar 5 segundos de exemplo no seu celular, com a mesma cena em todos os estilos.</p>
+  </>},
+  aparelhos:{titulo:'Conectar aparelhos ao servidor',corpo:<>
+    <p>Cada aparelho tem sua própria entrada. Para conectar um aparelho novo, gere um <b>código de uso único</b> aqui (ou rode <code>bash iniciar-termux.sh parear</code> no Termux) e abra o link no aparelho novo. O código vence em 10 minutos.</p>
+    <p>A senha do servidor não vai mais em link. Se perder um aparelho, toque em <b>Desconectar</b> na lista.</p>
+  </>},
+  sincronia:{titulo:'Salvar no servidor',corpo:<>
+    <p>Com o salvamento ligado, o que você faz em Vídeo animado, Montagem, Vozes e as preferências fica guardado também no servidor do celular, e aparece em qualquer aparelho conectado.</p>
+    <ul><li><b>Salvo no servidor</b>: tudo certo. <b>Offline</b>: ficou salvo neste navegador e sobe quando a conexão voltar.</li>
+    <li><b>Conflito</b>: outro aparelho mudou a mesma área. Você escolhe qual versão fica; nada é apagado sem você escolher. As 40 últimas versões ficam no servidor.</li></ul>
+  </>},
   modelo:{titulo:'Falas ou Gameplay/ação?',corpo:<>
     <ul><li><b>Falas</b>: podcasts, entrevistas, aulas. Usa a transcrição para achar frases completas.</li><li><b>Gameplay/ação</b>: jogos, esportes, vídeos com pouca fala. Dá mais peso aos picos de áudio e, se a Claude estiver configurada, envia 2 quadros de cada trecho para a IA ver o que acontece (custa um pouco mais).</li></ul>
   </>},

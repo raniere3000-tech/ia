@@ -2,6 +2,21 @@ import InstalarApp from '../components/InstalarApp';
 import { Search, Upload, Sparkles, Download, KeyRound, CheckCircle2, Circle, ArrowRight, ShieldCheck, Clock, Clapperboard, Mic, Film, PlayCircle } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
+import { useServidor } from '../components/Servidor2';
+import { lerFila, pendentes } from '../lib/api';
+
+// Resumo do servidor do celular: só números que o servidor informou (nada inventado).
+function ResumoServidor(){
+  const {go}=useApp();
+  const f=useServidor(c=>lerFila(c),30); const p=useServidor(pendentes,30);
+  const n=f.dados?.contagem||{};
+  const itens:[string,number|undefined,'fila'|'revisar'][]= [['Produzindo agora',n.produzindo,'fila'],['Agendados',n.agendados,'fila'],['Esperando sua aprovação',p.dados?.pendentes.length,'fila'],['Com erro',n.erros,'fila']];
+  return <section className="panel">
+   <div className="section-head"><h2><Clock size={18}/> Servidor do celular</h2>{f.erro?<span className="tag warn">sem resposta</span>:f.dados?<span className="tag ok">ligado</span>:null}</div>
+   {f.erro?<p className="hint bad">{f.erro}</p>:<div className="inicio-resumo">{itens.map(([t,v,to])=><button key={t} onClick={()=>go(to)}><b>{v??'...'}</b>{t}</button>)}</div>}
+   <div className="row-gap left mt"><button className="subtle sm" onClick={()=>go('ia')}><Sparkles size={14}/> Criar com IA</button><button className="subtle sm" onClick={()=>go('automatico')}><Film size={14}/> Automático</button><button className="subtle sm" onClick={()=>go('projetos')}><Download size={14}/> Meus projetos</button></div>
+  </section>;
+}
 
 export default function Inicio(){
   const {settings,go,projeto}=useApp();
@@ -29,6 +44,7 @@ export default function Inicio(){
     {ok:true,t:'Legendas automáticas (Whisper)',d:'Já funciona, sem chave. O modelo é baixado na primeira vez.',help:'whisper' as const,need:'Sem chave'},
   ];
   return <>
+   {settings.servidor&&<ResumoServidor/>}
    {continuar.length>0&&<section className="panel">
     <div className="section-head"><h2><PlayCircle size={18}/> Continuar projeto</h2></div>
     <div className="inicio-cont">{continuar.map(c=><button key={c.t} className="inicio-cont-item" onClick={()=>go(c.to)}><b>{c.t}</b><small>{c.d}</small><ArrowRight size={15}/></button>)}</div>

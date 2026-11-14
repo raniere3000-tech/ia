@@ -6,6 +6,7 @@ import { testarChaveYouTube } from '../lib/radar';
 import { WHISPER_MODELS, IDIOMAS } from '../lib/transcribe';
 import { testarServidor, enviarCookies } from '../lib/servidor';
 import { iaAtiva } from '../lib/ia';
+import { AparelhosCard, DiagnosticoCard } from '../components/Aparelhos';
 import { temCofre, cofreAberto, podeCofre, criarCofre, removerCofre, trancarCofre } from '../lib/cofre';
 
 function KeyField({label,value,placeholder,onSave,onTest,help,link,linkLabel}:{label:string;value:string;placeholder:string;onSave:(v:string)=>void;onTest:(v:string)=>Promise<void>;help:'youtube'|'claude'|'gemini'|'muapi';link:string;linkLabel:string}){
@@ -70,7 +71,7 @@ function ServidorCard(){
        <button className="primary" disabled={!url.trim()||busy} onClick={salvar}>{busy?<Loader2 size={16} className="spin"/>:<CheckCircle2 size={16}/>} Testar e salvar</button>
        {settings.servidor&&<button className="subtle" title="Desligar servidor" onClick={()=>{setSettings({servidor:'',servidorToken:''});setInfo('');toast('Servidor desligado neste navegador.')}}><Trash2 size={16}/></button>}
       </div>
-      <label className="mt">Senha do servidor (só se você definiu uma)<input type="password" value={tok} onChange={e=>setTok(e.target.value)} placeholder="Deixe vazio no servidor do seu computador" autoComplete="off"/></label>
+      <label className="mt">Senha do servidor (só para o primeiro acesso ou servidor antigo; depois use "Aparelhos conectados" abaixo)<input type="password" value={tok} onChange={e=>setTok(e.target.value)} placeholder="Deixe vazio no servidor do seu computador" autoComplete="off"/></label>
       <div className="key-foot">{settings.servidor?<span className="tag ok">Servidor salvo: {settings.servidor}</span>:<span className="tag warn">Nenhum servidor</span>}{info&&<span className="tag ok">{info}</span>}</div>
      </div>
      {settings.servidor&&<div className="key-field cookies-box">
@@ -118,6 +119,8 @@ export default function Config(){
    </section>
 
    <ServidorCard/>
+   <AparelhosCard/>
+   <DiagnosticoCard/>
 
    <section className="panel config-card">
     <div className="config-icon cap"><Captions size={22}/></div>
@@ -131,5 +134,6 @@ export default function Config(){
     </div>
    </section>
    <CofreCard/>
+   <section className="panel"><div className="row-gap left"><button className="subtle" onClick={()=>dispatchEvent(new Event('estudio:tour'))}>Rever o tutorial do site</button></div></section>
   </>;
 }
