@@ -3,7 +3,8 @@ import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Film, Loader2, Packag
 import { VOZES, pegarDub, wavDaDub } from '../lib/dublagem';
 import { useApp, captionPresets, effectPresets } from '../state';
 import Preview from './Preview';
-import { TemplateForm } from '../pages/Templates';
+import EscolherModelo from './EscolherModelo';
+import { optsDoClip } from '../lib/modelos';
 import { TARJA_PADRAO, type Clip, type Formato, type Tarja } from '../lib/analyze';
 import { tm } from '../lib/store';
 
@@ -32,8 +33,7 @@ export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZi
   const marcados=clips.filter(c=>!fora.has(c.id)).map(c=>c.id);
   const marcar=(id:string,v:boolean)=>setFora(f=>{ const n=new Set(f); v?n.delete(id):n.add(id); return n; });
   const atual=clips[Math.min(i,clips.length-1)];
-  const legenda=captionPresets.find(p=>p.id===atual?.legenda)||null;
-  const opts=useMemo(()=>({legenda,efeito:atual?.efeito||'nenhum',cues:atual?.video?.cues??projeto.cues,gancho:atual?.gancho_texto||'',accent:legenda?.highlightColor||template.cor,template:atual?.semTemplate?{...template,ativo:false}:template,tarja:atual?.tarja}),[atual?.tarja,legenda,atual?.semTemplate,atual?.efeito,atual?.gancho_texto,atual?.video,projeto.cues,template]);
+  const opts=useMemo(()=>atual?optsDoClip(atual,atual.video?.cues??projeto.cues,template,captionPresets):null,[atual,projeto.cues,template]);
   if(!atual) return <section className="panel empty-state"><h2>Nenhum corte escolhido</h2><button className="primary" onClick={onVoltar}><ArrowLeft size={16}/> Voltar e escolher</button></section>;
   const alvo=()=>todos&&marcados.length?marcados:[atual.id];
   const igual=(k:keyof Clip)=>clips.every(c=>c[k]===atual[k]);
@@ -69,7 +69,7 @@ export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZi
     <div className="result-controls">
      <button className="subtle" onClick={onVoltar}><ArrowLeft size={15}/> Voltar aos cortes</button>
      <button className="subtle" disabled={exportando} onClick={onZip}>{exportando?<Loader2 size={15} className="spin"/>:<Package size={15}/>} Baixar todos (ZIP)</button>
-     <button className="primary" disabled={!marcados.length} onClick={()=>onProximo(marcados)}>Próximo: postar {marcados.length<clips.length?`os ${marcados.length} marcados`:''} <ArrowRight size={15}/></button>
+     <button className="primary" disabled={!marcados.length} onClick={()=>onProximo(marcados)}>Próximo: baixar ou postar {marcados.length<clips.length?`os ${marcados.length} marcados`:''} <ArrowRight size={15}/></button>
     </div>
    </section>
    <div className="edicao">
@@ -79,7 +79,7 @@ export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZi
       <span><b>Corte {i+1} de {clips.length}</b> • {tm(atual.inicio)}–{tm(atual.fim)}</span>
       <button className="icon-btn" disabled={i>=clips.length-1} onClick={()=>setI(i+1)} aria-label="Próximo corte"><ChevronRight size={18}/></button>
      </div>
-     <Preview key={atual.id} url={atual.video?.url||projeto.url} inicio={atual.inicio} fim={atual.fim} formato={atual.formato} opts={opts}/>
+     <Preview key={atual.id} url={atual.video?.url||projeto.url} inicio={atual.inicio} fim={atual.fim} formato={atual.formato} opts={opts!}/>
      <label className="mt">Título deste corte<input value={atual.titulo} maxLength={100} onChange={e=>mudar([atual.id],{titulo:e.target.value})}/></label>
      <label className="mt">Hashtags do post<input value={(atual.hashtags||[]).join(' ')} placeholder="#shorts #reels" onChange={e=>mudar([atual.id],{hashtags:e.target.value.split(/\s+/).filter(Boolean).map(h=>h.startsWith('#')?h:'#'+h)})}/></label>
      <label className="mt">Texto de gancho no topo (opcional)<input value={atual.gancho_texto} maxLength={60} placeholder="Ex.: ELE NÃO ESPERAVA ISSO" onChange={e=>mudar([atual.id],{gancho_texto:e.target.value})}/></label>
@@ -147,12 +147,11 @@ export default function EdicaoLote({clips,mudar,onEditar,onVoltar,onProximo,onZi
       <label className="check big"><input type="checkbox" checked={todos} onChange={e=>setTodos(e.target.checked)}/> Aplicar nos {marcados.length} corte(s) marcados na tira (desmarque para mudar só o corte {i+1})</label>
       <label className="mt"><span className="label-row">Efeito e enquadramento {!igual('efeito')&&<span className="tag">varia entre os cortes</span>}</span>
        <select value={atual.efeito} onChange={e=>mudar(alvo(),{efeito:e.target.value})}>{efeitos.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select></label>
-      <label className="mt"><span className="label-row">Template e @ {!igual('semTemplate')&&<span className="tag">varia entre os cortes</span>}</span>
-       <select value={atual.semTemplate?'nao':'sim'} onChange={e=>mudar(alvo(),{semTemplate:e.target.value==='nao'})}><option value="sim">Usar o template</option><option value="nao">Sem template</option></select></label>
+      <div className="mt">{(!igual('modelo')||!igual('semTemplate'))&&<span className="tag">o template varia entre os cortes</span>}
+       <EscolherModelo clip={atual} aplicar={p=>mudar(alvo(),p)} ajustar={p=>mudar([atual.id],p)} escopo={todos?`vale para os ${marcados.length} marcados`:`só o corte ${i+1}`}/></div>
       <div className="field mt"><span className="field-label">Formato</span><div className="seg">{(['9:16','1:1','16:9'] as Formato[]).map(f=><button key={f} className={atual.formato===f?'on':''} onClick={()=>mudar(alvo(),{formato:f})}>{f}</button>)}</div></div>
      </section>
-     <TemplateForm titulo="Template e @ do canal"/>
-     <p className="hint"><LayoutTemplate size={13}/> O template fica salvo para os próximos vídeos. Para tirar de alguns cortes, marque-os na tira e escolha Sem template acima.</p>
+     <p className="hint"><LayoutTemplate size={13}/> Escolher um template aplica uma cópia dele nos cortes marcados. Depois você ainda pode mudar legenda, tarjas, efeito e formato de cada corte sem alterar o template salvo.</p>
     </div>
    </div>
   </>;

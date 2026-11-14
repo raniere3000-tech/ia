@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react';
 import type { Clip } from './lib/analyze';
 import type { Cue, Preset } from './lib/captions';
 import type { Template } from './lib/render';
+import type { Modelo } from './lib/modelos';
 import presets from '../../config/presets.json';
 
 export type Marca = {id:string;inicio:number;fim:number;titulo:string;nota?:number;motivo?:string;gancho?:string;hashtags?:string[];ia?:boolean};
@@ -27,6 +28,8 @@ export type Ctx = {
   toast:(msg:string,kind?:'ok'|'erro'|'info')=>void;
   projeto:Projeto; setProjeto:(f:(p:Projeto)=>Projeto)=>void;
   template:Template; setTemplate:(t:Template)=>void;
+  /** Biblioteca de templates, igual no navegador e no servidor dos agentes. sinc diz onde ela está guardada. */
+  modelos:Modelo[]; setModelos:(ms:Modelo[])=>void; modelosSinc:'local'|'servidor'|'erro';
   linkRef:string; setLinkRef:(s:string)=>void;
   marcas:Marca[]; setMarcas:(f:(m:Marca[])=>Marca[])=>void;
 };

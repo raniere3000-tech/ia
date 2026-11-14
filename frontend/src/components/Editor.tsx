@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { Copy, Download, Save, Minus, Plus, Crosshair } from 'lucide-react';
 import { Modal } from './Help';
 import Preview from './Preview';
+import EscolherModelo from './EscolherModelo';
+import { optsDoClip } from '../lib/modelos';
 import { useApp, captionPresets, effectPresets } from '../state';
 import { notaFinal, nota10, type Clip, type Formato } from '../lib/analyze';
 import { tm, parseTime } from '../lib/store';
@@ -15,8 +17,7 @@ export default function Editor({clip,onClose,onSave,onDuplicate,onExport}:{clip:
   const dur=clip.video?.duracao??projeto.duracao;
   const setIni=(v:number)=>set({inicio:Math.max(0,Math.min(v,c.fim-1))});
   const setFim=(v:number)=>set({fim:Math.min(dur,Math.max(v,c.inicio+1))});
-  const legenda=captionPresets.find(p=>p.id===c.legenda)||null;
-  const opts=useMemo(()=>({legenda,efeito:c.efeito,cues,gancho:c.gancho_texto,accent:legenda?.highlightColor||template.cor,template,tarja:c.tarja}),[c.tarja,legenda,c.efeito,cues,c.gancho_texto,template]);
+  const opts=useMemo(()=>optsDoClip(c,cues,template,captionPresets),[c,cues,template]);
   const falas=cues.map((q,i)=>({q,i})).filter(({q})=>q.end>c.inicio&&q.start<c.fim);
   const salvar=()=>{ onSave({...c,nota_final:notaFinal(c.notas),nota_10:nota10(notaFinal(c.notas))},cues); };
   const TimeInput=({label,value,onChange}:{label:string;value:number;onChange:(v:number)=>void})=><label>{label}<div className="time-row"><button className="icon-btn" onClick={()=>onChange(value-1)} aria-label="Menos 1 segundo"><Minus size={14}/></button><input key={value} defaultValue={tm(value)} onBlur={e=>{const v=parseTime(e.target.value); if(!isNaN(v)) onChange(v);}} onKeyDown={e=>{if(e.key==='Enter')(e.target as HTMLInputElement).blur()}}/><button className="icon-btn" onClick={()=>onChange(value+1)} aria-label="Mais 1 segundo"><Plus size={14}/></button></div></label>;
@@ -37,6 +38,7 @@ export default function Editor({clip,onClose,onSave,onDuplicate,onExport}:{clip:
       <label>Estilo da legenda<select value={c.legenda} onChange={e=>set({legenda:e.target.value})}><option value="">Sem legenda</option>{captionPresets.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select></label>
       <label>Efeito<select value={c.efeito} onChange={e=>set({efeito:e.target.value})}><option value="nenhum">Sem efeito (preencher a tela)</option>{effectPresets.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select></label>
      </div>
+     <EscolherModelo clip={c} aplicar={set} ajustar={set}/>
      <label>Texto de gancho no topo (opcional)<input value={c.gancho_texto} maxLength={80} placeholder="Ex.: ELE NÃO ESPERAVA ISSO" onChange={e=>set({gancho_texto:e.target.value})}/></label>
      <div className="cue-edit">
       <div className="cue-head"><strong>Legenda deste corte</strong><small>{falas.length?'Clique no texto para corrigir uma palavra.':'Sem falas neste trecho. Gere legendas automáticas ou envie um .srt.'}</small></div>

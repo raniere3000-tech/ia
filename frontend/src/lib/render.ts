@@ -10,7 +10,21 @@ export type Template = {ativo:boolean; logo:string; logoPos:'top-left'|'top-righ
 export const TEMPLATE_PADRAO:Template = {ativo:false,logo:'',logoPos:'top-right',credito:'',cor:'#7758ef',moldura:false};
 
 import { posicao, type Trilha } from './rosto';
-export type RenderOpts = {legenda:Preset|null; efeito:string; cues:Cue[]; gancho:string; accent:string; template:Template; logoImg?:HTMLImageElement|null; rosto?:Trilha|null; tarja?:Tarja|null};
+/** Parte do vídeo original, em frações de 0 a 1 (x, y, largura, altura). */
+export type Regiao = {x:number;y:number;w:number;h:number};
+/** Composição vinda de um template: enquadramento, zoom e posição. Sem isso vale o comportamento antigo (pelo efeito). */
+export type Visual = {layout:'desfoque'|'cheio'|'gameplay-streamer'; zoom:number; posX:number; posY:number; jogo:Regiao; camera:Regiao; divisao:number; gancho:boolean; ganchoPos:'topo'|'alto'};
+export type RenderOpts = {legenda:Preset|null; efeito:string; cues:Cue[]; gancho:string; accent:string; template:Template; logoImg?:HTMLImageElement|null; rosto?:Trilha|null; tarja?:Tarja|null; visual?:Visual|null};
+/** Tamanho e peso do arquivo exportado. escala 1 = 1080p; 2/3 = 720p. */
+export type Saida = {escala:number; bitrate:number};
+
+/** Desenha uma parte do vídeo preenchendo um retângulo do quadro (corta o que sobra, sem distorcer). */
+function drawRegiao(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,r:Regiao,vw:number,vh:number,dx:number,dy:number,dw:number,dh:number){
+  let sx=vw*r.x, sy=vh*r.y, sw=Math.max(2,vw*r.w), sh=Math.max(2,vh*r.h);
+  const alvo=dw/dh;
+  if(sw/sh>alvo){ const n=sh*alvo; sx+=(sw-n)/2; sw=n; } else { const n=sw/alvo; sy+=(sh-n)/2; sh=n; }
+  ctx.drawImage(v,sx,sy,sw,sh,dx,dy,dw,dh);
+}
 
 export function formatoSuportado(){
   if(typeof MediaRecorder==='undefined') return null;
@@ -31,13 +45,20 @@ export function drawFrame(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,small:
   let z=1,dx=0,dy=0;
   if(o.efeito==='zoom-acao') z=1+0.18*Math.min(1,t/Math.max(1,dur));
   if(o.efeito==='camera-shake' && (t%4)<0.22){ dx=(Math.random()-.5)*28; dy=(Math.random()-.5)*28; }
-  if(o.efeito==='seguir-rosto' && o.rosto && Math.abs(W/H - vw/vh) >= 0.05){
+  const vis=o.visual||null;
+  if(vis){ z*=Math.max(1,vis.zoom||1); }
+  if(vis?.layout==='gameplay-streamer'){
+    // Gameplay em cima e câmera do streamer embaixo, tirados do mesmo quadro (sempre sincronizados).
+    const h1=Math.round(H*Math.max(35,Math.min(80,vis.divisao||62))/100/2)*2;
+    drawRegiao(ctx,v,vis.jogo,vw,vh,0,0,W,h1);
+    drawRegiao(ctx,v,vis.camera,vw,vh,0,h1,W,H-h1);
+  }else if(o.efeito==='seguir-rosto' && o.rosto && Math.abs(W/H - vw/vh) >= 0.05){
     // Corta o quadro inteiro (sem bordas) e move a janela para manter o rosto no centro.
     const p=posicao(o.rosto,t); const w=vw*cover, h=vh*cover;
     const x=Math.min(0,Math.max(W-w,W/2-p.cx*w)), y=Math.min(0,Math.max(H-h,H*0.42-p.cy*h));
     ctx.drawImage(v,x,y,w,h);
-  }else if(o.efeito==='nenhum' || (o.efeito==='seguir-rosto' && o.rosto===undefined) || Math.abs(W/H - vw/vh) < 0.05){
-    const w=vw*cover*z, h=vh*cover*z; ctx.drawImage(v,(W-w)/2+dx,(H-h)/2+dy,w,h);
+  }else if(vis ? vis.layout==='cheio' : (o.efeito==='nenhum' || (o.efeito==='seguir-rosto' && o.rosto===undefined) || Math.abs(W/H - vw/vh) < 0.05)){
+    const w=vw*cover*z, h=vh*cover*z; ctx.drawImage(v,(W-w)*(vis?vis.posX:0.5)+dx,(H-h)*(vis?vis.posY:0.5)+dy,w,h);
   }else{
     // Fundo desfocado: reduz para um canvas minúsculo e amplia (funciona em todos os navegadores).
     small.width = W>H?96:54; small.height = W>H?54:(W===H?54:96);
@@ -50,7 +71,7 @@ export function drawFrame(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,small:
   }
   const hTarja=o.tarja?drawTarjas(ctx,o.tarja,W,H):0;
   if(o.legenda){ const cue=o.cues.find(c=>t>=c.start&&t<c.end); if(cue) drawCaption(ctx,o.legenda,cue.text,t-cue.start,cue.end-cue.start,W,H); }
-  drawHook(ctx,o.gancho,o.accent,W,o.tarja?.topo?hTarja:0);
+  if(!vis||vis.gancho) drawHook(ctx,o.gancho,o.accent,W,o.tarja?.topo?hTarja:0,vis?.ganchoPos==='alto'?H*0.14:0);
   if(o.template.ativo) drawTemplate(ctx,o.template,o.logoImg||null,W,H);
   if(o.efeito==='transicao-fade'){ const a=Math.max(0,1-t/0.4,1-(dur-t)/0.4); if(a>0){ ctx.fillStyle=`rgba(0,0,0,${Math.min(1,a)})`; ctx.fillRect(0,0,W,H);} }
   if(o.efeito==='virada-cena' && t<0.35){ ctx.fillStyle=`rgba(255,255,255,${1-t/0.35})`; ctx.fillRect(0,0,W,H); }
@@ -95,7 +116,7 @@ export function drawTemplate(ctx:CanvasRenderingContext2D,tp:Template,logo:HTMLI
 export type ExportClip = {inicio:number;fim:number;formato:Formato};
 
 /** Grava o corte em tempo real. Mantenha a aba visível durante a exportação. */
-export async function exportarCorte(url:string,clip:ExportClip,cuesAbs:Cue[],o:Omit<RenderOpts,'cues'>,progress:(n:number)=>void,dub?:{samples:Float32Array;rate:number;volumeOriginal:number}|null){
+export async function exportarCorte(url:string,clip:ExportClip,cuesAbs:Cue[],o:Omit<RenderOpts,'cues'>,progress:(n:number)=>void,dub?:{samples:Float32Array;rate:number;volumeOriginal:number}|null,saida?:Saida|null){
   const mime=formatoSuportado();
   if(!mime) throw new Error('Este navegador não grava vídeo. Use Chrome, Edge ou Safari atualizados.');
   const [W,H]=DIMS[clip.formato];
@@ -103,8 +124,11 @@ export async function exportarCorte(url:string,clip:ExportClip,cuesAbs:Cue[],o:O
   const cues=cuesAbs.filter(c=>c.end>clip.inicio&&c.start<clip.fim).map(c=>({start:Math.max(0,c.start-clip.inicio),end:Math.min(dur,c.end-clip.inicio),text:c.text}));
   const v=document.createElement('video'); v.src=url; v.playsInline=true; v.preload='auto';
   await new Promise<void>((res,rej)=>{v.onloadedmetadata=()=>res();v.onerror=()=>rej(new Error('Não foi possível abrir o vídeo.'));});
-  const canvas=document.createElement('canvas'); canvas.width=W; canvas.height=H;
+  // O desenho é sempre feito na medida de 1080p; para 720p o quadro inteiro é reduzido por igual.
+  const esc=saida?.escala&&saida.escala>0&&saida.escala<1?saida.escala:1;
+  const canvas=document.createElement('canvas'); canvas.width=Math.round(W*esc/2)*2; canvas.height=Math.round(H*esc/2)*2;
   const ctx=canvas.getContext('2d')!; const small=document.createElement('canvas');
+  if(esc!==1) ctx.setTransform(canvas.width/W,0,0,canvas.height/H,0,0);
   const stream=canvas.captureStream(FPS);
   const ac=new AudioContext(); await ac.resume();
   const src=ac.createMediaElementSource(v); const dest=ac.createMediaStreamDestination();
@@ -116,7 +140,7 @@ export async function exportarCorte(url:string,clip:ExportClip,cuesAbs:Cue[],o:O
     voz=ac.createBufferSource(); voz.buffer=buf; voz.connect(dest);
   } else src.connect(dest);
   dest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
-  const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8_000_000,audioBitsPerSecond:160_000});
+  const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:saida?.bitrate||8_000_000,audioBitsPerSecond:160_000});
   const chunks:Blob[]=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
   const done=new Promise<void>(res=>{ rec.onstop=()=>res(); });
   v.currentTime=clip.inicio;

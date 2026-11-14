@@ -33,7 +33,9 @@ from email.message import EmailMessage
 from pathlib import Path
 
 import cofre
+import modelos as mo
 import postagem as pg
+import hashlib
 
 ARQ_CFG = pg.DADOS / 'agente.json'
 ARQ_SEG = pg.DADOS / 'agente_segredos.json'
@@ -73,6 +75,7 @@ PADRAO = {
                      'gancho': True, 'gancho_pos': 'topo', 'tarja_topo': '', 'tarja_base': '',
                      'cor_tarja': '#111111', 'cor_tarja_texto': '#FFFFFF', 'qualidade': 1080},
         'variar': ['cor_destaque', 'gancho_pos', 'zoom'],
+        'modelos': [], 'aprender': True,
     },
     'postagem': {
         'ligado': False, 'redes': ['youtube', 'instagram', 'facebook', 'tiktok', 'kwai'],
@@ -126,6 +129,7 @@ def _limpar_cfg(c: dict) -> dict:
     co['nichos'] = [str(x).strip()[:40] for x in co['nichos'] if str(x).strip()][:8]
     co['proibidos'] = [str(x).strip()[:60] for x in co['proibidos'] if str(x).strip()][:40]
     co['variar'] = [v for v in co['variar'] if v in VARIACOES][:3]
+    co['modelos'] = [str(x)[:40] for x in dict.fromkeys(co['modelos']) if isinstance(x, str)][:mo.MAX_ATIVOS]
     co['idioma'] = co['idioma'].lower() if re.fullmatch(r'[A-Za-z]{2}', co['idioma']) else 'pt'
     co['regiao'] = co['regiao'].upper() if re.fullmatch(r'[A-Za-z]{2}', co['regiao']) else ''
     co['por_semana'] = max(1, min(21, co['por_semana']))
@@ -177,7 +181,7 @@ def salvar_segredos(novo: dict):
 def estado() -> dict:
     with LOCK:
         e = pg._ler(ARQ_EST, {})
-        for k, v in (('canais', []), ('cortes', []), ('vistos', {}), ('log', []), ('gasto', {}), ('horarios', {}), ('marcas', {})):
+        for k, v in (('canais', []), ('cortes', []), ('vistos', {}), ('log', []), ('gasto', {}), ('horarios', {}), ('marcas', {}), ('pesos', {}), ('medidas', [])):
             if not isinstance(e.get(k), type(v)):
                 e[k] = v
         return e
@@ -361,11 +365,24 @@ def acao_canal(d: dict) -> dict:
         if motivo not in MOTIVOS:
             raise ErroAgente('Marque o motivo: o canal é seu, o dono autorizou, ou o canal tem regra pública que permite cortes.')
 
+    extras = {}
+    if 'comercial' in d:
+        extras['comercial'] = None if d['comercial'] is None else bool(d['comercial'])
+    if 'restricoes' in d:
+        extras['restricoes'] = str(d['restricoes'])[:300]
+    if 'origem_aut' in d:
+        extras['origem_aut'] = str(d['origem_aut'])[:300]
+
     def g(e):
         for c in e['canais']:
             if c['id'] == cid:
                 if acao == 'aprovar' or (acao == 'adicionar' and motivo):
                     c.update(status='aprovado', motivo=motivo, aprovado=time.time())
+                    c.update(extras)
+                    if motivo == 'meu' and c.get('comercial') is None:
+                        c['comercial'] = True
+                elif acao == 'editar':
+                    c.update(extras)
                 elif acao == 'recusar':
                     c.update(status='recusado', motivo='')
                 elif acao == 'remover':
@@ -613,31 +630,49 @@ def sortear(tpl: dict, variar: list, rnd: random.Random) -> tuple[dict, list]:
     return t, usadas
 
 
+def _dims(tpl: dict) -> tuple[int, int]:
+    L, A = mo.FORMATOS.get(tpl.get('formato', '9:16'), (1080, 1920))
+    if tpl.get('qualidade', 1080) < 1000:
+        L, A = L * 2 // 3 // 2 * 2, A * 2 // 3 // 2 * 2
+    return L, A
+
+
+def _tarjas(tpl: dict, A: int) -> tuple[bool, bool, int]:
+    """Tarja de cima, de baixo e a altura em pixels. Modelos antigos ligavam a tarja pelo texto."""
+    topo = tpl.get('tarja_topo_on', bool(tpl.get('tarja_topo', '').strip()))
+    base = tpl.get('tarja_base_on', bool(tpl.get('tarja_base', '').strip()))
+    return topo, base, int(A * max(4, min(25, tpl.get('tarja_alt', 7.5))) / 100)
+
+
 def montar_ass(palavras: list, ini: float, fim: float, tpl: dict, gancho: str, L: int, A: int) -> str:
-    esc = A / 1920
+    esc = min(L, A) / 1080
     tam = {'pequeno': 62, 'medio': 78, 'grande': 96}.get(tpl['tamanho'], 78) * esc
-    alt_tarja = int(A * 0.075)
+    tem_topo, tem_base, alt_tarja = _tarjas(tpl, A)
     topo, base = tpl['tarja_topo'].strip(), tpl['tarja_base'].strip()
-    estilo = lambda nome, t, cor, borda, sombra, alin, mv, bs=1, fundo='&H00000000&': (
-        f'Style: {nome},Inter,{t:.0f},{cor},{cor},&H00000000&,{fundo},-1,0,0,0,100,100,0,0,{bs},{borda:.1f},{sombra:.1f},{alin},{int(L * 0.07)},{int(L * 0.07)},{int(mv)},1')
-    mv_leg = A * (0.20 if tpl['legenda_pos'] == 'baixo' else 0.0) + (alt_tarja if base and tpl['legenda_pos'] == 'baixo' else 0)
+    estilo = lambda nome, t, cor, borda, sombra, alin, mv, bs=1, fundo='&H00000000&', contorno='&H00000000&': (
+        f'Style: {nome},Inter,{t:.0f},{cor},{cor},{contorno},{fundo},-1,0,0,0,100,100,0,0,{bs},{borda:.1f},{sombra:.1f},{alin},{int(L * 0.07)},{int(L * 0.07)},{int(mv)},1')
+    mv_leg = A * (0.20 if tpl['legenda_pos'] == 'baixo' else 0.0) + (alt_tarja if tem_base and tpl['legenda_pos'] == 'baixo' else 0)
     alin_leg = 2 if tpl['legenda_pos'] == 'baixo' else 5
     caixa = tpl['legenda'] == 'caixa'
+    m = min(L, A) * 0.04
     linhas = [
         '[Script Info]', 'ScriptType: v4.00+', f'PlayResX: {L}', f'PlayResY: {A}', 'WrapStyle: 0', 'ScaledBorderAndShadow: yes', '',
         '[V4+ Styles]',
         'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
         estilo('Leg', tam, _ass_cor(tpl['cor']), 14 * esc if caixa else 7 * esc, 0 if caixa else 3 * esc, alin_leg, mv_leg, 3 if caixa else 1, '&H50000000&'),
-        estilo('Gancho', 70 * esc, '&H00111111&', 16 * esc, 0, 8, (A * (0.10 if tpl['gancho_pos'] == 'topo' else 0.24)) + (alt_tarja if topo else 0), 3),
-        estilo('Tarja', alt_tarja * 0.5, _ass_cor(tpl['cor_tarja_texto']), 0, 0, 5, 0),
+        estilo('Gancho', 70 * esc, '&H00111111&', 16 * esc, 0, 8, (A * (0.10 if tpl['gancho_pos'] == 'topo' else 0.24)) + (alt_tarja if tem_topo else 0), 3),
+        estilo('Tarja', alt_tarja * 0.42, _ass_cor(tpl['cor_tarja_texto']), 0, 0, 5, 0),
+        estilo('Credito', min(L, A) * 0.032, '&H00FFFFFF&', 9 * esc, 0, 2, m * 1.2 + (alt_tarja if tem_base else 0), 3, contorno=_ass_cor(tpl.get('cor_marca', '#7758ef'))),
         '', '[Events]', 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
     ]
     ev = lambda a, b, est, txt: linhas.append(f'Dialogue: 0,{_ass_t(a)},{_ass_t(b)},{est},,0,0,0,,{txt}')
     dur = fim - ini
-    if topo:
+    if tem_topo and topo:
         ev(0, dur, 'Tarja', f'{{\\an5\\pos({L // 2},{alt_tarja // 2})}}{_ass_txt(topo)}')
-    if base:
+    if tem_base and base:
         ev(0, dur, 'Tarja', f'{{\\an5\\pos({L // 2},{A - alt_tarja // 2})}}{_ass_txt(base)}')
+    if tpl.get('credito', '').strip():
+        ev(0, dur, 'Credito', _ass_txt(tpl['credito'].strip()))
     if tpl['gancho'] and gancho:
         # o estilo Gancho é uma caixa clara com letra escura: a cor da caixa vem do contorno
         ev(0, min(3.5, dur), 'Gancho', f'{{\\3c&H00FFFFFF&\\fad(150,200)}}{_ass_txt(gancho.upper())}')
@@ -665,33 +700,76 @@ def montar_ass(palavras: list, ini: float, fim: float, tpl: dict, gancho: str, L
     return '\n'.join(linhas) + '\n'
 
 
-def editar(video: Path, corte: dict, palavras: list, tpl: dict, destino: Path, pasta: Path):
-    """Corta o trecho, põe em vertical, grava legenda, gancho e tarjas."""
-    A = 1920 if tpl['qualidade'] >= 1000 else 1280
-    L = A * 9 // 16
-    ass = pasta / f'{destino.stem}.ass'
-    ass.write_text(montar_ass(palavras, corte['ini'], corte['fim'], tpl, corte.get('gancho', ''), L, A), encoding='utf-8')
+def _recorte(r: dict) -> str:
+    return f"crop=iw*{r['w']:.4f}:ih*{r['h']:.4f}:iw*{r['x']:.4f}:ih*{r['y']:.4f}"
+
+
+def filtro_video(tpl: dict, L: int, A: int, dur: float, ass: Path, logo: Path | None) -> str:
+    """Monta o filtro do FFmpeg que desenha o modelo: enquadramento, tarjas, textos, moldura, logo e transição."""
     z = tpl['zoom']
-    if tpl['enquadramento'] == 'cortar':
-        fc = f'[0:v]scale={L}:{A}:force_original_aspect_ratio=increase,crop={L}:{A},setsar=1[v0]'
+    par = lambda n: int(n) // 2 * 2
+    quadro = tpl['enquadramento']
+    if quadro == 'gameplay-streamer':
+        h1 = par(A * tpl.get('divisao', 62) / 100)
+        h2 = A - h1
+        fc = (f"[0:v]split=2[g][c];[g]{_recorte(tpl['jogo'])},scale={L}:{h1}:force_original_aspect_ratio=increase,crop={L}:{h1},setsar=1[top];"
+              f"[c]{_recorte(tpl['camera'])},scale={L}:{h2}:force_original_aspect_ratio=increase,crop={L}:{h2},setsar=1[bot];[top][bot]vstack=inputs=2[v0]")
+    elif quadro == 'cortar':
+        fc = (f"[0:v]scale={par(L * z)}:{par(A * z)}:force_original_aspect_ratio=increase,"
+              f"crop={L}:{A}:(iw-{L})*{tpl.get('pos_x', 0.5):.3f}:(ih-{A})*{tpl.get('pos_y', 0.5):.3f},setsar=1[v0]")
     else:
         fc = (f'[0:v]split=2[a][b];[a]scale={L // 4}:{A // 4}:force_original_aspect_ratio=increase,crop={L // 4}:{A // 4},boxblur=6:2,scale={L}:{A},setsar=1[bg];'
-              f'[b]scale={int(L * z) // 2 * 2}:-2,crop=\'min(iw,{L})\':\'min(ih,{A})\',setsar=1[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v0]')
-    at = int(A * 0.075)
+              f'[b]scale={par(L * z)}:-2,crop=\'min(iw,{L})\':\'min(ih,{A})\',setsar=1[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v0]')
+    tem_topo, tem_base, at = _tarjas(tpl, A)
     cor = '0x' + tpl['cor_tarja'].lstrip('#')
-    caixas = ''
-    if tpl['tarja_topo'].strip():
-        caixas += f',drawbox=x=0:y=0:w={L}:h={at}:color={cor}:t=fill'
-    if tpl['tarja_base'].strip():
-        caixas += f',drawbox=x=0:y={A - at}:w={L}:h={at}:color={cor}:t=fill'
+    etapas = ['fps=30']
+    efeito = tpl.get('efeito', 'nenhum')
+    if efeito == 'zoom-acao' and quadro != 'gameplay-streamer':
+        # aproxima devagar até 18%, como na prévia do site
+        etapas.append(f"scale=w='trunc({L}*(1+0.18*min(1,t/{max(1.0, dur):.2f}))/2)*2':h='trunc({A}*(1+0.18*min(1,t/{max(1.0, dur):.2f}))/2)*2':eval=frame,crop={L}:{A}")
+    if tem_topo:
+        etapas.append(f'drawbox=x=0:y=0:w={L}:h={at}:color={cor}:t=fill')
+    if tem_base:
+        etapas.append(f'drawbox=x=0:y={A - at}:w={L}:h={at}:color={cor}:t=fill')
     esc = lambda p: str(p).replace('\\', '/').replace(':', '\\:').replace("'", "\\'")
-    fc += f';[v0]fps=30{caixas},ass=\'{esc(ass)}\':fontsdir=\'{esc(FONTES)}\'[v]'
+    etapas.append(f"ass='{esc(ass)}':fontsdir='{esc(FONTES)}'")
+    m = min(L, A) * 0.04
+    if tpl.get('moldura'):
+        etapas.append(f"drawbox=x=0:y=0:w={L}:h={A}:color=0x{tpl.get('cor_marca', '#7758ef').lstrip('#')}:t={max(2, int(m * 0.6))}")
+    fc += ';[v0]' + ','.join(etapas) + '[v1]'
+    ultimo = 'v1'
+    if logo:
+        lw = par(min(L, A) * 0.16)
+        pos = tpl.get('logo_pos', 'top-right')
+        x = f'{int(m)}' if pos.endswith('left') else f'W-w-{int(m)}'
+        y = f'{int(m)}' if pos.startswith('top') else f'H-h-{int(m)}'
+        fc += f';[1:v]scale={lw}:-1,format=rgba,colorchannelmixer=aa=0.92[lg];[v1][lg]overlay={x}:{y}[v2]'
+        ultimo = 'v2'
+    fim = []
+    if efeito == 'transicao-fade' and dur > 1.2:
+        fim = ['fade=t=in:st=0:d=0.4', f'fade=t=out:st={dur - 0.4:.2f}:d=0.4']
+    elif efeito == 'virada-cena':
+        fim = ['fade=t=in:st=0:d=0.35:c=white']
+    return fc + f";[{ultimo}]{','.join(fim) or 'null'}[v]"
+
+
+def editar(video: Path, corte: dict, palavras: list, tpl: dict, destino: Path, pasta: Path):
+    """Corta o trecho e monta o vídeo seguindo o modelo (enquadramento, legenda, gancho, tarjas e marca)."""
+    L, A = _dims(tpl)
     dur = corte['fim'] - corte['ini']
-    cmd = ['ffmpeg', '-nostdin', '-y', '-v', 'error', '-ss', f'{corte["ini"]:.2f}', '-t', f'{dur:.2f}', '-i', str(video),
-           '-filter_complex', fc, '-map', '[v]', '-map', '0:a?', '-c:v', 'libx264', '-preset', os.getenv('PRESET_X264', 'veryfast'),
-           '-crf', '23', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-movflags', '+faststart', str(destino)]
+    ass = pasta / f'{destino.stem}.ass'
+    ass.write_text(montar_ass(palavras, corte['ini'], corte['fim'], tpl, corte.get('gancho', ''), L, A), encoding='utf-8')
+    logo = mo.gravar_logo(tpl.get('logo', ''), pasta / f'{destino.stem}-logo')
+    fc = filtro_video(tpl, L, A, dur, ass, logo)
+    cmd = ['ffmpeg', '-nostdin', '-y', '-v', 'error', '-ss', f'{corte["ini"]:.2f}', '-t', f'{dur:.2f}', '-i', str(video)]
+    if logo:
+        cmd += ['-i', str(logo)]
+    cmd += ['-filter_complex', fc, '-map', '[v]', '-map', '0:a?', '-t', f'{dur:.2f}', '-c:v', 'libx264', '-preset', os.getenv('PRESET_X264', 'veryfast'),
+            '-crf', str(tpl.get('crf', 23)), '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-movflags', '+faststart', str(destino)]
     r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
     ass.unlink(missing_ok=True)
+    if logo:
+        logo.unlink(missing_ok=True)
     if r.returncode != 0 or not destino.exists() or destino.stat().st_size < 2000:
         destino.unlink(missing_ok=True)
         raise ErroAgente('O FFmpeg não conseguiu montar o corte: ' + (r.stderr.strip()[-300:] or 'erro desconhecido'))
@@ -855,12 +933,17 @@ def processar_video(v: dict, quantos: int) -> list:
         for i, c in enumerate(escolhidos):
             etapa(f'Editando o corte {i + 1} de {len(escolhidos)}', 62 + 34 * i / len(escolhidos))
             rnd = random.Random(f'{v["id"]}-{c["ini"]}-{time.time()}')
-            tpl, usadas = sortear(co['template'], co['variar'], rnd)
+            ativos = mo.ativos(co['modelos'])
+            mid = mo.sortear(estado()['pesos'], [m['id'] for m in ativos], cfg['postagem']['redes'], rnd)
+            modelo = next(m for m in ativos if m['id'] == mid)
+            tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
             vid = uuid.uuid4().hex[:12]
             editar(arq, c, palavras, tpl, pg.VIDEOS / (vid + '.mp4'), pasta)
             c.update(id=uuid.uuid4().hex[:10], chave=secrets.token_urlsafe(18), video=vid, criado=time.time(), status='pronto', post='',
                      origem=v['id'], origem_titulo=v['titulo'][:150], canal=v.get('canal', ''), canal_nome=v.get('canal_nome', ''),
-                     variacoes=usadas, fala=fonte, tamanho=(pg.VIDEOS / (vid + '.mp4')).stat().st_size, email=False)
+                     variacoes=usadas, fala=fonte, tamanho=(pg.VIDEOS / (vid + '.mp4')).stat().st_size, email=False,
+                     tipo='agente', modelo=modelo['id'], modelo_nome=modelo['nome'], hash=_hash(pg.VIDEOS / (vid + '.mp4')),
+                     legendado=tpl['legenda'] != 'nenhuma')
             _mudar(lambda e, c=c: e['cortes'].append(c))
             criados.append(c)
         return criados
@@ -910,6 +993,98 @@ def trabalhar_cortes(forcar: bool = False, link: str = '') -> str:
 
 
 # ---------------------------------------------------------------- agente de postagem
+def _hash(arq: Path) -> str:
+    h = hashlib.sha1()
+    try:
+        with open(arq, 'rb') as f:
+            for bloco in iter(lambda: f.read(1 << 20), b''):
+                h.update(bloco)
+        return h.hexdigest()
+    except OSError:
+        return ''
+
+
+def conferir(c: dict, e: dict | None = None) -> dict:
+    """Direitos, originalidade e chance de monetizar, conferidos antes de qualquer publicação.
+
+    Bloqueios impedem o agendamento. Avisos só informam. É uma conferência dos seus registros,
+    não substitui a autorização do dono do conteúdo nem a análise de cada rede.
+    """
+    e = e or estado()
+    bloq, avisos = [], []
+    if c.get('tipo') == 'manual':
+        if (c.get('direitos') or {}).get('origem') not in MOTIVOS:
+            bloq.append('Falta dizer de quem é o vídeo: seu, autorizado pelo dono ou de canal com regra pública de cortes.')
+    else:
+        canal = next((x for x in e['canais'] if x['id'] == c.get('canal')), None)
+        if c.get('canal') and (not canal or canal['status'] != 'aprovado' or canal.get('motivo') not in MOTIVOS):
+            bloq.append('O canal de origem não está mais na sua lista de aprovados.')
+        elif canal:
+            if canal.get('comercial') is False:
+                bloq.append(f'O canal {canal["nome"]} está marcado como sem permissão para uso comercial.')
+            elif canal.get('comercial') is None:
+                avisos.append(f'Você ainda não informou se {canal["nome"]} permite uso comercial (monetização).')
+            if canal.get('restricoes'):
+                avisos.append(f'Restrições de {canal["nome"]}: {canal["restricoes"]}')
+    outros = [x for x in e['cortes'] if x['id'] != c['id'] and x['status'] in ('agendado', 'postado')]
+    if c.get('hash') and any(x.get('hash') == c['hash'] for x in outros):
+        bloq.append('Este mesmo arquivo já foi agendado ou postado.')
+    if c.get('tipo') != 'manual' and c.get('origem'):
+        dur = max(1.0, c['fim'] - c['ini'])
+        for x in outros:
+            if x.get('origem') == c['origem'] and x.get('tipo') != 'manual':
+                comum = min(c['fim'], x['fim']) - max(c['ini'], x['ini'])
+                if comum / dur > 0.5:
+                    bloq.append(f'Mais da metade deste trecho já saiu em "{x["titulo"][:50]}".')
+                    break
+    if c.get('video') and not list(pg.VIDEOS.glob(c['video'] + '.*')):
+        bloq.append('O arquivo deste corte não está mais no servidor.')
+    dur = c.get('dur') or (c.get('fim', 0) - c.get('ini', 0))
+    if dur > 180:
+        avisos.append('Passa de 3 minutos: não entra como Shorts nem como Reels curto.')
+    if c.get('tipo') != 'manual' and not c.get('legendado', True) and not c.get('gancho'):
+        avisos.append('Sem legenda e sem gancho: as redes podem tratar como conteúdo reaproveitado e não monetizar.')
+    if c.get('tipo') != 'manual' and (canal := next((x for x in e['canais'] if x['id'] == c.get('canal')), None)) and canal.get('motivo') != 'meu':
+        avisos.append('Conteúdo de terceiros: a monetização depende das regras de cada rede para vídeos reaproveitados.')
+    return {'bloqueios': bloq, 'avisos': avisos}
+
+
+def receber_manual(d: dict) -> dict:
+    """Corte editado à mão no site: entra na mesma fila do Agente de Postagem, com o template registrado."""
+    vid = str(d.get('video', ''))
+    if not vid.isalnum() or not list(pg.VIDEOS.glob(vid + '.*')):
+        raise ErroAgente('Vídeo não encontrado no servidor. Envie de novo.')
+    destino = 'fila' if d.get('destino') == 'fila' else 'pronto'
+    dr = d.get('direitos') if isinstance(d.get('direitos'), dict) else {}
+    direitos = {'origem': str(dr.get('origem', ''))[:20], 'nota': str(dr.get('nota', ''))[:300]}
+    if direitos['origem'] not in MOTIVOS:
+        raise ErroAgente('Diga de quem é o vídeo antes de guardar: seu, autorizado pelo dono ou de canal com regra pública de cortes.')
+    for _ in range(600):       # a conversão do arquivo enviado roda em segundo plano
+        if pg.video_pronto(vid):
+            break
+        time.sleep(0.5)
+    arq = pg.video_path(vid)
+    modelo = mo.por_id(str(d.get('modelo', '')))
+    tags = [('#' + str(h).lstrip('#'))[:40] for h in (d.get('hashtags') or []) if str(h).strip('# ')][:12]
+    c = {'id': uuid.uuid4().hex[:10], 'chave': secrets.token_urlsafe(18), 'video': vid, 'criado': time.time(), 'status': 'pronto', 'post': '',
+         'titulo': _sem_link(d.get('titulo', ''))[:100] or 'Corte', 'gancho': str(d.get('gancho', ''))[:80], 'hashtags': tags,
+         'legenda_post': str(d.get('legenda', ''))[:2200], 'motivo': 'Editado por você no site.', 'nota': int(mo._num(d.get('nota'), 0, 0, 99)),
+         'ini': 0.0, 'fim': 0.0, 'dur': round(duracao(arq), 1), 'origem': '', 'origem_titulo': str(d.get('origem_titulo', ''))[:150],
+         'canal': '', 'canal_nome': '', 'variacoes': [], 'fala': 'site', 'tamanho': arq.stat().st_size, 'email': False,
+         'tipo': 'manual', 'modelo': modelo['id'] if modelo else '', 'modelo_nome': modelo['nome'] if modelo else 'Sem template',
+         'hash': _hash(arq), 'direitos': direitos, 'espera': destino == 'pronto'}
+    if any(x.get('hash') == c['hash'] and x['status'] != 'descartado' for x in estado()['cortes']):
+        raise ErroAgente('Este mesmo vídeo já está na fila do agente.')
+    _mudar(lambda e: e['cortes'].append(c))
+    anotar(f'Corte manual recebido: "{c["titulo"][:60]}" ({"na fila de postagem" if destino == "fila" else "guardado como pronto"}).', 'ok')
+    if destino == 'fila':
+        try:
+            agendar_corte(c['id'])
+        except (ErroAgente, pg.ErroRede) as err:
+            anotar(f'"{c["titulo"][:50]}" ficou como pronto, sem horário: {err}', 'erro')
+    return {'id': c['id'], 'corte': next({k: v for k, v in x.items() if k != 'chave'} for x in estado()['cortes'] if x['id'] == c['id'])}
+
+
 def _vagas(po: dict, dias: int = 21) -> list:
     """Próximos horários possíveis, a partir das faixas escolhidas."""
     agora = datetime.now()
@@ -949,13 +1124,17 @@ def agendar_corte(cid: str) -> dict:
         raise ErroAgente('Este corte não está na fila de prontos.')
     if not po['redes']:
         raise ErroAgente('Escolha pelo menos uma rede na parte Postagem.')
+    problemas = conferir(c)['bloqueios']
+    if problemas:
+        raise ErroAgente('Não agendei: ' + ' '.join(problemas))
     vaga = escolher_vaga(po, cfg['cortes']['por_semana'])
     if not vaga:
         raise ErroAgente('Não há horário livre. Marque mais horários na parte Postagem.')
-    legenda = (c['titulo'] + '\n\n' + ' '.join(c['hashtags'])).strip()
+    legenda = c.get('legenda_post') or (c['titulo'] + '\n\n' + ' '.join(c['hashtags'])).strip()
     p = pg.criar_post({'video': c['video'], 'redes': po['redes'], 'quando': vaga['quando'], 'titulo': c['titulo'], 'legenda': legenda,
-                       'youtube_privacidade': po['youtube_privacidade'], 'tiktok_modo': po['tiktok_modo']})
-    _mudar(lambda e: [x.update(status='agendado', post=p['id'], quando=vaga['quando'], faixa=vaga['faixa']) for x in e['cortes'] if x['id'] == cid])
+                       'youtube_privacidade': po['youtube_privacidade'], 'tiktok_modo': po['tiktok_modo'],
+                       'modelo': c.get('modelo', ''), 'origem': 'agente-manual' if c.get('tipo') == 'manual' else 'agente', 'repetir': True})
+    _mudar(lambda e: [x.update(status='agendado', post=p['id'], quando=vaga['quando'], faixa=vaga['faixa'], espera=False) for x in e['cortes'] if x['id'] == cid])
     quando = datetime.fromtimestamp(vaga['quando']).strftime('%d/%m às %H:%M')
     nomes = ', '.join(r.capitalize() for r in po['redes'])
     anotar(f'"{c["titulo"][:60]}" agendado para {quando} em {nomes}.', 'ok')
@@ -973,7 +1152,12 @@ def agendar_corte(cid: str) -> dict:
 def trabalhar_postagem() -> str:
     """Agenda os cortes prontos e acompanha os que já foram ao ar."""
     feitos = 0
-    for c in [x for x in estado()['cortes'] if x['status'] == 'pronto']:
+    for c in [x for x in estado()['cortes'] if x['status'] == 'pronto' and not x.get('espera')]:
+        problemas = conferir(c)['bloqueios']
+        if problemas:       # fica parado esperando você, sem travar o resto da fila
+            _mudar(lambda e, cid=c['id']: [x.update(espera=True) for x in e['cortes'] if x['id'] == cid])
+            anotar(f'"{c["titulo"][:50]}" ficou fora da fila: {" ".join(problemas)}', 'erro')
+            continue
         try:
             agendar_corte(c['id'])
             feitos += 1
@@ -1011,30 +1195,187 @@ def acompanhar():
             avisar('postado', 'Post enviado: ' + c['titulo'][:60], corpo)
 
 
-def aprender():
-    """Lê as visualizações no YouTube dos posts com mais de 2 dias e soma na faixa de horário usada."""
-    pend = [c for c in estado()['cortes'] if c['status'] == 'postado' and not c.get('medido') and time.time() - c.get('postado', 0) > 2 * 86400]
-    for c in pend[:20]:
-        m = re.search(r'shorts/([\w-]{11})', (c.get('links') or {}).get('youtube', ''))
-        views = None
-        if m:
-            try:
-                st, _, j = pg.http('GET', pg.URL['google_api'] + '/youtube/v3/videos?part=statistics&id=' + m.group(1),
-                                   cab={'Authorization': 'Bearer ' + pg._token_google()}, tempo=30)
-                itens = j.get('items') or [] if st < 300 else []
-                views = int(itens[0]['statistics'].get('viewCount') or 0) if itens else None
-            except Exception:  # noqa: BLE001
-                views = None
+def _numero(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
 
-        def f(e, cid=c['id'], fx=c.get('faixa', ''), v=views):
+
+def medir_post(p: dict) -> dict:
+    """Números públicos de um post em cada rede. O que a rede não entrega fica como None."""
+    saida = {}
+    for rede, r in p['redes'].items():
+        if r.get('status') != 'postado':
+            continue
+        m = {'views': None, 'curtidas': None, 'comentarios': None}
+        try:
+            if rede == 'youtube':
+                achou = re.search(r'shorts/([\w-]{11})', r.get('link', ''))
+                if achou:
+                    st, _, j = pg.http('GET', pg.URL['google_api'] + '/youtube/v3/videos?part=statistics&id=' + achou.group(1),
+                                       cab={'Authorization': 'Bearer ' + pg._token_google()}, tempo=30)
+                    itens = (j.get('items') or []) if st < 300 else []
+                    if itens:
+                        e = itens[0].get('statistics', {})
+                        m = {'views': _numero(e.get('viewCount')), 'curtidas': _numero(e.get('likeCount')), 'comentarios': _numero(e.get('commentCount'))}
+            elif rede in ('facebook', 'instagram') and r.get('ref'):
+                pag = pg._pagina_meta()
+                campos = 'views,likes.summary(true),comments.summary(true)' if rede == 'facebook' else 'like_count,comments_count'
+                st, _, j = pg.http('GET', f"{pg.URL['graph']}/{pg.GRAPH_V}/{r['ref']}?fields={campos}&access_token=" + urllib.parse.quote(pag['token']), tempo=30)
+                if st < 300 and isinstance(j, dict):
+                    if rede == 'facebook':
+                        m = {'views': _numero(j.get('views')), 'curtidas': _numero(((j.get('likes') or {}).get('summary') or {}).get('total_count')),
+                             'comentarios': _numero(((j.get('comments') or {}).get('summary') or {}).get('total_count'))}
+                    else:
+                        m = {'views': None, 'curtidas': _numero(j.get('like_count')), 'comentarios': _numero(j.get('comments_count'))}
+        except Exception:  # noqa: BLE001
+            pass
+        saida[rede] = m
+    return saida
+
+
+def _resultado(m: dict):
+    """Número usado para comparar modelos em uma rede: visualizações; sem elas, curtidas mais comentários."""
+    if m.get('views') is not None:
+        return m['views']
+    if m.get('curtidas') is not None:
+        return m['curtidas'] + (m.get('comentarios') or 0)
+    return None
+
+
+def aprender(ajustar: bool = True):
+    """Mede os posts com mais de 2 dias (do agente e os manuais), guarda por modelo e rede, e ajusta horários e pesos."""
+    e0 = estado()
+    ps = {p['id']: p for p in pg.posts()}
+    do_agente = {c['post']: c for c in e0['cortes'] if c.get('post')}
+    velho = lambda t: time.time() - t > float(os.getenv('ESPERA_MEDIR_DIAS', '2')) * 86400
+    pend = [c for c in e0['cortes'] if c['status'] == 'postado' and not c.get('medido') and velho(c.get('postado', 0))]
+    soltos = [p for p in ps.values() if p['id'] not in do_agente and not p.get('medido') and velho(p['quando'])
+              and any(r['status'] == 'postado' for r in p['redes'].values())
+              and not any(r['status'] in ('agendado', 'postando') for r in p['redes'].values())]
+    for c in pend[:20]:
+        p = ps.get(c.get('post'))
+        medida = medir_post(p) if p else {}
+        views = (medida.get('youtube') or {}).get('views')
+
+        def f(e, cid=c['id'], fx=c.get('faixa', ''), v=views, md=medida, c=c):
             for x in e['cortes']:
                 if x['id'] == cid:
-                    x.update(medido=True, views=v)
+                    x.update(medido=True, views=v, metricas=md)
             if v is not None and fx:
                 h = e['horarios'].setdefault(fx, {'n': 0, 'views': 0})
                 h['n'] += 1
                 h['views'] += v
+            for rede, m in md.items():
+                e['medidas'].append({'t': time.time(), 'modelo': c.get('modelo', ''), 'rede': rede, 'tipo': c.get('tipo', 'agente'),
+                                     'canal': c.get('canal_nome', ''), **m})
+            e['medidas'] = e['medidas'][-3000:]
         _mudar(f)
+    for p in soltos[:20]:
+        medida = medir_post(p)
+
+        def g(e, md=medida, p=p):
+            for rede, m in md.items():
+                e['medidas'].append({'t': time.time(), 'modelo': p.get('modelo', ''), 'rede': rede, 'tipo': 'manual', 'canal': '', **m})
+            e['medidas'] = e['medidas'][-3000:]
+        _mudar(g)
+        try:
+            pg._mudar(p['id'], lambda q, md=medida: q.update(medido=True, metricas=md))
+        except pg.ErroRede:
+            pass
+    if ajustar and (pend or soltos) and config()['cortes']['aprender']:
+        ajustar_pesos()
+
+
+def ajustar_pesos() -> list:
+    """Aprendizado: aproxima os pesos dos modelos ativos do resultado medido em cada rede."""
+    ids = [m['id'] for m in mo.ativos(config()['cortes']['modelos'])]
+    e = estado()
+    medidas: dict = {}
+    for x in e['medidas'][-600:]:
+        r = _resultado(x)
+        if r is not None and x.get('modelo') in ids:
+            medidas.setdefault(x['rede'], {}).setdefault(x['modelo'], []).append(r)
+    novo, redes = mo.aprender(e['pesos'], ids, medidas)
+    if redes:
+        _mudar(lambda st: st.update(pesos=novo))
+        anotar('Pesos dos templates ajustados pelo resultado em: ' + ', '.join(r.capitalize() for r in redes) + '.', 'info')
+    return redes
+
+
+def salvar_pesos(d: dict) -> dict:
+    """Você decide os pesos à mão (ou zera para voltar às chances iguais)."""
+    ids = [m['id'] for m in mo.ativos(config()['cortes']['modelos'])]
+    if d.get('zerar'):
+        _mudar(lambda e: e.update(pesos={}))
+        anotar('Pesos dos templates voltaram a ser iguais.', 'info')
+        return ver()
+    rede = str(d.get('rede', ''))
+    if rede not in REDES or not isinstance(d.get('pesos'), dict):
+        raise ErroAgente('Informe a rede e os pesos.')
+    bruto = {i: max(0.0, mo._num(d['pesos'].get(i), 0, 0, 100)) for i in ids}
+    if sum(bruto.values()) <= 0:
+        raise ErroAgente('Dê peso a pelo menos um template.')
+    _mudar(lambda e: e['pesos'].update({rede: {i: round(v, 4) for i, v in mo.normalizar(bruto).items()}}))
+    anotar(f'Pesos dos templates em {rede.capitalize()} definidos por você.', 'info')
+    return ver()
+
+
+def desempenho(e: dict | None = None) -> dict:
+    """Painel: uso e resultado de cada template, por rede e por canal, e a situação das filas."""
+    e = e or estado()
+    cfg = config()
+    ativos = mo.ativos(cfg['cortes']['modelos'])
+    ids = [m['id'] for m in ativos]
+    nomes = {m['id']: m['nome'] for m in mo.biblioteca()['modelos']}
+    por_modelo: dict = {}
+    for c in e['cortes']:
+        if c['status'] == 'descartado':
+            continue
+        m = por_modelo.setdefault(c.get('modelo', ''), {'cortes': 0, 'postados': 0, 'manuais': 0})
+        m['cortes'] += 1
+        m['postados'] += c['status'] == 'postado'
+        m['manuais'] += c.get('tipo') == 'manual'
+    medidas: dict = {}
+    canais: dict = {}
+    for x in e['medidas']:
+        d = medidas.setdefault(x.get('modelo', ''), {}).setdefault(x['rede'], {'n': 0, 'views': 0, 'com_views': 0, 'curtidas': 0, 'comentarios': 0, 'com_eng': 0})
+        d['n'] += 1
+        if x.get('views') is not None:
+            d['views'] += x['views']
+            d['com_views'] += 1
+        if x.get('curtidas') is not None:
+            d['curtidas'] += x['curtidas']
+            d['comentarios'] += x.get('comentarios') or 0
+            d['com_eng'] += 1
+        if x.get('canal'):
+            k = canais.setdefault(x['canal'], {'n': 0, 'views': 0})
+            k['n'] += 1
+            k['views'] += x.get('views') or 0
+    filas = {r: {'fila': 0, 'postados': 0, 'erros': 0, 'manual': 0, 'ultimo_erro': ''} for r in REDES}
+    for p in pg.posts():
+        for rede, r in p['redes'].items():
+            f = filas.get(rede)
+            if not f:
+                continue
+            st = r['status']
+            f['fila'] += st in ('agendado', 'postando')
+            f['postados'] += st == 'postado'
+            f['manual'] += st == 'manual'
+            if st == 'erro':
+                f['erros'] += 1
+                f['ultimo_erro'] = r.get('erro', '')[:200]
+    redes = cfg['postagem']['redes']
+    todos = sorted(set(ids) | {k for k in por_modelo if k} | {k for k in medidas if k}, key=lambda i: (i not in ids, nomes.get(i, i)))
+    return {
+        'modelos': [{'id': i, 'nome': nomes.get(i, 'Template apagado'), 'ativo': i in ids, **por_modelo.get(i, {'cortes': 0, 'postados': 0, 'manuais': 0}),
+                     'redes': medidas.get(i, {})} for i in todos],
+        'sem_modelo': por_modelo.get('', {'cortes': 0, 'postados': 0, 'manuais': 0}),
+        'chances': mo.chances(e['pesos'], ids, redes), 'pesos': {r: mo.chances({r: e['pesos'].get(r, {})}, ids, [r]) for r in redes},
+        'definidos': sorted(e['pesos']), 'filas': filas, 'canais': canais, 'medidos': len(e['medidas']),
+        'indisponivel': 'Retenção e receita não chegam por esta ligação: as redes só entregam esses números com permissões extras de análise. Veja no YouTube Studio e no painel de cada rede.',
+    }
 
 
 def limpar():
@@ -1077,10 +1418,13 @@ def relatorio_semana():
 # ---------------------------------------------------------------- comando e relógio
 def ver() -> dict:
     c, s, e = config(), segredos(), estado()
+    mo.biblioteca(c['cortes']['template'])
     return {
         'config': c, 'chaves': {'gemini': bool(s['gemini']), 'youtube': bool(s['youtube']), 'email_senha': bool(s['email_senha'])},
         'canais': sorted(e['canais'], key=lambda x: ({'aprovado': 0, 'sugerido': 1, 'recusado': 2}.get(x['status'], 3), -x.get('media', 0))),
-        'cortes': [{k: v for k, v in x.items() if k != 'chave'} for x in sorted(e['cortes'], key=lambda x: -x['criado'])][:80],
+        'cortes': [dict({k: v for k, v in x.items() if k != 'chave'}, conferencia=conferir(x, e) if x['status'] == 'pronto' else None)
+                   for x in sorted(e['cortes'], key=lambda x: -x['criado'])][:80],
+        'modelos': mo.resumo(), 'ativos': [m['id'] for m in mo.ativos(c['cortes']['modelos'])], 'desempenho': desempenho(e),
         'log': e['log'][-40:][::-1], 'gasto': gasto_mes(), 'semana': cortes_da_semana(),
         'horarios': e['horarios'], 'atual': dict(ATUAL, ocupado=OCUPADO.locked()),
         'opcoes': {'idiomas': IDIOMAS, 'paises': PAISES, 'nichos': NICHOS, 'proibidos': PROIBIDOS, 'variacoes': VARIACOES, 'motivos': MOTIVOS},
@@ -1161,7 +1505,7 @@ def parar_tudo() -> dict:
     cancelados = 0
     for c in [x for x in estado()['cortes'] if x['status'] == 'agendado']:
         try:
-            pg.cancelar_post(c['post'])
+            pg.cancelar_post(c['post'], manter_video=True)     # o corte volta para a fila, então o arquivo fica
             cancelados += 1
         except pg.ErroRede:
             continue

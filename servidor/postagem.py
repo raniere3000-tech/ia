@@ -6,8 +6,10 @@ Só usa a biblioteca padrão do Python (roda no Termux).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -451,6 +453,20 @@ def video_path(vid: str) -> Path:
 
 
 # ---------------------------------------------------------------- posts
+def assinatura(vid: str) -> str:
+    """Impressão digital do arquivo, para não postar o mesmo vídeo duas vezes na mesma rede."""
+    if not video_pronto(vid):
+        return ''
+    try:
+        h = hashlib.sha1()
+        with open(video_path(vid), 'rb') as f:
+            for bloco in iter(lambda: f.read(1 << 20), b''):
+                h.update(bloco)
+        return h.hexdigest()
+    except (ErroRede, OSError):
+        return ''
+
+
 def criar_post(d: dict) -> dict:
     vid = str(d.get('video', ''))
     if not vid.isalnum() or not (list(VIDEOS.glob(vid + '.*'))):
@@ -459,11 +475,20 @@ def criar_post(d: dict) -> dict:
     if not redes:
         raise ErroRede('Escolha pelo menos uma rede.')
     quando = float(d.get('quando') or agora())
+    marca = assinatura(vid)
+    if marca and not d.get('repetir'):
+        # o mesmo arquivo não vai duas vezes para a mesma rede
+        for outro in posts():
+            repetidas = [r for r in redes if r in outro['redes'] and outro['redes'][r]['status'] != 'erro'] if outro.get('hash') == marca else []
+            if repetidas:
+                raise ErroRede('Este mesmo vídeo já está agendado ou postado em ' + ', '.join(x.capitalize() for x in repetidas) + '. Para postar de novo mesmo assim, cancele o post anterior.')
     p = {
         'id': uuid.uuid4().hex[:10], 'video': vid, 'criado': agora(), 'quando': quando,
         'titulo': str(d.get('titulo', ''))[:100], 'legenda': str(d.get('legenda', ''))[:2200],
         'opcoes': {'youtube_privacidade': d.get('youtube_privacidade', 'public'), 'tiktok_modo': d.get('tiktok_modo', 'rascunho')},
         'redes': {r: {'status': 'manual' if r == 'kwai' else 'agendado', 'link': '', 'erro': ''} for r in redes},
+        'modelo': re.sub(r'[^a-zA-Z0-9_-]', '', str(d.get('modelo', '')))[:40], 'origem': str(d.get('origem', 'manual'))[:20], 'hash': marca,
+        'direitos': {'origem': str((d.get('direitos') or {}).get('origem', ''))[:20], 'nota': str((d.get('direitos') or {}).get('nota', ''))[:300]} if isinstance(d.get('direitos'), dict) else None,
     }
     with LOCK:
         ps = posts()
@@ -490,7 +515,7 @@ def _mudar(pid: str, f):
     raise ErroRede('Post não encontrado.')
 
 
-def cancelar_post(pid: str):
+def cancelar_post(pid: str, manter_video: bool = False):
     with LOCK:
         ps = posts()
         alvo = [p for p in ps if p['id'] == pid]
@@ -500,7 +525,7 @@ def cancelar_post(pid: str):
             raise ErroRede('Este post está sendo enviado agora. Espere terminar.')
         ps = [p for p in ps if p['id'] != pid]
         salvar_posts(ps)
-    if not any(p['video'] == alvo[0]['video'] for p in ps) and alvo[0]['video'] not in PREPARANDO:
+    if not manter_video and not any(p['video'] == alvo[0]['video'] for p in ps) and alvo[0]['video'] not in PREPARANDO:
         for arq in VIDEOS.glob(alvo[0]['video'] + '.*'):
             arq.unlink(missing_ok=True)
 
@@ -571,6 +596,7 @@ def postar_facebook(p: dict, arq: Path) -> str:
     st, _, j = http('POST', f"{base}/{pg['id']}/video_reels", form={
         'upload_phase': 'finish', 'video_id': vid, 'video_state': 'PUBLISHED', 'description': _texto(p, 2200), 'access_token': pg['token']})
     _ok(st, j, 'Facebook não publicou o Reels')
+    REF['facebook'] = str(vid)
     return f'https://www.facebook.com/reel/{vid}'
 
 
@@ -597,6 +623,7 @@ def postar_instagram(p: dict, arq: Path) -> str:
     st, _, j = http('POST', f"{base}/{pg['ig_id']}/media_publish", form={'creation_id': cont, 'access_token': pg['token']})
     _ok(st, j, 'Instagram não publicou')
     mid = j['id']
+    REF['instagram'] = str(mid)
     st, _, j = http('GET', f"{base}/{mid}?fields=permalink&access_token=" + urllib.parse.quote(pg['token']))
     return j.get('permalink') or f"https://www.instagram.com/{pg.get('ig_usuario', '')}"
 
@@ -662,6 +689,7 @@ def _conferir_tiktok(publish_id, cab):
         time.sleep(float(os.getenv('ESPERA_TIKTOK', '5')))
 
 
+REF: dict = {}      # identificação do post em cada rede, usada depois para ler os números
 PUBLICAR = {'youtube': postar_youtube, 'facebook': postar_facebook, 'instagram': postar_instagram, 'tiktok': postar_tiktok}
 
 
@@ -678,8 +706,10 @@ def _publicar_um(pid: str, rede: str):
         p['redes'][rede].update(status='postando', erro='', inicio=agora())
     p = _mudar(pid, iniciar)
     try:
+        REF.pop(rede, None)
         link = PUBLICAR[rede](p, video_path(p['video']))
-        _mudar(pid, lambda q: q['redes'][rede].update(status='postado', link=link, erro='', feito=agora()))
+        ref = REF.pop(rede, '')
+        _mudar(pid, lambda q: q['redes'][rede].update(status='postado', link=link, erro='', feito=agora(), ref=ref))
     except ErroTemporario as e:
         n = int(p['redes'][rede].get('tentativas', 0))
         if n < len(ESPERAS):

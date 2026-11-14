@@ -23,8 +23,9 @@ from urllib.parse import parse_qs, urlparse
 import cofre
 import postagem as pg
 import agente as ag
+import modelos as mo
 
-VERSAO = '1.5.0'
+VERSAO = '1.6.0'
 PORTA = int(os.getenv('PORT', os.getenv('PORTA', '8787')))
 HOST = os.getenv('HOST', '127.0.0.1')
 TOKEN = os.getenv('TOKEN', '').strip()
@@ -345,7 +346,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get('Content-Length') or 0)
         rota = urlparse(self.path).path.rstrip('/')
-        limite = 40 * 1024 * 1024 if rota == '/video' else 5 * 1024 * 1024 if rota == '/cookies' else 100000
+        limite = 40 * 1024 * 1024 if rota == '/video' else 5 * 1024 * 1024 if rota == '/cookies' else 12 * 1024 * 1024 if rota == '/modelos' else 100000
         self.corpo = self.rfile.read(n) if 0 < n <= limite else b''
         if n > limite:
             self.close_connection = True
@@ -356,7 +357,7 @@ class Handler(BaseHTTPRequestHandler):
             f(urlparse(self.path).path.rstrip('/') or '/')
         except Erro as e:
             self.json(e.status, {'detail': e.msg})
-        except (pg.ErroRede, ag.ErroAgente) as e:
+        except (pg.ErroRede, ag.ErroAgente, mo.ErroModelo) as e:
             self.json(400, {'detail': str(e)})
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -383,6 +384,9 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == '/agente':
             self.token_ok()
             return self.json(200, ag.ver())
+        if caminho == '/modelos':
+            self.token_ok()
+            return self.json(200, mo.biblioteca(ag.config()['cortes']['template']))
         ma = re.fullmatch(r'/agente/cortes/(\w+)/video', caminho)
         if ma:
             chave = parse_qs(urlparse(self.path).query).get('chave', [''])[0]
@@ -480,6 +484,15 @@ def _rotas_agenda(self, caminho: str):
         return ag.ver()
     if caminho == '/agente/canais':
         return ag.acao_canal(d)
+    if caminho == '/modelos':
+        return mo.salvar(d)
+    if caminho == '/agente/pesos':
+        return ag.salvar_pesos(d)
+    if caminho == '/agente/aprender':
+        ag.aprender(ajustar=False)      # lê os números que já podem ser lidos e só então ajusta
+        return {'redes': ag.ajustar_pesos(), **ag.ver()}
+    if caminho == '/agente/cortes/manual':
+        return ag.receber_manual(d)
     if caminho == '/agente/rodar':
         return ag.rodar_agora(str(d.get('oque', '')), str(d.get('link', '')).strip())
     if caminho == '/agente/parar':

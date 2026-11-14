@@ -3,6 +3,7 @@ import { pegarDub } from './dublagem';
 import { exportarCorte, loadImage, type Template } from './render';
 import { cuesDe, urlDe, type Clip } from './analyze';
 import { comTelaAcesa } from './app';
+import { optsDoClip, saidaDoClip } from './modelos';
 import type { Cue, Preset } from './captions';
 
 export function nomeArquivo(c:Clip,i:number,ext:string){
@@ -12,17 +13,16 @@ export function nomeArquivo(c:Clip,i:number,ext:string){
 
 export async function renderClip(urlProj:string,c:Clip,cuesProj:Cue[],presets:Preset[],template:Template,progress:(n:number)=>void){
   const url=urlDe(c,urlProj), cues=cuesDe(c,cuesProj);
-  if(c.semTemplate) template={...template,ativo:false};
-  const legenda=presets.find(p=>p.id===c.legenda)||null;
-  const logoImg=template.ativo? await loadImage(template.logo) : null;
+  const o=optsDoClip(c,cues,template,presets);
+  const logoImg=o.template.ativo? await loadImage(o.template.logo) : null;
   let rosto:Trilha|null|undefined;
-  if(c.efeito==='seguir-rosto'){
+  if(c.efeito==='seguir-rosto'&&c.visual?.layout!=='gameplay-streamer'){
     // 1ª parte da barra: achar o rosto; 2ª: gravar.
     try{ rosto=await rastrearRosto(url,c.inicio,c.fim,p=>progress(Math.round(p*0.25))); }
     catch(e){ console.warn('Segue o rosto: falhou, usando fundo desfocado.',e); rosto=null; }
   }
   const k=c.efeito==='seguir-rosto'?0.75:1, base=c.efeito==='seguir-rosto'?25:0;
-  return comTelaAcesa(()=>exportarCorte(url,{inicio:c.inicio,fim:c.fim,formato:c.formato},cues,{legenda,efeito:c.efeito,gancho:c.gancho_texto,accent:legenda?.highlightColor||template.cor,template,logoImg,rosto,tarja:c.tarja},p=>progress(p>=100?100:Math.round(base+p*k)),pegarDub(c.id)));
+  return comTelaAcesa(()=>exportarCorte(url,{inicio:c.inicio,fim:c.fim,formato:c.formato},cues,{...o,logoImg,rosto},p=>progress(p>=100?100:Math.round(base+p*k)),pegarDub(c.id),saidaDoClip(c)));
 }
 
 export function baixar(blob:Blob,nome:string){

@@ -1,11 +1,12 @@
 import ErroTela from './components/ErroTela';
-import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useState, type ComponentType } from 'react';
+import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, Film, Bot, CheckCircle2, AlertTriangle, Info, X, Circle } from 'lucide-react';
-import { AppCtx, PROJETO_VAZIO, type Marca, type Projeto, type Settings, type Tab } from './state';
+import { AppCtx, PROJETO_VAZIO, captionPresets, type Marca, type Projeto, type Settings, type Tab } from './state';
 import { store } from './lib/store';
 import { salvos, temCofre, cofreAberto, separar, atualizarCofre } from './lib/cofre';
 import Cadeado from './components/Cadeado';
 import { TEMPLATE_PADRAO, type Template } from './lib/render';
+import { lerModelos, gravarModelos, enviarModelos, sincronizar, type Biblioteca, type Modelo } from './lib/modelos';
 import Inicio from './pages/Inicio';
 
 // Cada aba é baixada só quando é aberta (a primeira tela abre mais rápido).
@@ -25,9 +26,9 @@ const InicioM=memo(Inicio);
 const adiantar=(t:Tab)=>{ CARGA[t]?.().catch(()=>{}); };
 
 const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'seguir-rosto',servidor:'',servidorToken:'',servidorCanal:'',geminiKey:'',ia:''};
-const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['video','Criar vídeo animado',Sparkles],['vozes','Estúdio de vozes',Mic],['manual','Montagem manual',Film],['agendar','Agendar posts',CalendarClock],['agente','Agentes',Bot],['estilos','Legendas e efeitos',Captions],['templates','Template da marca',LayoutTemplate],['config','Chaves e ajustes',Gear]];
+const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['video','Criar vídeo animado',Sparkles],['vozes','Estúdio de vozes',Mic],['manual','Montagem manual',Film],['agendar','Agendar posts',CalendarClock],['agente','Agentes',Bot],['estilos','Legendas e efeitos',Captions],['templates','Templates',LayoutTemplate],['config','Chaves e ajustes',Gear]];
 /** Nome curto de cada aba para a barra de baixo do telefone. */
-const CURTO:Record<Tab,string> = {inicio:'Início',radar:'Radar',cortes:'Cortes',video:'Animado',vozes:'Vozes',manual:'Montagem',agendar:'Agendar',agente:'Agentes',estilos:'Legendas',templates:'Template',config:'Ajustes'};
+const CURTO:Record<Tab,string> = {inicio:'Início',radar:'Radar',cortes:'Cortes',video:'Animado',vozes:'Vozes',manual:'Montagem',agendar:'Agendar',agente:'Agentes',estilos:'Legendas',templates:'Templates',config:'Ajustes'};
 /** Menu por etapa do trabalho. */
 const GRUPOS:[string,Tab[]][] = [['',['inicio']],['Descobrir',['radar']],['Produzir',['cortes','video','vozes','manual','estilos','templates']],['Publicar',['agendar','agente']],['Configurações',['config']]];
 const TITLES:Record<Tab,[string,string]> = {
@@ -40,7 +41,7 @@ const TITLES:Record<Tab,[string,string]> = {
   agendar:['Agendar posts','Conecte suas contas uma vez e agende os cortes no YouTube, Instagram, Facebook e TikTok. O Kwai fica com o botão de baixar.'],
   agente:['Agentes','Dois agentes trabalham sozinhos no seu servidor: um procura vídeos e faz os cortes, o outro agenda e posta. Você aprova os canais e recebe tudo por e-mail.'],
   estilos:['Legendas e efeitos','Escolha o visual padrão das legendas e o efeito aplicado nos cortes.'],
-  templates:['Template da marca','Logo, cor, moldura e crédito aplicados automaticamente em todos os cortes.'],
+  templates:['Templates','Modelos de vídeo usados na edição manual e pelos agentes: composição, legenda, tarjas, marca e exportação.'],
   config:['Chaves e ajustes','Cole aqui as chaves que ativam cada função. Clique no ? para ver como conseguir cada uma.'],
 };
 
@@ -59,6 +60,25 @@ export default function App(){
   const setProjeto=useCallback((f:(p:Projeto)=>Projeto)=>setP(f),[]);
   const [template,setT]=useState<Template>(()=>({...TEMPLATE_PADRAO,...store.json<Partial<Template>>('studio_template',{})}));
   const setTemplate=useCallback((t:Template)=>{ setT(t); store.setJson('studio_template',t); },[]);
+  // Biblioteca de templates: guardada aqui e, com o servidor ligado, também lá (os agentes usam a mesma).
+  const [bib,setBib]=useState<Biblioteca>(lerModelos);
+  const [modelosSinc,setSinc]=useState<'local'|'servidor'|'erro'>('local');
+  const srvRef=useRef({servidor:settings.servidor,servidorToken:settings.servidorToken}); srvRef.current={servidor:settings.servidor,servidorToken:settings.servidorToken};
+  const envio=useRef(0);
+  const setModelos=useCallback((ms:Modelo[])=>{
+    const b={atualizado:Date.now()/1000,modelos:ms}; setBib(b);
+    if(!gravarModelos(b)) toast('Não coube neste navegador (logo grande demais?). Use um logo menor.','erro');
+    clearTimeout(envio.current);
+    if(srvRef.current.servidor) envio.current=window.setTimeout(()=>{ enviarModelos(srvRef.current,b,captionPresets).then(()=>setSinc('servidor')).catch(()=>setSinc('erro')); },700);
+  },[toast]);
+  useEffect(()=>{
+    if(!settings.servidor){ setSinc('local'); return; }
+    let vivo=true;
+    sincronizar({servidor:settings.servidor,servidorToken:settings.servidorToken},lerModelos(),captionPresets)
+      .then(b=>{ if(!vivo) return; setBib(b); gravarModelos(b); setSinc('servidor'); }).catch(()=>{ if(vivo) setSinc('erro'); });
+    return ()=>{ vivo=false; };
+  },[settings.servidor,settings.servidorToken]);
+  const modelos=bib.modelos;
   const [linkRef,setLinkRef]=useState('');
   const [marcas,setM]=useState<Marca[]>([]);
   const setMarcas=useCallback((f:(m:Marca[])=>Marca[])=>setM(f),[]);
@@ -112,7 +132,7 @@ export default function App(){
       }catch(e){ if(doLink) toast('Não consegui conectar ao servidor do link: '+(e instanceof Error?e.message:String(e)),'erro'); }
     })();
   },[setSettings,toast]);
-  const ctx=useMemo(()=>({settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,linkRef,setLinkRef,marcas,setMarcas}),[settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,linkRef,marcas,setMarcas]);
+  const ctx=useMemo(()=>({settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,modelos,setModelos,modelosSinc,linkRef,setLinkRef,marcas,setMarcas}),[settings,setSettings,tab,go,toast,projeto,setProjeto,template,setTemplate,modelos,setModelos,modelosSinc,linkRef,marcas,setMarcas]);
   const status=[{ok:!!settings.ytKey,label:'Radar (YouTube)',opt:false},{ok:true,label:'Cortes e exportação',opt:false},{ok:!!(settings.claudeKey||settings.geminiKey),label:'Notas com IA',opt:true},{ok:!!settings.servidor,label:'Cortes pelo link',opt:true}];
   const [t,sub]=TITLES[tab];
   return <AppCtx.Provider value={ctx}>

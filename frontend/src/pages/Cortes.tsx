@@ -559,7 +559,7 @@ export default function Cortes(){
     </Passo>
    </div>}
    {exp&&etapa==='edicao'&&temResultado&&<div className="export-bar"><Loader2 size={16} className="spin"/><span>{exp.fila?`Exportando ${exp.fila}`:'Exportando corte'} • {exp.pct}% — mantenha esta aba aberta e visível</span><div className="progress"><div style={{width:exp.pct+'%'}}/></div></div>}
-   {agendando&&<AgendarPost titulo={agendando.titulo} legenda={legendaAutomatica(agendando,projeto.cues,projeto.tema)} gerar={async onPct=>{ const {blob,ext}=await renderClip(projeto.url,agendando,projeto.cues,captionPresets,template,onPct); return {blob,nome:nomeArquivo(agendando,visiveis.indexOf(agendando),ext)}; }} onClose={()=>setAgendando(null)}/>}
+   {agendando&&<AgendarPost modelo={agendando.modelo} titulo={agendando.titulo} legenda={legendaAutomatica(agendando,projeto.cues,projeto.tema)} gerar={async onPct=>{ const {blob,ext}=await renderClip(projeto.url,agendando,projeto.cues,captionPresets,template,onPct); return {blob,nome:nomeArquivo(agendando,visiveis.indexOf(agendando),ext)}; }} onClose={()=>setAgendando(null)}/>}
    {editando&&<Editor clip={editando} onClose={()=>setEditando(null)}
      onSave={(c,cues)=>{ if(c.video) atualizar({...c,video:{...c.video,cues}}); else { atualizar(c); setProjeto(p=>({...p,cues})); } setEditando(null); toast('Alterações salvas.','ok'); }}
      onDuplicate={c=>{ const n=duplicar(c); setEditando(n); }}

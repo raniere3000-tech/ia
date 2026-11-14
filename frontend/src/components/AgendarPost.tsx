@@ -8,7 +8,7 @@ const doisDigitos=(n:number)=>String(n).padStart(2,'0');
 function proximaHora(){ const d=new Date(Date.now()+60*60*1000); d.setMinutes(0,0,0); return `${d.getFullYear()}-${doisDigitos(d.getMonth()+1)}-${doisDigitos(d.getDate())}T${doisDigitos(d.getHours())}:00`; }
 
 /** Janela para agendar um corte (ou vídeo pronto) nas redes conectadas. */
-export default function AgendarPost({titulo:t0,legenda:l0,gerar,onClose}:{titulo:string;legenda:string;gerar:(onPct:(p:number)=>void)=>Promise<{blob:Blob;nome:string}>;onClose:()=>void}){
+export default function AgendarPost({titulo:t0,legenda:l0,gerar,onClose,modelo}:{titulo:string;legenda:string;modelo?:string;gerar:(onPct:(p:number)=>void)=>Promise<{blob:Blob;nome:string}>;onClose:()=>void}){
   const {settings,toast,go}=useApp();
   const [contas,setContas]=useState<Contas|null>(null); const [erro,setErro]=useState('');
   const [titulo,setTitulo]=useState(t0); const [legenda,setLegenda]=useState(l0);
@@ -26,7 +26,7 @@ export default function AgendarPost({titulo:t0,legenda:l0,gerar,onClose}:{titulo
       const {blob,nome}=await gerar(p=>setEtapa({txt:'Preparando o vídeo',pct:p}));
       setEtapa({txt:'Enviando para o servidor',pct:0});
       const video=await enviarVideo(settings,blob,nome,p=>setEtapa({txt:'Enviando para o servidor',pct:p}));
-      await criarPost(settings,{video,redes:[...redes],titulo,legenda,quando:ts,youtube_privacidade:privac,tiktok_modo:ttModo});
+      await criarPost(settings,{video,redes:[...redes],titulo,legenda,quando:ts,youtube_privacidade:privac,tiktok_modo:ttModo,modelo:modelo||''});
       toast(agora?'Enviado! Acompanhe em Agendar posts.':`Agendado para ${new Date(ts*1000).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}.`,'ok');
       onClose(); go('agendar');
     }catch(e){ setEtapa(null); toast(e instanceof Error?e.message:String(e),'erro'); }

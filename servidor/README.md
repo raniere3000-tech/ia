@@ -60,6 +60,17 @@ Para funcionar, na aba Agentes:
 3. Em **Postagem**, marque as redes e os horários. As contas são as mesmas de Agendar posts.
 4. Ligue os dois agentes. O botão **Parar tudo** desliga os dois e tira da agenda os posts que eles marcaram.
 
+### Templates compartilhados
+
+Os modelos de vídeo ficam na aba **Templates** do site e são gravados também no servidor (`~/.estudioclip/modelos.json`). A edição manual e os agentes usam a mesma biblioteca.
+
+- Marque até **3 templates** para os agentes (na aba Templates ou em Agentes > Cortes). O agente sorteia um para cada corte, com chances iguais no começo.
+- Com o **aprendizado** ligado, os pesos mudam aos poucos conforme o resultado de cada rede (visualizações; onde a rede não entrega, curtidas e comentários). Nenhum template cai abaixo de 15%. Você também pode definir os pesos à mão em Agentes > Desempenho.
+- O template de cada vídeo fica registrado no post, inclusive nos cortes que você manda da edição manual (Salvar como pronto ou Enviar à fila do agente).
+- Antes de publicar, o servidor confere: canal de origem aprovado, permissão comercial, arquivo repetido e trecho já postado. O que não passa fica parado esperando você.
+- O site desenha a prévia e o vídeo manual no navegador; o agente monta com FFmpeg seguindo os mesmos campos do template. Pequenas diferenças de letra entre os dois são esperadas. Zoom lento e as duas transições funcionam nos dois; tremor de câmera, seguir o rosto e câmera acelerada são só da edição manual.
+- Retenção e receita não são lidas: as redes só entregam esses números com permissões extras de análise.
+
 No celular, para os agentes trabalharem sem parar:
 
 ```
