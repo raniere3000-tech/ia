@@ -46,6 +46,29 @@ O mesmo servidor guarda os cortes e publica nas **suas** contas na hora marcada,
 Limites das redes: YouTube com projeto não verificado sobe como privado (peça a auditoria);
 TikTok sem aprovação manda para os rascunhos; Kwai não tem API (fica o botão de baixar).
 
+## Agentes (cortes e postagem sozinhos)
+
+O servidor traz dois agentes, configurados na aba **Agentes** do site:
+
+- **Agente de cortes**: sugere canais em alta no seu nicho, acha vídeos novos dos canais que você aprovou, baixa, escolhe os melhores trechos com IA, edita em vertical (legenda, gancho, tarjas, variações sorteadas) e manda cada corte por e-mail.
+- **Agente de postagem**: agenda os cortes prontos nas redes, nos horários que você marcou, avisa por e-mail e passa a preferir os horários que renderam mais visualizações no YouTube.
+
+Para funcionar, na aba Agentes:
+
+1. Em **Avisos e chaves**, guarde a chave do Gemini e a chave do YouTube no servidor, o e-mail que recebe, o e-mail que envia e a **senha de aplicativo** dele (no Gmail: Conta Google > Segurança > Senhas de app). Toque em Enviar e-mail de teste.
+2. Em **Cortes**, toque em Procurar canais e aprove os canais marcando o motivo (é seu, o dono autorizou ou o canal tem regra pública de cortes). O agente não corta canal sem motivo marcado.
+3. Em **Postagem**, marque as redes e os horários. As contas são as mesmas de Agendar posts.
+4. Ligue os dois agentes. O botão **Parar tudo** desliga os dois e tira da agenda os posts que eles marcaram.
+
+No celular, para os agentes trabalharem sem parar:
+
+```
+bash iniciar-termux.sh link     # liga o servidor, com vigia que religa se ele cair
+bash iniciar-termux.sh sempre   # liga sozinho quando o celular reinicia (app Termux:Boot)
+```
+
+Deixe o celular na tomada e tire o Termux da economia de bateria. As chaves, a senha do e-mail e os cortes ficam só na pasta `~/.estudioclip` do aparelho. A letra das legendas é a fonte Inter (licença em `fontes/LICENCA-Inter.txt`).
+
 ## Configuração (variáveis de ambiente)
 
 | Variável | Padrão | Para quê |

@@ -6,7 +6,7 @@ import presets from '../../config/presets.json';
 
 export type Marca = {id:string;inicio:number;fim:number;titulo:string;nota?:number;motivo?:string;gancho?:string;hashtags?:string[];ia?:boolean};
 export type Settings = {ytKey:string; claudeKey:string; whisperModel:string; idioma:string; api:string; legendaPadrao:string; efeitoPadrao:string; servidor:string; servidorToken:string; servidorCanal:string; geminiKey:string; muapiKey?:string; ia:''|'gemini'|'claude'};
-export type Tab = 'inicio'|'radar'|'cortes'|'video'|'vozes'|'manual'|'agendar'|'estilos'|'templates'|'config';
+export type Tab = 'inicio'|'radar'|'cortes'|'video'|'vozes'|'manual'|'agendar'|'agente'|'estilos'|'templates'|'config';
 
 export type Projeto = {
   file:File|null; url:string; nome:string; duracao:number;

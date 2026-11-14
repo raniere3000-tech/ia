@@ -20,8 +20,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import postagem as pg
+import agente as ag
 
-VERSAO = '1.3.1'
+VERSAO = '1.4.0'
 PORTA = int(os.getenv('PORT', os.getenv('PORTA', '8787')))
 HOST = os.getenv('HOST', '127.0.0.1')
 TOKEN = os.getenv('TOKEN', '').strip()
@@ -187,6 +188,64 @@ def baixar(jid: str, url: str):
 
 
 
+def baixar_para_agente(url: str, pasta: Path, idioma: str, progresso):
+    """Download usado pelo agente: devolve (arquivo, informações, legenda automática json3 ou None)."""
+    import yt_dlp
+    if not (YT.match(url) or (QUALQUER_URL and url.startswith('http'))):
+        raise ag.ErroAgente('O agente só baixa links do YouTube.')
+    estado = {'parte': 0}
+
+    def gancho(d):
+        if d.get('status') == 'downloading':
+            total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+            pct = (d.get('downloaded_bytes') or 0) / total * 100 if total else 0
+            progresso(pct * 0.85 if estado['parte'] == 0 else 85 + pct * 0.13)
+        elif d.get('status') == 'finished':
+            estado['parte'] += 1
+
+    opts = {
+        'format': f'bv*[height<={ALTURA}][vcodec^=avc1]+ba[ext=m4a]/b[height<={ALTURA}][ext=mp4]/bv*[height<={ALTURA}]+ba/b[height<={ALTURA}]/b',
+        'merge_output_format': 'mp4', 'outtmpl': str(pasta / 'video.%(ext)s'), 'noplaylist': True, 'quiet': True, 'no_warnings': True,
+        'progress_hooks': [gancho], 'js_runtimes': js_runtimes(),
+        'match_filter': yt_dlp.utils.match_filter_func(f'!is_live & duration <=? {int(MAX_MIN * 60)}'),
+        'writeautomaticsub': True, 'writesubtitles': True, 'subtitlesformat': 'json3',
+        'subtitleslangs': [idioma, idioma + '-orig', idioma + '-BR'], 'ignoreerrors': False,
+    }
+    ff = ffmpeg_path()
+    if ff:
+        opts['ffmpeg_location'] = ff
+    if COOKIES.exists():
+        opts['cookiefile'] = str(COOKIES)
+    try:
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+        except Exception as e:  # noqa: BLE001
+            m = str(e).lower()
+            if 'subtitle' in m or 'caption' in m or '429' in m:
+                # a legenda falhou: baixa só o vídeo e deixa a IA ouvir a fala
+                opts.update(writeautomaticsub=False, writesubtitles=False)
+            elif 'sign in to confirm' in m or 'not a bot' in m:
+                opts['extractor_args'] = {'youtube': {'player_client': ['tv', 'web_safari', 'mweb']}}
+            else:
+                raise
+            estado['parte'] = 0
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+    except Exception as e:  # noqa: BLE001
+        raise ag.ErroAgente(erro_amigavel(str(e)))
+    if info is None:
+        raise ag.ErroAgente(f'O vídeo passa de {int(MAX_MIN)} minutos ou é uma live.')
+    videos = sorted((a for a in pasta.glob('video.*') if a.suffix in ('.mp4', '.webm', '.mkv', '.mov')), key=lambda p: p.stat().st_size, reverse=True)
+    if not videos:
+        raise ag.ErroAgente('O arquivo não apareceu depois do download.')
+    legendas = sorted(pasta.glob('video.*.json3'), key=lambda p: ('orig' not in p.name, len(p.name)))
+    return videos[0], info, (legendas[0] if legendas else None)
+
+
+ag.BAIXAR = baixar_para_agente
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = 'EstudioClip/' + VERSAO
     protocol_version = 'HTTP/1.1'
@@ -242,7 +301,7 @@ class Handler(BaseHTTPRequestHandler):
             f(urlparse(self.path).path.rstrip('/') or '/')
         except Erro as e:
             self.json(e.status, {'detail': e.msg})
-        except pg.ErroRede as e:
+        except (pg.ErroRede, ag.ErroAgente) as e:
             self.json(400, {'detail': str(e)})
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -257,7 +316,7 @@ class Handler(BaseHTTPRequestHandler):
                 versao_yt = yt_dlp.version.__version__
             except Exception:
                 versao_yt = None
-            return self.json(200, {'ok': True, 'download': versao_yt is not None, 'agendador': True, 'versao': VERSAO, 'yt_dlp': versao_yt, 'senha': bool(TOKEN), 'max_minutos': MAX_MIN, 'cookies': COOKIES.exists(),
+            return self.json(200, {'ok': True, 'download': versao_yt is not None, 'agendador': True, 'agente': True, 'versao': VERSAO, 'yt_dlp': versao_yt, 'senha': bool(TOKEN), 'max_minutos': MAX_MIN, 'cookies': COOKIES.exists(),
                                    'aviso': None if versao_yt else 'yt-dlp não instalado: rode  pip install -U yt-dlp'})
         if caminho == '/contas':
             self.token_ok()
@@ -265,6 +324,15 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == '/posts':
             self.token_ok()
             return self.json(200, {'posts': pg.lista_posts(), 'agora': time.time()})
+        if caminho == '/agente':
+            self.token_ok()
+            return self.json(200, ag.ver())
+        ma = re.fullmatch(r'/agente/cortes/(\w+)/video', caminho)
+        if ma:
+            chave = parse_qs(urlparse(self.path).query).get('chave', [''])[0]
+            if not chave:
+                self.token_ok()
+            return self.enviar_arquivo(*ag.video_do_corte(ma.group(1), chave))
         mv = re.fullmatch(r'/posts/(\w+)/video', caminho)
         if mv:
             self.token_ok()
@@ -345,6 +413,25 @@ class Handler(BaseHTTPRequestHandler):
 def _rotas_agenda(self, caminho: str):
     d = self.corpo_json() if caminho != '/video' else {}
     q = parse_qs(urlparse(self.path).query)
+    if caminho == '/agente/config':
+        ag.salvar_config(d)
+        pg.acordar()
+        return ag.ver()
+    if caminho == '/agente/chaves':
+        ag.salvar_segredos(d)
+        return ag.ver()
+    if caminho == '/agente/canais':
+        return ag.acao_canal(d)
+    if caminho == '/agente/rodar':
+        return ag.rodar_agora(str(d.get('oque', '')), str(d.get('link', '')).strip())
+    if caminho == '/agente/parar':
+        return ag.parar_tudo()
+    if caminho == '/agente/email/teste':
+        ag.enviar_email('Teste de aviso', 'Se você recebeu este e-mail, os avisos do agente estão funcionando.')
+        return {'ok': True}
+    m = re.fullmatch(r'/agente/cortes/(\w+)/(descartar|agendar|email)', caminho)
+    if m:
+        return ag.acao_corte(*m.groups())
     if caminho == '/contas/codigo':
         return {'rede': pg.receber_codigo(str(d.get('code', '')), str(d.get('state', '')))}
     if caminho == '/contas/verificar':
@@ -390,6 +477,7 @@ def main():
     if not shutil.which('ffmpeg') and not ffmpeg_path():
         print('Aviso: FFmpeg não encontrado. Vídeos acima de 360p podem falhar. (Termux: pkg install ffmpeg)')
     pg.iniciar_relogio()
+    ag.iniciar()
     srv = ThreadingHTTPServer((HOST, PORTA), Handler)
     print(f'\n  EstúdioClip servidor {VERSAO} rodando em http://localhost:{PORTA}')
     print('  Cole esse endereço no site, em Chaves e ajustes > Cortes direto pelo link.')

@@ -1,6 +1,6 @@
 import ErroTela from './components/ErroTela';
 import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useState, type ComponentType } from 'react';
-import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, Film, CheckCircle2, AlertTriangle, Info, X, Circle } from 'lucide-react';
+import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, Film, Bot, CheckCircle2, AlertTriangle, Info, X, Circle } from 'lucide-react';
 import { AppCtx, PROJETO_VAZIO, type Marca, type Projeto, type Settings, type Tab } from './state';
 import { store } from './lib/store';
 import { TEMPLATE_PADRAO, type Template } from './lib/render';
@@ -10,7 +10,7 @@ import Inicio from './pages/Inicio';
 // Se o site foi atualizado com a aba aberta, o pedaço antigo some do servidor: recarrega uma vez para pegar a versão nova.
 type Mod = Promise<{default:ComponentType}>;
 const CARGA:Partial<Record<Tab,()=>Mod>> = {
-  radar:()=>import('./pages/Radar'), cortes:()=>import('./pages/Cortes'), agendar:()=>import('./pages/Agendar'), video:()=>import('./pages/VideoCodigo'), vozes:()=>import('./pages/Vozes'),
+  radar:()=>import('./pages/Radar'), cortes:()=>import('./pages/Cortes'), agendar:()=>import('./pages/Agendar'), agente:()=>import('./pages/Agente'), video:()=>import('./pages/VideoCodigo'), vozes:()=>import('./pages/Vozes'),
   manual:()=>import('./pages/Manual'), estilos:()=>import('./pages/Estilos'), templates:()=>import('./pages/Templates'), config:()=>import('./pages/Config'),
 };
 const seguro=(f:()=>Mod)=>()=>f().then(m=>{ try{ sessionStorage.removeItem('studio_recarregou'); }catch{ /* sem armazenamento */ } return m; },()=>{
@@ -23,11 +23,11 @@ const InicioM=memo(Inicio);
 const adiantar=(t:Tab)=>{ CARGA[t]?.().catch(()=>{}); };
 
 const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'seguir-rosto',servidor:'',servidorToken:'',servidorCanal:'',geminiKey:'',ia:''};
-const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['video','Criar vídeo animado',Sparkles],['vozes','Estúdio de vozes',Mic],['manual','Montagem manual',Film],['agendar','Agendar posts',CalendarClock],['estilos','Legendas e efeitos',Captions],['templates','Template da marca',LayoutTemplate],['config','Chaves e ajustes',Gear]];
+const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['video','Criar vídeo animado',Sparkles],['vozes','Estúdio de vozes',Mic],['manual','Montagem manual',Film],['agendar','Agendar posts',CalendarClock],['agente','Agentes',Bot],['estilos','Legendas e efeitos',Captions],['templates','Template da marca',LayoutTemplate],['config','Chaves e ajustes',Gear]];
 /** Nome curto de cada aba para a barra de baixo do telefone. */
-const CURTO:Record<Tab,string> = {inicio:'Início',radar:'Radar',cortes:'Cortes',video:'Animado',vozes:'Vozes',manual:'Montagem',agendar:'Agendar',estilos:'Legendas',templates:'Template',config:'Ajustes'};
+const CURTO:Record<Tab,string> = {inicio:'Início',radar:'Radar',cortes:'Cortes',video:'Animado',vozes:'Vozes',manual:'Montagem',agendar:'Agendar',agente:'Agentes',estilos:'Legendas',templates:'Template',config:'Ajustes'};
 /** Menu por etapa do trabalho. */
-const GRUPOS:[string,Tab[]][] = [['',['inicio']],['Descobrir',['radar']],['Produzir',['cortes','video','vozes','manual','estilos','templates']],['Publicar',['agendar']],['Configurações',['config']]];
+const GRUPOS:[string,Tab[]][] = [['',['inicio']],['Descobrir',['radar']],['Produzir',['cortes','video','vozes','manual','estilos','templates']],['Publicar',['agendar','agente']],['Configurações',['config']]];
 const TITLES:Record<Tab,[string,string]> = {
   inicio:['Bem-vindo ao EstúdioClip','Descubra vídeos em alta, transforme vídeos longos em cortes curtos e exporte com legenda, tudo no navegador.'],
   radar:['Descubra vídeos em alta','Pesquise qualquer nicho no YouTube e encontre canais e vídeos com muitas visualizações.'],
@@ -36,6 +36,7 @@ const TITLES:Record<Tab,[string,string]> = {
   manual:['Montagem manual','Mande as imagens dos quadros, a narração, a trilha e os efeitos. O site lê o roteiro de quadros, sincroniza tudo e grava o vídeo.'],
   video:['Criar vídeo animado','Digite um tema: a IA escreve o roteiro e o site monta um vídeo vertical animado, com narração e batida, pronto para postar.'],
   agendar:['Agendar posts','Conecte suas contas uma vez e agende os cortes no YouTube, Instagram, Facebook e TikTok. O Kwai fica com o botão de baixar.'],
+  agente:['Agentes','Dois agentes trabalham sozinhos no seu servidor: um procura vídeos e faz os cortes, o outro agenda e posta. Você aprova os canais e recebe tudo por e-mail.'],
   estilos:['Legendas e efeitos','Escolha o visual padrão das legendas e o efeito aplicado nos cortes.'],
   templates:['Template da marca','Logo, cor, moldura e crédito aplicados automaticamente em todos os cortes.'],
   config:['Chaves e ajustes','Cole aqui as chaves que ativam cada função. Clique no ? para ver como conseguir cada uma.'],
