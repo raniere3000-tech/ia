@@ -1,0 +1,716 @@
+"""Estilos visuais do EstúdioClip e o motor que transforma uma CENA (dados declarativos) em vídeo com FFmpeg.
+
+Segurança: a IA nunca escreve código. Ela devolve só campos de texto e escolhas de uma lista
+(validados em `validar_cena`). Este arquivo transforma esses campos em filtros do FFmpeg que nós
+escrevemos. Nada vindo da IA vira comando, caminho de arquivo ou expressão.
+
+Os 16 estilos aparecem no site com o status REAL de cada um:
+  operacional  -> o servidor (Termux) já faz o vídeo neste estilo, só com FFmpeg
+  beta         -> faz, mas ainda simples / precisa de mais testes no aparelho
+  indisponivel -> ainda não existe motor que rode no celular; não é oferecido na produção
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import random
+import re
+import textwrap
+from pathlib import Path
+
+import raster
+
+VERSAO_MOTOR = 3
+FONTE = Path(__file__).parent / 'fontes' / 'Inter-Bold.otf'
+FPS = 30
+
+ESTILOS = [
+    # id, nome, técnica, status, prioridade, descrição, paleta
+    ('cinema3d', '3D de cinema', 'Objetos e câmera 3D com luz e material', 'indisponivel', 'avançada',
+     'Precisa de um motor 3D. Ainda não há um que rode de forma estável no Termux; fica para depois de um teste no aparelho.', ['#0b0f1a', '#f2b544', '#e8eef9']),
+    ('brinquedo_blocos', 'Blocos de brinquedo', 'Blocos modulares 3D articulados', 'indisponivel', 'avançada',
+     'Depende do motor 3D (não validado no Android).', ['#d62828', '#f7c600', '#1d70b8']),
+    ('plastico3d', 'Bonequinho de plástico', '3D estilizado com brilho de plástico', 'indisponivel', 'avançada',
+     'Depende do motor 3D (não validado no Android).', ['#ffcf56', '#ff6f59', '#4ecdc4']),
+    ('retro3d_2000', '3D anos 2000', 'Low-poly com texturas simples', 'indisponivel', 'intermediária',
+     'Depende do motor 3D (não validado no Android).', ['#2b2d42', '#8d99ae', '#ef233c']),
+    ('lousa_giz', 'Lousa de giz', 'Fundo de lousa, giz que escreve palavra por palavra', 'operacional', 'prioritária',
+     'Texto escrito aos poucos em giz, sublinhado e poeira de giz. Bom para explicações.', ['#23382b', '#f2f2e9', '#f7d66b']),
+    ('traco_neon', 'Traço neon', 'Traços e textos brilhantes sobre fundo escuro', 'operacional', 'prioritária',
+     'Moldura e texto com brilho neon que pulsa. Bom para games e tecnologia.', ['#05010f', '#22e4ff', '#ff3df2']),
+    ('quadrinhos', 'Quadrinhos', 'Quadro, retícula, balão de fala e onomatopeia', 'operacional', 'prioritária',
+     'Quadro de HQ com retícula, balão com o texto e a palavra de destaque em onomatopeia.', ['#ffd23f', '#111111', '#ee4266']),
+    ('vetor_chapado', 'Vetor chapado', 'Formas planas animadas e tipografia', 'operacional', 'prioritária',
+     'Formas de cor sólida que entram deslizando, cartão com o título. Ideal para explicações e mascotes.', ['#3a86ff', '#ffbe0b', '#fb5607']),
+    ('palitinho', 'Palitinho', 'Bonequinho de palitos com poses simples', 'beta', 'prioritária',
+     'Bonequinho de palitos que gesticula ao lado do texto. Poses ainda simples.', ['#ffffff', '#111111', '#e63946']),
+    ('pixel_art', 'Pixel art', 'Cena em baixa resolução ampliada sem suavizar', 'operacional', 'prioritária',
+     'Tudo desenhado em blocos de pixel, paleta curta e personagem que pula.', ['#1b1b3a', '#ffd166', '#06d6a0']),
+    ('papel_recortado', 'Papel recortado', 'Camadas de papel com sombra que balançam', 'operacional', 'prioritária',
+     'Recortes de papel colorido com sombra sobre fundo de papel pardo.', ['#d9c3a0', '#e76f51', '#2a9d8f']),
+    ('cartoon2d', 'Desenho animado 2D', 'Ilustração por IA com movimento de câmera', 'beta', 'intermediária',
+     'Precisa de um gerador de imagem ligado (Gemini). Sem ele, este estilo não é usado.', ['#ffffff', '#ff8c42', '#3d5a80']),
+    ('motion_graphics', 'Motion graphics', 'Números, barras e tipografia animada', 'operacional', 'prioritária',
+     'Contador animado, barras que crescem e grade. Ideal para dados e curiosidades com números.', ['#0d1b2a', '#00f5d4', '#fee440']),
+    ('parallax_25d', '2.5D / Parallax', 'Camadas em profundidade que andam em velocidades diferentes', 'beta', 'intermediária',
+     'Montanhas em camadas com profundidade. Com imagem de IA, a imagem vira as camadas.', ['#14213d', '#fca311', '#e5e5e5']),
+    ('quadro_branco', 'Quadro branco', 'Caneta que escreve no quadro e marca-texto', 'operacional', 'prioritária',
+     'Texto escrito aos poucos em caneta azul com marca-texto na palavra de destaque.', ['#fbfbf8', '#1d3557', '#ffe066']),
+    ('mapas_animados', 'Mapas animados', 'Mapas vetoriais com rotas e marcadores', 'indisponivel', 'intermediária',
+     'Precisa de uma base de mapas com licença de uso. Ainda não incluída.', ['#cfe8ef', '#2a6f97', '#e63946']),
+]
+CAMPOS = ('id', 'nome', 'tecnica', 'status', 'prioridade', 'descricao', 'paleta')
+CAMERAS = ('parado', 'aproximar', 'afastar', 'panoramica')
+FORMATOS = {'9:16': (1080, 1920), '16:9': (1920, 1080), '1:1': (1080, 1080)}
+
+
+def catalogo() -> list:
+    out = []
+    for e in ESTILOS:
+        d = dict(zip(CAMPOS, e))
+        d['servidor'] = d['status'] != 'indisponivel'
+        d['formatos'] = list(FORMATOS) if d['servidor'] else []
+        d['custo'] = 'Só o processamento do celular' if d['id'] != 'cartoon2d' else 'Uma imagem de IA por cena (custo do Gemini)'
+        d['precisa_imagem'] = d['id'] == 'cartoon2d'
+        out.append(d)
+    return out
+
+
+def estilo(eid: str) -> dict:
+    for d in catalogo():
+        if d['id'] == eid:
+            return d
+    return next(d for d in catalogo() if d['id'] == 'vetor_chapado')
+
+
+def utilizavel(eid: str, tem_imagem: bool = False) -> bool:
+    e = estilo(eid)
+    return e['id'] == eid and e['servidor'] and (tem_imagem or not e['precisa_imagem'])
+
+
+# ---------------------------------------------------------------- validação da cena (o que a IA pode mandar)
+def _txt(v, n: int) -> str:
+    s = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', ' ', str(v or '')).strip()
+    return s[:n]
+
+
+def validar_cena(c: dict, i: int = 0) -> dict:
+    els = []
+    for e in (c.get('elementos') or [])[:5] if isinstance(c.get('elementos'), list) else []:
+        if isinstance(e, dict):
+            try:
+                valor = max(0.0, min(100.0, float(e.get('valor', 50))))
+            except (TypeError, ValueError):
+                valor = 50.0
+            els.append({'rotulo': _txt(e.get('rotulo'), 18), 'valor': valor})
+    num = c.get('numero')
+    try:
+        num = None if num in (None, '') else max(-1e9, min(1e9, float(num)))
+    except (TypeError, ValueError):
+        num = None
+    try:
+        dur = float(c.get('duracao_alvo') or c.get('duracao') or 0)
+    except (TypeError, ValueError):
+        dur = 0
+    return {
+        'id': re.sub(r'[^a-z0-9]', '', str(c.get('id') or ''))[:12] or f'c{i + 1}',
+        'texto': _txt(c.get('texto') or c.get('fala'), 600),
+        'titulo': _txt(c.get('titulo'), 70),
+        'destaque': _txt(c.get('destaque'), 24),
+        'numero': num, 'unidade': _txt(c.get('unidade'), 12),
+        'elementos': els,
+        'camera': c.get('camera') if c.get('camera') in CAMERAS else 'parado',
+        'personagem': _txt(c.get('personagem'), 40), 'emocao': _txt(c.get('emocao'), 30),
+        'cenario': _txt(c.get('cenario'), 160), 'visual': _txt(c.get('visual') or c.get('prompt_visual'), 400),
+        'movimento': _txt(c.get('movimento'), 160), 'enquadramento': _txt(c.get('enquadramento'), 60),
+        'duracao_alvo': max(0.0, min(60.0, dur)),
+        'estilo': c.get('estilo') if c.get('estilo') in [e[0] for e in ESTILOS] else '',
+    }
+
+
+# ---------------------------------------------------------------- montagem do filtro
+def _esc(p: Path | str) -> str:
+    return str(p).replace('\\', '/').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+
+
+def quebrar(texto: str, largura_px: float, tam: float) -> list[str]:
+    por_linha = max(6, int(largura_px / (tam * 0.56)))
+    return textwrap.wrap(texto, por_linha) or ['']
+
+
+class Comp:
+    def __init__(self, W: int, H: int, dur: float, pasta: Path):
+        self.W, self.H, self.dur, self.pasta = W, H, dur, pasta
+        self.args: list[str] = []
+        self.f: list[str] = []
+        self.n = 0
+        self.k = 0
+        self.v = ''
+        self.nt = 0
+
+    def _rot(self) -> str:
+        self.k += 1
+        return f'v{self.k}'
+
+    def entrada(self, args: list) -> int:
+        self.args += args
+        self.n += 1
+        return self.n - 1
+
+    def fundo(self, cor: str, grad: tuple | None = None):
+        c = cor.lstrip('#')
+        if grad:
+            i = self.entrada(['-f', 'lavfi', '-i', f'gradients=s={self.W}x{self.H}:c0=0x{grad[0].lstrip("#")}:c1=0x{grad[1].lstrip("#")}:speed=0.008:r={FPS}:d={self.dur:.3f}'])
+        else:
+            i = self.entrada(['-f', 'lavfi', '-i', f'color=c=0x{c}:s={self.W}x{self.H}:r={FPS}:d={self.dur:.3f}'])
+        self.v = f'[{i}:v]'
+        self.filtro('format=yuv420p')
+
+    def filtro(self, expr: str):
+        r = self._rot()
+        self.f.append(f'{self.v}{expr}[{r}]')
+        self.v = f'[{r}]'
+
+    def png(self, arq: Path, x: str, y: str, ini: float = 0, fade: float = 0.35, escala: tuple | None = None, vizinho: bool = False, fim: float | None = None):
+        i = self.entrada(['-loop', '1', '-framerate', str(FPS), '-t', f'{self.dur:.3f}', '-i', str(arq)])
+        cadeia = 'format=rgba'
+        if escala:
+            cadeia += f',scale={int(escala[0])}:{int(escala[1])}' + (':flags=neighbor' if vizinho else '')
+        if fade:
+            cadeia += f',fade=t=in:st={ini:.2f}:d={fade:.2f}:alpha=1'
+        r = self._rot()
+        self.f.append(f'[{i}:v]{cadeia}[{r}]')
+        en = f"between(t,{ini:.2f},{fim:.2f})" if fim is not None else f'gte(t,{ini:.2f})'
+        o = self._rot()
+        self.f.append(f"{self.v}[{r}]overlay=x='{x}':y='{y}':eval=frame:enable='{en}'[{o}]")
+        self.v = f'[{o}]'
+
+    def imagem(self, arq: Path, x: int, y: int, w: int, h: int, camera: str, ini: float = 0, borda: str = ''):
+        frames = max(1, int(self.dur * FPS))
+        z = {'aproximar': f"1+0.12*on/{frames}", 'afastar': f"1.12-0.12*on/{frames}", 'panoramica': '1.12', 'parado': '1.0'}[camera]
+        px = f"(iw-iw/zoom)*on/{frames}" if camera == 'panoramica' else 'iw/2-(iw/zoom/2)'
+        i = self.entrada(['-i', str(arq)])
+        r = self._rot()
+        self.f.append(f"[{i}:v]scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,crop={w * 2}:{h * 2},"
+                      f"zoompan=z='{z}':x='{px}':y='ih/2-(ih/zoom/2)':d={frames}:s={w}x{h}:fps={FPS},format=rgba,"
+                      f"fade=t=in:st={ini:.2f}:d=0.4:alpha=1[{r}]")
+        if borda:
+            self.f[-1] = self.f[-1][:-len(f'[{r}]')] + f",drawbox=x=0:y=0:w=iw:h=ih:color={borda}:t=8[{r}]"
+        o = self._rot()
+        self.f.append(f"{self.v}[{r}]overlay=x={x}:y={y}:eval=init:shortest=0[{o}]")
+        self.v = f'[{o}]'
+
+    def _arq_texto(self, texto: str) -> Path:
+        self.nt += 1
+        arq = self.pasta / f'txt{self.nt}.txt'
+        arq.write_text(texto, encoding='utf-8')
+        return arq
+
+    def texto(self, texto: str, x: str, y: str, tam: float, cor: str, ini: float = 0, fade: float = 0.4, borda: int = 0,
+              cor_borda: str = '#000000', caixa: str = '', fim: float | None = None, sombra: int = 0, tam_expr: str = ''):
+        if not texto.strip():
+            return
+        arq = self._arq_texto(texto)
+        alpha = f"if(lt(t,{ini:.2f}),0,min(1,(t-{ini:.2f})/{max(fade, 0.01):.2f}))" if fade else '1'
+        opts = [f"fontfile='{_esc(FONTE)}'", f"textfile='{_esc(arq)}'", 'expansion=none', f"fontsize={tam_expr or int(tam)}",
+                f"fontcolor=0x{cor.lstrip('#')}", f"x={x}", f"y={y}", f"alpha='{alpha}'", f"line_spacing={int(tam * 0.18)}"]
+        if borda:
+            opts += [f'borderw={borda}', f"bordercolor=0x{cor_borda.lstrip('#')}"]
+        if sombra:
+            opts += [f'shadowx={sombra}', f'shadowy={sombra}', 'shadowcolor=black@0.45']
+        if caixa:
+            opts += ['box=1', f'boxcolor={caixa}', f'boxborderw={int(tam * 0.35)}']
+        en = f"between(t,{ini:.2f},{fim:.2f})" if fim is not None else f'gte(t,{ini:.2f})'
+        opts.append(f"enable='{en}'")
+        self.filtro('drawtext=' + ':'.join(opts))
+
+    def palavras(self, texto: str, x0: int, y0: int, largura: int, tam: float, cor: str, ini: float, fim_rev: float, **kw):
+        """Escreve palavra por palavra (giz, caneta): cada prefixo aparece num intervalo."""
+        pal = texto.split()
+        if not pal:
+            return
+        passos = min(len(pal), 14)
+        grupos = [pal[: max(1, round(len(pal) * (k + 1) / passos))] for k in range(passos)]
+        dt = max(0.12, (fim_rev - ini) / passos)
+        for k, g in enumerate(grupos):
+            linhas = quebrar(' '.join(pal), largura, tam)
+            # mantém a quebra de linha do texto inteiro (as palavras não pulam de linha enquanto escreve)
+            restante = ' '.join(g)
+            parcial = []
+            for ln in linhas:
+                if not restante:
+                    break
+                if restante.startswith(ln):
+                    parcial.append(ln)
+                    restante = restante[len(ln):].strip()
+                else:
+                    parcial.append(restante)
+                    restante = ''
+            t0 = ini + k * dt
+            t1 = ini + (k + 1) * dt if k < passos - 1 else None
+            self.texto('\n'.join(parcial), str(x0), str(y0), tam, cor, ini=t0, fade=0, fim=t1, **kw)
+
+    def legenda(self, ass: Path):
+        self.filtro(f"subtitles=filename='{_esc(ass)}':fontsdir='{_esc(FONTE.parent)}'")
+
+    def comando(self, audio: Path | None, saida: Path) -> list[str]:
+        cmd = ['ffmpeg', '-nostdin', '-y', '-v', 'error', *self.args]
+        if audio:
+            ia = self.n
+            cmd += ['-i', str(audio)]
+            afiltro = f'[{ia}:a]aresample=48000,aformat=channel_layouts=stereo,apad=whole_dur={self.dur:.3f}[a]'
+        else:
+            ia = self.n
+            cmd += ['-f', 'lavfi', '-i', f'anullsrc=r=48000:cl=stereo:d={self.dur:.3f}']
+            afiltro = f'[{ia}:a]anull[a]'
+        final = self.v
+        grafo = ';'.join(self.f + [f'{final}format=yuv420p,setsar=1[vout]', afiltro])
+        return cmd + ['-filter_complex', grafo, '-map', '[vout]', '-map', '[a]', '-r', str(FPS), '-c:v', 'libx264', '-preset', 'veryfast',
+                      '-crf', '22', '-pix_fmt', 'yuv420p', '-g', str(FPS * 2), '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2',
+                      '-t', f'{self.dur:.3f}', '-movflags', '+faststart', str(saida)]
+
+
+# ---------------------------------------------------------------- legendas (ASS)
+def _ass_t(t: float) -> str:
+    t = max(0.0, t)
+    return f'{int(t // 3600)}:{int(t % 3600 // 60):02d}:{t % 60:05.2f}'
+
+
+def _ass_cor(h: str, a: int = 0) -> str:
+    h = h.lstrip('#')
+    return f'&H{a:02X}{h[4:6]}{h[2:4]}{h[0:2]}'.upper()
+
+
+def legenda_ass(texto: str, dur: float, W: int, H: int, cor: str, borda: str, caixa: bool, arq: Path, tamanho: float = 0.042, y_rel: float = 0.86):
+    pal = texto.split()
+    tam = int(min(W, H) * tamanho * (1.35 if H > W else 1.0))
+    blocos, atual = [], []
+    for p in pal:
+        atual.append(p)
+        if len(' '.join(atual)) > (26 if H > W else 42) or p.endswith(('.', '!', '?')):
+            blocos.append(' '.join(atual))
+            atual = []
+    if atual:
+        blocos.append(' '.join(atual))
+    total = sum(len(b) for b in blocos) or 1
+    t = 0.15
+    eventos = []
+    for b in blocos:
+        d = max(0.6, (dur - 0.3) * len(b) / total)
+        eventos.append(f'Dialogue: 0,{_ass_t(t)},{_ass_t(min(dur, t + d))},L,,0,0,0,,{b.replace("{", "(").replace("}", ")")}')
+        t += d
+    margem = int(H * (1 - y_rel))
+    estilo_ln = (f'Style: L,Inter,{tam},{_ass_cor(cor)},{_ass_cor(cor)},{_ass_cor(borda)},{_ass_cor("#000000", 0x60)},-1,0,0,0,100,100,0,0,'
+                 f'{3 if caixa else 1},{max(2, tam // 12)},0,2,{int(W * 0.07)},{int(W * 0.07)},{margem},1')
+    arq.write_text('[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\nWrapStyle: 0\n\n[V4+ Styles]\n'
+                   'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, '
+                   'ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n%s\n\n[Events]\n'
+                   'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n%s\n' % (W, H, estilo_ln, '\n'.join(eventos)),
+                   encoding='utf-8')
+    return arq
+
+
+# ---------------------------------------------------------------- peças desenhadas (PNG)
+def _peca(pasta: Path, nome: str, desenhar) -> Path:
+    arq = pasta / f'{nome}.png'
+    if not arq.exists():
+        desenhar().salvar(arq)
+    return arq
+
+
+def _circulo(pasta, cor, r=120):
+    def d():
+        t = raster.Tela(r * 2 + 4, r * 2 + 4)
+        t.elipse(r + 2, r + 2, r, r, raster.cor(cor))
+        return t
+    return _peca(pasta, f'circ_{cor.strip("#")}_{r}', d)
+
+
+def _cartao(pasta, w, h, cor, raio, sombra=True, nome='cartao'):
+    esc = 4   # desenha em 1/4 e o FFmpeg amplia (rápido no celular)
+    def d():
+        t = raster.Tela(w // esc + 6, h // esc + 6)
+        if sombra:
+            t.retangulo(4, 5, w // esc + 4, h // esc + 5, (0, 0, 0, 70), raio / esc)
+        t.retangulo(1, 1, w // esc, h // esc, raster.cor(cor), raio / esc)
+        return t
+    return _peca(pasta, f'{nome}_{cor.strip("#")}_{w}x{h}', d), (w + 6 * esc, h + 6 * esc)
+
+
+def _linha_giz(pasta, w, cor):
+    def d():
+        t = raster.Tela(w // 2, 14)
+        rnd = random.Random(7)
+        x = 2
+        while x < w // 2 - 6:
+            nx = min(w // 2 - 4, x + rnd.randint(18, 40))
+            t.linha(x, 7 + rnd.uniform(-1.5, 1.5), nx, 7 + rnd.uniform(-1.5, 1.5), raster.cor(cor, 230), 4, aspero=0.55, semente=x)
+            x = nx
+        return t
+    return _peca(pasta, f'giz_{cor.strip("#")}_{w}', d), (w, 28)
+
+
+def _reticula(pasta, cor):
+    def d():
+        t = raster.Tela(120, 120)
+        for y in range(0, 120, 12):
+            for x in range(0 if (y // 12) % 2 == 0 else 6, 120, 12):
+                t.elipse(x + 3, y + 3, 2.6, 2.6, raster.cor(cor, 70))
+        return t
+    return _peca(pasta, f'ret_{cor.strip("#")}', d)
+
+
+def _balao(pasta, w, h):
+    esc = 3
+    def d():
+        tw, th = w // esc, h // esc
+        t = raster.Tela(tw + 8, th + 30)
+        t.elipse(tw / 2 + 4, th / 2 + 4, tw / 2, th / 2, (17, 17, 17, 255))
+        t.poligono([(tw * 0.25, th * 0.8), (tw * 0.18, th + 26), (tw * 0.42, th * 0.9)], (17, 17, 17, 255))
+        t.elipse(tw / 2 + 4, th / 2 + 4, tw / 2 - 3, th / 2 - 3, (255, 255, 255, 255))
+        t.poligono([(tw * 0.27, th * 0.78), (tw * 0.21, th + 20), (tw * 0.39, th * 0.86)], (255, 255, 255, 255))
+        return t
+    return _peca(pasta, f'balao_{w}x{h}', d), (w + 8 * esc, h + 30 * esc)
+
+
+def _palito(pasta, pose: int, cor: str):
+    def d():
+        t = raster.Tela(160, 260)
+        c = raster.cor(cor)
+        t.elipse(80, 40, 28, 28, c, borda=6)
+        t.linha(80, 70, 80, 165, c, 7)
+        if pose == 0:
+            t.linha(80, 95, 35, 135, c, 7)
+            t.linha(80, 95, 125, 135, c, 7)
+        else:
+            t.linha(80, 95, 30, 55, c, 7)
+            t.linha(80, 95, 132, 120, c, 7)
+        t.linha(80, 165, 45, 245, c, 7)
+        t.linha(80, 165, 115, 245, c, 7)
+        return t
+    return _peca(pasta, f'palito{pose}_{cor.strip("#")}', d)
+
+
+def _pixel_heroi(pasta, cor):
+    mapa = ['..XXXX..', '.XXXXXX.', '.X.XX.X.', '.XXXXXX.', '..XXXX..', '.XXXXXX.', 'X.XXXX.X', '..X..X..']
+    def d():
+        t = raster.Tela(8, 8)
+        c = raster.cor(cor)
+        for y, ln in enumerate(mapa):
+            for x, ch in enumerate(ln):
+                if ch == 'X':
+                    t.retangulo(x, y, x + 1, y + 1, c)
+        return t
+    return _peca(pasta, f'heroi_{cor.strip("#")}', d)
+
+
+def _montanhas(pasta, w, h, cor, semente):
+    esc = 4
+    def d():
+        tw, th = w // esc, h // esc
+        t = raster.Tela(tw, th)
+        rnd = random.Random(semente)
+        fases = [rnd.uniform(0, 6) for _ in range(3)]
+        pts = [(0, th)]
+        for x in range(0, tw + 1, 4):
+            y = th * 0.45 + sum(math.sin(x / tw * math.pi * 2 * (k + 1) + fases[k]) * th * 0.12 / (k + 1) for k in range(3))
+            pts.append((x, y))
+        pts.append((tw, th))
+        t.poligono(pts, raster.cor(cor))
+        return t
+    return _peca(pasta, f'mont_{cor.strip("#")}_{semente}_{w}x{h}', d), (w, h)
+
+
+# ---------------------------------------------------------------- estilos
+def _layout(W, H):
+    v = H > W
+    return {
+        'v': v, 'margem': int(W * 0.08),
+        'titulo_y': int(H * (0.12 if v else 0.08)), 'titulo_tam': int(W * (0.075 if v else 0.042)),
+        'painel': (int(W * 0.08), int(H * 0.27), int(W * 0.84), int(H * 0.35)) if v else (int(W * 0.52), int(H * 0.22), int(W * 0.42), int(H * 0.56)),
+        'texto_larg': int(W * 0.84) if v else int(W * 0.42),
+    }
+
+
+def montar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, imagem: Path | None, audio: Path | None, saida: Path, paleta: list | None = None) -> list:
+    """Devolve o comando do FFmpeg que faz o clipe desta cena."""
+    e = estilo(eid)
+    if not utilizavel(e['id'], bool(imagem)):
+        e = estilo('vetor_chapado')
+    p0, p1, p2 = (paleta or e['paleta'])[:3] if len(paleta or e['paleta']) >= 3 else e['paleta']
+    L = _layout(W, H)
+    c = Comp(W, H, dur, pasta)
+    titulo = cena.get('titulo') or ''
+    destaque = cena.get('destaque') or ''
+    m = L['margem']
+    tam = L['titulo_tam']
+    fn = globals()['_e_' + e['id']]
+    leg_cor, leg_borda, leg_caixa = fn(c, cena, L, W, H, dur, pasta, imagem, (p0, p1, p2), titulo, destaque, m, tam)
+    if cena.get('texto'):
+        c.legenda(legenda_ass(cena['texto'], dur, W, H, leg_cor, leg_borda, leg_caixa, pasta / 'legenda.ass'))
+    return c.comando(audio, saida)
+
+
+def _y_dest(L, H):
+    x, y, w, h = L['painel']
+    return y + h + int(L['titulo_tam'] * 1.1) if L['v'] else int(H * 0.82)
+
+
+def _imagem_painel(c, imagem, L, cena, borda=''):
+    if imagem:
+        x, y, w, h = L['painel']
+        c.imagem(imagem, x, y, w, h, cena.get('camera') or 'aproximar', 0.3, borda)
+        return True
+    return False
+
+
+def _e_vetor_chapado(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    p0, p1, p2 = pal
+    c.fundo(p0)
+    r = int(W * 0.22)
+    c.png(_circulo(pasta, p1, 100), f"W-w*0.75+12*sin(t*1.6)", f"H*0.62-h/2+10*cos(t*1.3)", 0.0, 0.5, (r * 2, r * 2))
+    c.png(_circulo(pasta, p2, 100), f"-w*0.35", f"H*0.05+14*sin(t*1.1)", 0.15, 0.5, (int(r * 1.4), int(r * 1.4)))
+    cw, ch = int(W - 2 * m), int(tam * 3.4)
+    arq, (sw, sh) = _cartao(pasta, cw, ch, '#ffffff', 28)
+    c.png(arq, f"{m - 12}", f"if(lt(t,0.5),H,{L['titulo_y'] - 20}+(H-{L['titulo_y'] - 20})*max(0,1-t/0.5)^3)", 0, 0, (sw, sh))
+    if not _imagem_painel(c, imagem, L, cena, 'white'):
+        _barras(c, cena, L, W, H, pal, 0.6)
+    ln = quebrar(titulo, cw - 60, tam)[:2]
+    c.texto('\n'.join(ln), f'{m + 30}', f"{L['titulo_y'] + int(tam * 0.4)}", tam, '#1b1b1b', ini=0.45)
+    if destaque:
+        c.texto(destaque.upper(), '(w-text_w)/2', f'{_y_dest(L, H)}', tam * 0.8, '#ffffff', ini=0.9, borda=6, cor_borda=p2)
+    return '#ffffff', '#111111', True
+
+
+def _barras(c, cena, L, W, H, pal, ini):
+    els = cena.get('elementos') or []
+    if not els:
+        return
+    x, y, w, h = L['painel']
+    n = len(els)
+    bw = int(w / (n * 1.6))
+    for k, e in enumerate(els):
+        bh = max(12, int(h * 0.8 * e['valor'] / 100))
+        arq, (sw, sh) = _cartao(c.pasta, bw, bh, pal[(k % 2) + 1], 10, False, f'barra{k}')
+        bx = x + int(k * bw * 1.6 + bw * 0.3)
+        t0 = ini + k * 0.15
+        c.png(arq, str(bx), f"{y + h}-{sh}*min(1,max(0,(t-{t0:.2f})/0.6))", t0, 0.1, (sw, sh))
+        if e['rotulo']:
+            c.texto(e['rotulo'], f'{bx}', f'{y + h + 14}', max(22, int(L["titulo_tam"] * 0.42)), '#ffffff', ini=t0 + 0.3, borda=3)
+    # base cobre a parte da barra que ainda está "abaixo do chão"
+    c.filtro(f"drawbox=x={x}:y={y + h}:w={w}:h=6:color=white@0.9:t=fill")
+
+
+def _e_lousa_giz(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    p0, p1, p2 = pal
+    c.fundo(p0)
+    c.filtro('noise=alls=9:allf=t+u')
+    c.filtro(f"drawbox=x=0:y=0:w=iw:h=ih:color=0x6b4423:t={int(min(W, H) * 0.035)}")
+    c.filtro(f"drawbox=x={int(min(W, H) * 0.035)}:y={int(min(W, H) * 0.035)}:w=iw-{int(min(W, H) * 0.07)}:h=ih-{int(min(W, H) * 0.07)}:color=0x3e2a14@0.6:t=4")
+    fim_rev = min(dur * 0.55, 0.4 + 0.22 * len(titulo.split()))
+    c.palavras(titulo, m + 10, L['titulo_y'], W - 2 * m, tam, p1, 0.3, fim_rev)
+    n_lin = len(quebrar(titulo, W - 2 * m, tam))
+    arq, (sw, sh) = _linha_giz(pasta, int(W * 0.6), p2)
+    c.png(arq, f'{m}', f"{L['titulo_y'] + int(n_lin * tam * 1.2) + 10}", fim_rev, 0.5, (sw, sh))
+    if not _imagem_painel(c, imagem, L, cena, '0xf2f2e9'):
+        _barras(c, cena, L, W, H, (p0, p1, p2), fim_rev)
+    if destaque:
+        c.texto(destaque, '(w-text_w)/2', f'{_y_dest(L, H)}', tam * 1.15, p2, ini=fim_rev + 0.2, fade=0.6)
+    return p1, '#1a2a20', False
+
+
+def _e_quadro_branco(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    p0, p1, p2 = pal
+    c.fundo(p0)
+    c.filtro('drawgrid=w=60:h=60:t=1:c=0x1d3557@0.05')
+    fim_rev = min(dur * 0.55, 0.4 + 0.25 * len(titulo.split()))
+    if destaque:
+        dw = int(len(destaque) * tam * 0.62) + 40
+        arq, (sw, sh) = _cartao(pasta, dw, int(tam * 1.25), p2, 6, False, 'marca')
+        c.png(arq, f'(W-{sw})/2', f'{_y_dest(L, H) - 10}', fim_rev, 0.25, (sw, sh))
+        c.texto(destaque, '(w-text_w)/2', f'{_y_dest(L, H) + int(tam * 0.1)}', tam, p1, ini=fim_rev + 0.15, fade=0.2)
+    c.palavras(titulo, m, L['titulo_y'], W - 2 * m, tam, p1, 0.3, fim_rev)
+    if not _imagem_painel(c, imagem, L, cena, '0x1d3557'):
+        _barras(c, cena, L, W, H, (p0, p1, '#457b9d'), fim_rev)
+    return p1, '#ffffff', False
+
+
+def _e_traco_neon(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    p0, p1, p2 = pal
+    c.fundo(p0)
+    x, y, w, h = L['painel']
+    c.filtro(f"drawbox=x={x}:y={y}:w={w}:h={h}:color=0x{p1.lstrip('#')}@'0.6+0.4*abs(sin(t*2))':t=10:enable='gte(t,0.2)'".replace("@'0.6+0.4*abs(sin(t*2))'", '@0.9'))
+    c.filtro(f"drawbox=x={m // 2}:y={m // 2}:w=iw-{m}:h=ih-{m}:color=0x{p2.lstrip('#')}@0.8:t=6")
+    _imagem_painel(c, imagem, L, cena) or _barras(c, cena, L, W, H, (p0, p1, p2), 0.5)
+    ln = quebrar(titulo, W - 2 * m, tam)
+    c.texto('\n'.join(ln), '(w-text_w)/2', f"{L['titulo_y']}", tam, p2, ini=0.25)
+    if destaque:
+        c.texto(destaque.upper(), '(w-text_w)/2', f'{_y_dest(L, H)}', tam * 0.9, p1, ini=0.8)
+    # brilho: borra uma cópia e soma por cima (efeito neon)
+    r1, r2, r3 = c._rot(), c._rot(), c._rot()
+    c.f.append(f'{c.v}split[{r1}][{r2}]')
+    c.f.append(f'[{r2}]gblur=sigma={max(6, W // 90)}[{r3}]')
+    o = c._rot()
+    c.f.append(f'[{r1}][{r3}]blend=all_mode=screen:all_opacity=0.6[{o}]')
+    c.v = f'[{o}]'
+    c.filtro("eq=brightness='0.02*sin(t*6)':eval=frame")
+    return p1, '#000000', False
+
+
+def _e_quadrinhos(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    p0, p1, p2 = pal
+    c.fundo(p0)
+    ret = _reticula(pasta, p1)
+    for yy in range(0, H, 480):
+        for xx in range(0, W, 480):
+            c.png(ret, str(xx), str(yy), 0, 0, (480, 480))
+    c.filtro(f"drawbox=x={m // 2}:y={m // 2}:w=iw-{m}:h=ih-{m}:color=0x{p1.lstrip('#')}:t={max(8, W // 90)}")
+    _imagem_painel(c, imagem, L, cena, '0x111111') or _barras(c, cena, L, W, H, (p0, p1, p2), 0.6)
+    bw, bh = int(W * 0.84), int(tam * 4.2)
+    arq, (sw, sh) = _balao(pasta, bw, bh)
+    c.png(arq, f'(W-{sw})/2', f"{L['titulo_y'] - 30}", 0.15, 0.2, (sw, sh))
+    ln = quebrar(titulo, bw * 0.72, tam * 0.85)[:3]
+    c.texto('\n'.join(ln).upper(), '(w-text_w)/2', f"{L['titulo_y'] + int(bh / 2 - len(ln) * tam * 0.5)}", tam * 0.85, '#111111', ini=0.35)
+    if destaque:
+        yy = _y_dest(L, H)
+        c.texto(destaque.upper() + '!', '(w-text_w)/2', str(yy), tam * 1.4, p0, ini=0.7, fade=0.01, borda=max(6, W // 140), cor_borda=p1,
+                tam_expr=f"'{int(tam * 1.4)}*(1+0.25*max(0,1-(t-0.7)/0.25)*gte(t,0.7))'")
+    return '#ffffff', '#111111', True
+
+
+def _e_pixel_art(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    p0, p1, p2 = pal
+    c.fundo(p0)
+    k = 8      # 1 pixel de arte = 8 pixels de vídeo
+    for i in range(0, W, k * 6):
+        c.filtro(f"drawbox=x={i}:y={int(H * 0.82)}:w={k * 5}:h={k * 2}:color=0x{p2.lstrip('#')}:t=fill")
+    c.filtro(f"drawbox=x=0:y={int(H * 0.84)}:w=iw:h=ih:color=0x2b2d42:t=fill")
+    c.filtro(f"drawbox=x={W - k * 20}:y={k * 10}:w={k * 8}:h={k * 8}:color=0x{p1.lstrip('#')}:t=fill")
+    heroi = _pixel_heroi(pasta, p1)
+    c.png(heroi, f"mod(t*{W // 6},W+w)-w", f"{int(H * 0.82) - k * 12}-abs(sin(t*5))*{k * 6}", 0.2, 0.1, (k * 12, k * 12), vizinho=True)
+    if imagem:
+        x, y, w, h = L['painel']
+        i = c.entrada(['-i', str(imagem)])
+        r = c._rot()
+        c.f.append(f"[{i}:v]scale={w // k}:{h // k}:force_original_aspect_ratio=increase,crop={w // k}:{h // k},scale={w}:{h}:flags=neighbor[{r}]")
+        o = c._rot()
+        c.f.append(f"{c.v}[{r}]overlay=x={x}:y={y}[{o}]")
+        c.v = f'[{o}]'
+    else:
+        _barras(c, cena, L, W, H, (p0, p1, p2), 0.5)
+    ln = quebrar(titulo.upper(), W - 2 * m, tam)
+    c.texto('\n'.join(ln), '(w-text_w)/2', f"{L['titulo_y']}", tam, p1, ini=0.2, fade=0.01, borda=k // 2, cor_borda='#000000')
+    if destaque:
+        c.texto(destaque.upper(), '(w-text_w)/2', f'{_y_dest(L, H)}', tam * 0.9, p2, ini=0.8, fade=0.01, borda=k // 2)
+    # tudo vira pixel grande: reduz e amplia sem suavizar
+    c.filtro(f'scale={W // 4}:{H // 4}:flags=neighbor,scale={W}:{H}:flags=neighbor')
+    return '#ffffff', '#000000', True
+
+
+def _e_papel_recortado(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    p0, p1, p2 = pal
+    c.fundo(p0)
+    c.filtro('noise=alls=7:allf=u')
+    r = int(W * 0.2)
+    c.png(_circulo(pasta, p2, 100), f"W-w*0.8", f"H*0.78+8*sin(t*1.7)", 0, 0.4, (r * 2, r * 2))
+    a1, s1 = _montanhas(pasta, W, int(H * 0.3), p1, 3)
+    c.png(a1, '0', f"H-h+6*sin(t*1.2)", 0, 0.4, s1)
+    cw, ch = int(W - 2 * m), int(tam * 3.2)
+    arq, (sw, sh) = _cartao(pasta, cw, ch, '#fffaf0', 6, True, 'papel')
+    c.png(arq, f"{m}+4*sin(t*1.5)", f"{L['titulo_y'] - 20}", 0.1, 0.3, (sw, sh))
+    _imagem_painel(c, imagem, L, cena, 'white') or _barras(c, cena, L, W, H, (p0, p1, p2), 0.6)
+    ln = quebrar(titulo, cw - 60, tam)[:2]
+    c.texto('\n'.join(ln), f'{m + 30}+4*sin(t*1.5)', f"{L['titulo_y'] + int(tam * 0.35)}", tam, '#3b2a1a', ini=0.35)
+    if destaque:
+        c.texto(destaque, '(w-text_w)/2', f'{_y_dest(L, H)}', tam, '#fffaf0', ini=0.8, sombra=6)
+    return '#fffaf0', '#3b2a1a', True
+
+
+def _e_motion_graphics(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    p0, p1, p2 = pal
+    c.fundo(p0)
+    c.filtro(f"drawgrid=w={W // 12}:h={W // 12}:t=1:c=0x{p1.lstrip('#')}@0.08")
+    c.filtro(f"drawbox=x={m}:y={L['titulo_y'] - 24}:w='min({W - 2 * m},{W - 2 * m}*t/0.5)':h=8:color=0x{p1.lstrip('#')}:t=fill".replace(f"w='min({W - 2 * m},{W - 2 * m}*t/0.5)'", f'w={W - 2 * m}'))
+    ln = quebrar(titulo, W - 2 * m, tam)
+    c.texto('\n'.join(ln), f'{m}', f"{L['titulo_y']}", tam, '#ffffff', ini=0.15)
+    if cena.get('numero') is not None:
+        n = cena['numero']
+        yn = int(H * (0.36 if L['v'] else 0.38))
+        # contador que sobe de 0 até o número (expressão nossa; o número já foi validado como float)
+        c.filtro(f"drawtext=fontfile='{_esc(FONTE)}':text='%{{eif\\:{n:.4f}*min(1,t/1.5)\\:d}}':fontsize={int(tam * 2.4)}:fontcolor=0x{p2.lstrip('#')}:"
+                 f"x=(w-text_w)/2:y={yn}")
+        unidade = cena.get('unidade') or ''
+        if unidade:
+            c.texto(unidade, '(w-text_w)/2', str(yn + int(tam * 2.7)), tam * 0.9, p1, ini=0.3)
+    if not _imagem_painel(c, imagem, L, cena):
+        if cena.get('numero') is None:
+            _barras(c, cena, L, W, H, (p0, p1, p2), 0.4)
+    if destaque:
+        c.texto(destaque.upper(), '(w-text_w)/2', f'{_y_dest(L, H)}', tam * 0.8, p1, ini=1.0, caixa='black@0.4')
+    return '#ffffff', '#000000', True
+
+
+def _e_palitinho(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    p0, p1, p2 = pal
+    c.fundo(p0)
+    c.filtro(f"drawbox=x=0:y={int(H * 0.80)}:w=iw:h=6:color=0x{p1.lstrip('#')}:t=fill")
+    alto = int(H * 0.32)
+    larg = int(alto * 160 / 260)
+    px = int(W * 0.12)
+    py = int(H * 0.80) - alto
+    for k in range(int(dur / 0.5) + 1):
+        pose = k % 2
+        c.png(_palito(pasta, pose, p1), str(px), str(py), k * 0.5, 0, (larg, alto), fim=(k + 1) * 0.5)
+    ln = quebrar(titulo, W - 2 * m, tam)
+    c.texto('\n'.join(ln), '(w-text_w)/2', f"{L['titulo_y']}", tam, p1, ini=0.2)
+    if destaque:
+        c.texto(destaque, f'{px + larg + 40}', f'{py + alto // 3}', tam, p2, ini=0.6)
+    return p1, '#ffffff', False
+
+
+def _e_parallax_25d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    p0, p1, p2 = pal
+    if imagem:
+        i = c.entrada(['-loop', '1', '-framerate', str(FPS), '-t', f'{dur:.3f}', '-i', str(imagem)])
+        b, f1 = c._rot(), c._rot()
+        c.f.append(f"[{i}:v]scale={int(W * 1.3)}:{int(H * 1.3)}:force_original_aspect_ratio=increase,crop={int(W * 1.3)}:{int(H * 1.3)},split[{b}][{f1}]")
+        bg, fg = c._rot(), c._rot()
+        c.f.append(f"[{b}]gblur=sigma=18,crop={W}:{H}:x='(iw-ow)/2+40*sin(t*0.5)':y='(ih-oh)/2'[{bg}]")
+        c.f.append(f"[{f1}]scale={int(W * 0.8)}:-2,crop={int(W * 0.7)}:{int(H * 0.5)}:x='(iw-ow)/2-30*sin(t*0.5)':y='(ih-oh)/2',format=rgba[{fg}]")
+        o = c._rot()
+        c.f.append(f"[{bg}][{fg}]overlay=x=(W-w)/2:y=H*0.28[{o}]")
+        c.v = f'[{o}]'
+    else:
+        c.fundo(p0, (p0, '#3a506b'))
+        c.png(_circulo(pasta, p1, 100), f"W*0.65", f"H*0.18+20*sin(t*0.4)", 0, 0.5, (int(W * 0.3), int(W * 0.3)))
+        for k, (cor, vel, alt) in enumerate([('#2c3e66', 12, 0.45), ('#1f2b4a', 28, 0.38), ('#10182c', 55, 0.30)]):
+            arq, (sw, sh) = _montanhas(pasta, W * 2, int(H * alt), cor, k + 1)
+            c.png(arq, f"-mod(t*{vel},{W})", f"H-h", 0, 0, (sw, sh))
+    ln = quebrar(titulo, W - 2 * m, tam)
+    c.texto('\n'.join(ln), '(w-text_w)/2', f"{L['titulo_y']}", tam, p2, ini=0.3, sombra=5)
+    if destaque:
+        c.texto(destaque, '(w-text_w)/2', f'{_y_dest(L, H)}', tam, p1, ini=0.8, sombra=5)
+    return '#ffffff', '#000000', True
+
+
+def _e_cartoon2d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    p0, p1, p2 = pal
+    c.fundo(p0)
+    if imagem:
+        c.imagem(imagem, 0, 0, W, H, cena.get('camera') or 'aproximar', 0)
+    ln = quebrar(titulo, W - 2 * m, tam)
+    c.texto('\n'.join(ln), '(w-text_w)/2', f"{L['titulo_y']}", tam, '#ffffff', ini=0.3, borda=max(5, W // 180), cor_borda=p2)
+    return '#ffffff', '#000000', True
+
+
+def chave_cena(eid: str, cena: dict, W: int, H: int, dur: float, audio_sha: str, imagem_sha: str, paleta) -> str:
+    base = json.dumps([VERSAO_MOTOR, eid, cena, W, H, round(dur, 2), audio_sha, imagem_sha, paleta], sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(base.encode()).hexdigest()[:24]
+
+
+def demo_cena(eid: str) -> dict:
+    """Cena de demonstração igual para todos os estilos (comparar lado a lado)."""
+    return validar_cena({'titulo': 'Por que o céu é azul?', 'destaque': 'Luz do sol', 'texto': 'A luz do sol se espalha no ar e o azul se espalha mais.',
+                         'numero': 71 if eid == 'motion_graphics' else None, 'unidade': '%',
+                         'elementos': [{'rotulo': 'Azul', 'valor': 90}, {'rotulo': 'Verde', 'valor': 55}, {'rotulo': 'Vermelho', 'valor': 25}]})

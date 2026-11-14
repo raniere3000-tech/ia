@@ -30,6 +30,7 @@ import urllib.parse
 import uuid
 from datetime import datetime, timedelta
 from email.message import EmailMessage
+from email.utils import make_msgid
 from pathlib import Path
 
 import cofre
@@ -799,15 +800,22 @@ def _smtp(cfg: dict) -> tuple[str, int]:
     raise ErroAgente(f'Não sei o servidor de envio de "{dom}". Preencha o campo Servidor SMTP na aba Agente.')
 
 
-def enviar_email(assunto: str, corpo: str, anexo: Path | None = None, nome_anexo: str = 'corte.mp4'):
+def enviar_email(assunto: str, corpo: str, anexo: Path | None = None, nome_anexo: str = 'corte.mp4',
+                 cabecalhos: dict | None = None, prefixo: str = 'EstúdioClip: ') -> str:
+    """Envia e devolve o Message-ID (usado para reconhecer a resposta do dono no e-mail de aprovação)."""
     cfg, senha = config()['email'], segredos()['email_senha']
     if not (cfg['para'] and cfg['de'] and senha):
         raise ErroAgente('Preencha o e-mail que recebe, o e-mail que envia e a senha de aplicativo na aba Agente.')
     host, porta = _smtp(cfg)
     m = EmailMessage()
-    m['Subject'] = re.sub(r'[\r\n\x00-\x1f]+', ' ', 'EstúdioClip: ' + assunto)[:200]
+    m['Subject'] = re.sub(r'[\r\n\x00-\x1f]+', ' ', prefixo + assunto)[:200]
     m['From'] = cfg['de']
     m['To'] = cfg['para']
+    mid = make_msgid(domain=(cfg['de'].rsplit('@', 1)[-1] or 'estudioclip.local'))
+    m['Message-ID'] = mid
+    for k, v in (cabecalhos or {}).items():
+        if k in ('In-Reply-To', 'References', 'X-EstudioClip'):
+            m[k] = re.sub(r'[\r\n]+', ' ', str(v))[:900]
     m.set_content(corpo + '\n\nEnviado pelo agente do EstúdioClip no seu servidor.')
     if anexo and anexo.exists():
         m.add_attachment(anexo.read_bytes(), maintype='video', subtype='mp4', filename=nome_anexo)
@@ -827,6 +835,7 @@ def enviar_email(assunto: str, corpo: str, anexo: Path | None = None, nome_anexo
         raise ErroAgente('O e-mail recusou a senha. Use uma SENHA DE APLICATIVO (não a senha normal da conta); no Gmail ela fica em Conta Google > Segurança > Senhas de app.')
     except (smtplib.SMTPException, OSError) as e:
         raise ErroAgente(f'Não consegui enviar o e-mail por {host}: {e}')
+    return mid
 
 
 def avisar(tipo: str, assunto: str, corpo: str, anexo: Path | None = None, nome_anexo: str = 'corte.mp4') -> bool:
@@ -1426,7 +1435,7 @@ def ver() -> dict:
                    for x in sorted(e['cortes'], key=lambda x: -x['criado'])][:80],
         'modelos': mo.resumo(), 'ativos': [m['id'] for m in mo.ativos(c['cortes']['modelos'])], 'desempenho': desempenho(e),
         'log': e['log'][-40:][::-1], 'gasto': gasto_mes(), 'semana': cortes_da_semana(),
-        'horarios': e['horarios'], 'atual': dict(ATUAL, ocupado=OCUPADO.locked()),
+        'horarios': e['horarios'], 'atual': dict(ATUAL, ocupado=OCUPADO.locked() or bool(PENDENTES and PENDENTES())),
         'opcoes': {'idiomas': IDIOMAS, 'paises': PAISES, 'nichos': NICHOS, 'proibidos': PROIBIDOS, 'variacoes': VARIACOES, 'motivos': MOTIVOS},
         'ffmpeg': bool(shutil.which('ffmpeg')), 'agora': time.time(),
     }
@@ -1448,11 +1457,21 @@ def _em_fundo(nome: str, f, *a):
     threading.Thread(target=rodar, daemon=True).start()
 
 
+PENDENTES = None         # ligado pelo servidor: quantos pedidos do agente de cortes esperam na fila
+ENFILEIRAR = None        # ligado pelo servidor: pedidos manuais entram na fila em vez de serem recusados
+
+
 def rodar_agora(oque: str, link: str = '') -> dict:
-    if OCUPADO.locked():
-        raise ErroAgente('O agente já está trabalhando. Espere terminar.')
     if not shutil.which('ffmpeg') and oque in ('cortar', 'link'):
         raise ErroAgente('Falta o FFmpeg no servidor (Termux: pkg install ffmpeg).')
+    if oque == 'link' and not re.match(r'https?://', link):
+        raise ErroAgente('Cole o link do vídeo.')
+    if oque not in ('buscar', 'cortar', 'link', 'postar'):
+        raise ErroAgente('Pedido desconhecido.')
+    if ENFILEIRAR:
+        return ENFILEIRAR(oque, link)
+    if OCUPADO.locked():
+        raise ErroAgente('O agente já está trabalhando. Espere terminar.')
     if oque == 'buscar':
         _em_fundo('Busca de canais', buscar_canais)
     elif oque == 'cortar':

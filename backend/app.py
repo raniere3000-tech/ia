@@ -1,4 +1,5 @@
-"""MVP local do Estúdio de Cortes; NÃO expor publicamente sem autenticação."""
+"""DESCONTINUADO: MVP antigo (FastAPI) do Estúdio de Cortes. O servidor oficial é servidor/servidor.py (Termux).
+Mantido só como referência; não recebe as funções novas (projetos, fila, Agente 3). NÃO expor publicamente."""
 from __future__ import annotations
 import json, math, os, re, shutil, subprocess, threading, time, uuid
 from datetime import datetime, timezone

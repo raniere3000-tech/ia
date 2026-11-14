@@ -80,6 +80,53 @@ bash iniciar-termux.sh sempre   # liga sozinho quando o celular reinicia (app Te
 
 Deixe o celular na tomada e tire o Termux da economia de bateria. As chaves, a senha do e-mail e os cortes ficam só na pasta `~/.estudioclip` do aparelho. A letra das legendas é a fonte Inter (licença em `fontes/LICENCA-Inter.txt`).
 
+## Versão 2: projetos no servidor, fila e Agente 3
+
+O celular (Termux) é o servidor central. Tudo abaixo roda nele, com o site fechado.
+
+**O que mudou**
+
+- **Projetos no servidor** (`~/.estudioclip/database/studio.sqlite`, SQLite em modo WAL). O site salva sozinho; se dois aparelhos mexem no mesmo projeto, o segundo recebe um aviso de conflito (nada é sobrescrito sem você escolher). As últimas 40 versões de cada projeto ficam guardadas.
+- **Aparelhos**: cada aparelho tem sua própria sessão. Para conectar um aparelho novo use um **código de uso único** (vale 10 minutos) em Ajustes > Aparelhos, ou `bash iniciar-termux.sh parear`. A senha não vai mais em link. Dá para desconectar um aparelho perdido.
+- **Fila**: um trabalho pesado por vez (render, cortes), dois leves. Tem horário marcado, prioridade, pausa, cancelar, tentar de novo e previsão de término medida no próprio aparelho. Se o servidor reiniciar, continua da etapa em que parou. A postagem (Agente 2) não entra na fila pesada: nunca fica travada.
+- **Agente 3 (vídeos originais)**: briefing → roteiro e storyboard → (você aprova o roteiro, no modo assistido) → narração Gemini → render por cena com FFmpeg nos estilos por código → vídeo final conferido (codec, tamanho, duração, som, começo/meio/fim, tela preta) → e-mail com código.
+- **Aprovação**: nada é publicado sem aprovação da versão final exata (o hash do arquivo). Aprove em **Fila e aprovações** no site ou respondendo o e-mail com `APROVAR VID-XXXXXX CÓDIGO`. Só então o vídeo vira post no Agente 2.
+- **Rotinas de produção**: dias da semana + hora (Brasília) + quantos vídeos. Reiniciar o servidor não duplica produção.
+- **Backup diário** em `~/.estudioclip/backups` (banco + configurações, com sha256; 7 dias). Os vídeos não entram (são grandes).
+
+**Instalar ou atualizar no Termux**
+
+```bash
+cd ~/ia && git pull
+pkg install -y ffmpeg tmux curl     # se ainda não tiver
+cd servidor && bash iniciar-termux.sh link
+```
+
+O banco é criado sozinho na primeira vez. Os dados antigos (`posts.json`, `contas.json`, cortes, chaves cifradas e a chave-mestra) continuam onde estavam e não são renomeados.
+
+**Respostas por e-mail (opcional)**: em Fila e aprovações > E-mail, ligue "Ler respostas". Usa IMAP com a mesma senha de aplicativo do envio (no Gmail, ative o IMAP nas configurações). Só aceita resposta do e-mail que recebe os avisos (ou dos remetentes que você autorizar), na mesma conversa, com o código certo, uma vez só. A Gmail API (OAuth) não foi implementada.
+
+**Voltar para a versão anterior (rollback)**
+
+```bash
+cd ~/ia && git log --oneline -5           # ache o commit anterior à versão 2
+git checkout <commit> -- servidor          # volta só a pasta do servidor
+cd servidor && bash iniciar-termux.sh link
+```
+
+A versão antiga ignora o banco novo (`database/`), então nada se perde: voltando para a 2 depois, tudo reaparece. Para restaurar um backup, use primeiro **Testar restauração** (abre numa pasta de teste); trocar o banco de verdade é manual: pare o servidor, copie `studio.sqlite` do zip para `~/.estudioclip/database/` e ligue de novo.
+
+**Teste automático**: `python servidor/testes/teste_agente3.py` (Gemini e e-mail falsos, FFmpeg de verdade).
+
+| Variável nova | Padrão | Para quê |
+|---|---|---|
+| `SITE` | GitHub Pages | Link "abrir revisão" nos e-mails |
+| `SESSAO_DIAS` | `120` | Validade da sessão de cada aparelho (renova a cada uso) |
+| `MIN_LIVRE_MB` | `500` | Espaço mínimo livre para começar um render |
+| `BACKUP_DIARIO` / `BACKUPS_MANTER` | `1` / `7` | Backup diário e quantos guardar |
+| `LIMITE_ANEXO_MB` | `18` | Maior prévia anexada no e-mail |
+| `FUSO` | `America/Sao_Paulo` | Fuso das rotinas |
+
 ## Configuração (variáveis de ambiente)
 
 | Variável | Padrão | Para quê |
@@ -104,6 +151,7 @@ Se um vídeo parar de baixar, atualize o yt-dlp abrindo o iniciador de novo (ele
 - **Senhas e chaves criptografadas no servidor.** Os logins das redes (`contas.json`), as chaves do agente (`agente_segredos.json`) e os cookies do YouTube ficam cifrados em disco. A chave-mestra fica em `~/.estudioclip-chave`, criada sozinha na primeira vez. Arquivos antigos em texto puro são convertidos na primeira leitura. Se apagar a chave-mestra, é preciso refazer os logins e as chaves.
 - **Limite honesto:** a chave-mestra fica no mesmo aparelho. Isso protege contra cópia dos arquivos, backup e envio acidental, mas não contra quem tem acesso total ao celular desbloqueado. Use bloqueio de tela.
 - **Senha do servidor:** mínimo de 10 caracteres (`bash iniciar-termux.sh senha`). Ela só é aceita no cabeçalho, nunca no endereço. Depois de 8 senhas erradas em 10 minutos o visitante fica bloqueado.
-- **Link fixo assinado:** o endereço anunciado no canal vai assinado com a senha, e o site só troca de endereço sozinho se a assinatura conferir. O link fixo leva a senha depois do `#`, que não é enviado para nenhum servidor.
+- **Endereço assinado e pareamento:** o endereço anunciado no canal vai assinado (com a senha e com um segredo que só os aparelhos pareados conhecem), e o site só troca de endereço sozinho se a assinatura conferir. Aparelhos novos entram com código de uso único; a senha não vai em link nem em e-mail.
+- **Aprovação presa ao arquivo:** o código do e-mail vale para um projeto + o hash daquela versão do vídeo, uma vez, por 7 dias. Um render novo invalida os códigos antigos. Links do e-mail só abrem a tela de revisão (nunca aprovam sozinhos).
 - **Sem senha, só local:** o servidor se recusa a abrir para a rede sem `TOKEN`.
 - **No site:** em Chaves e ajustes, "Proteger as chaves com PIN" cifra as chaves guardadas no navegador (AES-GCM, PIN esticado com PBKDF2). Sem o PIN não há como recuperar: é preciso colar as chaves de novo.

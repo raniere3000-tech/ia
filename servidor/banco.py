@@ -1,0 +1,153 @@
+"""Banco de dados do servidor (SQLite no próprio celular): projetos, versões, arquivos, fila, aprovações.
+
+Só biblioteca padrão. Modo WAL, transações curtas, uma conexão por thread.
+O esquema é versionado (PRAGMA user_version): cada versão nova só ACRESCENTA tabelas/colunas,
+nunca apaga dados de quem já usa.
+"""
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+import threading
+import time
+from contextlib import contextmanager
+from pathlib import Path
+
+import postagem as pg
+
+PASTA = pg.DADOS / 'database'
+ARQ = Path(os.getenv('BANCO_ARQ', str(PASTA / 'studio.sqlite')))
+PROJETOS = pg.DADOS / 'projects'
+_local = threading.local()
+_LOCK_ESCRITA = threading.RLock()   # um escritor por vez (SQLite gosta assim)
+
+ESQUEMA = [
+    # 1: base
+    """
+    CREATE TABLE IF NOT EXISTS sessoes (id TEXT PRIMARY KEY, nome TEXT, token_hash TEXT UNIQUE, criado REAL, visto REAL,
+        expira REAL, revogado INTEGER DEFAULT 0, origem TEXT);
+    CREATE TABLE IF NOT EXISTS pareamentos (codigo_hash TEXT PRIMARY KEY, nome TEXT, criado REAL, expira REAL, usado REAL);
+    CREATE TABLE IF NOT EXISTS projetos (id TEXT PRIMARY KEY, titulo TEXT, tipo TEXT, modo TEXT, status TEXT, revisao INTEGER,
+        schema INTEGER, dados TEXT, criado REAL, atualizado REAL, dispositivo TEXT, origem TEXT, origem_chave TEXT, apagado INTEGER DEFAULT 0);
+    CREATE INDEX IF NOT EXISTS projetos_tipo ON projetos(tipo, atualizado);
+    CREATE INDEX IF NOT EXISTS projetos_origem ON projetos(origem_chave);
+    CREATE TABLE IF NOT EXISTS versoes (projeto TEXT, revisao INTEGER, dados TEXT, criado REAL, dispositivo TEXT, origem TEXT,
+        PRIMARY KEY(projeto, revisao));
+    CREATE TABLE IF NOT EXISTS assets (id TEXT PRIMARY KEY, projeto TEXT, nome TEXT, mime TEXT, tamanho INTEGER, sha256 TEXT,
+        caminho TEXT, criado REAL, origem TEXT);
+    CREATE INDEX IF NOT EXISTS assets_sha ON assets(sha256);
+    CREATE TABLE IF NOT EXISTS uploads (id TEXT PRIMARY KEY, projeto TEXT, nome TEXT, mime TEXT, tamanho INTEGER, sha256 TEXT,
+        recebido INTEGER, criado REAL);
+    CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, agente TEXT, tipo TEXT, projeto TEXT, titulo TEXT, status TEXT,
+        run_at REAL, prioridade INTEGER DEFAULT 0, recurso TEXT, tentativas INTEGER DEFAULT 0, max_tentativas INTEGER DEFAULT 3,
+        proxima REAL DEFAULT 0, lease REAL DEFAULT 0, heartbeat REAL DEFAULT 0, progresso REAL DEFAULT 0, etapa TEXT,
+        criado REAL, iniciado REAL, terminado REAL, erro TEXT, dados TEXT, resultado TEXT, chave TEXT UNIQUE,
+        pausado INTEGER DEFAULT 0, cancelar INTEGER DEFAULT 0, espera_api REAL DEFAULT 0, decorrido REAL DEFAULT 0);
+    CREATE INDEX IF NOT EXISTS jobs_fila ON jobs(status, recurso, run_at);
+    CREATE TABLE IF NOT EXISTS agendas (id TEXT PRIMARY KEY, nome TEXT, dias TEXT, hora TEXT, quantidade INTEGER, ativo INTEGER,
+        proxima REAL, briefing TEXT, criado REAL);
+    CREATE TABLE IF NOT EXISTS renders (id TEXT PRIMARY KEY, projeto TEXT, versao INTEGER, arquivo TEXT, sha256 TEXT, duracao REAL,
+        codec TEXT, largura INTEGER, altura INTEGER, validado INTEGER, alertas TEXT, criado REAL);
+    CREATE TABLE IF NOT EXISTS aprovacoes (id TEXT PRIMARY KEY, projeto TEXT, render_sha TEXT, decisao TEXT, origem TEXT, por TEXT,
+        texto TEXT, destinos TEXT, publicar_em REAL, criado REAL, chave TEXT UNIQUE);
+    CREATE TABLE IF NOT EXISTS desafios (id TEXT PRIMARY KEY, projeto TEXT, render_sha TEXT, codigo_hash TEXT, expira REAL,
+        usado REAL, erros INTEGER DEFAULT 0, message_id TEXT, criado REAL);
+    CREATE TABLE IF NOT EXISTS publicacoes (id TEXT PRIMARY KEY, aprovacao TEXT, render_sha TEXT, post TEXT, rede TEXT,
+        chave TEXT UNIQUE, criado REAL);
+    CREATE TABLE IF NOT EXISTS eventos (n INTEGER PRIMARY KEY AUTOINCREMENT, t REAL, ator TEXT, acao TEXT, recurso TEXT, detalhe TEXT);
+    CREATE TABLE IF NOT EXISTS custos (id INTEGER PRIMARY KEY AUTOINCREMENT, job TEXT, provedor TEXT, modelo TEXT, etapa TEXT,
+        estimado REAL, real REAL, moeda TEXT, t REAL);
+    CREATE TABLE IF NOT EXISTS medidas (id INTEGER PRIMARY KEY AUTOINCREMENT, etapa TEXT, segundos REAL, unidades REAL, t REAL);
+    CREATE TABLE IF NOT EXISTS kv (chave TEXT PRIMARY KEY, valor TEXT);
+    CREATE TABLE IF NOT EXISTS emails_lidos (message_id TEXT PRIMARY KEY, t REAL, resultado TEXT);
+    """,
+]
+
+
+def con() -> sqlite3.Connection:
+    c = getattr(_local, 'c', None)
+    if c is None:
+        ARQ.parent.mkdir(parents=True, exist_ok=True)
+        c = sqlite3.connect(str(ARQ), timeout=15, isolation_level=None, check_same_thread=False)
+        c.row_factory = sqlite3.Row
+        c.execute('PRAGMA journal_mode=WAL')
+        c.execute('PRAGMA synchronous=NORMAL')
+        c.execute('PRAGMA busy_timeout=15000')
+        _local.c = c
+    return c
+
+
+@contextmanager
+def tx():
+    """Transação de escrita curta (BEGIN IMMEDIATE)."""
+    with _LOCK_ESCRITA:
+        c = con()
+        c.execute('BEGIN IMMEDIATE')
+        try:
+            yield c
+            c.execute('COMMIT')
+        except BaseException:
+            c.execute('ROLLBACK')
+            raise
+
+
+def um(sql: str, *a) -> dict | None:
+    r = con().execute(sql, a).fetchone()
+    return dict(r) if r else None
+
+
+def todos(sql: str, *a) -> list[dict]:
+    return [dict(r) for r in con().execute(sql, a).fetchall()]
+
+
+def executar(sql: str, *a) -> int:
+    with tx() as c:
+        return c.execute(sql, a).rowcount
+
+
+def migrar():
+    ARQ.parent.mkdir(parents=True, exist_ok=True)
+    PROJETOS.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(ARQ.parent, 0o700)
+    except OSError:
+        pass
+    c = con()
+    v = c.execute('PRAGMA user_version').fetchone()[0]
+    for i, sql in enumerate(ESQUEMA[v:], start=v + 1):
+        with _LOCK_ESCRITA:
+            c.executescript(sql)
+            c.execute(f'PRAGMA user_version={i}')
+    try:
+        os.chmod(ARQ, 0o600)
+    except OSError:
+        pass
+
+
+def evento(ator: str, acao: str, recurso: str = '', detalhe=None):
+    executar('INSERT INTO eventos (t, ator, acao, recurso, detalhe) VALUES (?,?,?,?,?)', time.time(), ator, acao, recurso,
+             json.dumps(detalhe, ensure_ascii=False)[:4000] if detalhe is not None else '')
+
+
+def kv(chave: str, padrao=None):
+    r = um('SELECT valor FROM kv WHERE chave=?', chave)
+    if not r:
+        return padrao
+    try:
+        return json.loads(r['valor'])
+    except ValueError:
+        return padrao
+
+
+def kv_gravar(chave: str, valor):
+    executar('INSERT INTO kv (chave, valor) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor', chave, json.dumps(valor, ensure_ascii=False))
+
+
+def copia_consistente(destino: Path):
+    """Cópia do banco sem parar o servidor (API de backup do SQLite)."""
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    alvo = sqlite3.connect(str(destino))
+    with _LOCK_ESCRITA:
+        con().backup(alvo)
+    alvo.close()

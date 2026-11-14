@@ -3,6 +3,7 @@
 # Opções:  bash iniciar-termux.sh link    -> cria também um endereço https para usar de outro aparelho (link fixo)
 #          bash iniciar-termux.sh senha   -> escolhe uma senha nova para o servidor
 #          bash iniciar-termux.sh sempre  -> liga sozinho quando o celular reinicia (precisa do app Termux:Boot)
+#          bash iniciar-termux.sh parear  -> gera um código de uso único (10 min) para conectar mais um aparelho
 set -e
 cd "$(dirname "$0")"
 if [ "$1" = "senha" ]; then
@@ -20,10 +21,21 @@ if [ "$1" = "sempre" ]; then
   echo "Tire também o Termux da economia de bateria: Ajustes do Android > Apps > Termux > Bateria > Sem restrição."
   exit 0
 fi
+if [ "$1" = "parear" ]; then
+  [ -f .senha ] && export TOKEN="${TOKEN:-$(cat .senha)}"
+  R=$(curl -s -m 10 -X POST -H "X-Token: ${TOKEN}" -H 'Content-Type: application/json' -d '{"nome":"Aparelho novo"}' "http://localhost:${PORTA:-8787}/api/v1/pareamento/iniciar" || true)
+  COD=$(echo "$R" | grep -o '"codigo": *"[A-Z0-9-]*"' | grep -o '[A-Z0-9]\{4\}-[A-Z0-9]\{4\}' || true)
+  if [ -z "$COD" ]; then echo "O servidor precisa estar ligado (bash iniciar-termux.sh link em outra sessão)."; exit 1; fi
+  SITE="${SITE:-https://raniere3000-tech.github.io/ia/}"
+  CANAL="$(cat .canal 2>/dev/null || true)"
+  echo "  Código: $COD  (vale 10 minutos, uma vez só)"
+  [ -n "$CANAL" ] && echo "  Link para o aparelho novo: ${SITE}?canal=${CANAL}#par=${COD}"
+  exit 0
+fi
 if [ ! -f .instalado ]; then
   echo "Primeira vez: instalando (uns 3 minutos)..."
   pkg update -y
-  pkg install -y python ffmpeg nodejs
+  pkg install -y python ffmpeg nodejs tmux curl
   [ "$1" = "link" ] && pkg install -y cloudflared
   pip install -U yt-dlp yt-dlp-ejs
   touch .instalado
@@ -50,9 +62,13 @@ if [ "$1" = "link" ]; then
   CANAL="$(cat .canal)"
   TOPICO="https://ntfy.sh/estudioclip-${CANAL}"
   SITE="${SITE:-https://raniere3000-tech.github.io/ia/}"
-  LINK_FIXO="${SITE}?canal=${CANAL}#senha=${TOKEN}"
-  # O aviso do endereço vai assinado com a senha: quem descobrir o canal não consegue apontar o site para outro servidor.
-  assinar() { python -c 'import hmac,hashlib,sys; print(sys.argv[1]+"|"+hmac.new(sys.argv[2].encode(),sys.argv[1].encode(),hashlib.sha256).hexdigest())' "$1" "$TOKEN"; }
+  # Segredo do aviso: os aparelhos pareados recebem este segredo (e não a senha) para conferir o endereço novo.
+  [ -s .anuncio ] || ( umask 077; head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > .anuncio )
+  chmod 600 .anuncio
+  # O aviso vai assinado duas vezes (senha e segredo do aviso): quem descobrir o canal não aponta o site para outro servidor.
+  assinar() { python -c 'import hmac,hashlib,sys; u=sys.argv[1]; print(u+"|"+hmac.new(sys.argv[2].encode(),u.encode(),hashlib.sha256).hexdigest()+"|"+hmac.new(sys.argv[3].encode(),u.encode(),hashlib.sha256).hexdigest())' "$1" "$TOKEN" "$(cat .anuncio)"; }
+  # Link para conectar um aparelho: código de USO ÚNICO que vence em 10 minutos (a senha nunca vai no link).
+  link_par() { C=$(curl -s -m 10 -X POST -H "X-Token: ${TOKEN}" -H 'Content-Type: application/json' -d '{"nome":"Aparelho novo"}' "http://localhost:${PORTA:-8787}/api/v1/pareamento/iniciar" | grep -o '[A-Z0-9]\{4\}-[A-Z0-9]\{4\}' | head -1); [ -n "$C" ] && echo "${SITE}?canal=${CANAL}#par=${C}"; }
   echo
   echo "  SENHA do servidor: $TOKEN"
   echo "  Criando o endereço https (leva uns segundos)..."
@@ -76,16 +92,17 @@ if [ "$1" = "link" ]; then
       echo "  ============================================================"
       echo "  Servidor no ar: $URL"
       echo
-      echo "  SEU LINK FIXO (não muda mais, pode salvar nos favoritos):"
+      LINK_PAR="$(link_par || true)"
+      echo "  CONECTAR UM APARELHO (vale 10 minutos, uma vez só):"
       echo
-      echo "  ${LINK_FIXO}"
+      echo "  ${LINK_PAR:-gere com: bash iniciar-termux.sh parear}"
       echo
-      echo "  Abra em qualquer aparelho. Mesmo quando o servidor reinicia,"
-      echo "  é só abrir ou recarregar o site que ele acha o servidor sozinho."
-      [ -z "$AVISO" ] && echo "  (Aviso: não consegui publicar o endereço no canal. Use este link desta vez:"
-      [ -z "$AVISO" ] && echo "   ${SITE}?servidor=${URL}#senha=${TOKEN} )"
+      echo "  Aparelho já conectado não precisa de nada: o site acha o servidor"
+      echo "  sozinho pelo canal, mesmo quando o endereço muda."
+      echo "  Para outro aparelho depois: Ajustes > Aparelhos no site, ou  bash iniciar-termux.sh parear"
+      [ -z "$AVISO" ] && echo "  (Aviso: não consegui publicar o endereço no canal. Endereço desta vez: ${URL} )"
       echo "  ============================================================"
-      command -v termux-clipboard-set >/dev/null && echo "${LINK_FIXO}" | termux-clipboard-set && echo "  (link copiado)"
+      [ -n "$LINK_PAR" ] && command -v termux-clipboard-set >/dev/null && echo "${LINK_PAR}" | termux-clipboard-set && echo "  (link copiado)"
     fi
   done
 else

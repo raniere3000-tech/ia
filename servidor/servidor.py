@@ -24,8 +24,16 @@ import cofre
 import postagem as pg
 import agente as ag
 import modelos as mo
+import banco as db
+import autenticacao as au
+import projetos as pj
+import fila
+import aprovacoes as apv
+import renderizador as rd
+import produtor
+import api_v1
 
-VERSAO = '1.6.0'
+VERSAO = '2.0.0'
 PORTA = int(os.getenv('PORT', os.getenv('PORTA', '8787')))
 HOST = os.getenv('HOST', '127.0.0.1')
 TOKEN = os.getenv('TOKEN', '').strip()
@@ -296,16 +304,19 @@ class Handler(BaseHTTPRequestHandler):
         origem = self.headers.get('Origin', '')
         if origem and (origem in ORIGENS or '*' in ORIGENS):
             self.send_header('Access-Control-Allow-Origin', origem)
-            self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-            self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Token')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Token, X-Sessao, If-Match, Idempotency-Key, Range')
             self.send_header('Access-Control-Allow-Private-Network', 'true')
-            self.send_header('Access-Control-Expose-Headers', 'Content-Length, X-Titulo')
+            self.send_header('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, X-Titulo, ETag')
+            self.send_header('Access-Control-Max-Age', '600')
             self.send_header('Vary', 'Origin')
 
-    def json(self, status: int, dados: dict):
+    def json(self, status: int, dados: dict, etag=None):
         corpo = json.dumps(dados, ensure_ascii=False).encode()
         self.send_response(status)
         self.cors()
+        if etag is not None:
+            self.send_header('ETag', f'"{etag}"')
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
@@ -314,11 +325,22 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(corpo)
 
-    def token_ok(self):
-        if not TOKEN:
-            return
+    def quem(self) -> str:
         # Pelo túnel todo pedido chega de 127.0.0.1; o Cloudflare informa o endereço real de quem pediu.
-        quem = self.headers.get('CF-Connecting-IP') or self.client_address[0]
+        return self.headers.get('CF-Connecting-IP') or self.client_address[0]
+
+    def token_ok(self):
+        """Aceita a sessão do aparelho (X-Sessao) ou a senha do servidor (X-Token). Devolve a sessão, se houver."""
+        ses = self.headers.get('X-Sessao') or ''
+        if ses:
+            s = au.validar(ses)
+            if s:
+                return s
+            if not self.headers.get('X-Token'):
+                raise Erro(401, 'Este aparelho foi desconectado ou a sessão venceu. Entre de novo em Ajustes > Aparelhos.')
+        if not TOKEN:
+            return None
+        quem = self.quem()
         agora = time.time()
         with LOCK:
             erros = [t for t in FALHAS.get(quem, []) if agora - t < JANELA_FALHAS]
@@ -333,6 +355,7 @@ class Handler(BaseHTTPRequestHandler):
                 FALHAS.setdefault(quem, []).append(agora)
             time.sleep(0.4)
             raise Erro(401, 'Senha do servidor errada. Confira em Chaves e ajustes.')
+        return None
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -341,23 +364,104 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        self.corpo = b''
         self.rodar(self.get)
 
-    def do_POST(self):
+    def _ler_corpo(self, metodo: str):
         n = int(self.headers.get('Content-Length') or 0)
         rota = urlparse(self.path).path.rstrip('/')
-        limite = 40 * 1024 * 1024 if rota == '/video' else 5 * 1024 * 1024 if rota == '/cookies' else 12 * 1024 * 1024 if rota == '/modelos' else 100000
+        if rota.startswith('/api/v1/'):
+            limite = api_v1.limite_corpo(metodo, rota)
+        else:
+            limite = 40 * 1024 * 1024 if rota == '/video' else 5 * 1024 * 1024 if rota == '/cookies' else 12 * 1024 * 1024 if rota == '/modelos' else 100000
         self.corpo = self.rfile.read(n) if 0 < n <= limite else b''
         if n > limite:
             self.close_connection = True
-        self.rodar(self.post)
+            raise Erro(413, 'Pedido grande demais.')
+
+    def do_POST(self):
+        self.rodar(lambda c: (self._ler_corpo('POST'), self.post(c)))
+
+    def do_PUT(self):
+        self.rodar(lambda c: (self._ler_corpo('PUT'), self.api('PUT', c)))
+
+    def do_PATCH(self):
+        self.rodar(lambda c: (self._ler_corpo('PATCH'), self.api('PATCH', c)))
+
+    def do_DELETE(self):
+        self.rodar(lambda c: (self._ler_corpo('DELETE'), self.api('DELETE', c)))
+
+    def api(self, metodo: str, caminho: str):
+        if not caminho.startswith('/api/v1/'):
+            raise Erro(404, 'Rota não encontrada.')
+        sessao = None
+        q = parse_qs(urlparse(self.path).query)
+        if metodo == 'GET' and caminho.startswith('/api/v1/assets/') and q.get('sig'):
+            if not api_v1._arquivo_assinado(caminho, q):
+                raise Erro(403, 'Link vencido. Abra de novo pelo site.')
+        elif (metodo, caminho) not in api_v1.ABERTAS:
+            sessao = self.token_ok()
+        try:
+            r = api_v1.tratar(self, metodo, caminho, sessao)
+        except api_v1.Resposta as arq:
+            return self.enviar_parcial(arq.arquivo, arq.mime, arq.nome, arq.baixar)
+        etag = r.get('revisao') if isinstance(r, dict) and 'revisao' in r and 'id' in r else None
+        return self.json(200, r, etag)
+
+    def enviar_parcial(self, arq: Path, mime: str, nome: str = '', baixar: bool = False):
+        """Arquivo com suporte a Range (o <video> do navegador pede pedaços para poder pular no tempo)."""
+        tamanho = arq.stat().st_size
+        ini, fim = 0, tamanho - 1
+        m = re.fullmatch(r'bytes=(\d*)-(\d*)', (self.headers.get('Range') or '').strip())
+        parcial = bool(m and (m.group(1) or m.group(2)))
+        if parcial:
+            if m.group(1):
+                ini = int(m.group(1))
+                fim = min(int(m.group(2)), tamanho - 1) if m.group(2) else tamanho - 1
+            else:
+                ini = max(0, tamanho - int(m.group(2)))
+            if ini > fim or ini >= tamanho:
+                self.send_response(416)
+                self.cors()
+                self.send_header('Content-Range', f'bytes */{tamanho}')
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+                return
+        self.send_response(206 if parcial else 200)
+        self.cors()
+        self.send_header('Content-Type', mime)
+        self.send_header('Accept-Ranges', 'bytes')
+        self.send_header('Content-Length', str(fim - ini + 1))
+        if parcial:
+            self.send_header('Content-Range', f'bytes {ini}-{fim}/{tamanho}')
+        if baixar:
+            limpo = re.sub(r'[^\w\-. ]+', '', nome)[:80].strip() or 'arquivo'
+            self.send_header('Content-Disposition', f'attachment; filename="{limpo}"')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Cache-Control', 'private, max-age=3600')
+        self.end_headers()
+        with open(arq, 'rb') as f:
+            f.seek(ini)
+            falta = fim - ini + 1
+            while falta > 0:
+                bloco = f.read(min(1024 * 1024, falta))
+                if not bloco:
+                    break
+                self.wfile.write(bloco)
+                falta -= len(bloco)
 
     def rodar(self, f):
         try:
             f(urlparse(self.path).path.rstrip('/') or '/')
         except Erro as e:
             self.json(e.status, {'detail': e.msg})
-        except (pg.ErroRede, ag.ErroAgente, mo.ErroModelo) as e:
+        except au.ErroAuth as e:
+            self.json(e.status, {'detail': e.msg})
+        except pj.ErroProjeto as e:
+            self.json(e.status, {'detail': str(e), **(getattr(e, 'extra', None) or {})})
+        except apv.ErroAprovacao as e:
+            self.json(e.status, {'detail': str(e)})
+        except (pg.ErroRede, ag.ErroAgente, mo.ErroModelo, produtor.ErroProdutor, rd.ErroRender, ValueError, FileNotFoundError) as e:
             self.json(400, {'detail': str(e)})
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -367,6 +471,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- rotas ----
     def get(self, caminho: str):
+        if caminho.startswith('/api/v1/'):
+            return self.api('GET', caminho)
         if caminho in ('/', '/saude'):
             try:
                 import yt_dlp
@@ -374,6 +480,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 versao_yt = None
             return self.json(200, {'ok': True, 'download': versao_yt is not None, 'agendador': True, 'agente': True, 'versao': VERSAO, 'yt_dlp': versao_yt, 'senha': bool(TOKEN), 'max_minutos': MAX_MIN, 'cookies': COOKIES.exists(),
+                                   'api': 1, 'projetos': True, 'fila': True, 'agente3': rd.tem_ffmpeg(),
                                    'aviso': None if versao_yt else 'yt-dlp não instalado: rode  pip install -U yt-dlp'})
         if caminho == '/contas':
             self.token_ok()
@@ -449,6 +556,8 @@ class Handler(BaseHTTPRequestHandler):
             raise Erro(400, 'Pedido inválido.')
 
     def post(self, caminho: str):
+        if caminho.startswith('/api/v1/'):
+            return self.api('POST', caminho)
         if caminho in ('/cookies', '/cookies/apagar'):
             self.token_ok()
             return self.json(200, salvar_cookies(self.corpo if caminho == '/cookies' else None))
@@ -537,6 +646,63 @@ def _rotas_agenda(self, caminho: str):
 
 
 Handler.post_agenda = _rotas_agenda
+Handler.TOKEN = TOKEN
+
+
+# ---------------------------------------------------------------- agente de cortes pela fila
+def _job_agente1(ctx):
+    """Pedido manual do agente de cortes, agora pela fila (antes era recusado quando estava ocupado)."""
+    oque, link = ctx.dados.get('oque', ''), ctx.dados.get('link', '')
+    ctx.progresso(5, {'buscar': 'Buscando canais', 'cortar': 'Fazendo cortes', 'link': 'Cortando o link', 'postar': 'Agendando cortes'}.get(oque, oque))
+    nome = {'buscar': 'Busca de canais', 'cortar': 'Agente de cortes', 'link': 'Corte do link', 'postar': 'Agente de postagem'}.get(oque, oque)
+    try:
+        if oque == 'buscar':
+            ag.buscar_canais()
+        elif oque == 'cortar':
+            ag.trabalhar_cortes(True)
+        elif oque == 'link':
+            ag.trabalhar_cortes(True, link)
+        elif oque == 'postar':
+            ag.trabalhar_postagem()
+    except (ag.ErroAgente, pg.ErroRede) as e:
+        ag.anotar(f'{nome}: {e}', 'erro')       # aparece no histórico do agente, como antes
+        e.definitivo = True
+        raise
+    finally:
+        ag.etapa('')
+    return {'resultado': {'ok': True}, 'etapa': 'Concluído'}
+
+
+def _enfileirar_agente1(oque: str, link: str = '') -> dict:
+    ja = db.um("SELECT id FROM jobs WHERE agente='agente1' AND status IN ('agendado','na_fila','rodando') AND dados=?",
+               json.dumps({'oque': oque, 'link': link}, ensure_ascii=False))
+    if ja:
+        return {'ok': True, 'job': ja['id'], 'fila': True, 'ja_na_fila': True}
+    pesado = oque in ('cortar', 'link')
+    j = fila.enfileirar('agente1.' + ('pesado' if pesado else 'leve'), agente='agente1', dados={'oque': oque, 'link': link},
+                        recurso='pesado' if pesado else 'leve', titulo={'buscar': 'Buscar canais', 'cortar': 'Fazer cortes', 'link': 'Cortar link',
+                                                                        'postar': 'Agendar cortes prontos'}.get(oque, oque),
+                        max_tentativas=1)
+    return {'ok': True, 'job': j['id'], 'fila': True, 'ocupado': ag.OCUPADO.locked()}
+
+
+def ligar_servicos():
+    import agendador
+    import backups
+    import emails
+    db.migrar()
+    fila.CADEADO_PESADO = ag.OCUPADO       # um trabalho pesado por vez, dividido com o agente de cortes
+    fila.registrar('agente1.pesado', _job_agente1, 'pesado')
+    fila.registrar('agente1.leve', _job_agente1, 'leve')
+    ag.ENFILEIRAR = _enfileirar_agente1
+    ag.PENDENTES = lambda: (db.um("SELECT COUNT(*) AS n FROM jobs WHERE agente='agente1' AND status IN ('agendado','na_fila','rodando')") or {'n': 0})['n']
+    produtor.iniciar()
+    api_v1.iniciar()
+    fila.iniciar()
+    agendador.iniciar()
+    emails.iniciar()
+    if os.getenv('BACKUP_DIARIO', '1') == '1':
+        backups.iniciar()
 
 
 def main():
@@ -554,6 +720,9 @@ def main():
         print('Aviso: a senha do servidor é curta. Use pelo menos 10 letras e números (bash iniciar-termux.sh senha).')
     pg.iniciar_relogio()
     ag.iniciar()
+    ligar_servicos()
+    if not rd.tem_ffmpeg():
+        print('Aviso: sem FFmpeg o Agente 3 não produz vídeos (Termux: pkg install ffmpeg).')
     srv = ThreadingHTTPServer((HOST, PORTA), Handler)
     print(f'\n  EstúdioClip servidor {VERSAO} rodando em http://localhost:{PORTA}')
     print('  Cole esse endereço no site, em Chaves e ajustes > Cortes direto pelo link.')

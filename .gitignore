@@ -19,3 +19,5 @@ servidor/.chave_mestra
 *.pem
 *.key
 youtube-cookies.txt
+servidor/.anuncio
+servidor/.links
