@@ -284,6 +284,18 @@ confere(len(pg.posts()) == 1, 'aprovar de novo pelo site não duplica o post')
 p = api('GET', f'/api/v1/projetos/{PID}', None, SES)[1]
 confere(p['status'] == 'queued_to_publish', 'situação: na fila de postagem')
 
+print('Storyboard editado no site')
+st, rasc, _ = api('POST', '/api/v1/agente3/projetos', {'briefing': dict(briefing, tema='Rascunho'), 'cenas': [{'titulo': 'A', 'texto': 'Primeira cena.'}, {'titulo': 'B', 'texto': 'Segunda cena.'}]}, SES)
+confere(st == 200 and rasc['status'] != 'queued', 'rascunho criado sem produzir')
+st, sb, _ = api('POST', f'/api/v1/projetos/{rasc["id"]}/storyboard', {'revisao': rasc['revisao'], 'cenas': [{'titulo': 'B', 'texto': 'Segunda cena, agora primeiro.', 'bloqueada': True}, {'titulo': 'C', 'texto': 'Nova.'}]}, SES)
+confere(st == 200 and sb['revisao'] == rasc['revisao'] + 1, 'storyboard salvo numa revisão nova')
+st, sb2, _ = api('POST', f'/api/v1/projetos/{rasc["id"]}/storyboard', {'revisao': rasc['revisao'], 'cenas': [{'texto': 'x'}]}, SES)
+confere(st == 409, 'storyboard de revisão antiga dá conflito 409')
+pd = api('GET', f'/api/v1/projetos/{rasc["id"]}', None, SES)[1]['dados']
+confere([c['texto'] for c in pd['cenas']] == ['Segunda cena, agora primeiro.', 'Nova.'] and pd['cenas'][0].get('bloqueada'), 'ordem, texto e cena travada guardados')
+st, _, _ = api('POST', f'/api/v1/projetos/{rasc["id"]}/storyboard', {'revisao': sb['revisao'], 'cenas': [{'texto': ''}]}, SES)
+confere(st == 400, 'storyboard vazio recusado')
+
 print('Fila, capacidade, backup')
 st, f, _ = api('GET', '/api/v1/fila', None, SES)
 confere(st == 200 and f['contagem']['concluidos'] >= 1, 'fila lista os concluídos')
@@ -296,4 +308,10 @@ st, a, _ = api('POST', '/agente/rodar', {'oque': 'buscar'}, SES)
 confere(st == 200 and a.get('fila'), 'pedido manual do agente de cortes entra na fila')
 
 print(f'\n{ok_n} ok, {falhas} falhas   (pasta {TMP})')
+if os.getenv('MANTER_SERVIDOR'):
+    # Para testar o site no navegador contra este servidor de teste.
+    Path(os.environ['MANTER_SERVIDOR']).write_text(json.dumps({'base': BASE, 'sessao': SES['X-Sessao'], 'pid': PID}))
+    print('servidor de teste no ar:', BASE, flush=True)
+    while True:
+        time.sleep(3600)
 sys.exit(1 if falhas else 0)

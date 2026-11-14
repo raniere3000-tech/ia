@@ -216,6 +216,50 @@ def novo(d: dict, dispositivo: str = '') -> dict:
     return pj.criar({'tipo': 'agente3', 'modo': d.get('modo') or 'automatico', 'titulo': titulo, 'status': st, 'dados': dados}, dispositivo, d.get('origem') or 'site')
 
 
+def salvar_storyboard(pid: str, revisao: int, d: dict, dispositivo: str = '') -> dict:
+    """Storyboard editado no site: valida cada cena, mantém o que já foi gerado (narração, imagem, clipe) das cenas
+    com o mesmo id (o cache por conteúdo decide o que refazer) e guarda numa revisão nova (409 se mudou em outro aparelho)."""
+    p = pj.obter(pid)
+    if p['tipo'] != 'agente3':
+        raise ErroProdutor('Este projeto não é do Agente 3.')
+    dados = p['dados']
+    b = limpar_briefing({**dados.get('briefing', {}), **(d.get('briefing') or {})}) if isinstance(d.get('briefing'), dict) else dados['briefing']
+    antigas = {c.get('id'): c for c in dados.get('cenas') or []}
+    cenas, vistos = [], set()
+    for i, c in enumerate((d.get('cenas') if isinstance(d.get('cenas'), list) else dados.get('cenas') or [])[:30]):
+        if not isinstance(c, dict):
+            continue
+        v = ec.validar_cena(c, i)
+        if v['id'] in vistos:
+            v['id'] = f'c{i + 1}x{len(vistos)}'
+        vistos.add(v['id'])
+        if not (v['texto'] or v['titulo']):
+            continue
+        velha = antigas.get(v['id']) or {}
+        for k in ('audio', 'imagem', 'clipe'):
+            if velha.get(k):
+                v[k] = velha[k]
+        if c.get('bloqueada'):
+            v['bloqueada'] = True
+        cenas.append(v)
+    if not cenas:
+        raise ErroProdutor('O storyboard precisa de pelo menos uma cena com texto.')
+    novos = dict(dados, briefing=b, cenas=cenas)
+    if isinstance(d.get('roteiro'), dict):
+        r = dict(dados.get('roteiro') or {})
+        for k in ('titulo', 'legenda', 'gancho'):
+            if k in d['roteiro']:
+                r[k] = str(d['roteiro'][k] or '')[:2000 if k == 'legenda' else 160]
+        if isinstance(d['roteiro'].get('hashtags'), list):
+            r['hashtags'] = [re.sub(r'[^\w#]', '', str(h))[:40] for h in d['roteiro']['hashtags'][:12]]
+        novos['roteiro'] = r
+    if cenas != dados.get('cenas'):
+        novos['aprovacao_roteiro'] = {'aprovado': False}      # mudou: precisa aprovar de novo antes de produzir
+    titulo = (novos.get('roteiro') or {}).get('titulo') or p['titulo']
+    st = p['status'] if p['status'] not in ('draft', 'ready_for_review', 'rejected', 'failed', 'changes_requested') else 'storyboard_ready'
+    return pj.atualizar(pid, {'revisao': revisao, 'dados': novos, 'titulo': titulo, 'status': st}, dispositivo, 'site')
+
+
 def _status(pid: str, st: str, extra=None):
     def f(dados, p):
         dados.setdefault('producao', {})['status'] = st

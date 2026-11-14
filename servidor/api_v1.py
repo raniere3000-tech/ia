@@ -174,7 +174,7 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
             return pj.atualizar(pid, d, quem, 'site')
         if metodo == 'DELETE':
             return pj.apagar(pid, quem)
-    m = re.fullmatch(r'/api/v1/projetos/(\w+)/(versoes|restaurar|duplicar|exportar|revisao|aprovar|alterar|rejeitar|aprovar-roteiro|produzir|reenviar-email)', caminho)
+    m = re.fullmatch(r'/api/v1/projetos/(\w+)/(versoes|restaurar|duplicar|exportar|revisao|aprovar|alterar|rejeitar|aprovar-roteiro|produzir|reenviar-email|storyboard)', caminho)
     if m:
         pid, acao = m.groups()
         if acao == 'versoes' and metodo == 'GET':
@@ -208,6 +208,8 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
             return apv.aprovar_roteiro(pid, quem, d.get('revisao'))
         if acao == 'produzir':
             return {'job': produtor.produzir(pid, _quando(d), '', str(d.get('etapa', '')), quem)}
+        if acao == 'storyboard':
+            return produtor.salvar_storyboard(pid, _int(d.get('revisao'), -1), d, quem)
         if acao == 'reenviar-email':
             p = pj.obter(pid)
             return {'ok': emails.enviar_pronto(pid, (p['dados'].get('render') or {}).get('sha', ''))}
@@ -291,9 +293,9 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         p = produtor.novo(d, quem)
         if d.get('produzir'):
             if d.get('aprovar_roteiro') and p['dados'].get('cenas'):
-                apv.aprovar_roteiro(p['id'], quem)
-            else:
-                produtor.produzir(p['id'], _quando(d), '', '', quem)
+                # quem montou o storyboard no site já o revisou: fica aprovado (vale também para produção agendada)
+                pj.mudar_dados(p['id'], lambda dd, _p: dd.update(aprovacao_roteiro={'aprovado': True, 't': time.time(), 'por': quem}))
+            produtor.produzir(p['id'], _quando(d), '', '', quem)
         return pj.obter(p['id'])
     if rota == ('POST', '/api/v1/agente3/lote'):
         d = corpo()

@@ -29,7 +29,9 @@ if [ "$1" = "parear" ]; then
   SITE="${SITE:-https://raniere3000-tech.github.io/ia/}"
   CANAL="$(cat .canal 2>/dev/null || true)"
   echo "  Código: $COD  (vale 10 minutos, uma vez só)"
-  [ -n "$CANAL" ] && echo "  Link para o aparelho novo: ${SITE}?canal=${CANAL}#par=${COD}"
+  URLA="$(cat .url_atual 2>/dev/null || true)"
+  if [ -n "$URLA" ]; then echo "  Link para o aparelho novo: ${SITE}?servidor=${URLA}&canal=${CANAL}#par=${COD}"
+  else echo "  O endereço do servidor ainda não saiu. Espere o túnel ligar e rode de novo, ou gere o link no site em Ajustes > Aparelhos."; fi
   exit 0
 fi
 if [ ! -f .instalado ]; then
@@ -68,7 +70,7 @@ if [ "$1" = "link" ]; then
   # O aviso vai assinado duas vezes (senha e segredo do aviso): quem descobrir o canal não aponta o site para outro servidor.
   assinar() { python -c 'import hmac,hashlib,sys; u=sys.argv[1]; print(u+"|"+hmac.new(sys.argv[2].encode(),u.encode(),hashlib.sha256).hexdigest()+"|"+hmac.new(sys.argv[3].encode(),u.encode(),hashlib.sha256).hexdigest())' "$1" "$TOKEN" "$(cat .anuncio)"; }
   # Link para conectar um aparelho: código de USO ÚNICO que vence em 10 minutos (a senha nunca vai no link).
-  link_par() { C=$(curl -s -m 10 -X POST -H "X-Token: ${TOKEN}" -H 'Content-Type: application/json' -d '{"nome":"Aparelho novo"}' "http://localhost:${PORTA:-8787}/api/v1/pareamento/iniciar" | grep -o '[A-Z0-9]\{4\}-[A-Z0-9]\{4\}' | head -1); [ -n "$C" ] && echo "${SITE}?canal=${CANAL}#par=${C}"; }
+  link_par() { C=$(curl -s -m 10 -X POST -H "X-Token: ${TOKEN}" -H 'Content-Type: application/json' -d '{"nome":"Aparelho novo"}' "http://localhost:${PORTA:-8787}/api/v1/pareamento/iniciar" | grep -o '[A-Z0-9]\{4\}-[A-Z0-9]\{4\}' | head -1); [ -n "$C" ] && echo "${SITE}?servidor=${1}&canal=${CANAL}#par=${C}"; }
   echo
   echo "  SENHA do servidor: $TOKEN"
   echo "  Criando o endereço https (leva uns segundos)..."
@@ -92,7 +94,7 @@ if [ "$1" = "link" ]; then
       echo "  ============================================================"
       echo "  Servidor no ar: $URL"
       echo
-      LINK_PAR="$(link_par || true)"
+      LINK_PAR="$(link_par "$URL" || true)"
       echo "  CONECTAR UM APARELHO (vale 10 minutos, uma vez só):"
       echo
       echo "  ${LINK_PAR:-gere com: bash iniciar-termux.sh parear}"
