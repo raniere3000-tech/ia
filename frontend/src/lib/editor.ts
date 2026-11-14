@@ -2,6 +2,7 @@
 // Tudo roda no navegador: o desenho é feito num canvas e o áudio é misturado com a Web Audio API.
 import fixWebmDuration from 'fix-webm-duration';
 import { formatoSuportado } from './render';
+import { gravarQuadros, irPara, relogioFundo } from './gravador';
 import { FONT_STACK, drawCaption } from './captions';
 import { captionPresets } from '../state';
 import { gerarSom } from './sons';
@@ -190,7 +191,7 @@ export function tocarProj(canvas:HTMLCanvasElement,p:Proj,audio:AudioBuffer|null
     rec=new MediaRecorder(st,{mimeType:mime,videoBitsPerSecond:8_000_000,audioBitsPerSecond:192_000}); rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
   }
   let ok=false, t0=0;
-  const encerrar=async()=>{ if(parado) return; parado=true; cancelAnimationFrame(raf); clearInterval(reserva); try{ fonte?.stop(); }catch{ /* já parou */ }
+  const encerrar=async()=>{ if(parado) return; parado=true; cancelAnimationFrame(raf); reserva(); try{ fonte?.stop(); }catch{ /* já parou */ }
     sincronizarVideosProj(p,-1,false);
     if(rec&&rec.state!=='inactive'){ await new Promise<void>(r=>{ rec!.onstop=()=>r(); rec!.stop(); }); rec.stream.getTracks().forEach(tk=>tk.stop());
       const type=mime.split(';')[0]; let blob=new Blob(chunks,{type}); if(type==='video/webm'){ try{ blob=await fixWebmDuration(blob,total*1000,{logger:false}); }catch{ /* mantém */ } }
@@ -200,11 +201,26 @@ export function tocarProj(canvas:HTMLCanvasElement,p:Proj,audio:AudioBuffer|null
     if(t>=total){ desenharProj(ctx,p,total-0.001); cb.onTempo?.(total); ok=true; encerrar(); return; }
     sincronizarVideosProj(p,Math.max(0,t),true); desenharProj(ctx,p,Math.max(0,t)); cb.onTempo?.(t); };
   const loop=()=>{ passo(); if(!parado) raf=requestAnimationFrame(loop); };
-  const reserva=setInterval(()=>{ if(document.hidden) passo(); },250);
+  // Com a aba escondida o navegador para de pedir quadros: um relógio à parte continua desenhando.
+  const reserva=relogioFundo(passo);
   (async()=>{ await ac.resume(); desenharProj(ctx,p,t00); rec?.start(1000); t0=ac.currentTime+0.05; fonte?.start(t0,t00); loop(); })();
   return {parar:()=>{ encerrar(); },fim};
 }
-export function gravarProj(p:Proj,audio:AudioBuffer|null,onTempo:(t:number)=>void){
+/** Deixa cada vídeo que aparece no instante `t` parado exatamente no quadro certo. */
+export async function posicionarVideosProj(p:Proj,t:number){
+  for(const c of p.clips){ if(c.faixa!=='video'||!c.midia||!ativo(c,t)) continue; const m=midias.get(c.midia); if(!m||m.tipo!=='video') continue;
+    await irPara(m.el as HTMLVideoElement,m.duracao>0?Math.min(Math.max(0,m.duracao-0.04),(c.de+Math.max(0,t-c.ini))%m.duracao):0); }
+}
+/** Grava o projeto. Primeiro tenta quadro a quadro (sem perder quadros, funciona com a aba escondida); se o navegador não tiver o codificador, grava em tempo real. */
+export async function gravarProj(p:Proj,audio:AudioBuffer|null,onTempo:(t:number)=>void,aoModo?:(m:'quadros'|'tempo-real')=>void){
+  const [w,h]=TAMANHO[p.formato]; const total=totalDe(p);
+  sincronizarVideosProj(p,-1,false);
+  const r=await gravarQuadros({w,h,total,audio,desenhar:async(ctx,t)=>{ await posicionarVideosProj(p,t); desenharProj(ctx,p,t); },onPct:pc=>{ aoModo?.('quadros'); onTempo(total*pc/100); }});
+  if(r) return r;
+  aoModo?.('tempo-real');
+  return gravarTempoReal(p,audio,onTempo);
+}
+function gravarTempoReal(p:Proj,audio:AudioBuffer|null,onTempo:(t:number)=>void){
   return new Promise<{blob:Blob;ext:string}>((res,rej)=>{ const [w,h]=TAMANHO[p.formato]; const cv=document.createElement('canvas'); cv.width=w; cv.height=h; let pronto=false;
     try{ const se=tocarProj(cv,p,audio,{onTempo,gravar:x=>{ pronto=true; res(x); }}); se.fim.then(()=>{ if(!pronto) rej(new Error('A gravação foi interrompida.')); }); }catch(e){ rej(e); } });
 }

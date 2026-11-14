@@ -1,5 +1,6 @@
 // Renderização dos cortes no navegador (canvas + MediaRecorder): prévia e exportação.
 import { drawCaption, drawHook, FONT_STACK, type Cue, type Preset } from './captions';
+import { relogioFundo } from './gravador';
 import type { Formato, Tarja } from './analyze';
 import fixWebmDuration from 'fix-webm-duration';
 
@@ -149,22 +150,28 @@ export async function exportarCorte(url:string,clip:ExportClip,cuesAbs:Cue[],o:O
   drawFrame(ctx,v,small,0,dur,opts,W,H);
   rec.start(1000);
   try{ await v.play(); }catch{ rec.stop(); ac.close(); throw new Error('O navegador bloqueou a reprodução. Clique novamente em Exportar.'); }
-  await new Promise<void>(res=>{
-    const tick=()=>{
+  let fundo=()=>{};
+  await new Promise<void>(res0=>{
+    let acabou=false; const res=()=>{ if(!acabou){ acabou=true; res0(); } };
+    const passo=()=>{
+      if(acabou) return false;
       const t=v.currentTime-clip.inicio;
       // A voz começa junto com o primeiro quadro que anda de verdade, no mesmo ponto do vídeo.
       if(voz&&!vozIniciada&&t>0){ vozIniciada=true; voz.start(0,Math.max(0,t)); }
       if(o.efeito==='speed-ramp'&&!dub) v.playbackRate=(t>dur*0.4&&t<dur*0.6)?1.5:1;
-      if(t>=dur||v.ended){ res(); return; }
+      if(t>=dur||v.ended){ res(); return false; }
       drawFrame(ctx,v,small,t,dur,opts,W,H);
       progress(Math.min(99,Math.round(t/dur*100)));
-      if('requestVideoFrameCallback' in v) (v as any).requestVideoFrameCallback(tick); else requestAnimationFrame(tick);
+      return true;
     };
+    const tick=()=>{ if(!passo()) return; if('requestVideoFrameCallback' in v) (v as any).requestVideoFrameCallback(tick); else requestAnimationFrame(tick); };
+    // Com a aba escondida o navegador para de avisar dos quadros: um relógio à parte continua desenhando.
+    fundo=relogioFundo(()=>{ if(v.paused&&!v.ended) v.play().catch(()=>{}); passo(); });
     v.onended=()=>res();
     tick();
     setTimeout(res,(dur*1.3+10)*1000);
   });
-  v.pause(); rec.stop(); await done;
+  fundo(); v.pause(); rec.stop(); await done;
   stream.getTracks().forEach(t=>t.stop()); ac.close(); v.removeAttribute('src'); v.load();
   progress(100);
   const type=mime.split(';')[0];

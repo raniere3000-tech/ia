@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ocupar } from '../lib/gravador';
+import { comTelaAcesa } from '../lib/app';
 import { ArrowDown, ArrowUp, CalendarClock, Copy, Download, FileText, ImagePlus, Loader2, Mic, Music, Play, Plus, Sparkles, Square, Trash2, Wand2, X } from 'lucide-react';
 import { listar, lerRoteiro, pedidoTTS, gerarVoz as gerarVozTTS, lerWav, vozDoNome, VOZES_TTS, type Personagem, type Projeto as ProjetoVoz } from '../lib/vozes';
 import { falar } from '../lib/dublagem';
@@ -132,6 +134,8 @@ export default function VideoCodigo(){
   const mudaCena=(id:string,p:Partial<Cena>)=>setRot(r=>r?{...r,cenas:r.cenas.map(c=>c.id===id?{...c,...p}:c)}:r);
   const moveCena=(i:number,d:number)=>setRot(r=>{ if(!r) return r; const cs=[...r.cenas]; const j=i+d; if(j<0||j>=cs.length) return r; [cs[i],cs[j]]=[cs[j],cs[i]]; return {...r,cenas:cs}; });
   const parar=()=>{ sessao.current?.parar(); sessao.current=null; setTocando(false); };
+  // Saiu da aba do site: a prévia para (a gravação continua).
+  useEffect(()=>{ const h=()=>parar(); window.addEventListener('estudioclip-saiu',h); return ()=>window.removeEventListener('estudioclip-saiu',h); });
 
   async function criar(){
     if(!aj.ideia.trim()){ toast('Escreva o tema do vídeo primeiro.','erro'); return; }
@@ -169,10 +173,11 @@ export default function VideoCodigo(){
   }
   async function baixarVideo(){
     if(total>MAX_SEG+0.5){ toast(`O vídeo tem ${fmt(total)}. O máximo é 2:00: tire ou encurte cenas.`,'erro'); return; }
-    setOcupado({txt:'Gravando o vídeo (deixe esta aba aberta)',pct:0});
-    try{ const {blob,nome}=await exportar(p=>setOcupado({txt:'Gravando o vídeo (deixe esta aba aberta)',pct:p})); baixar(blob,nome); toast('Vídeo baixado!','ok'); }
+    const txt='Gravando o vídeo (pode usar as outras abas do site enquanto grava)';
+    setOcupado({txt,pct:0}); const fim=ocupar('video');
+    try{ const {blob,nome}=await comTelaAcesa(()=>exportar(p=>setOcupado({txt,pct:p}))); baixar(blob,nome); toast('Vídeo animado baixado!','ok'); }
     catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
-    finally{ setOcupado(null); }
+    finally{ setOcupado(null); fim(); }
   }
 
   const textoPost=rot?[rot.legenda,rot.hashtags.join(' ')].filter(Boolean).join('\n\n'):'';

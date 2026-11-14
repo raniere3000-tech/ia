@@ -3,6 +3,7 @@ import { pegarDub } from './dublagem';
 import { exportarCorte, loadImage, type Template } from './render';
 import { cuesDe, urlDe, type Clip } from './analyze';
 import { comTelaAcesa } from './app';
+import { comTrabalho } from './gravador';
 import { optsDoClip, saidaDoClip } from './modelos';
 import type { Cue, Preset } from './captions';
 
@@ -22,7 +23,7 @@ export async function renderClip(urlProj:string,c:Clip,cuesProj:Cue[],presets:Pr
     catch(e){ console.warn('Segue o rosto: falhou, usando fundo desfocado.',e); rosto=null; }
   }
   const k=c.efeito==='seguir-rosto'?0.75:1, base=c.efeito==='seguir-rosto'?25:0;
-  return comTelaAcesa(()=>exportarCorte(url,{inicio:c.inicio,fim:c.fim,formato:c.formato},cues,{...o,logoImg,rosto},p=>progress(p>=100?100:Math.round(base+p*k)),pegarDub(c.id),saidaDoClip(c)));
+  return comTrabalho('cortes',()=>comTelaAcesa(()=>exportarCorte(url,{inicio:c.inicio,fim:c.fim,formato:c.formato},cues,{...o,logoImg,rosto},p=>progress(p>=100?100:Math.round(base+p*k)),pegarDub(c.id),saidaDoClip(c))));
 }
 
 export function baixar(blob:Blob,nome:string){

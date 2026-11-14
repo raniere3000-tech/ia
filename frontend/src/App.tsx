@@ -8,6 +8,7 @@ import Cadeado from './components/Cadeado';
 import { TEMPLATE_PADRAO, type Template } from './lib/render';
 import { lerModelos, gravarModelos, enviarModelos, sincronizar, type Biblioteca, type Modelo } from './lib/modelos';
 import Inicio from './pages/Inicio';
+import { useTrabalhos } from './lib/gravador';
 
 // Cada aba é baixada só quando é aberta (a primeira tela abre mais rápido).
 // Se o site foi atualizado com a aba aberta, o pedaço antigo some do servidor: recarrega uma vez para pegar a versão nova.
@@ -22,6 +23,8 @@ const seguro=(f:()=>Mod)=>()=>f().then(m=>{ try{ sessionStorage.removeItem('stud
   throw new Error(navigator.onLine?'Não consegui abrir esta tela. Recarregue a página.':'Sem internet: esta tela ainda não foi baixada neste aparelho.'); });
 const TELAS=Object.fromEntries(Object.entries(CARGA).map(([k,f])=>[k,memo(lazy(seguro(f)))])) as unknown as Record<Exclude<Tab,'inicio'>,ComponentType>;
 const InicioM=memo(Inicio);
+/** Abas de trabalho demorado: depois de abertas ficam vivas por trás, para a gravação e a geração continuarem enquanto você usa outra aba. */
+const VIVAS:Tab[]=['cortes','video','vozes','manual'];
 /** Começa a baixar a aba quando o dedo ou o mouse chega no botão. */
 const adiantar=(t:Tab)=>{ CARGA[t]?.().catch(()=>{}); };
 
@@ -53,7 +56,14 @@ export default function App(){
     if(temCofre()){ store.setJson('studio_settings',separar(n).publico); atualizarCofre(n); } else store.setJson('studio_settings',n);
     return n; }),[]);
   const [tab,setTab]=useState<Tab>(()=>{ const h=location.hash.slice(1) as Tab; return NAV.some(n=>n[0]===h)?h:'inicio'; });
-  const go=useCallback((t:Tab)=>{ setTab(t); history.replaceState(null,'','#'+t); window.scrollTo({top:0}); },[]);
+  const [abertas,setAbertas]=useState<Tab[]>(()=>VIVAS.includes(tab)?[tab]:[]);
+  const go=useCallback((t:Tab)=>{ setTab(t); if(VIVAS.includes(t)) setAbertas(a=>a.includes(t)?a:[...a,t]); history.replaceState(null,'','#'+t); window.scrollTo({top:0}); },[]);
+  useEffect(()=>{ if(VIVAS.includes(tab)) setAbertas(a=>a.includes(tab)?a:[...a,tab]); },[tab]);
+  const vivas=useRef<HTMLDivElement>(null);
+  // Ao sair de uma aba que fica viva: param as prévias e os players dela (as gravações continuam).
+  useEffect(()=>()=>{ if(!VIVAS.includes(tab)) return; window.dispatchEvent(new CustomEvent('estudioclip-saiu',{detail:tab}));
+    vivas.current?.querySelectorAll<HTMLMediaElement>(`[data-tela="${tab}"] video, [data-tela="${tab}"] audio`).forEach(m=>{ try{ m.pause(); }catch{ /* ignora */ } }); },[tab]);
+  const trabalhos=useTrabalhos().split(',');
   const [toasts,setToasts]=useState<{id:number;msg:string;kind:string}[]>([]);
   const toast=useCallback((msg:string,kind:'ok'|'erro'|'info'='info')=>{ const id=Date.now()+Math.random(); setToasts(t=>[...t.slice(-2),{id,msg,kind}]); setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),kind==='erro'?9000:5500); },[]);
   const [projeto,setP]=useState<Projeto>(PROJETO_VAZIO);
@@ -140,7 +150,7 @@ export default function App(){
    <div className="app">
     <aside className="sidebar">
      <div className="brand"><span className="brand-icon"><Clapperboard size={22}/></span><div><strong>ESTÚDIO<span>CLIP</span></strong><small>RADAR + EDITOR</small></div></div>
-     <nav>{GRUPOS.map(([g,tabs])=><div key={g||'ini'} className="nav-grupo">{g&&<small className="nav-titulo">{g}</small>}{tabs.map(key=>{ const [,label,Icon]=NAV.find(n=>n[0]===key)!; return <button key={key} className={'nav '+(tab===key?'active':'')} onClick={()=>go(key)} onPointerEnter={()=>adiantar(key)} onFocus={()=>adiantar(key)} aria-current={tab===key?'page':undefined} title={label}><Icon size={18}/><span>{label}</span><b className="nav-curto" aria-hidden="true">{CURTO[key]}</b>{key==='cortes'&&projeto.clips.length>0&&<em className="nav-badge">{projeto.clips.filter(c=>!c.descartado).length}</em>}</button>; })}</div>)}</nav>
+     <nav>{GRUPOS.map(([g,tabs])=><div key={g||'ini'} className="nav-grupo">{g&&<small className="nav-titulo">{g}</small>}{tabs.map(key=>{ const [,label,Icon]=NAV.find(n=>n[0]===key)!; return <button key={key} className={'nav '+(tab===key?'active':'')} onClick={()=>go(key)} onPointerEnter={()=>adiantar(key)} onFocus={()=>adiantar(key)} aria-current={tab===key?'page':undefined} title={label}><Icon size={18}/><span>{label}</span><b className="nav-curto" aria-hidden="true">{CURTO[key]}</b>{key==='cortes'&&projeto.clips.length>0&&<em className="nav-badge">{projeto.clips.filter(c=>!c.descartado).length}</em>}{trabalhos.includes(key)&&<i className="nav-ocupado" role="status" aria-label="Trabalhando" title="Trabalhando"/>}</button>; })}</div>)}</nav>
      <div className="sidebar-bottom">
       <div className="side-title">STATUS</div>
       {status.map(s=><button key={s.label} className={'status-row '+(s.ok?'ok':s.opt?'opt':'no')} onClick={()=>go('config')}>{s.ok?<CheckCircle2 size={14}/>:<Circle size={14}/>}<span>{s.label}</span><small>{s.ok?'pronto':s.opt?'opcional':'falta chave'}</small></button>)}
@@ -148,11 +158,13 @@ export default function App(){
     </aside>
     <main>
      <header className="page-head"><div><div className="eyebrow">PAINEL DE PRODUÇÃO</div><h1>{t}</h1><p className="subtitle">{sub}</p></div></header>
-     <ErroTela chave={tab}>
+     <div ref={vivas} style={{display:'contents'}}>{abertas.map(k=>{ const T=TELAS[k as Exclude<Tab,'inicio'>]; return <div key={k} data-tela={k} style={{display:tab===k?'contents':'none'}}>
+      <ErroTela chave={k}><Suspense fallback={<p className="hint carregando-tela" role="status">Abrindo...</p>}><T/></Suspense></ErroTela></div>; })}</div>
+     {!VIVAS.includes(tab)&&<ErroTela chave={tab}>
      <Suspense fallback={<p className="hint carregando-tela" role="status">Abrindo...</p>}>
      {tab==='inicio'?<InicioM/>:(()=>{ const T=TELAS[tab]; return <T/>; })()}
      </Suspense>
-     </ErroTela>
+     </ErroTela>}
      <footer>EstúdioClip • Use apenas vídeos próprios ou com autorização • Seus vídeos e chaves ficam neste navegador</footer>
     </main>
    </div>

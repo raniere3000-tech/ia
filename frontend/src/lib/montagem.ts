@@ -2,6 +2,7 @@
 // cola o roteiro de quadros e o site encaixa tudo no tempo certo (nome dos arquivos, ordem,
 // transcrição da narração, batida da música) e grava o vídeo no navegador.
 import fixWebmDuration from 'fix-webm-duration';
+import { relogioFundo } from './gravador';
 import { formatoSuportado } from './render';
 import { FONT_STACK, type Cue } from './captions';
 import { gerarSom } from './sons';
@@ -466,7 +467,7 @@ export function tocar(canvas:HTMLCanvasElement,s:Sinc,audio:AudioBuffer|null,o:O
     rec=new MediaRecorder(st,{mimeType:mime,videoBitsPerSecond:8_000_000,audioBitsPerSecond:192_000}); rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
   }
   let ok=false, t0=0;
-  const encerrar=async()=>{ if(parado) return; parado=true; cancelAnimationFrame(raf); clearInterval(reserva); try{ fonte?.stop(); }catch{ /* já parou */ }
+  const encerrar=async()=>{ if(parado) return; parado=true; cancelAnimationFrame(raf); reserva(); try{ fonte?.stop(); }catch{ /* já parou */ }
     sincronizarVideos(s,-1,false);
     if(rec&&rec.state!=='inactive'){ await new Promise<void>(r=>{ rec!.onstop=()=>r(); rec!.stop(); }); rec.stream.getTracks().forEach(tk=>tk.stop());
       const type=mime.split(';')[0]; let blob=new Blob(chunks,{type}); if(type==='video/webm'){ try{ blob=await fixWebmDuration(blob,total*1000,{logger:false}); }catch{ /* mantém */ } }
@@ -476,7 +477,7 @@ export function tocar(canvas:HTMLCanvasElement,s:Sinc,audio:AudioBuffer|null,o:O
     if(t>=total){ desenhar(ctx,s,total-0.001,o); ok=true; encerrar(); return; }
     sincronizarVideos(s,Math.max(0,t),true); desenhar(ctx,s,Math.max(0,t),o); cb.onTempo?.(t); };
   const loop=()=>{ passo(); if(!parado) raf=requestAnimationFrame(loop); };
-  const reserva=setInterval(()=>{ if(document.hidden) passo(); },250);
+  const reserva=relogioFundo(passo);
   (async()=>{ await ac.resume(); desenhar(ctx,s,t00,o); rec?.start(1000); t0=ac.currentTime+0.05; fonte?.start(t0,t00); loop(); })();
   return {parar:()=>{ encerrar(); },fim};
 }

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ocupar } from '../lib/gravador';
+import { comTelaAcesa } from '../lib/app';
 import { ArrowLeftRight, Maximize2, Copy, Download, Film, Headphones, Loader2, Minus, Pause, Play, Plus, Redo2, Scissors, Trash2, Type, Undo2, Upload, Volume2, VolumeX } from 'lucide-react';
 import { useApp, captionPresets } from '../state';
 import { drawCaption, type Preset } from '../lib/captions';
@@ -91,20 +93,24 @@ export default function EditorVideo({inicial,arquivos,onChange,onEnviar}:{inicia
   }
   async function exportar(){
     parar();
-    try{ const a=await audio(); setOcupado('Gravando: 0%');
-      const r=await gravarProj(p,a,t=>setOcupado(`Gravando: ${Math.min(99,Math.round(t/total*100))}% (grava em tempo real, deixe esta aba aberta)`));
-      if(video) URL.revokeObjectURL(video.url); setVideo({url:URL.createObjectURL(r.blob),blob:r.blob,ext:r.ext}); toast('Vídeo pronto. Baixe abaixo da prévia.','ok'); }
-    catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } finally{ setOcupado(''); }
+    const fim=ocupar('manual');
+    try{ const a=await audio(); setOcupado('Gravando: 0%'); let modo:'quadros'|'tempo-real'='quadros';
+      const r=await comTelaAcesa(()=>gravarProj(p,a,t=>setOcupado(`Gravando: ${Math.min(99,Math.round(t/total*100))}% ${modo==='quadros'?'(quadro a quadro: pode usar as outras abas do site enquanto grava)':'(este navegador só grava em tempo real: deixe o site aberto)'}`),m=>{ modo=m; }));
+      if(video) URL.revokeObjectURL(video.url); setVideo({url:URL.createObjectURL(r.blob),blob:r.blob,ext:r.ext}); toast('Vídeo da Montagem manual pronto. Baixe abaixo da prévia.','ok'); }
+    catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } finally{ setOcupado(''); fim(); }
   }
 
   // Teclado: espaço toca/para, S divide, Delete apaga, Ctrl+Z / Ctrl+Y.
   useEffect(()=>{ const h=(e:KeyboardEvent)=>{ const alvo=e.target as HTMLElement; if(/INPUT|TEXTAREA|SELECT/.test(alvo.tagName)) return;
+    if(!cv.current?.offsetParent) return;   // a Montagem está aberta por trás de outra aba do site
     if(e.key===' '){ e.preventDefault(); play(); }
     else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){ e.preventDefault(); if(e.shiftKey) avancar(); else voltar(); }
     else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){ e.preventDefault(); avancar(); }
     else if((e.key==='Delete'||e.key==='Backspace')&&sel){ e.preventDefault(); commit(apagar(p,sel)); setSel(''); }
     else if(e.key.toLowerCase()==='s'&&sel){ commit(dividir(p,sel,tempo)); } };
     window.addEventListener('keydown',h); return ()=>window.removeEventListener('keydown',h); });
+  // Saiu da aba do site: a prévia para (a gravação continua).
+  useEffect(()=>{ const h=()=>parar(); window.addEventListener('estudioclip-saiu',h); return ()=>window.removeEventListener('estudioclip-saiu',h); });
 
   // Arrastar blocos e pontas, com ímã nas bordas dos outros blocos e no cursor.
   function iniciar(e:React.PointerEvent,c:Clip,modo:Arrasto['modo']){ e.stopPropagation(); e.preventDefault(); parar(); setSel(c.id); setAba('ajustes'); arr.current={id:c.id,modo,x0:e.clientX,orig:c,antes:p,mexeu:false}; }

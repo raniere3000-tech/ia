@@ -6,6 +6,7 @@ import { FONT_STACK } from './captions';
 import { formatoSuportado, drawTemplate, type Template } from './render';
 import { chamar, ErroGemini, GEMINI_MODEL } from './gemini';
 import { falar } from './dublagem';
+import { gravarQuadros, irPara, relogioFundo } from './gravador';
 
 export const W = 1080, H = 1920, FPS = 30, RATE = 44100;
 
@@ -468,7 +469,7 @@ export function tocar(canvas:HTMLCanvasElement,r:Roteiro,ts:{ini:number;fim:numb
     rec.ondataavailable = e=>{ if(e.data.size) chunks.push(e.data); };
   }
   const encerrar = async()=>{
-    if(parado) return; parado = true; cancelAnimationFrame(raf); clearInterval(reserva);
+    if(parado) return; parado = true; cancelAnimationFrame(raf); reserva();
     try{ fonte?.stop(); }catch{ /* já parou */ }
     if(rec&&rec.state!=='inactive'){
       await new Promise<void>(res=>{ rec!.onstop=()=>res(); rec!.stop(); });
@@ -488,8 +489,8 @@ export function tocar(canvas:HTMLCanvasElement,r:Roteiro,ts:{ini:number;fim:numb
     desenhar(ctx,r,ts,Math.max(0,t),o.template,o.logo); o.onTempo?.(t); o.onPct?.(Math.min(99,Math.round(t/total*100)));
   };
   const loop = ()=>{ quadro(); if(!parado) raf = requestAnimationFrame(loop); };
-  // Reserva: se a aba ficar em segundo plano, ainda desenha (mais devagar).
-  const reserva = setInterval(()=>{ if(document.hidden) quadro(); },250);
+  // Com a aba escondida o navegador para de pedir quadros: um relógio à parte continua desenhando.
+  const reserva = relogioFundo(quadro);
   (async()=>{
     await ac.resume();
     desenhar(ctx,r,ts,0,o.template,o.logo);
@@ -501,7 +502,20 @@ export function tocar(canvas:HTMLCanvasElement,r:Roteiro,ts:{ini:number;fim:numb
 }
 
 /** Grava o vídeo inteiro e devolve o arquivo. */
-export function gravar(r:Roteiro,ts:{ini:number;fim:number;fala:number}[],audio:Float32Array|null,template:Template|null,logo:HTMLImageElement|null,onPct:(p:number)=>void){
+export async function gravar(r:Roteiro,ts:{ini:number;fim:number;fala:number}[],audio:Float32Array|null,template:Template|null,logo:HTMLImageElement|null,onPct:(p:number)=>void){
+  // Primeiro quadro a quadro (sem perder quadros, funciona com a aba escondida); sem o codificador, em tempo real.
+  const total = ts.length?ts[ts.length-1].fim:0;
+  let som:AudioBuffer|null = null;
+  if(audio&&audio.length){ som = new AudioBuffer({length:audio.length,numberOfChannels:1,sampleRate:RATE}); som.copyToChannel(audio as Float32Array<ArrayBuffer>,0); }
+  sincronizarMidias(r,ts,-1,false);
+  const pronto = total>0?await gravarQuadros({w:W,h:H,fps:FPS,total,audio:som,onPct,desenhar:async(ctx,t)=>{
+    for(let i=0;i<r.cenas.length;i++){ const c=r.cenas[i], s=ts[i]; const m=c.midia?midias.get(c.midia):null; if(!m||m.tipo!=='video'||!s||t<s.ini||t>=s.fim) continue;
+      await irPara(m.el as HTMLVideoElement,m.duracao>0?Math.min(Math.max(0,m.duracao-0.04),(t-s.ini)%m.duracao):0); }
+    desenhar(ctx,r,ts,t,template,logo); }}):null;
+  if(pronto) return pronto;
+  return gravarTempoReal(r,ts,audio,template,logo,onPct);
+}
+function gravarTempoReal(r:Roteiro,ts:{ini:number;fim:number;fala:number}[],audio:Float32Array|null,template:Template|null,logo:HTMLImageElement|null,onPct:(p:number)=>void){
   return new Promise<{blob:Blob;ext:string}>((res,rej)=>{
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     let pronto = false;
