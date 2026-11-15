@@ -86,6 +86,8 @@ PADRAO = {
     'email': {'para': '', 'de': '', 'smtp': '', 'porta': 0, 'anexar': True,
               'avisos': {'corte': True, 'agendado': True, 'postado': True, 'falha': True, 'canal': True, 'semana': True}},
     'orcamento': {'teto': 10.0, 'dolar': 5.6, 'preco_texto': 0.30, 'preco_audio': 1.00, 'preco_saida': 2.50},
+    # qual chave do Gemini cada tarefa usa: 'gratis' (projeto sem cobrança) ou 'paga' (projeto com saldo)
+    'chaves_uso': {'cortes': 'gratis', 'camera': 'gratis', 'roteiro': 'gratis', 'voz': 'gratis', 'imagens': 'paga', 'reserva': True},
 }
 
 
@@ -140,6 +142,9 @@ def _limpar_cfg(c: dict) -> dict:
     co['dur_min'] = max(10, min(175, co['dur_min']))
     co['dur_max'] = max(co['dur_min'] + 5, min(180, co['dur_max']))
     co['nota_min'] = max(0, min(99, co['nota_min']))
+    for k, v in c['chaves_uso'].items():
+        if k != 'reserva' and v not in ('gratis', 'paga'):
+            c['chaves_uso'][k] = PADRAO['chaves_uso'][k]
     t = co['template']
     for k in ('cor', 'cor_destaque', 'cor_tarja', 'cor_tarja_texto'):
         if not re.fullmatch(r'#[0-9a-fA-F]{6}', t[k]):
@@ -169,7 +174,7 @@ def salvar_config(novo: dict) -> dict:
 def segredos() -> dict:
     with LOCK:
         s = cofre.ler_json(ARQ_SEG, {})
-        return {k: str(s.get(k, '')) for k in ('gemini', 'youtube', 'email_senha', 'pexels')}
+        return {k: str(s.get(k, '')) for k in ('gemini', 'gemini_pago', 'youtube', 'email_senha', 'pexels')}
 
 
 def salvar_segredos(novo: dict):
@@ -231,23 +236,73 @@ def _somar_gasto(uso: dict, audio: bool):
     _mudar(f)
 
 
-def gemini(partes: list, audio: bool = False, tempo: int = 300):
-    chave = segredos()['gemini']
-    if not chave:
-        raise ErroAgente('Falta a chave do Gemini. Preencha na aba Agente, em Chaves.')
-    o = config()['orcamento']
-    if o['teto'] > 0 and gasto_mes()['reais'] >= o['teto']:
-        raise ErroAgente(f'O teto de R$ {o["teto"]:.2f} da IA neste mês foi atingido. Aumente o teto na aba Agente ou espere o mês virar.')
+USOS = {'cortes': 'Agente 1: ouvir e escolher os cortes', 'camera': 'Agente 1: achar a câmera do streamer', 'roteiro': 'Agente 3: assuntos e roteiros',
+        'voz': 'Agente 3: narração', 'imagens': 'Agente 3: imagens criadas por IA'}
+
+
+def chaves_gemini(uso: str) -> list[tuple[str, str]]:
+    """Chaves a tentar para esta tarefa, na ordem: a escolhida e, com a reserva ligada, a outra.
+    Sem nenhuma chave guardada, avisa onde colocar."""
+    s, cu = segredos(), config()['chaves_uso']
+    pref = cu.get(uso, 'gratis')
+    ordem = [pref] + (['paga' if pref == 'gratis' else 'gratis'] if cu.get('reserva', True) else [])
+    nomes = {'gratis': 'gemini', 'paga': 'gemini_pago'}
+    lista = [(n, s[nomes[n]]) for n in ordem if s[nomes[n]]]
+    if not lista:
+        qual = 'grátis' if pref == 'gratis' else 'com saldo'
+        raise ErroAgente(f'Falta a chave do Gemini {qual} para "{USOS.get(uso, uso)}". Cole em Agentes > Avisos e chaves.')
+    return lista
+
+
+def _cobrada(nome: str) -> bool:
+    """A chave gasta dinheiro? A paga sempre; a grátis só é contada quando é a única guardada (instalações antigas)."""
+    return nome == 'paga' or not segredos()['gemini_pago']
+
+
+_COTA = re.compile(r'quota|rate limit|resource.?exhausted|spending cap|spend cap|billing', re.I)
+
+
+def http_gemini(uso: str, caminho: str, corpo: dict, tempo: int = 300) -> tuple[int, dict, str]:
+    """Faz o pedido ao Gemini com a chave escolhida para a tarefa. Se ela estiver sem cota ou sem saldo e a reserva
+    estiver ligada, tenta a outra. Devolve (status, resposta, nome da chave usada)."""
+    lista = chaves_gemini(uso)
+    st, j, nome = 0, {}, ''
+    for k, (nome, chave) in enumerate(lista):
+        if _cobrada(nome):
+            o = config()['orcamento']
+            if o['teto'] > 0 and gasto_mes()['reais'] >= o['teto']:
+                if k + 1 < len(lista):
+                    continue
+                raise ErroAgente(f'O teto de R$ {o["teto"]:.2f} da IA neste mês foi atingido. Aumente o teto em Agentes > Avisos e chaves ou espere o mês virar.')
+        st, _, j = pg.http('POST', f'{URL_GEMINI}/v1beta/models/{caminho}', js=corpo, cab={'x-goog-api-key': chave}, tempo=tempo)
+        if st < 300:
+            if k:
+                anotar(f'A chave {"grátis" if lista[0][0] == "gratis" else "com saldo"} estava sem cota; usei a outra para "{USOS.get(uso, uso)}".', 'aviso')
+            return st, j, nome
+        if not ((st in (429, 403) or _COTA.search(pg._msg(j))) and k + 1 < len(lista)):
+            break
+    return st, j, nome
+
+
+def erro_gemini(st: int, j: dict, nome: str) -> str:
+    msg = pg._msg(j)
+    qual = 'grátis' if nome == 'gratis' else 'com saldo'
+    if re.search(r'spending cap|spend cap', msg, re.I):
+        return (f'A chave {qual} chegou no limite de gasto do mês do projeto no Google. Aumente o limite em ai.studio/spend '
+                '(Monthly spend cap) ou mude esta tarefa para a outra chave em Agentes > Avisos e chaves.')
+    if st == 429 or re.search(r'quota|resource.?exhausted', msg, re.I):
+        return f'A chave {qual} está sem cota agora (limite por minuto ou por dia do Google). Tento de novo mais tarde, ou mude a tarefa para a outra chave.'
+    return f'A IA (Gemini, chave {qual}) recusou o pedido: {msg}'
+
+
+def gemini(partes: list, audio: bool = False, tempo: int = 300, uso: str = 'cortes'):
     corpo = {'contents': [{'role': 'user', 'parts': partes}],
              'generationConfig': {'responseMimeType': 'application/json', 'temperature': 0.3}}
-    st, _, j = pg.http('POST', f'{URL_GEMINI}/v1beta/models/{MODELO}:generateContent', js=corpo,
-                       cab={'x-goog-api-key': chave}, tempo=tempo)
+    st, j, nome = http_gemini(uso, f'{MODELO}:generateContent', corpo, tempo)
     if st >= 300:
-        msg = pg._msg(j)
-        if re.search(r'spending cap|spend cap', msg, re.I):
-            raise ErroAgente('O seu projeto do Google chegou no limite de gasto do mês que você definiu. Aumente o limite em ai.studio/spend '
-                             '(Spend > Monthly spend cap) ou use no servidor uma chave de um projeto sem cobrança (cota grátis). Até lá, a IA fica parada.')
-        raise ErroAgente('A IA (Gemini) recusou o pedido: ' + msg)
+        raise ErroAgente(erro_gemini(st, j, nome))
+    if not _cobrada(nome):
+        j = dict(j, usageMetadata={})          # chave grátis: não entra no gasto do mês
     _somar_gasto(j.get('usageMetadata') or {}, audio)
     try:
         texto = ''.join(p.get('text', '') for p in j['candidates'][0]['content']['parts'])
@@ -779,7 +834,7 @@ def achar_camera(video: Path, t: float, pasta: Path) -> dict | None:
               'Responda só JSON: {"tem_camera": true|false, "x": 0-1, "y": 0-1, "w": 0-1, "h": 0-1} onde x,y é o canto de cima à esquerda da janela '
               'e w,h a largura e a altura, todos como fração da imagem inteira (0 a 1). Se a pessoa ocupa a tela toda ou não aparece ninguém, tem_camera é false.')
     try:
-        r = gemini([{'text': prompt}, {'inlineData': {'mimeType': 'image/jpeg', 'data': base64.b64encode(quadro.read_bytes()).decode()}}], tempo=120)
+        r = gemini([{'text': prompt}, {'inlineData': {'mimeType': 'image/jpeg', 'data': base64.b64encode(quadro.read_bytes()).decode()}}], tempo=120, uso='camera')
     finally:
         quadro.unlink(missing_ok=True)
     if isinstance(r, list):
@@ -1511,7 +1566,7 @@ def ver() -> dict:
     c, s, e = config(), segredos(), estado()
     mo.biblioteca(c['cortes']['template'])
     return {
-        'config': c, 'chaves': {'gemini': bool(s['gemini']), 'youtube': bool(s['youtube']), 'email_senha': bool(s['email_senha']), 'pexels': bool(s['pexels'])},
+        'config': c, 'chaves': {'gemini': bool(s['gemini']), 'gemini_pago': bool(s['gemini_pago']), 'youtube': bool(s['youtube']), 'email_senha': bool(s['email_senha']), 'pexels': bool(s['pexels'])},
         'canais': sorted(e['canais'], key=lambda x: ({'aprovado': 0, 'sugerido': 1, 'recusado': 2}.get(x['status'], 3), -x.get('media', 0))),
         'cortes': [dict({k: v for k, v in x.items() if k != 'chave'}, conferencia=conferir(x, e) if x['status'] == 'pronto' else None)
                    for x in sorted(e['cortes'], key=lambda x: -x['criado'])][:80],
@@ -1644,7 +1699,7 @@ def passo():
     if not dentro:
         return
     s = segredos()
-    if not s['youtube'] or not s['gemini']:
+    if not s['youtube'] or not (s['gemini'] or s['gemini_pago']):
         return
     if time.time() - m.get('busca', 0) > 86400:
         _em_fundo('Busca de canais', buscar_canais)

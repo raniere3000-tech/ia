@@ -12,9 +12,9 @@ export function Prontidao({cat}:{cat:Catalogo|null}){
   if(!r) return null;
   const itens:{ok:boolean;t:string;d:string;obrig:boolean;btn:string;ir:()=>void}[]=[
     {ok:r.ffmpeg,t:'FFmpeg no celular',d:'É ele que monta o vídeo. No Termux: pkg install -y ffmpeg',obrig:true,btn:'Ver diagnóstico',ir:()=>go('config')},
-    {ok:r.gemini,t:'Chave do Gemini no servidor',d:'A IA escreve o roteiro e narra com ela. É grátis.',obrig:true,btn:'Colar a chave',ir:()=>go('agente','','posts')},
-    {ok:r.email,t:'E-mail de avisos',d:'Para receber o vídeo pronto e aprovar respondendo o e-mail.',obrig:false,btn:'Configurar e-mail',ir:()=>go('agente','','posts')},
-    {ok:r.pexels,t:'Chave do Pexels (fotos)',d:'Fotos reais melhores em cada cena. Grátis. Sem ela, o servidor usa só fotos de domínio público.',obrig:false,btn:'Colar a chave',ir:()=>go('agente','','posts')},
+    {ok:r.gemini,t:'Chave do Gemini no servidor',d:'A IA escreve o roteiro e narra com ela. É grátis.',obrig:true,btn:'Colar a chave',ir:()=>go('agente','avisos','radar')},
+    {ok:r.email,t:'E-mail de avisos',d:'Para receber o vídeo pronto e aprovar respondendo o e-mail.',obrig:false,btn:'Configurar e-mail',ir:()=>go('agente','avisos','radar')},
+    {ok:r.pexels,t:'Chave do Pexels (fotos)',d:'Fotos reais melhores em cada cena. Grátis. Sem ela, o servidor usa só fotos de domínio público.',obrig:false,btn:'Colar a chave',ir:()=>go('agente','avisos','radar')},
   ];
   const faltam=itens.filter(i=>!i.ok);
   if(!faltam.length) return null;

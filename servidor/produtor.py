@@ -66,7 +66,7 @@ class ErroProdutor(Exception):
 def requisitos() -> dict:
     """O que já está pronto no servidor para o Agente 3 trabalhar (o site mostra o que falta e onde resolver)."""
     seg, em = ag.segredos(), ag.config().get('email', {})
-    return {'ffmpeg': rd.tem_ffmpeg(), 'gemini': bool(seg.get('gemini')), 'email': bool(em.get('para') and seg.get('email_senha')),
+    return {'ffmpeg': rd.tem_ffmpeg(), 'gemini': bool(seg.get('gemini') or seg.get('gemini_pago')), 'email': bool(em.get('para') and seg.get('email_senha')),
             'pexels': bool(seg.get('pexels')), 'numpy': ec.motor3d.disponivel()}
 
 
@@ -139,7 +139,7 @@ def ideias(d: dict) -> dict:
     if radar:
         prompt += ('\nTítulos que estão em alta no YouTube neste nicho (use SÓ como termômetro de interesse; '
                    'interesse no YouTube não prova que o assunto é popular fora dele): ' + json.dumps(radar[:15], ensure_ascii=False))
-    j = ag.gemini([{'text': prompt}])
+    j = ag.gemini([{'text': prompt}], uso='roteiro')
     out = []
     for it in (j.get('ideias') if isinstance(j, dict) else []) or []:
         if not isinstance(it, dict) or not str(it.get('titulo', '')).strip():
@@ -245,7 +245,7 @@ def validar_roteiro(j: dict, b: dict) -> dict:
 
 
 def gerar_roteiro(b: dict, ideia: str = '') -> dict:
-    return validar_roteiro(ag.gemini([{'text': _prompt_roteiro(b, ideia)}]), b)
+    return validar_roteiro(ag.gemini([{'text': _prompt_roteiro(b, ideia)}], uso='roteiro'), b)
 
 
 def ler_roteiro_colado(texto: str, b: dict) -> dict:
@@ -369,16 +369,16 @@ def _wav(pcm: bytes, arq: Path, taxa: int = 24000):
 
 
 def _tts_bruto(texto: str, voz: str, arq: Path) -> float:
-    chave = ag.segredos().get('gemini')
-    if not chave:
-        raise ErroProdutor('Falta a chave do Gemini no servidor (Publicações > Agente de postagem > Avisos e chaves) para narrar.', True)
     corpo = {'contents': [{'parts': [{'text': texto}]}],
              'generationConfig': {'responseModalities': ['AUDIO'], 'speechConfig': {'voiceConfig': {'prebuiltVoiceConfig': {'voiceName': voz}}}}}
-    st, _, j = ag.pg.http('POST', f'{ag.URL_GEMINI}/v1beta/models/{MODELO_TTS}:generateContent', js=corpo, cab={'x-goog-api-key': chave}, tempo=180)
+    try:
+        st, j, nome = ag.http_gemini('voz', f'{MODELO_TTS}:generateContent', corpo, 180)
+    except ag.ErroAgente as e:
+        raise ErroProdutor(str(e), True)
     if st == 429:
         raise fila.Esperar(90, 'A voz do Gemini pediu para esperar (limite por minuto)')
     if st >= 300:
-        raise ErroProdutor('A voz do Gemini recusou: ' + ag.pg._msg(j))
+        raise ErroProdutor(ag.erro_gemini(st, j, nome).replace('A IA (Gemini', 'A voz do Gemini'))
     try:
         dados = next(p['inlineData']['data'] for p in j['candidates'][0]['content']['parts'] if p.get('inlineData'))
     except (KeyError, IndexError, StopIteration, TypeError):
@@ -417,16 +417,16 @@ def tts(texto: str, voz: str, arq: Path, tom: str = '', ritmo: float = 1.0) -> f
 
 
 def gerar_imagem(prompt: str, arq: Path, formato: str):
-    chave = ag.segredos().get('gemini')
-    if not chave:
-        raise ErroProdutor('Falta a chave do Gemini no servidor para gerar imagens.', True)
     corpo = {'contents': [{'parts': [{'text': prompt + f' Formato {formato}. Sem texto escrito na imagem, sem marcas registradas.'}]}],
              'generationConfig': {'responseModalities': ['IMAGE']}}
-    st, _, j = ag.pg.http('POST', f'{ag.URL_GEMINI}/v1beta/models/{MODELO_IMAGEM}:generateContent', js=corpo, cab={'x-goog-api-key': chave}, tempo=180)
+    try:
+        st, j, nome = ag.http_gemini('imagens', f'{MODELO_IMAGEM}:generateContent', corpo, 180)
+    except ag.ErroAgente as e:
+        raise ErroProdutor(str(e), True)
     if st == 429:
         raise fila.Esperar(120, 'O gerador de imagens pediu para esperar')
     if st >= 300:
-        raise ErroProdutor('O gerador de imagens recusou: ' + ag.pg._msg(j))
+        raise ErroProdutor(ag.erro_gemini(st, j, nome).replace('A IA (Gemini', 'O gerador de imagens (Gemini'))
     try:
         dados = next(p['inlineData']['data'] for p in j['candidates'][0]['content']['parts'] if p.get('inlineData'))
     except (KeyError, IndexError, StopIteration, TypeError):
@@ -517,7 +517,7 @@ def etapa_revisar(ctx, pid, p, b):
     prompt = (_prompt_roteiro(b, b['tema'], 'Este é o roteiro atual (JSON): ' + json.dumps({'cenas': atual}, ensure_ascii=False)[:30000] +
                               f'\nPEDIDO DE CORREÇÃO do dono do canal: "{pedido[:2000]}". Mude só o necessário para atender o pedido; '
                               f'mantenha iguais as cenas com "bloqueada": true. ') + ' Devolva o roteiro completo corrigido.')
-    r = validar_roteiro(ag.gemini([{'text': prompt}]), b)
+    r = validar_roteiro(ag.gemini([{'text': prompt}], uso='roteiro'), b)
     _custo(ctx.id, 'gemini', ag.MODELO, 'correcao', 0.03)
 
     def f(d, _p):

@@ -4,7 +4,7 @@ import { useApp } from '../state';
 import { REDES } from '../lib/agenda';
 import { useServidor } from '../components/Servidor2';
 import { lerFila, pendentes, listarProjetos, catalogo, horaTexto } from '../lib/api';
-import { verAgente, salvarAgente, salvarChaves, acaoCanal, rodarAgente, pararAgente, testarEmail, acaoCorte, videoDoCorte, salvarPesos, aprenderAgora, DIAS, MOTIVOS, type VisaoAgente, type ConfigAgente, type Canal, type CorteAgente } from '../lib/agente';
+import { verAgente, salvarAgente, salvarChaves, acaoCanal, rodarAgente, pararAgente, testarEmail, acaoCorte, videoDoCorte, salvarPesos, aprenderAgora, DIAS, MOTIVOS, type VisaoAgente, type ConfigAgente, type Uso, type Canal, type CorteAgente } from '../lib/agente';
 
 type Parte = 'cortes'|'postagem'|'agente3'|'desempenho'|'avisos'|'fila';
 const num=(n:number)=>n.toLocaleString('pt-BR');
@@ -167,7 +167,7 @@ export default function Agente(){
   const [v,setV]=useState<VisaoAgente|null>(null); const [erro,setErro]=useState(''); const [parte,setParte]=useState<Parte>(()=>PARTES.includes(rotaExtra as Parte)?rotaExtra as Parte:'cortes');
   useEffect(()=>{ if(PARTES.includes(rotaExtra as Parte)) setParte(rotaExtra as Parte); },[rotaExtra]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [link,setLink]=useState(''); const [canalLink,setCanalLink]=useState(''); const [canalMotivo,setCanalMotivo]=useState('');
-  const [chaves,setChaves]=useState({gemini:'',youtube:'',email_senha:'',pexels:''}); const [hora,setHora]=useState('18:00'); const [diasSel,setDiasSel]=useState<number[]>([0,1,2,3,4,5]);
+  const [chaves,setChaves]=useState({gemini:'',gemini_pago:'',youtube:'',email_senha:'',pexels:''}); const [hora,setHora]=useState('18:00'); const [diasSel,setDiasSel]=useState<number[]>([0,1,2,3,4,5]);
   const vivo=useRef(true);
   useEffect(()=>{ vivo.current=true; return ()=>{ vivo.current=false; }; },[]);
   const carregar=useCallback(()=>{ if(!settings.servidor) return; verAgente(settings).then(x=>{ if(vivo.current){ setV(x); setErro(''); } }).catch(e=>{ if(vivo.current) setErro(e.message); }); },[settings]);
@@ -187,12 +187,12 @@ export default function Agente(){
   const faltas:string[]=[];
   if(!v.ffmpeg) faltas.push('Falta o FFmpeg no servidor (no Termux: pkg install ffmpeg).');
   if(!v.chaves.youtube) faltas.push('Falta a chave do YouTube (parte Avisos e chaves).');
-  if(!v.chaves.gemini) faltas.push('Falta a chave do Gemini (parte Avisos e chaves).');
+  if(!v.chaves.gemini&&!v.chaves.gemini_pago) faltas.push('Falta a chave do Gemini (parte Avisos e chaves).');
   if(!aprovados.length) faltas.push('Nenhum canal aprovado ainda (parte Cortes).');
   if(!em.para||!em.de||!v.chaves.email_senha) faltas.push('O e-mail de avisos não está completo (parte Avisos e chaves).');
   const variar=(k:string)=>{ const tem=co.variar.includes(k); if(!tem&&co.variar.length>=3){ toast('Escolha no máximo 3 elementos para variar.','erro'); return; } salvar({cortes:{variar:tem?co.variar.filter(x=>x!==k):[...co.variar,k]}}); };
   const addFaixas=()=>{ if(!/^\d\d:\d\d$/.test(hora)||!diasSel.length) return; salvar({postagem:{faixas:[...po.faixas,...diasSel.map(d=>({dia:d,hora}))]}}); };
-  const guardarChaves=(k:Partial<typeof chaves>)=>run(async()=>{ const r=await salvarChaves(settings,k); setChaves({gemini:'',youtube:'',email_senha:'',pexels:''}); return r; },'Guardado no servidor.');
+  const guardarChaves=(k:Partial<typeof chaves>)=>run(async()=>{ const r=await salvarChaves(settings,k); setChaves({gemini:'',gemini_pago:'',youtube:'',email_senha:'',pexels:''}); return r; },'Guardado no servidor.');
 
   return <div className="agente">
     <section className="panel ag-topo">
@@ -370,22 +370,36 @@ export default function Agente(){
           <label>Porta<Campo tipo="number" valor={em.porta} salvar={x=>salvar({email:{porta:+x}})}/></label></div></details>
       </section>
       <section className="panel">
-        <h3>Chaves usadas pelos agentes</h3>
-        <p className="hint tight">Os agentes trabalham com o aplicativo fechado, então as chaves precisam ficar no servidor. Elas não voltam para esta tela.</p>
+        <h3>Chaves do Gemini: grátis e com saldo</h3>
+        <p className="subtitle">Guarde as duas e escolha abaixo qual cada tarefa usa. A <b>grátis</b> vem de um projeto do Google sem cobrança (tem limite por minuto e por dia). A <b>com saldo</b> vem de um projeto com cobrança ligada (sem esse limite, mas gasta). As chaves ficam só no servidor e não voltam para esta tela.</p>
         <div className="ag-grade">
-          <label>Chave do Gemini {v.chaves.gemini&&<span className="tag ok">guardada</span>}<input type="password" autoComplete="off" value={chaves.gemini} onChange={e=>setChaves(s=>({...s,gemini:e.target.value}))} placeholder={v.chaves.gemini?'Digite só para trocar':'Cole a chave'}/></label>
-          <label>Chave do Pexels (fotos grátis para os vídeos) {v.chaves.pexels&&<span className="tag ok">guardada</span>}<input type="password" autoComplete="off" value={chaves.pexels} onChange={e=>setChaves(s=>({...s,pexels:e.target.value}))} placeholder={v.chaves.pexels?'Digite só para trocar':'Opcional: pexels.com/api, é grátis'}/></label>
+          <label>Chave grátis {v.chaves.gemini&&<span className="tag ok">guardada</span>}<input type="password" autoComplete="off" value={chaves.gemini} onChange={e=>setChaves(s=>({...s,gemini:e.target.value}))} placeholder={v.chaves.gemini?'Digite só para trocar':'Cole a chave (projeto sem cobrança)'}/></label>
+          <label>Chave com saldo {v.chaves.gemini_pago&&<span className="tag ok">guardada</span>}<input type="password" autoComplete="off" value={chaves.gemini_pago} onChange={e=>setChaves(s=>({...s,gemini_pago:e.target.value}))} placeholder={v.chaves.gemini_pago?'Digite só para trocar':'Cole a chave (projeto com cobrança)'}/></label>
+        </div>
+        <div className="row-gap left mt"><button className="primary sm" disabled={!chaves.gemini.trim()&&!chaves.gemini_pago.trim()} onClick={()=>guardarChaves({...(chaves.gemini.trim()?{gemini:chaves.gemini.trim()}:{}),...(chaves.gemini_pago.trim()?{gemini_pago:chaves.gemini_pago.trim()}:{})})}><KeyRound size={14}/> Guardar chaves do Gemini</button>
+          <a className="link-btn" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Criar chaves no Google AI Studio <ExternalLink size={12}/></a></div>
+        <span className="field-label mt">Qual chave cada tarefa usa</span>
+        <div className="usos-chave">{([['cortes','Agente 1: ouvir o vídeo e escolher os cortes'],['camera','Agente 1: achar a câmera do streamer'],['roteiro','Agente 3: assuntos e roteiros'],['voz','Agente 3: narração'],['imagens','Agente 3: imagens criadas por IA']] as [keyof ConfigAgente['chaves_uso'],string][]).map(([k,t])=>{ const atual=c.chaves_uso[k] as Uso;
+          return <div key={k} className="uso-linha"><span>{t}</span><div className="seg">{(['gratis','paga'] as Uso[]).map(u=><button key={u} type="button" className={atual===u?'on':''} aria-pressed={atual===u} onClick={()=>salvar({chaves_uso:{[k]:u}})}>{u==='gratis'?'Grátis':'Com saldo'}</button>)}</div>
+            {!(atual==='gratis'?v.chaves.gemini:v.chaves.gemini_pago)&&<small className="bad">falta esta chave</small>}</div>; })}</div>
+        <label className="check mt"><input type="checkbox" checked={c.chaves_uso.reserva} onChange={e=>salvar({chaves_uso:{reserva:e.target.checked}})}/> Se a chave escolhida estiver sem cota ou sem saldo, usar a outra</label>
+        <p className="hint">Sugestão: deixe tudo na grátis e só as imagens na com saldo. Com a reserva ligada, quando a grátis bate o limite do dia, o trabalho continua na com saldo (e passa a gastar). O teto de gasto abaixo vale só para a chave com saldo.</p>
+      </section>
+      <section className="panel">
+        <h3>Outras chaves dos agentes</h3>
+        <div className="ag-grade">
+          <label>Chave do Pexels (fotos grátis para os vídeos) {v.chaves.pexels&&<span className="tag ok">guardada</span>}<input type="password" autoComplete="off" value={chaves.pexels} onChange={e=>setChaves(s=>({...s,pexels:e.target.value}))} placeholder={v.chaves.pexels?'Digite só para trocar':'Opcional: pexels.com/api'}/></label>
           <label>Chave do YouTube {v.chaves.youtube&&<span className="tag ok">guardada</span>}<input type="password" autoComplete="off" value={chaves.youtube} onChange={e=>setChaves(s=>({...s,youtube:e.target.value}))} placeholder={v.chaves.youtube?'Digite só para trocar':'Cole a chave'}/></label>
         </div>
         <div className="row-gap left mt">
-          <button className="primary sm" disabled={!chaves.gemini.trim()&&!chaves.youtube.trim()&&!chaves.pexels.trim()} onClick={()=>guardarChaves({...(chaves.pexels.trim()?{pexels:chaves.pexels.trim()}:{}),...(chaves.gemini.trim()?{gemini:chaves.gemini.trim()}:{}),...(chaves.youtube.trim()?{youtube:chaves.youtube.trim()}:{})})}><KeyRound size={14}/> Guardar no servidor</button>
-          {(settings.geminiKey||settings.ytKey)&&<button className="subtle sm" onClick={()=>guardarChaves({...(settings.geminiKey?{gemini:settings.geminiKey}:{}),...(settings.ytKey?{youtube:settings.ytKey}:{})})}>Usar as chaves já salvas neste aparelho</button>}
+          <button className="primary sm" disabled={!chaves.youtube.trim()&&!chaves.pexels.trim()} onClick={()=>guardarChaves({...(chaves.pexels.trim()?{pexels:chaves.pexels.trim()}:{}),...(chaves.youtube.trim()?{youtube:chaves.youtube.trim()}:{})})}><KeyRound size={14}/> Guardar</button>
+          {settings.ytKey&&!v.chaves.youtube&&<button className="subtle sm" onClick={()=>guardarChaves({youtube:settings.ytKey})}>Usar a chave do YouTube deste aparelho</button>}
         </div>
       </section>
       <section className="panel">
         <h3>Orçamento da IA</h3>
         <div className="ag-grade">
-          <label>Teto por mês (R$)<Campo tipo="number" min={0} step={1} valor={c.orcamento.teto} salvar={x=>salvar({orcamento:{teto:+x}})}/></label>
+          <label>Teto por mês da chave com saldo (R$)<Campo tipo="number" min={0} step={1} valor={c.orcamento.teto} salvar={x=>salvar({orcamento:{teto:+x}})}/></label>
           <div className="ag-gasto"><span>Gasto estimado neste mês</span><b>R$ {v.gasto.reais.toFixed(2).replace('.',',')}</b><small>{v.gasto.chamadas} pedido(s) à IA</small></div>
         </div>
         <p className="hint">Ao chegar no teto o agente para de usar a IA até o mês virar. O valor é uma estimativa feita pelo servidor; o valor cobrado de verdade aparece na sua conta do Google. Quando o vídeo tem legenda automática do YouTube, o agente usa a legenda e gasta bem menos.</p>
