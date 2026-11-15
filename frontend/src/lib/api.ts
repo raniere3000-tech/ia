@@ -143,11 +143,11 @@ export const lerCapacidade=(cfg:CfgSrv)=>api<Capacidade>(cfg,'GET','/api/v1/capa
 export type EstiloInfo={id:string;nome:string;descricao:string;tecnica:string;status:'operacional'|'beta'|'indisponivel';prioridade:string;paleta:string[];precisa_imagem:boolean;servidor:boolean;formatos:string[];custo:string};
 export type Cena={id:string;titulo:string;texto:string;destaque?:string;numero?:number|null;unidade?:string;personagem?:string;prompt_visual?:string;duracao_alvo?:number;bloqueada?:boolean;elementos?:{rotulo:string;valor:number}[];audio?:{dur:number}|null;clipe?:{dur:number}|null};
 export type Briefing={tema:string;nicho:string;publico:string;objetivo:string;idioma:string;tipo:string;descricao:string;origem:string;referencias:string;duracao_alvo:number;formato:string;cenas_qtd:number;
-  estilo:string;paleta:string[];voz:string;trilha:string;imagens:string;modo_aprovacao:'assistido'|'supervisionado';prioridade:number;orcamento_max:number;max_tentativas:number;
+  estilo:string;paleta:string[];voz:string;ritmo?:string;trilha:string;imagens:string;modo_aprovacao:'assistido'|'supervisionado';prioridade:number;orcamento_max:number;max_tentativas:number;
   destinos:{redes:string[];quando:'proximo'|'agora'|'data';data?:number;titulo?:string;legenda?:string};temas:string[]};
-export type Catalogo={estilos:EstiloInfo[];vozes:string[];tipos:string[];estados:Record<string,string>;briefing:Briefing;formatos:string[];ffmpeg:boolean;demos:Record<string,{asset:string;segundos:number}>};
+export type Catalogo={estilos:EstiloInfo[];vozes:string[];tipos:string[];estados:Record<string,string>;briefing:Briefing;formatos:string[];ffmpeg:boolean;requisitos?:{ffmpeg:boolean;gemini:boolean;email:boolean;pexels:boolean;numpy:boolean};demos:Record<string,{asset:string;segundos:number}>};
 export type Ideia={titulo:string;gancho:string;porque:string;tipo:string;fato:boolean;fontes:{titulo:string;url:string}[]};
-export type Roteiro={titulo:string;alternativas:string[];gancho:string;publico:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[];cenas:Cena[]};
+export type Roteiro={titulo:string;alternativas:string[];gancho:string;publico:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[];cenas:Cena[];avisos?:string[]};
 export const catalogo=(cfg:CfgSrv)=>api<Catalogo>(cfg,'GET','/api/v1/agente3/catalogo');
 export const ideias=(cfg:CfgSrv,b:Partial<Briefing>&{quantidade?:number})=>api<{ideias:Ideia[];radar:{titulo:string;canal:string}[]}>(cfg,'POST','/api/v1/agente3/ideias',b);
 export const gerarRoteiro=(cfg:CfgSrv,briefing:Partial<Briefing>,roteiro_texto='')=>api<Roteiro>(cfg,'POST','/api/v1/agente3/roteiro',{briefing,roteiro_texto});

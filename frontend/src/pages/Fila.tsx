@@ -108,13 +108,13 @@ export default function Fila(){
       </button>)}</div>}
     </section>
     <section className="panel">
-     <div className="section-head"><h2>Trabalhos do servidor <HelpButton topic="fila"/></h2>{fila.carregando&&<Loader2 size={15} className="spin"/>}</div>
+     <div className="section-head"><h2>O que o celular está fazendo <HelpButton topic="fila"/></h2>{fila.carregando&&<Loader2 size={15} className="spin"/>}</div>
      <div className="chips">{FILTROS.map(([id,nome])=><button key={id} className={'chip '+(filtro===id?'on':'')} onClick={()=>setFiltro(id)}>{nome}{f&&id&&f.contagem[id]?` (${f.contagem[id]})`:''}</button>)}</div>
      {fila.erro&&<p className="hint bad"><AlertTriangle size={14}/> {fila.erro}</p>}
-     {f&&f.jobs.length===0&&<p className="hint">Nada aqui.</p>}
+     {f&&f.jobs.length===0&&<div className="row-gap left"><p className="hint">Nada aqui agora.</p><button className="primary sm" onClick={()=>go('ia','','criar')}>Criar um vídeo</button></div>}
      <div className="job-lista">{f?.jobs.slice(0,80).map(j=><CartaoJob key={j.id} j={j} agora={f.agora} acao={acao}/>)}</div>
     </section>
-    <Capacidade/>
-    <RespostasEmail/>
+    <details className="recolhido"><summary>Aprovar respondendo o e-mail (configuração)</summary><RespostasEmail/></details>
+    <details className="recolhido"><summary>Saúde do celular servidor</summary><Capacidade/></details>
   </div>;
 }

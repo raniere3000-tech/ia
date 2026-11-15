@@ -34,6 +34,12 @@ MODELO_IMAGEM = os.getenv('MODELO_IMAGEM', 'gemini-2.5-flash-image')
 VOZES = ['Puck', 'Kore', 'Charon', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr']
 TIPOS = ['curiosidades', 'história narrada', 'documentário', 'games', 'explicativo', 'tutorial', 'quiz', 'motivacional',
          'animação com personagens', 'motion graphics', 'outro']
+RITMOS = {'calmo': 0.97, 'normal': 1.0, 'agil': 1.06, 'rapido': 1.12}      # velocidade da narração (sem mudar o tom da voz)
+# Como o narrador deve falar em cada tipo de vídeo (instrução de estilo do Gemini TTS).
+TONS = {'curiosidades': 'animado e curioso, como quem conta uma descoberta', 'história narrada': 'envolvente, de contador de histórias, com suspense leve',
+        'documentário': 'firme e claro, de documentário', 'games': 'empolgado e rápido, de quem fala com amigos', 'explicativo': 'claro e simpático, de professor que explica fácil',
+        'tutorial': 'direto e calmo, passo a passo', 'quiz': 'animado, de apresentador de jogo', 'motivacional': 'confiante e inspirador, com pausas curtas',
+        'animação com personagens': 'expressivo e divertido', 'motion graphics': 'claro, moderno e direto', 'outro': 'natural e animado'}
 ESTADOS = {
     'draft': 'Rascunho', 'researching': 'Pesquisando', 'script_ready': 'Roteiro pronto', 'storyboard_ready': 'Storyboard pronto',
     'waiting_brief_approval': 'Esperando você aprovar o roteiro', 'scheduled': 'Agendado', 'queued': 'Na fila',
@@ -45,7 +51,7 @@ ESTADOS = {
 BRIEFING_PADRAO = {
     'tema': '', 'nicho': 'Curiosidades', 'publico': '', 'objetivo': '', 'idioma': 'pt-BR', 'tipo': 'curiosidades',
     'descricao': '', 'origem': 'manual', 'referencias': '', 'duracao_alvo': 45, 'formato': '9:16', 'cenas_qtd': 6,
-    'estilo': 'vetor_chapado', 'paleta': [], 'voz': 'Puck', 'trilha': '', 'imagens': 'nenhuma',
+    'estilo': 'vetor_chapado', 'paleta': [], 'voz': 'Puck', 'ritmo': 'agil', 'trilha': '', 'imagens': 'nenhuma',
     'modo_aprovacao': 'assistido', 'prioridade': 0, 'orcamento_max': 2.0, 'max_tentativas': 3,
     'destinos': {'redes': [], 'quando': 'proximo', 'titulo': '', 'legenda': ''}, 'temas': [],
 }
@@ -55,6 +61,13 @@ class ErroProdutor(Exception):
     def __init__(self, msg: str, definitivo: bool = False):
         super().__init__(msg)
         self.definitivo = definitivo
+
+
+def requisitos() -> dict:
+    """O que já está pronto no servidor para o Agente 3 trabalhar (o site mostra o que falta e onde resolver)."""
+    seg, em = ag.segredos(), ag.config().get('email', {})
+    return {'ffmpeg': rd.tem_ffmpeg(), 'gemini': bool(seg.get('gemini')), 'email': bool(em.get('para') and seg.get('email_senha')),
+            'pexels': bool(seg.get('pexels')), 'numpy': ec.motor3d.disponivel()}
 
 
 def limpar_briefing(d: dict) -> dict:
@@ -74,6 +87,7 @@ def limpar_briefing(d: dict) -> dict:
         raise ErroProdutor('Números do briefing inválidos.')
     b['estilo'] = d.get('estilo') if d.get('estilo') in [e[0] for e in ec.ESTILOS] else 'vetor_chapado'
     b['voz'] = d.get('voz') if d.get('voz') in VOZES + ['nenhuma'] else 'Puck'
+    b['ritmo'] = d.get('ritmo') if d.get('ritmo') in RITMOS else 'agil'
     b['imagens'] = d.get('imagens') if d.get('imagens') in ('nenhuma', 'gemini', 'busca') else 'nenhuma'
     b['modo_aprovacao'] = d.get('modo_aprovacao') if d.get('modo_aprovacao') in ('assistido', 'supervisionado') else 'assistido'
     b['trilha'] = re.sub(r'[^a-f0-9]', '', str(d.get('trilha') or ''))[:16]
@@ -139,19 +153,75 @@ def ideias(d: dict) -> dict:
 
 def _prompt_roteiro(b: dict, ideia: str, extra: str = '') -> str:
     e = ec.estilo(b['estilo'])
-    return (f'Escreva o roteiro e o storyboard de um vídeo ORIGINAL em {b["idioma"]}. Tema: {ideia or b["tema"]}. Nicho: {b["nicho"]}. '
-            f'Tipo: {b["tipo"]}. Público: {b["publico"] or "geral"}. Objetivo: {b["objetivo"] or "informar e prender a atenção"}. '
-            f'Detalhes do pedido: {b["descricao"] or "-"}. Referências do usuário: {b["referencias"] or "-"}. '
-            f'Duração total aproximada: {b["duracao_alvo"]} segundos, em {b["cenas_qtd"]} cenas. Estilo visual: {e["nome"]} ({e["descricao"]}). '
-            'Cada cena tem: texto (a narração falada, frases curtas, máximo ~2,6 palavras por segundo da cena), titulo (até 6 palavras na tela), '
-            'destaque (1 a 3 palavras), numero (só se a cena tiver um número importante, senão null), unidade (ex.: "%", "anos", "km" ou ""), '
-            'elementos (até 4 itens {rotulo, valor de 0 a 100} quando fizer sentido comparar, senão []), camera (parado|aproximar|afastar|panoramica), '
-            'personagem, emocao, cenario, visual (descrição da imagem da cena), busca (2 a 4 palavras EM INGLÊS para procurar uma foto real que ilustre a cena, ex.: "blue sky clouds"), movimento, enquadramento, duracao_alvo (segundos). '
-            'A primeira cena é o gancho. Se for história/ciência/documentário, liste fontes confiáveis para conferir e não invente dados; '
-            'quando não tiver certeza, deixe claro no texto. Não use marcas, personagens ou músicas de terceiros. '
+    palavras = int(b['duracao_alvo'] * 2.4)
+    return (f'Você é roteirista de vídeos curtos que prendem a atenção até o fim. Escreva o roteiro e o storyboard de um vídeo ORIGINAL em {b["idioma"]}. '
+            f'Tema: {ideia or b["tema"]}. Nicho: {b["nicho"]}. Tipo: {b["tipo"]}. Público: {b["publico"] or "geral"}. '
+            f'Objetivo: {b["objetivo"] or "informar e prender a atenção"}. Detalhes do pedido: {b["descricao"] or "-"}. Referências do usuário: {b["referencias"] or "-"}. '
+            f'Duração total: cerca de {b["duracao_alvo"]} segundos (perto de {palavras} palavras narradas no total), em {b["cenas_qtd"]} cenas. '
+            f'Estilo visual: {e["nome"]} ({e["descricao"]}).\n'
+            'REGRAS DO ROTEIRO (siga todas):\n'
+            '1. A cena 1 é o GANCHO: uma pergunta ou um fato surpreendente em até 12 palavras. Sem cumprimento, sem "olá", sem apresentar canal, sem "neste vídeo".\n'
+            '2. Cada cena tem UMA ideia, em 1 ou 2 frases curtas (8 a 24 palavras), em linguagem falada e simples. Nada de listas, emojis, parênteses ou siglas difíceis de ler em voz alta.\n'
+            '3. Cada cena deixa um motivo para ver a próxima (uma pergunta aberta, um "mas", um detalhe que falta). A resposta principal vem perto do fim, não no começo.\n'
+            '4. A última cena fecha a ideia em uma frase e termina com um convite curto (uma pergunta para comentar ou "segue para mais").\n'
+            '5. titulo de cada cena: até 5 palavras para aparecer na tela, SEM repetir a narração palavra por palavra. destaque: a palavra-chave da cena (1 a 3 palavras).\n'
+            '6. numero: só se a cena girar em torno de um número importante (senão null); unidade: "%", "anos", "km" ou "". elementos: até 4 itens {rotulo, valor de 0 a 100} só quando a cena compara coisas (senão []).\n'
+            '7. busca: 2 a 4 palavras EM INGLÊS de algo concreto que dá para fotografar e que mostra a cena (ex.: "lightning storm night", "astronaut in space"). '
+            'Nada abstrato ("success", "idea") e não repita a mesma busca em cenas diferentes.\n'
+            '8. camera: varie entre aproximar, afastar e panoramica (parado só em cena de número). visual: descrição da imagem da cena. duracao_alvo: segundos da cena.\n'
+            '9. Não invente dados. Em temas de fato (história, ciência, saúde), liste fontes confiáveis para conferir e, se não tiver certeza, diga isso no texto. '
+            'Não use marcas, personagens ou músicas de terceiros.\n'
+            '10. titulo do vídeo: até 60 caracteres, curioso e verdadeiro. legenda: 1 ou 2 frases com um convite para comentar. hashtags: 5 a 8, do tema.\n'
+            'Antes de responder, releia: o gancho prende em 2 segundos? Alguma cena está longa ou repetida? O total cabe na duração? Corrija e só então responda.\n'
             f'{extra}Responda só JSON: {{"titulo":"","alternativas":["",""],"gancho":"","publico":"","legenda":"","hashtags":[""],'
             '"fontes":[{"titulo":"","url":""}],"cenas":[{"texto":"","titulo":"","destaque":"","numero":null,"unidade":"","elementos":[],'
-            '"camera":"parado","personagem":"","emocao":"","cenario":"","visual":"","busca":"","movimento":"","enquadramento":"","duracao_alvo":6}]}')
+            '"camera":"aproximar","personagem":"","emocao":"","cenario":"","visual":"","busca":"","movimento":"","enquadramento":"","duracao_alvo":6}]}')
+
+
+_VAZIAS = set('a o e de da do das dos um uma uns umas que em no na nos nas por para com sem se mas ou como mais muito isso esse essa este esta ele ela eles elas seu sua foi ser tem não sim já quando onde porque você the and of'.split())
+
+
+def afinar_roteiro(cenas: list) -> tuple[list, list]:
+    """Ajustes automáticos (sem IA) que deixam o vídeo com ritmo melhor: divide narrações longas, encurta títulos,
+    varia a câmera e preenche o destaque. Devolve (cenas, avisos em português para mostrar no storyboard)."""
+    out, avisos = [], []
+    for c in cenas:
+        pal = (c.get('texto') or '').split()
+        partes = [c]
+        if len(pal) > 34 and not c.get('bloqueada'):
+            frases = re.split(r'(?<=[.!?])\s+', c['texto'].strip())
+            if len(frases) > 1:
+                meio, acum, corte = len(pal) / 2, 0, 1
+                for k, f in enumerate(frases[:-1]):
+                    acum += len(f.split())
+                    corte = k + 1
+                    if acum >= meio:
+                        break
+                a, b2 = ' '.join(frases[:corte]), ' '.join(frases[corte:])
+                seg = dict(c, texto=b2, titulo=c.get('destaque') or ' '.join(b2.split()[:4]), numero=None, elementos=[], destaque='', busca='')
+                seg.pop('audio', None); seg.pop('imagem', None); seg.pop('clipe', None)
+                partes = [dict(c, texto=a), seg]
+                avisos.append(f'A cena "{c.get("titulo") or c["texto"][:30]}" tinha narração longa e foi dividida em duas (cenas curtas prendem mais).')
+        out += partes
+    out = out[:30]
+    cams = ('aproximar', 'panoramica', 'afastar')
+    for i, c in enumerate(out):
+        c['id'] = f'c{i + 1}'
+        t = (c.get('titulo') or '').split()
+        if len(t) > 7:
+            c['titulo'] = ' '.join(t[:7])
+        if not c.get('destaque') and c.get('texto'):
+            cand = [w.strip('.,!?;:"“”()').lower() for w in c['texto'].split()]
+            cand = [w for w in cand if len(w) > 4 and w not in _VAZIAS]
+            if cand:
+                c['destaque'] = max(cand, key=len)[:24]
+        if c.get('camera') in (None, '', 'parado') and c.get('numero') is None:
+            c['camera'] = cams[i % 3]
+        c['duracao_alvo'] = 0.0 if c.get('texto') else c.get('duracao_alvo') or 3.0     # com narração, a fala manda na duração
+    total = sum(len((c.get('texto') or '').split()) for c in out)
+    if out and len((out[0].get('texto') or '').split()) > 18:
+        avisos.append('O gancho (cena 1) está longo. O ideal é até 12 palavras: quem assiste decide em 2 segundos se fica.')
+    return out, avisos + ([f'Narração com {total} palavras: cerca de {round(total / 2.5)} s de vídeo.'] if total else [])
 
 
 def validar_roteiro(j: dict, b: dict) -> dict:
@@ -159,11 +229,11 @@ def validar_roteiro(j: dict, b: dict) -> dict:
         raise ErroProdutor('A IA não devolveu cenas. Tente de novo.')
     cenas = [ec.validar_cena(c, i) for i, c in enumerate(j['cenas'][:30]) if isinstance(c, dict)]
     cenas = [c for c in cenas if c['texto'] or c['titulo']]
-    for i, c in enumerate(cenas):
-        c['id'] = f'c{i + 1}'
     if not cenas:
         raise ErroProdutor('As cenas vieram vazias.')
+    cenas, avisos = afinar_roteiro(cenas)
     return {
+        'avisos': avisos,
         'titulo': str(j.get('titulo') or b['tema'] or 'Vídeo')[:120],
         'alternativas': [str(x)[:120] for x in (j.get('alternativas') or [])[:4]],
         'gancho': str(j.get('gancho') or '')[:300], 'publico': str(j.get('publico') or b['publico'])[:200],
@@ -298,10 +368,10 @@ def _wav(pcm: bytes, arq: Path, taxa: int = 24000):
         w.writeframes(pcm)
 
 
-def tts(texto: str, voz: str, arq: Path) -> float:
+def _tts_bruto(texto: str, voz: str, arq: Path) -> float:
     chave = ag.segredos().get('gemini')
     if not chave:
-        raise ErroProdutor('Falta a chave do Gemini no servidor (aba Agentes > Chaves) para narrar.', True)
+        raise ErroProdutor('Falta a chave do Gemini no servidor (Publicações > Agente de postagem > Avisos e chaves) para narrar.', True)
     corpo = {'contents': [{'parts': [{'text': texto}]}],
              'generationConfig': {'responseModalities': ['AUDIO'], 'speechConfig': {'voiceConfig': {'prebuiltVoiceConfig': {'voiceName': voz}}}}}
     st, _, j = ag.pg.http('POST', f'{ag.URL_GEMINI}/v1beta/models/{MODELO_TTS}:generateContent', js=corpo, cab={'x-goog-api-key': chave}, tempo=180)
@@ -316,6 +386,34 @@ def tts(texto: str, voz: str, arq: Path) -> float:
     pcm = base64.b64decode(dados)
     _wav(pcm, arq)
     return len(pcm) / 2 / 24000
+
+
+def _aparar(arq: Path, ritmo: float) -> float:
+    """Tira o silêncio do começo e do fim da fala (a legenda acompanha melhor e o vídeo não tem 'buracos') e aplica o ritmo.
+    Se o FFmpeg falhar, a narração fica como veio."""
+    tmp = arq.with_suffix('.ap.wav')
+    corte = 'silenceremove=start_periods=1:start_threshold=-48dB:start_silence=0.04'
+    filtro = f'{corte},areverse,{corte},areverse' + (f',atempo={ritmo:.3f}' if abs(ritmo - 1) > 0.005 else '')
+    try:
+        rd.rodar(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', str(arq), '-af', filtro, '-ar', '24000', '-ac', '1', str(tmp)], tempo_max=120)
+        d = rd.duracao(tmp)
+        if d > 0.3:
+            tmp.replace(arq)
+            return d
+    except (rd.ErroRender, OSError):
+        pass
+    tmp.unlink(missing_ok=True)
+    return rd.duracao(arq)
+
+
+def tts(texto: str, voz: str, arq: Path, tom: str = '', ritmo: float = 1.0) -> float:
+    """Narra uma cena. Com `tom`, pede ao Gemini o jeito de falar; se a fala vier longa demais para o texto
+    (sinal de que ele leu a instrução em voz alta), narra de novo só o texto."""
+    palavras = max(1, len(texto.split()))
+    dur = _tts_bruto(f'Diga em tom {tom}: {texto}' if tom else texto, voz, arq)
+    if tom and dur > palavras / 1.4 + 3.5:
+        dur = _tts_bruto(texto, voz, arq)
+    return _aparar(arq, ritmo) or dur
 
 
 def gerar_imagem(prompt: str, arq: Path, formato: str):
@@ -340,10 +438,13 @@ def _h(*partes) -> str:
     return hashlib.sha256(json.dumps(partes, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:20]
 
 
+PAUSA = 0.3        # respiro entre uma cena e outra, em segundos
+
+
 def _dur_cena(c: dict) -> float:
     falada = (c.get('audio') or {}).get('dur') or 0
     if falada:
-        return round(falada + 0.45, 2)
+        return round(falada + PAUSA, 2)
     estimada = max(2.5, len((c.get('texto') or '').split()) / 2.6 + 0.6)
     return round(max(estimada, min(c.get('duracao_alvo') or 0, 30)), 2)
 
@@ -446,14 +547,16 @@ def etapa_narracao(ctx, pid, p, b):
             if c.get('audio'):
                 pj.mudar_dados(pid, lambda d, _p, i=i: d['cenas'][i].pop('audio', None))
             continue
-        h = _h(c['texto'], b['voz'], MODELO_TTS)
+        tom = TONS.get(b.get('tipo'), TONS['outro']) if os.getenv('TTS_TOM', '1') != '0' else ''
+        ritmo = RITMOS.get(b.get('ritmo') or 'agil', 1.0)
+        h = _h(c['texto'], b['voz'], MODELO_TTS, tom, ritmo, 2)
         if (c.get('audio') or {}).get('h') == h and Path((c['audio'] or {}).get('arquivo', '')).exists():
             continue
         _conferir_orcamento(ctx.id, b, 0.02)
         arq = pasta / f'{h}.wav'
         t0 = time.time()
         if not arq.exists():
-            dur = tts(c['texto'], b['voz'], arq)
+            dur = tts(c['texto'], b['voz'], arq, tom, ritmo)
             _custo(ctx.id, 'gemini', MODELO_TTS, 'narracao', 0.002 * max(1, len(c['texto']) / 100) * float(ag.config()['orcamento'].get('dolar', 5.5)))
         else:
             dur = rd.duracao(arq)
@@ -474,9 +577,20 @@ def _foto_da_cena(pid, i, c, b, pasta, cenas):
     atuais = pj.obter(pid)['dados'].get('cenas') or cenas          # relê: as fotos das cenas anteriores acabaram de ser gravadas
     usadas = {str((x.get('imagem') or {}).get('id')) for j, x in enumerate(atuais) if j != i and (x.get('imagem') or {}).get('id')}
     t0 = time.time()
-    try:
-        foto = im.buscar(consulta, b['formato'], pasta, ag.segredos().get('pexels', ''), usadas)
-    except im.SemFoto as e:
+    tentativas = [consulta]
+    if len(consulta.split()) > 2:
+        tentativas.append(' '.join(consulta.split()[:2]))
+    reserva = ' '.join((c.get('destaque') or c.get('titulo') or '').split()[:3])
+    if reserva and reserva not in tentativas:
+        tentativas.append(reserva)
+    foto, e = None, None
+    for q in tentativas:
+        try:
+            foto = im.buscar(q, b['formato'], pasta, ag.segredos().get('pexels', ''), usadas)
+            break
+        except im.SemFoto as x:
+            e = x
+    if not foto:
         db.evento('agente3', 'foto_nao_achada', 'projeto:' + pid, {'cena': c.get('id'), 'consulta': consulta, 'motivo': str(e)[:200]})
         pj.mudar_dados(pid, lambda d, _p, i=i: d['cenas'][i].pop('imagem', None))
         return
@@ -637,9 +751,10 @@ def etapa_final(ctx, pid, p, b):
     except rd.ErroRender:
         prev = final
     thumb = pasta / f'{sha[:16]}.jpg'
-    meio = next((Path(q) for q in conf['quadros'] if 'meio' in q), None)
-    if meio:
-        shutil.copy(meio, thumb)
+    if not rd.capa(final, thumb, min(1.6, conf['duracao'] * 0.2)):      # capa: o gancho já com o título na tela
+        meio = next((Path(q) for q in conf['quadros'] if 'meio' in q), None)
+        if meio:
+            shutil.copy(meio, thumb)
     srt = pasta / f'{sha[:16]}.srt'
     srt.write_text(_srt(cenas), encoding='utf-8')
     ids = {}

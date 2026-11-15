@@ -115,6 +115,13 @@ def quadros(video: Path, pasta: Path, dur: float) -> list[Path]:
     return out
 
 
+def capa(video: Path, arq: Path, t: float) -> bool:
+    """Um quadro do vídeo para servir de capa (miniatura)."""
+    subprocess.run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-ss', f'{max(0, t):.2f}', '-i', str(video), '-frames:v', '1', '-vf', "scale='min(720,iw)':-2", '-q:v', '3', str(arq)],
+                   capture_output=True, stdin=subprocess.DEVNULL, timeout=120)
+    return arq.exists() and arq.stat().st_size > 500
+
+
 def conferir(video: Path, pasta: Path, esperado: dict, cancelado=None) -> dict:
     """Confere o vídeo final. Erros reprovam; avisos só informam."""
     info = sonda(video)

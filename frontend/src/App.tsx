@@ -33,7 +33,7 @@ const VIVAS:Tab[]=['cortes','video','vozes','manual'];
 const adiantar=(t:Tab)=>{ CARGA[t]?.().catch(()=>{}); };
 
 const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'seguir-rosto',servidor:'',servidorToken:'',servidorCanal:'',geminiKey:'',ia:''};
-const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['video','Manual',Sparkles],['ia','Com IA',Wand2],['manual','Montagem',Film],['automatico','Automático',CalendarRange],['projetos','Meus projetos',FolderOpen],
+const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['video','Animado no navegador',Sparkles],['ia','Criar com IA',Wand2],['manual','Montagem manual',Film],['automatico','Vários de uma vez',CalendarRange],['projetos','Meus projetos',FolderOpen],
   ['vozes','Estúdio de vozes',Mic],['galeria','Estilos de animação',Palette],['templates','Templates',LayoutTemplate],['estilos','Legendas e efeitos',Captions],
   ['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['agente','Agentes',Bot],['fila','Fila e aprovações',ListChecks],['revisar','Revisar vídeo',CheckCircle2],
   ['agendar','Agenda e contas',CalendarClock],['config','Ajustes',Gear]];
@@ -41,18 +41,18 @@ const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['video','Manu
 type AreaNav={id:string;nome:string;curto:string;Icon:typeof Home;abas:Tab[];extras?:[Tab,string][]};
 const AREAS_NAV:AreaNav[] = [
   {id:'inicio',nome:'Início',curto:'Início',Icon:Home,abas:['inicio']},
-  {id:'criar',nome:'Criar vídeos',curto:'Criar',Icon:Clapperboard,abas:['video','ia','manual','automatico','projetos','vozes','galeria','templates','estilos']},
+  {id:'criar',nome:'Criar vídeos',curto:'Criar',Icon:Clapperboard,abas:['ia','automatico','video','manual','projetos','vozes','galeria','templates','estilos']},
   {id:'radar',nome:'Radar e cortes',curto:'Radar',Icon:Search,abas:['radar','cortes','agente']},
   {id:'fila',nome:'Fila e aprovações',curto:'Fila',Icon:ListChecks,abas:['fila','revisar']},
   {id:'posts',nome:'Publicações',curto:'Posts',Icon:Send,abas:['agendar','agente'],extras:[['agente','Agente de postagem']]},
 ];
 /** Os quatro modos de criar ficam juntos no topo da área Criar. */
-const MODOS:Tab[]=['video','ia','manual','automatico'];
+const MODOS:Tab[]=['ia','automatico','video','manual'];
 const OCULTAS:Tab[]=['revisar'];
 const areaDe=(t:Tab,pref='')=>AREAS_NAV.find(a=>a.id===pref&&a.abas.includes(t))||AREAS_NAV.find(a=>a.abas.includes(t))||AREAS_NAV[0];
 const lerRota=():[Tab,string]=>{ const [h,...r]=decodeURIComponent(location.hash.slice(1)).split('/'); return NAV.some(n=>n[0]===h)?[h as Tab,r.join('/')]:['inicio','']; };
 const TITLES:Record<Tab,[string,string]> = {
-  inicio:['Bem-vindo ao EstúdioClip','Descubra vídeos em alta, transforme vídeos longos em cortes curtos e exporte com legenda, tudo no navegador.'],
+  inicio:['Bem-vindo ao EstúdioClip','Escreva um assunto e o celular faz o vídeo. Daqui você também acompanha o que está pronto para aprovar.'],
   radar:['Descubra vídeos em alta','Pesquise qualquer nicho no YouTube e encontre canais e vídeos com muitas visualizações.'],
   cortes:['Transforme vídeos em cortes','Envie um vídeo seu (ou autorizado), escolha a duração e receba os melhores trechos com nota.'],
   vozes:['Estúdio de vozes','Crie personagens, teste e compare vozes do Gemini, aplique no roteiro e baixe o áudio pronto para o vídeo.'],
@@ -63,10 +63,10 @@ const TITLES:Record<Tab,[string,string]> = {
   estilos:['Legendas e efeitos','Escolha o visual padrão das legendas e o efeito aplicado nos cortes.'],
   templates:['Templates','Modelos de vídeo usados na edição manual e pelos agentes: composição, legenda, tarjas, marca e exportação.'],
   config:['Ajustes','Servidor do celular, aparelhos conectados, chaves, e-mail, backups e tutorial.'],
-  ia:['Criar com IA','Tema → roteiro → storyboard → estilo → produção no servidor do celular. Você revisa antes e aprova no fim.'],
-  automatico:['Automático (Agente 3)','O Agente 3 produz vídeos originais no servidor do celular, com o navegador fechado: agora, mais tarde, em data marcada ou em rotina.'],
+  ia:['Criar com IA','Escreva o assunto e o celular faz o vídeo. Se preferir, veja e edite o roteiro antes.'],
+  automatico:['Vários vídeos de uma vez','O celular faz vários vídeos sozinho: agora, em data marcada ou todo dia na hora que você escolher.'],
   projetos:['Meus projetos','Tudo o que está salvo no servidor do celular, com versões. Daqui você também envia os dados deste navegador.'],
-  galeria:['Estilos de animação','Os 16 estilos com a situação real de cada um. Os operacionais renderizam no servidor do celular.'],
+  galeria:['Estilos de animação','Veja como fica cada visual antes de escolher. Os marcados como prontos já funcionam no celular.'],
   fila:['Fila e aprovações','O que o servidor está fazendo, o que vem depois e os vídeos esperando a sua decisão.'],
   revisar:['Revisar vídeo','Assista, confira e decida: aprovar, pedir correção ou rejeitar.'],
 };

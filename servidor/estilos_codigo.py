@@ -23,7 +23,7 @@ import icones
 import motor3d
 import raster
 
-VERSAO_MOTOR = 7
+VERSAO_MOTOR = 8
 FONTE = Path(__file__).parent / 'fontes' / 'Inter-Bold.otf'
 FPS = 30
 
@@ -304,7 +304,7 @@ def _acento(cor: str) -> str:
     return '#ffd23f' if (0.299 * r + 0.587 * g + 0.114 * b) > 120 else '#d62839'
 
 
-def legenda_ass(texto: str, dur: float, W: int, H: int, cor: str, borda: str, caixa: bool, arq: Path, tamanho: float = 0.05, y_rel: float = 0.86):
+def legenda_ass(texto: str, dur: float, W: int, H: int, cor: str, borda: str, caixa: bool, arq: Path, tamanho: float = 0.056, y_rel: float = 0.86):
     """Legenda grande com a palavra falada acesa (karaokê) e uma entrada com leve 'pop'. O tempo de cada palavra
     é proporcional ao tamanho dela dentro da fala da cena."""
     pal = texto.split()
@@ -317,15 +317,17 @@ def legenda_ass(texto: str, dur: float, W: int, H: int, cor: str, borda: str, ca
             atual = []
     if atual:
         blocos.append(atual)
-    total = sum(sum(len(w) + 1 for w in b) for b in blocos) or 1
-    t = 0.15
+    def peso_p(w):
+        return len(w) + 1 + (4 if w.endswith(('.', '!', '?', ':')) else 2 if w.endswith((',', ';')) else 0)
+    total = sum(sum(peso_p(w) for w in b) for b in blocos) or 1
+    t = 0.04
     eventos = []
     for b in blocos:
-        peso = sum(len(w) + 1 for w in b)
-        d = max(0.6, (dur - 0.3) * peso / total)
+        peso = sum(peso_p(w) for w in b)
+        d = max(0.5, (dur - 0.32) * peso / total)
         partes = []
         for w in b:
-            cs = max(8, int(round(d * 100 * (len(w) + 1) / peso)))
+            cs = max(6, int(round(d * 100 * peso_p(w) / peso)))
             partes.append('{\\k%d}%s' % (cs, w.replace('{', '(').replace('}', ')')))
         txt = '{\\fscx88\\fscy88\\t(0,140,\\fscx100\\fscy100)}' + ' '.join(partes)
         eventos.append(f'Dialogue: 0,{_ass_t(t)},{_ass_t(min(dur, t + d))},L,,0,0,0,,{txt}')
@@ -457,8 +459,8 @@ def _layout(W, H):
     v = H > W
     return {
         'v': v, 'margem': int(W * 0.08),
-        'titulo_y': int(H * (0.12 if v else 0.08)), 'titulo_tam': int(W * (0.075 if v else 0.042)),
-        'painel': (int(W * 0.08), int(H * 0.27), int(W * 0.84), int(H * 0.35)) if v else (int(W * 0.52), int(H * 0.22), int(W * 0.42), int(H * 0.56)),
+        'titulo_y': int(H * (0.085 if v else 0.08)), 'titulo_tam': int(W * (0.082 if v else 0.042)),
+        'painel': (int(W * 0.06), int(H * 0.235), int(W * 0.88), int(H * 0.43)) if v else (int(W * 0.52), int(H * 0.22), int(W * 0.42), int(H * 0.56)),
         'texto_larg': int(W * 0.84) if v else int(W * 0.42),
     }
 
@@ -548,7 +550,7 @@ def montar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, imagem
 
 def _y_dest(L, H):
     x, y, w, h = L['painel']
-    return y + h + int(L['titulo_tam'] * 1.1) if L['v'] else int(H * 0.82)
+    return y + h + int(L['titulo_tam'] * 0.75) if L['v'] else int(H * 0.82)
 
 
 def _imagem_painel(c, imagem, L, cena, borda=''):

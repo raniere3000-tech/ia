@@ -3,6 +3,7 @@ import { CheckCircle2, XCircle, Pencil, Loader2, AlertTriangle, Mail, ArrowLeft,
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/Servidor2';
+import { Etapas } from '../components/Prontidao';
 import { lerRevisao, aprovar, pedirCorrecao, rejeitar, aprovarRoteiro, reenviarEmail, urlServidor, duracaoTexto, horaTexto, type Render, type Cena, type Briefing } from '../lib/api';
 
 const REDES:[string,string][]=[['youtube','YouTube'],['instagram','Instagram'],['facebook','Facebook'],['tiktok','TikTok'],['kwai','Kwai (manual)']];
@@ -32,7 +33,9 @@ export default function Revisar(){
    <button className="link-btn" onClick={()=>go('fila')}><ArrowLeft size={14}/> Fila e aprovações</button>
    <section className="panel">
     <div className="section-head"><h2>{p.titulo} <span className="tag">{r.ref}</span> <span className={'tag '+(esperandoVideo?'warn':p.status==='failed'?'bad':['approved','queued_to_publish','posted'].includes(p.status)?'ok':'')}>{st}</span> <HelpButton topic="aprovacao"/></h2></div>
-    {r.job&&!['concluido','cancelado'].includes(r.job.status)&&<p className="hint">{r.job.etapa}{r.job.status==='rodando'&&` • ${Math.round(r.job.progresso)}%`}</p>}
+    {!['failed','cancelled','paused'].includes(p.status)&&<Etapas status={p.status} detalhe={r.job&&!['concluido','cancelado'].includes(r.job.status)?(p.status==='waiting_brief_approval'?'Esperando você aprovar':r.job.status==='rodando'?`${r.job.etapa} • ${Math.round(r.job.progresso)}%`:r.job.etapa):undefined}/>}
+    {!render&&!esperandoRoteiro&&!['failed','cancelled','rejected'].includes(p.status)&&<p className="hint">O celular está trabalhando. Pode fechar esta tela: quando o vídeo ficar pronto ele aparece aqui e em Fila e aprovações{' '}(e chega um e-mail, se estiver configurado).</p>}
+    {p.status==='failed'&&<div className="row-gap left"><button className="primary sm" onClick={()=>go('fila')}>Abrir a fila para tentar de novo</button></div>}
     {d.producao?.erro&&p.status==='failed'&&<p className="hint bad"><AlertTriangle size={14}/> {d.producao.erro}</p>}
     {render&&<div className="rev-video">
      {r.links.video?<video src={urlServidor(cfg,r.links.preview||r.links.video)} controls playsInline preload="metadata" poster={r.links.thumb?urlServidor(cfg,r.links.thumb):undefined} className={render.altura>render.largura?'vertical':''}/>:<p className="hint">Prévia indisponível.</p>}
@@ -40,14 +43,14 @@ export default function Revisar(){
       <p><b>Versão {render.versao}</b> • {Math.round(render.duracao)} s • {render.largura}x{render.altura} • {render.codec} • {(render.tamanho/1048576).toFixed(1)} MB</p>
       <p className="hint">Conferido automaticamente: abre, tem imagem e som, tamanho e duração certos, quadros do começo, meio e fim.</p>
       {render.avisos.length>0&&<ul className="avisos">{render.avisos.map(a=><li key={a}><AlertTriangle size={13}/> {a}</li>)}</ul>}
-      <p className="hint mono">Impressão digital: {render.sha.slice(0,16)}…</p>
-      {r.links.video&&<a className="subtle sm" href={urlServidor(cfg,r.links.video)+'&baixar=1'} download><Film size={14}/> Baixar o vídeo final</a>}
+            {r.links.video&&<a className="subtle sm" href={urlServidor(cfg,r.links.video)+'&baixar=1'} download><Film size={14}/> Baixar o vídeo final</a>}
      </div>
     </div>}
    </section>
 
    {esperandoVideo&&render&&<section className="panel decisao">
     <div className="section-head"><h2>Sua decisão</h2></div>
+    <p className="subtitle">Assista ao vídeo acima. Gostou? Toque em Aprovar. Quer mudar algo? Escreva o que mudar e toque em Pedir correção. Nada é publicado antes de você aprovar.</p>
     <div className="field-label">Publicar em</div>
     <div className="chips">{REDES.map(([id,nome])=><button key={id} className={'chip '+(destinos.includes(id)?'on':'')} onClick={()=>setRedes(destinos.includes(id)?destinos.filter(x=>x!==id):[...destinos,id])}>{nome}</button>)}</div>
     {r.contas.faltam.length>0&&redes===null&&<p className="hint warn">Falta conectar: {r.contas.faltam.join(', ')}. Conecte em Publicações ou tire da lista.</p>}
@@ -70,10 +73,10 @@ export default function Revisar(){
    </section>}
 
    {esperandoRoteiro&&<section className="panel decisao">
-    <div className="section-head"><h2>Aprovar o roteiro e o storyboard <HelpButton topic="storyboard"/></h2></div>
-    <p className="subtitle">No modo assistido, o vídeo só começa a ser produzido depois que você aprova o roteiro. Para editar as cenas, abra em Criar &gt; Com IA.</p>
+    <div className="section-head"><h2>Aprovar o roteiro <HelpButton topic="storyboard"/></h2></div>
+    <p className="subtitle">Leia as cenas abaixo. Se estiver bom, toque em Aprovar e o celular começa a fazer o vídeo. Se quiser mexer, edite as cenas ou peça uma correção.</p>
     <div className="row-gap left">
-     <button className="primary" disabled={!!busy} onClick={()=>fazer('rot',()=>aprovarRoteiro(cfg,pid,p.revisao),'Roteiro aprovado. A produção continua no servidor.')}><CheckCircle2 size={15}/> Aprovar e produzir</button>
+     <button className="primary" disabled={!!busy} onClick={()=>fazer('rot',()=>aprovarRoteiro(cfg,pid,p.revisao),'Roteiro aprovado. A produção continua no servidor.')}><CheckCircle2 size={15}/> Aprovar e fazer o vídeo</button>
      <button className="subtle" onClick={()=>go('ia',pid,'criar')}><Pencil size={15}/> Editar as cenas</button>
     </div>
     <label className="mt">Ou peça uma correção para a IA<textarea rows={2} value={texto} onChange={e=>setTexto(e.target.value)}/></label>
@@ -81,7 +84,7 @@ export default function Revisar(){
    </section>}
 
    <section className="panel">
-    <div className="section-head"><h2>Roteiro e storyboard ({d.cenas?.length||0} cenas)</h2></div>
+    <div className="section-head"><h2>Roteiro ({d.cenas?.length||0} cenas)</h2></div>
     {d.roteiro?.legenda&&<p><b>Legenda:</b> {d.roteiro.legenda} <span className="muted">{d.roteiro.hashtags?.join(' ')}</span></p>}
     <ol className="cenas-lista">{(d.cenas||[]).map(c=><li key={c.id}><b>{c.titulo}</b>{c.bloqueada&&<Lock size={12}/>} {c.destaque&&<span className="tag">{c.destaque}</span>}<p>{c.texto}</p>{c.clipe?.dur?<small className="muted">{c.clipe.dur.toFixed(1)} s</small>:null}</li>)}</ol>
     {d.roteiro?.fontes?.length?<><div className="field-label">Fontes para conferir</div><ul>{d.roteiro.fontes.map(f=><li key={f.url}><a className="help-link" href={f.url} target="_blank" rel="noreferrer">{f.titulo||f.url}</a></li>)}</ul></>:null}

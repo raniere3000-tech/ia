@@ -278,7 +278,7 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     # ---- Agente 3
     if rota == ('GET', '/api/v1/agente3/catalogo'):
         return {'estilos': ec.catalogo(), 'vozes': produtor.VOZES, 'tipos': produtor.TIPOS, 'estados': produtor.ESTADOS,
-                'briefing': produtor.BRIEFING_PADRAO, 'formatos': list(ec.FORMATOS), 'ffmpeg': rd.tem_ffmpeg(),
+                'briefing': produtor.BRIEFING_PADRAO, 'formatos': list(ec.FORMATOS), 'ffmpeg': rd.tem_ffmpeg(), 'requisitos': produtor.requisitos(),
                 'demos': {f'{e["id"]}:{f}': db.kv(f'demo:{e["id"]}:{f}:{ec.VERSAO_MOTOR}') for e in ec.catalogo() for f in ec.FORMATOS
                           if db.kv(f'demo:{e["id"]}:{f}:{ec.VERSAO_MOTOR}')}}
     if rota == ('POST', '/api/v1/agente3/ideias'):

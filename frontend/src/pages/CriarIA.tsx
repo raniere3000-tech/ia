@@ -4,6 +4,7 @@ import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/Servidor2';
 import { GradeEstilos } from './Galeria';
+import { Prontidao, CriarRapido } from '../components/Prontidao';
 import { catalogo, ideias as pedirIdeias, gerarRoteiro, novoVideo, obterProjeto, salvarStoryboard, aprovarRoteiro, type Briefing, type Cena, type Roteiro, type Ideia } from '../lib/api';
 
 const REDES:[string,string][]=[['youtube','YouTube'],['instagram','Instagram'],['facebook','Facebook'],['tiktok','TikTok'],['kwai','Kwai']];
@@ -11,18 +12,21 @@ let seq=0; const novaId=()=>'n'+Date.now().toString(36)+(seq++);
 
 /** Campos do briefing usados também no modo Automático. */
 export function CamposBriefing({b,set,cat}:{b:Partial<Briefing>;set:(p:Partial<Briefing>)=>void;cat:{vozes:string[];tipos:string[]}|null}){
-  return <div className="small-grid">
+  return <><div className="small-grid">
+    <label>Duração final (segundos)<input type="number" min={10} max={600} value={b.duracao_alvo||45} onChange={e=>set({duracao_alvo:+e.target.value})}/></label>
+    <label>Formato<select value={b.formato||'9:16'} onChange={e=>set({formato:e.target.value})}><option value="9:16">Em pé (Shorts, Reels, TikTok)</option><option value="16:9">Deitado (YouTube)</option><option value="1:1">Quadrado (feed)</option></select></label>
+    <label>Voz do narrador<select value={b.voz||'Puck'} onChange={e=>set({voz:e.target.value})}>{[...(cat?.vozes||['Puck']),'nenhuma'].map(v=><option key={v} value={v}>{v==='nenhuma'?'Sem narração':v}</option>)}</select></label>
+    <label>Ritmo da fala<select value={b.ritmo||'agil'} onChange={e=>set({ritmo:e.target.value})}><option value="calmo">Calmo</option><option value="normal">Normal</option><option value="agil">Ágil (bom para vídeo curto)</option><option value="rapido">Rápido</option></select></label>
+    <label>Imagens de cada cena<select value={b.imagens||'nenhuma'} onChange={e=>set({imagens:e.target.value})}><option value="busca">Fotos reais remodeladas no estilo (grátis)</option><option value="nenhuma">Sem fotos (só desenhos do estilo)</option><option value="gemini">Imagem criada por IA em cada cena (tem custo)</option></select></label>
+    <label>Quem confere<select value={b.modo_aprovacao||'assistido'} onChange={e=>set({modo_aprovacao:e.target.value as Briefing['modo_aprovacao']})}><option value="assistido">Aprovo o roteiro e depois o vídeo</option><option value="supervisionado">Aprovo só o vídeo pronto</option></select></label>
+   </div>
+   <details className="mt"><summary>Mais opções (nicho, público, número de cenas, limite de gasto)</summary><div className="small-grid">
     <label>Nicho<input value={b.nicho||''} onChange={e=>set({nicho:e.target.value})} placeholder="Curiosidades, Games, História..."/></label>
     <label>Tipo<select value={b.tipo||'curiosidades'} onChange={e=>set({tipo:e.target.value})}>{(cat?.tipos||['curiosidades']).map(t=><option key={t}>{t}</option>)}</select></label>
     <label>Público<input value={b.publico||''} onChange={e=>set({publico:e.target.value})} placeholder="Ex.: jovens que gostam de ciência"/></label>
-    <label>Duração final (segundos)<input type="number" min={10} max={600} value={b.duracao_alvo||45} onChange={e=>set({duracao_alvo:+e.target.value})}/></label>
-    <label>Formato<select value={b.formato||'9:16'} onChange={e=>set({formato:e.target.value})}><option value="9:16">9:16 (Shorts, Reels, TikTok)</option><option value="16:9">16:9 (YouTube)</option><option value="1:1">1:1 (feed)</option></select></label>
     <label>Cenas<input type="number" min={2} max={30} value={b.cenas_qtd||6} onChange={e=>set({cenas_qtd:+e.target.value})}/></label>
-    <label>Voz do narrador<select value={b.voz||'Puck'} onChange={e=>set({voz:e.target.value})}>{[...(cat?.vozes||['Puck']),'nenhuma'].map(v=><option key={v} value={v}>{v==='nenhuma'?'Sem narração':v}</option>)}</select></label>
-    <label>Imagens de cada cena<select value={b.imagens||'nenhuma'} onChange={e=>set({imagens:e.target.value})}><option value="busca">Fotos reais remodeladas no estilo (grátis)</option><option value="nenhuma">Não (só o estilo por código, sem custo)</option><option value="gemini">Sim, uma por cena (Gemini, tem custo)</option></select></label>
-    <label>Aprovação<select value={b.modo_aprovacao||'assistido'} onChange={e=>set({modo_aprovacao:e.target.value as Briefing['modo_aprovacao']})}><option value="assistido">Assistido: aprovo o roteiro e o vídeo final</option><option value="supervisionado">Supervisionado: aprovo só o vídeo final</option></select></label>
-    <label>Orçamento máximo de IA por vídeo (R$)<input type="number" min={0} step={0.5} value={b.orcamento_max??2} onChange={e=>set({orcamento_max:+e.target.value})}/></label>
-  </div>;
+    <label>Limite de gasto com IA por vídeo (R$)<input type="number" min={0} step={0.5} value={b.orcamento_max??2} onChange={e=>set({orcamento_max:+e.target.value})}/></label>
+   </div></details></>;
 }
 
 export function Destinos({b,set}:{b:Partial<Briefing>;set:(p:Partial<Briefing>)=>void}){
@@ -47,11 +51,11 @@ function EditorCenas({cenas,set}:{cenas:Cena[];set:(c:Cena[])=>void}){
      <button className="icon-btn" onClick={()=>set(cenas.filter((_,k)=>k!==i))} disabled={cenas.length<2} aria-label="Apagar"><Trash2 size={15}/></button>
     </div>
     <div className="sb-campos">
-     <label>Título<input value={c.titulo} onChange={e=>mudar(i,{titulo:e.target.value})} maxLength={70}/></label>
-     <label>Destaque na tela<input value={c.destaque||''} onChange={e=>mudar(i,{destaque:e.target.value})} maxLength={24}/></label>
-     <label className="larga">Texto narrado<textarea rows={2} value={c.texto} onChange={e=>mudar(i,{texto:e.target.value})} maxLength={600}/></label>
+     <label>Título na tela<input value={c.titulo} onChange={e=>mudar(i,{titulo:e.target.value})} maxLength={70}/></label>
+     <label>Palavra em destaque<input value={c.destaque||''} onChange={e=>mudar(i,{destaque:e.target.value})} maxLength={24}/></label>
+     <label className="larga">O que o narrador fala<textarea rows={2} value={c.texto} onChange={e=>mudar(i,{texto:e.target.value})} maxLength={600}/></label>
      <label>Número (opcional)<input type="number" value={c.numero??''} onChange={e=>mudar(i,{numero:e.target.value===''?null:+e.target.value})}/></label>
-     <label>Duração alvo (s, 0 = pela narração)<input type="number" min={0} max={60} value={c.duracao_alvo||0} onChange={e=>mudar(i,{duracao_alvo:+e.target.value})}/></label>
+     <label>Duração em segundos (0 = o tempo da fala)<input type="number" min={0} max={60} value={c.duracao_alvo||0} onChange={e=>mudar(i,{duracao_alvo:+e.target.value})}/></label>
     </div>
   </div>)}
   <button className="subtle" onClick={()=>set([...cenas,{id:novaId(),titulo:'Nova cena',texto:'',destaque:''}])}><Plus size={15}/> Cena</button>
@@ -69,6 +73,7 @@ export default function CriarIA(){
   const [busy,setBusy]=useState('');
   const [quando,setQuando]=useState('');
   const [pid,setPid]=useState(''); const [rev,setRev]=useState(0);
+  const [aberto,setAberto]=useState(false);
   // abrir um projeto existente (vindo da revisão: "Editar as cenas")
   useEffect(()=>{ if(!rotaExtra||!settings.servidor) return; obterProjeto(cfg,rotaExtra).then(p=>{
     const d=p.dados as {briefing:Briefing;cenas:Cena[];roteiro:Roteiro|null};
@@ -86,19 +91,23 @@ export default function CriarIA(){
     toast(agendar?'Agendado no servidor do celular. Acompanhe em Fila e aprovações.':'Produzindo no servidor do celular. Você recebe um e-mail quando ficar pronto.','ok');
     go('revisar',p.id,'fila');
   });
+  const detalhado=aberto||!!pid||!!roteiro;
   return <div className="criar-ia">
-   <section className="panel">
-    <div className="section-head"><h2><Lightbulb size={17}/> 1. Tema e briefing</h2></div>
+   <Prontidao cat={cat.dados}/>
+   {!pid&&!roteiro&&<CriarRapido/>}
+   {!detalhado&&<button className="subtle" onClick={()=>setAberto(true)}><Wand2 size={15}/> Prefiro ver e editar o roteiro, cena por cena, antes de produzir</button>}
+   {detalhado&&<><section className="panel">
+    <div className="section-head"><h2><Lightbulb size={17}/> 1. Assunto do vídeo</h2></div>
     <label>Tema ou ideia<input value={b.tema||''} onChange={e=>set({tema:e.target.value})} placeholder="Ex.: Por que o céu é azul?"/></label>
     <div className="row-gap left mt">
      <button className="subtle" disabled={!!busy} onClick={()=>fazer('ideias',async()=>{ const r=await pedirIdeias(cfg,{...b,quantidade:6}); setIdeias(r.ideias); if(!r.ideias.length) toast('A IA não trouxe ideias. Tente outro nicho.','info'); })}>{busy==='ideias'?<Loader2 size={15} className="spin"/>:<Lightbulb size={15}/>} Sugerir pautas originais</button>
     </div>
     {ideias.length>0&&<div className="ideias">{ideias.map(x=><button key={x.titulo} className={'ideia'+(b.tema===x.titulo?' on':'')} onClick={()=>set({tema:x.titulo})}><b>{x.titulo}</b><small>{x.gancho||x.porque}</small>{x.fontes.length>0&&<small className="muted">{x.fontes.length} fonte(s) para conferir</small>}{!x.fato&&<span className="tag warn">opinião</span>}</button>)}</div>}
-    <details className="mt"><summary>Mais opções do briefing</summary><CamposBriefing b={b} set={set} cat={cat.dados}/></details>
+    <div className="mt"><CamposBriefing b={b} set={set} cat={cat.dados}/></div>
    </section>
 
    <section className="panel">
-    <div className="section-head"><h2><Wand2 size={17}/> 2. Roteiro e storyboard <HelpButton topic="storyboard"/></h2></div>
+    <div className="section-head"><h2><Wand2 size={17}/> 2. Roteiro, cena por cena <HelpButton topic="storyboard"/></h2></div>
     <div className="row-gap left">
      <button className="primary" disabled={!!busy||!b.tema?.trim()} onClick={()=>fazer('rot',async()=>{ const r=await gerarRoteiro(cfg,b); setRoteiro(r); setPid(''); })}>{busy==='rot'?<Loader2 size={15} className="spin"/>:<Wand2 size={15}/>} {roteiro?'Gerar outro roteiro':'Gerar roteiro com IA'}</button>
      <button className="subtle" onClick={()=>setColar(!colar)}><ClipboardPaste size={15}/> Colar meu roteiro</button>
@@ -109,20 +118,21 @@ export default function CriarIA(){
      <div className="small-grid mt"><label>Título<input value={roteiro.titulo} onChange={e=>setRoteiro({...roteiro,titulo:e.target.value})}/></label>
       <label>Legenda do post<input value={roteiro.legenda} onChange={e=>setRoteiro({...roteiro,legenda:e.target.value})}/></label></div>
      {roteiro.fontes?.length>0&&<p className="hint">Fontes para conferir: {roteiro.fontes.map(f=><a key={f.url} className="help-link" href={f.url} target="_blank" rel="noreferrer">{f.titulo||'fonte'} <ExternalLink size={11}/></a>)}</p>}
+     {roteiro.avisos&&roteiro.avisos.length>0&&<ul className="avisos-roteiro">{roteiro.avisos.map(a=><li key={a}>{a}</li>)}</ul>}
      <EditorCenas cenas={roteiro.cenas} set={c=>setRoteiro({...roteiro,cenas:c})}/>
     </>}
    </section>
 
    {roteiro&&<section className="panel">
-    <div className="section-head"><h2>3. Estilo visual <HelpButton topic="estilos3"/></h2><span className="tag ok">{cat.dados?.estilos.find(e=>e.id===b.estilo)?.nome||b.estilo}</span></div>
-    <details><summary>Trocar o estilo (16 estilos com demonstração)</summary><GradeEstilos selecionado={b.estilo} escolher={id=>{ set({estilo:id}); toast('Estilo escolhido.','ok'); }}/></details>
+    <div className="section-head"><h2>3. Visual do vídeo <HelpButton topic="estilos3"/></h2><span className="tag ok">{cat.dados?.estilos.find(e=>e.id===b.estilo)?.nome||b.estilo}</span></div>
+    <details><summary>Trocar o visual (ver os estilos com demonstração)</summary><GradeEstilos selecionado={b.estilo} escolher={id=>{ set({estilo:id}); toast('Estilo escolhido.','ok'); }}/></details>
    </section>}
 
    {roteiro&&<section className="panel">
-    <div className="section-head"><h2>4. Produzir</h2></div>
+    <div className="section-head"><h2>4. Fazer o vídeo</h2></div>
     <Destinos b={b} set={set}/>
     <div className="row-gap left mt">
-     <button className="primary" disabled={!!busy||!cat.dados?.ffmpeg} onClick={()=>produzirAgora(false)}>{busy==='prod'?<Loader2 size={15} className="spin"/>:<Play size={15}/>} Produzir agora no servidor</button>
+     <button className="primary" disabled={!!busy||!cat.dados?.ffmpeg} onClick={()=>produzirAgora(false)}>{busy==='prod'?<Loader2 size={15} className="spin"/>:<Play size={15}/>} Fazer o vídeo agora</button>
      {!pid&&<><input type="datetime-local" value={quando} onChange={e=>setQuando(e.target.value)} aria-label="Data e hora"/>
      <button className="subtle" disabled={!!busy||!quando} onClick={()=>produzirAgora(true)}><CalendarClock size={15}/> Agendar</button></>}
      <button className="subtle" disabled={!!busy} onClick={()=>fazer('rasc',async()=>{ if(pid){ await salvarExistente(); toast('Storyboard salvo no servidor.','ok'); return; } const p=await novoVideo(cfg,{briefing:b,roteiro}); setPid(p.id); setRev(p.revisao); toast('Rascunho salvo em Meus projetos.','ok'); })}><Save size={15}/> Salvar rascunho</button>
@@ -130,5 +140,6 @@ export default function CriarIA(){
     {cat.dados&&!cat.dados.ffmpeg&&<p className="hint bad">O servidor está sem FFmpeg. No Termux: pkg install ffmpeg.</p>}
     <p className="hint">A produção roda no celular com o navegador fechado. Ao terminar, o vídeo passa pela conferência automática, chega um e-mail com o código e ele espera você em Fila e aprovações.</p>
    </section>}
+   </>}
   </div>;
 }
