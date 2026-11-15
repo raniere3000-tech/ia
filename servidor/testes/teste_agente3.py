@@ -55,6 +55,7 @@ ROTEIRO = {'titulo': 'Por que o céu é azul', 'legenda': 'A luz do sol explica.
                      {'titulo': 'A luz', 'texto': 'A luz do sol tem todas as cores.', 'destaque': 'Todas as cores', 'numero': 7, 'unidade': 'cores'},
                      {'titulo': 'O ar', 'texto': 'O ar espalha mais o azul.', 'destaque': 'Espalha o azul'}]}
 PEDIDOS = []
+SEM_FOTOS = False
 
 
 class Gemini(BaseHTTPRequestHandler):
@@ -63,7 +64,9 @@ class Gemini(BaseHTTPRequestHandler):
 
     def do_GET(self):
         # Pexels falso: busca devolve fotos do próprio servidor de teste; /fotoN.jpg serve uma imagem de verdade
-        if self.path.startswith('/v1/search'):
+        if self.path.startswith('/w/api.php') or (self.path.startswith('/v1/search') and SEM_FOTOS):
+            b, tipo = b'{}', 'application/json'
+        elif self.path.startswith('/v1/search'):
             PEDIDOS.append('pexels:' + (self.headers.get('Authorization') or ''))
             r = {'photos': [{'id': 900 + i, 'photographer': f'Fulano {i}', 'url': f'https://www.pexels.com/photo/{900 + i}/',
                              'src': {'large2x': f'http://127.0.0.1:{pg_port}/foto{i}.jpg'}} for i in range(1, 7)]}
@@ -81,7 +84,9 @@ class Gemini(BaseHTTPRequestHandler):
     def do_POST(self):
         corpo = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         PEDIDOS.append(self.path)
-        if 'tts' in self.path:
+        if 'image' in self.path:
+            r = {'candidates': [{'content': {'parts': [{'inlineData': {'mimeType': 'image/jpeg', 'data': base64.b64encode(FOTO.read_bytes()).decode()}}]}}]}
+        elif 'tts' in self.path:
             pcm = b''.join(struct.pack('<h', int(8000 * math.sin(2 * math.pi * 220 * i / 24000))) for i in range(int(24000 * 1.6)))
             r = {'candidates': [{'content': {'parts': [{'inlineData': {'mimeType': 'audio/pcm', 'data': base64.b64encode(pcm).decode()}}]}}]}
         else:
@@ -108,6 +113,7 @@ pg_port = livre()
 threading.Thread(target=ThreadingHTTPServer(('127.0.0.1', pg_port), Gemini).serve_forever, daemon=True).start()
 os.environ['BASE_GEMINI'] = f'http://127.0.0.1:{pg_port}'
 os.environ['BASE_PEXELS'] = f'http://127.0.0.1:{pg_port}'
+os.environ['BASE_WIKI'] = f'http://127.0.0.1:{pg_port}'
 os.environ['PERMITIR_QUALQUER_URL'] = '1'
 
 # ---------------------------------------------------------------- SMTP falso
@@ -334,6 +340,20 @@ confere(all((c.get('imagem') or {}).get('credito', '').startswith('Foto de Fulan
 confere(len({c['imagem']['id'] for c in cf}) == len(cf), 'cenas não repetem a mesma foto')
 confere('pexels:chave-pexels' in PEDIDOS, 'a busca usou a chave do Pexels')
 confere(any('Fotos usadas' in (m.get_body(('plain',)).get_content() if m.get_body(('plain',)) else '') for m in EMAILS), 'e-mail lista os créditos das fotos')
+
+print('Modo misto: IA desenha a cena sem foto')
+SEM_FOTOS = True
+b3 = dict(briefing, tema='Misto', imagens='busca', estilo='documentario', modo_aprovacao='supervisionado', cenas_qtd=3, duracao_alvo=9)
+st, pm, _ = api('POST', '/api/v1/agente3/projetos', {'briefing': b3, 'produzir': True}, SES)
+t = time.time()
+while time.time() - t < 400:
+    rm = api('GET', f'/api/v1/projetos/{pm["id"]}/revisao', None, SES)[1]
+    if rm['projeto']['status'] in ('ready_for_review', 'failed'):
+        break
+    time.sleep(0.5)
+confere(rm['projeto']['status'] == 'ready_for_review', 'vídeo documentário sem fotos achadas ficou pronto')
+confere(all((c.get('imagem') or {}).get('fonte') == 'ia' for c in rm['projeto']['dados']['cenas']), 'cada cena sem foto ganhou imagem da IA')
+SEM_FOTOS = False
 st, _, _ = api('POST', '/agente/chaves', {'pexels': ''}, SES)
 
 print('Estilos 3D')

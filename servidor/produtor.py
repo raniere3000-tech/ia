@@ -96,6 +96,7 @@ def limpar_briefing(d: dict) -> dict:
     de = d.get('destinos') if isinstance(d.get('destinos'), dict) else {}
     b['destinos'] = {'redes': [r for r in de.get('redes', []) if r in ag.REDES], 'quando': de.get('quando') if de.get('quando') in ('proximo', 'agora', 'data') else 'proximo',
                      'data': float(de.get('data') or 0), 'titulo': str(de.get('titulo') or '')[:100], 'legenda': str(de.get('legenda') or '')[:2200]}
+    b['ia_reserva'] = d.get('ia_reserva') is not False      # misto: a IA desenha só as cenas sem foto
     if b['estilo'] == 'documentario' and b['imagens'] == 'nenhuma':
         b['imagens'] = 'busca'          # o estilo documentário é feito de fotos reais
     if not ec.utilizavel(b['estilo'], b['imagens'] == 'gemini'):
@@ -613,6 +614,28 @@ def creditos(dados: dict) -> list:
     return out
 
 
+def _desenhar_reserva(ctx, pid, i, c, b, pasta, estilo):
+    """Modo misto: a busca não achou foto para esta cena, então a IA faz uma imagem só para ela.
+    Se não houver chave, saldo ou o gerador falhar, a cena segue e usa a foto da cena vizinha."""
+    foto = estilo['id'] == 'documentario'
+    prompt = ((f'Fotografia realista, vertical, luz natural, alta qualidade, como foto de banco de imagens. ' if foto else
+               f'Ilustração original no estilo "{estilo["nome"]}" ({estilo["tecnica"]}). ') +
+              f'Mostra: {c.get("visual") or c.get("busca") or c.get("titulo")}. Assunto do vídeo: {b.get("tema") or ""}. '
+              f'Cenário: {c.get("cenario") or "-"}.')
+    h = _h('reserva', prompt, MODELO_IMAGEM, b['formato'])
+    arq = pasta / f'{h}.png'
+    try:
+        if not arq.exists():
+            _conferir_orcamento(ctx.id, b, 0.25)
+            gerar_imagem(prompt, arq, b['formato'])
+            _custo(ctx.id, 'gemini', MODELO_IMAGEM, 'imagem', 0.04 * float(ag.config()['orcamento'].get('dolar', 5.5)))
+    except (ErroProdutor, ag.ErroAgente, fila.Esperar) as e:
+        db.evento('agente3', 'ia_reserva_falhou', 'projeto:' + pid, {'cena': c.get('id'), 'motivo': str(e)[:200]})
+        return
+    info = pj.registrar_asset(arq, f'imagem-{c["id"]}.png', 'image/png', pid, 'agente3')['asset']
+    pj.mudar_dados(pid, lambda d, _p, i=i: d['cenas'][i].update(imagem={'h': h, 'arquivo': str(arq), 'asset': info['id'], 'fonte': 'ia'}))
+
+
 def etapa_visual(ctx, pid, p, b):
     _status(pid, 'generating_assets')
     cenas = p['dados']['cenas']
@@ -624,6 +647,8 @@ def etapa_visual(ctx, pid, p, b):
             continue        # imagem escolhida pela pessoa: não troca
         if b['imagens'] == 'busca' and not estilo['precisa_imagem']:
             _foto_da_cena(pid, i, c, b, pasta, cenas)
+            if b.get('ia_reserva', True) and not _imagem_da_cena(pj.obter(pid)['dados']['cenas'][i]):
+                _desenhar_reserva(ctx, pid, i, c, b, pasta, estilo)
             continue
         prompt = (f'Ilustração original no estilo "{estilo["nome"]}" ({estilo["tecnica"]}). Cena: {c.get("visual") or c.get("titulo")}. '
                   f'Cenário: {c.get("cenario") or "-"}. Personagem: {c.get("personagem") or "nenhum"}, {c.get("emocao") or ""}. '
