@@ -65,7 +65,7 @@ function EditorCenas({cenas,set}:{cenas:Cena[];set:(c:Cena[])=>void}){
 export default function CriarIA(){
   const {settings,toast,go,rotaExtra}=useApp(); const cfg=useCfg();
   const cat=useServidor(catalogo);
-  const [b,setB]=useState<Partial<Briefing>>({tema:'',nicho:'Curiosidades',tipo:'curiosidades',duracao_alvo:45,formato:'9:16',cenas_qtd:6,voz:'Puck',imagens:'busca',modo_aprovacao:'assistido',estilo:'vetor_chapado',destinos:{redes:[],quando:'proximo'}});
+  const [b,setB]=useState<Partial<Briefing>>({tema:'',nicho:'Curiosidades',tipo:'curiosidades',duracao_alvo:45,formato:'9:16',cenas_qtd:6,voz:'Puck',imagens:'busca',modo_aprovacao:'assistido',estilo:'documentario',destinos:{redes:[],quando:'proximo'}});
   const set=(p:Partial<Briefing>)=>setB(x=>({...x,...p}));
   const [ideias,setIdeias]=useState<Ideia[]>([]);
   const [roteiro,setRoteiro]=useState<Roteiro|null>(null);

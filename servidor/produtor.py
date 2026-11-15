@@ -51,7 +51,7 @@ ESTADOS = {
 BRIEFING_PADRAO = {
     'tema': '', 'nicho': 'Curiosidades', 'publico': '', 'objetivo': '', 'idioma': 'pt-BR', 'tipo': 'curiosidades',
     'descricao': '', 'origem': 'manual', 'referencias': '', 'duracao_alvo': 45, 'formato': '9:16', 'cenas_qtd': 6,
-    'estilo': 'vetor_chapado', 'paleta': [], 'voz': 'Puck', 'ritmo': 'agil', 'trilha': '', 'imagens': 'nenhuma',
+    'estilo': 'documentario', 'paleta': [], 'voz': 'Puck', 'ritmo': 'agil', 'trilha': '', 'imagens': 'nenhuma',
     'modo_aprovacao': 'assistido', 'prioridade': 0, 'orcamento_max': 2.0, 'max_tentativas': 3,
     'destinos': {'redes': [], 'quando': 'proximo', 'titulo': '', 'legenda': ''}, 'temas': [],
 }
@@ -96,6 +96,8 @@ def limpar_briefing(d: dict) -> dict:
     de = d.get('destinos') if isinstance(d.get('destinos'), dict) else {}
     b['destinos'] = {'redes': [r for r in de.get('redes', []) if r in ag.REDES], 'quando': de.get('quando') if de.get('quando') in ('proximo', 'agora', 'data') else 'proximo',
                      'data': float(de.get('data') or 0), 'titulo': str(de.get('titulo') or '')[:100], 'legenda': str(de.get('legenda') or '')[:2200]}
+    if b['estilo'] == 'documentario' and b['imagens'] == 'nenhuma':
+        b['imagens'] = 'busca'          # o estilo documentário é feito de fotos reais
     if not ec.utilizavel(b['estilo'], b['imagens'] == 'gemini'):
         raise ErroProdutor(f'O estilo "{ec.estilo(b["estilo"])["nome"]}" ainda não roda no servidor ({ec.estilo(b["estilo"])["descricao"]}). Escolha outro.', True)
     return b
@@ -653,6 +655,18 @@ def _imagem_da_cena(c: dict) -> Path | None:
     return None
 
 
+def _foto_emprestada(cenas: list, i: int):
+    """Cena sem foto própria no estilo documentário: usa a foto da cena mais próxima (com outro movimento de câmera),
+    para o vídeo nunca cair num desenho simples no meio."""
+    for dist in range(1, len(cenas)):
+        for j in (i - dist, i + dist):
+            if 0 <= j < len(cenas):
+                img = _imagem_da_cena(cenas[j])
+                if img:
+                    return img
+    return None
+
+
 def etapa_render(ctx, pid, p, b):
     if not rd.tem_ffmpeg():
         raise ErroProdutor('Falta o FFmpeg no servidor (Termux: pkg install ffmpeg).', True)
@@ -668,6 +682,8 @@ def etapa_render(ctx, pid, p, b):
         dur = _dur_cena(c)
         eid = c.get('estilo') or b['estilo']
         img = _imagem_da_cena(c)
+        if not img and eid == 'documentario':
+            img = _foto_emprestada(cenas, i)
         if not ec.utilizavel(eid, bool(img)):
             eid = b['estilo'] if ec.utilizavel(b['estilo'], bool(img)) else 'vetor_chapado'
         audio = Path(c['audio']['arquivo']) if (c.get('audio') or {}).get('arquivo') and Path(c['audio']['arquivo']).exists() else None

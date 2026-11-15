@@ -23,12 +23,15 @@ import icones
 import motor3d
 import raster
 
-VERSAO_MOTOR = 8
+VERSAO_MOTOR = 9
 FONTE = Path(__file__).parent / 'fontes' / 'Inter-Bold.otf'
 FPS = 30
 
 ESTILOS = [
     # id, nome, técnica, status, prioridade, descrição, paleta
+    ('documentario', 'Documentário (fotos reais)', 'Foto em tela cheia com movimento de câmera, título forte e legenda grande', 'operacional', 'prioritária',
+     'O visual dos canais de curiosidades: uma foto real ocupando a tela em cada cena, câmera que se move devagar, '
+     'título no alto e legenda grande palavra por palavra. Melhor com a chave grátis do Pexels.', ['#0b0b0f', '#ffd23f', '#ffffff']),
     ('cinema3d', '3D de cinema', 'Objetos e câmera 3D com luz e material', 'indisponivel', 'avançada',
      'Precisa de um motor 3D. Ainda não há um que rode de forma estável no Termux; fica para depois de um teste no aparelho.', ['#0b0f1a', '#f2b544', '#e8eef9']),
     ('brinquedo_blocos', 'Blocos de brinquedo', 'Blocos modulares 3D articulados', 'indisponivel', 'avançada',
@@ -383,6 +386,17 @@ def _linha_giz(pasta, w, cor):
     return _peca(pasta, f'giz_{cor.strip("#")}_{w}', d), (w, 28)
 
 
+def _degrade(pasta, alfa_max: int, para_baixo: bool):
+    """Faixa preta que vai do transparente ao escuro (o FFmpeg estica para a largura da tela)."""
+    def d():
+        t = raster.Tela(4, 128)
+        for y in range(128):
+            k = y / 127 if para_baixo else 1 - y / 127
+            t.retangulo(0, y, 4, y + 1, (0, 0, 0, int(alfa_max * k ** 1.6)))
+        return t
+    return _peca(pasta, f'degrade_{alfa_max}_{int(para_baixo)}', d)
+
+
 def _reticula(pasta, cor):
     def d():
         t = raster.Tela(120, 120)
@@ -505,6 +519,8 @@ def _filtro_estilo(eid: str, w: int, h: int, pal: tuple) -> str | None:
     if eid == 'pixel_art':
         return (f'[0:v]scale={w // 8}:{h // 8}:force_original_aspect_ratio=increase:flags=area,crop={w // 8}:{h // 8},setsar=1,split[a][b];'
                 f'[a]palettegen=max_colors=14:stats_mode=single[p];[b][p]paletteuse=dither=bayer:bayer_scale=3,scale={w}:{h}:flags=neighbor[o]')
+    if eid == 'documentario':
+        return f'[0:v]{pre},eq=saturation=1.12:contrast=1.07:brightness=-0.02,unsharp=5:5:0.6,vignette=PI/4.5[o]'
     if eid == 'parallax_25d':
         return f'[0:v]{pre},eq=saturation=1.25:contrast=1.08,vignette=PI/5[o]'
     return None
@@ -534,7 +550,7 @@ def montar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, imagem
     p0, p1, p2 = (paleta or e['paleta'])[:3] if len(paleta or e['paleta']) >= 3 else e['paleta']
     L = _layout(W, H)
     if imagem and e['id'] != 'cartoon2d':
-        pw, ph = L['painel'][2], L['painel'][3]
+        pw, ph = (W, H) if e['id'] == 'documentario' else (L['painel'][2], L['painel'][3])
         imagem = estilizar(e['id'], imagem, pasta, pw, ph, (p0, p1, p2))
     c = Comp(W, H, dur, pasta)
     titulo = cena.get('titulo') or ''
@@ -544,7 +560,8 @@ def montar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, imagem
     fn = globals()['_e_' + e['id']]
     leg_cor, leg_borda, leg_caixa = fn(c, cena, L, W, H, dur, pasta, imagem, (p0, p1, p2), titulo, destaque, m, tam)
     if cena.get('texto'):
-        c.legenda(legenda_ass(cena['texto'], dur, W, H, leg_cor, leg_borda, leg_caixa, pasta / 'legenda.ass'))
+        extra = {'tamanho': 0.064, 'y_rel': 0.80 if H > W else 0.88} if e['id'] == 'documentario' else {}
+        c.legenda(legenda_ass(cena['texto'], dur, W, H, leg_cor, leg_borda, leg_caixa, pasta / 'legenda.ass', **extra))
     return c.comando(audio, saida)
 
 
@@ -810,6 +827,45 @@ def _e_parallax_25d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque,
     if destaque:
         c.texto(destaque, '(w-text_w)/2', f'{_y_dest(L, H)}', tam, p1, ini=0.8, sombra=5)
     return '#ffffff', '#000000', True
+
+
+def _linhas_centro(c, linhas, y0, tam, cor, **kw):
+    """Cada linha centralizada sozinha (o drawtext alinha o bloco pela esquerda)."""
+    for k, ln in enumerate(linhas):
+        c.texto(ln, '(w-text_w)/2', f'{y0 + int(k * tam * 1.18)}', tam, cor, **kw)
+
+
+def _e_documentario(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    """Foto em tela cheia com movimento lento, escurecida no alto e embaixo para o texto aparecer, título forte e
+    a palavra de destaque numa tarja amarela. Sem foto: fundo escuro em movimento com o título grande no meio (nunca ícone)."""
+    p0, p1, p2 = pal
+    v = H > W
+    if imagem:
+        c.fundo(p0)
+        c.imagem(imagem, 0, 0, W, H, cena.get('camera') or 'aproximar', 0)
+    else:
+        c.fundo(p0, ('#1a1a2e', '#3a2a5e'))
+    c.png(_degrade(pasta, 200, False), '0', '0', 0, 0, (W, int(H * (0.34 if v else 0.30))))
+    c.png(_degrade(pasta, 235, True), '0', f'{H - int(H * (0.46 if v else 0.40))}', 0, 0, (W, int(H * (0.46 if v else 0.40))))
+    tt = int(W * (0.088 if v else 0.05))
+    ln = quebrar(titulo.upper() if len(titulo) <= 42 else titulo, W - 2 * m, tt)[:3]
+    if imagem:
+        _linhas_centro(c, ln, int(H * (0.075 if v else 0.07)), tt, '#ffffff', ini=0.15, fade=0.3, borda=max(4, W // 200), cor_borda='#000000', sombra=4)
+        if destaque:
+            td = int(tt * 0.62)
+            c.texto(destaque.upper(), '(w-text_w)/2', f"{int(H * (0.075 if v else 0.07)) + int(tt * 1.18 * len(ln)) + int(td * 0.6)}", td, '#111111',
+                    ini=0.7, fade=0.2, caixa=f'0x{p1.lstrip("#")}@0.97')
+    else:
+        # sem foto, o título vira o centro da cena, grande, com a tarja de destaque embaixo
+        tg = int(W * (0.11 if v else 0.06))
+        lg = quebrar(titulo.upper(), W - 2 * m, tg)[:4]
+        y0 = int(H * 0.36) - len(lg) * int(tg * 0.6)
+        _linhas_centro(c, lg, y0, tg, '#ffffff', ini=0.15, fade=0.35, borda=max(4, W // 200), cor_borda='#000000', sombra=5)
+        if destaque:
+            td = int(tg * 0.55)
+            c.texto(destaque.upper(), '(w-text_w)/2', f'{y0 + int(tg * 1.18 * len(lg)) + td}', td, '#111111', ini=0.7, fade=0.2,
+                    caixa=f'0x{p1.lstrip("#")}@0.97')
+    return '#ffffff', '#000000', False
 
 
 def _e_cartoon2d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):

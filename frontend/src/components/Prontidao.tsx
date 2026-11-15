@@ -14,7 +14,7 @@ export function Prontidao({cat}:{cat:Catalogo|null}){
     {ok:r.ffmpeg,t:'FFmpeg no celular',d:'É ele que monta o vídeo. No Termux: pkg install -y ffmpeg',obrig:true,btn:'Ver diagnóstico',ir:()=>go('config')},
     {ok:r.gemini,t:'Chave do Gemini no servidor',d:'A IA escreve o roteiro e narra com ela. É grátis.',obrig:true,btn:'Colar a chave',ir:()=>go('agente','avisos','radar')},
     {ok:r.email,t:'E-mail de avisos',d:'Para receber o vídeo pronto e aprovar respondendo o e-mail.',obrig:false,btn:'Configurar e-mail',ir:()=>go('agente','avisos','radar')},
-    {ok:r.pexels,t:'Chave do Pexels (fotos)',d:'Fotos reais melhores em cada cena. Grátis. Sem ela, o servidor usa só fotos de domínio público.',obrig:false,btn:'Colar a chave',ir:()=>go('agente','avisos','radar')},
+    {ok:r.pexels,t:'Chave do Pexels (fotos)',d:'Deixa o vídeo bem mais bonito: uma foto boa em cada cena. Grátis. Sem ela, o servidor acha bem menos fotos.',obrig:false,btn:'Colar a chave',ir:()=>go('agente','avisos','radar')},
   ];
   const faltam=itens.filter(i=>!i.ok);
   if(!faltam.length) return null;
@@ -35,8 +35,10 @@ export function CriarRapido({compacto=false}:{compacto?:boolean}){
   const {toast,go}=useApp(); const cfg=useCfg();
   const cat=useServidor(catalogo);
   const [tema,setTema]=useState('');
-  const [op,setOp]=useState<Rapido>(()=>({estilo:'vetor_chapado',duracao:45,voz:'Puck',conferir:false,...store.json<Partial<Rapido>>('studio_criar_rapido',{})}));
-  const mudar=(p:Partial<Rapido>)=>setOp(o=>{ const n={...o,...p}; store.setJson('studio_criar_rapido',n); return n; });
+  const [op,setOp]=useState<Rapido>(()=>{ const g=store.json<Partial<Rapido>&{v?:number}>('studio_criar_rapido',{});
+    // versão 2: o visual padrão passou a ser o documentário com fotos reais (o antigo ficava com cara de desenho simples)
+    return {duracao:45,voz:'Puck',conferir:false,...g,estilo:g.v===2&&g.estilo?g.estilo:'documentario'}; });
+  const mudar=(p:Partial<Rapido>)=>setOp(o=>{ const n={...o,...p}; store.setJson('studio_criar_rapido',{...n,v:2}); return n; });
   const [ideias,setIdeias]=useState<Ideia[]>([]);
   const [busy,setBusy]=useState('');
   const r=cat.dados?.requisitos;
@@ -62,7 +64,7 @@ export function CriarRapido({compacto=false}:{compacto?:boolean}){
      <div className="field-label">Duração</div>
      <div className="chips">{DURACOES.map(([s,n])=><button key={s} className={'chip '+(op.duracao===s?'on':'')} onClick={()=>mudar({duracao:s})}>{n}</button>)}</div>
      <div className="small-grid mt">
-      <label>Visual<select value={op.estilo} onChange={e=>mudar({estilo:e.target.value})}>{(estilos.length?estilos:[{id:op.estilo,nome:'Vetor chapado',status:'operacional'}]).map(e=><option key={e.id} value={e.id}>{e.nome}{e.status==='beta'?' (em teste)':''}</option>)}</select></label>
+      <label>Visual<select value={op.estilo} onChange={e=>mudar({estilo:e.target.value})}>{(estilos.length?estilos:[{id:op.estilo,nome:'Documentário (fotos reais)',status:'operacional'}]).map(e=><option key={e.id} value={e.id}>{e.nome}{e.status==='beta'?' (em teste)':''}</option>)}</select></label>
       <label>Voz<select value={op.voz} onChange={e=>mudar({voz:e.target.value})}>{(cat.dados?.vozes||['Puck']).map(v=><option key={v}>{v}</option>)}</select></label>
      </div>
      <label className="check mt"><input type="checkbox" checked={op.conferir} onChange={e=>mudar({conferir:e.target.checked})}/> Quero ler e aprovar o roteiro antes de o vídeo ser feito</label>

@@ -1,4 +1,4 @@
-"""Busca de fotos para as cenas (Pexels com chave grátis; sem chave, Wikimedia Commons só com domínio público/CC0).
+"""Busca de fotos para as cenas (Pexels com chave grátis; sem chave, Wikimedia Commons só com domínio público, CC0 ou CC BY com crédito).
 
 A foto é só matéria-prima: o estilo da cena a remodela (estilos_codigo.estilizar). Só baixa de endereços que a própria
 API devolveu e só de domínios conhecidos. O crédito de cada foto fica guardado para aparecer no e-mail do vídeo.
@@ -80,7 +80,9 @@ def _wikimedia(consulta: str, pular: set) -> list:
         ii = (pg.get('imageinfo') or [{}])[0]
         meta = ii.get('extmetadata') or {}
         lic = re.sub(r'\s+', ' ', str((meta.get('LicenseShortName') or {}).get('value') or '')).lower()
-        if not any(lic == k or lic.startswith(k) for k in LICENCAS_LIVRES):
+        livre = any(lic == k or lic.startswith(k) for k in LICENCAS_LIVRES)
+        so_credito = re.fullmatch(r'cc[ -]by( \d\.\d)?', lic) is not None      # CC BY: pode usar dando o crédito (que vai no e-mail e na legenda)
+        if not (livre or so_credito):
             continue
         if ii.get('mime') not in ('image/jpeg', 'image/png') or (ii.get('width') or 0) < 800:
             continue
