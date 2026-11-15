@@ -118,7 +118,7 @@ export default function Agente(){
   const {settings,toast,go}=useApp();
   const [v,setV]=useState<VisaoAgente|null>(null); const [erro,setErro]=useState(''); const [parte,setParte]=useState<Parte>('cortes');
   const [link,setLink]=useState(''); const [canalLink,setCanalLink]=useState(''); const [canalMotivo,setCanalMotivo]=useState('');
-  const [chaves,setChaves]=useState({gemini:'',youtube:'',email_senha:''}); const [hora,setHora]=useState('18:00'); const [diasSel,setDiasSel]=useState<number[]>([0,1,2,3,4,5]);
+  const [chaves,setChaves]=useState({gemini:'',youtube:'',email_senha:'',pexels:''}); const [hora,setHora]=useState('18:00'); const [diasSel,setDiasSel]=useState<number[]>([0,1,2,3,4,5]);
   const vivo=useRef(true);
   useEffect(()=>{ vivo.current=true; return ()=>{ vivo.current=false; }; },[]);
   const carregar=useCallback(()=>{ if(!settings.servidor) return; verAgente(settings).then(x=>{ if(vivo.current){ setV(x); setErro(''); } }).catch(e=>{ if(vivo.current) setErro(e.message); }); },[settings]);
@@ -143,7 +143,7 @@ export default function Agente(){
   if(!em.para||!em.de||!v.chaves.email_senha) faltas.push('O e-mail de avisos não está completo (parte Avisos e chaves).');
   const variar=(k:string)=>{ const tem=co.variar.includes(k); if(!tem&&co.variar.length>=3){ toast('Escolha no máximo 3 elementos para variar.','erro'); return; } salvar({cortes:{variar:tem?co.variar.filter(x=>x!==k):[...co.variar,k]}}); };
   const addFaixas=()=>{ if(!/^\d\d:\d\d$/.test(hora)||!diasSel.length) return; salvar({postagem:{faixas:[...po.faixas,...diasSel.map(d=>({dia:d,hora}))]}}); };
-  const guardarChaves=(k:Partial<typeof chaves>)=>run(async()=>{ const r=await salvarChaves(settings,k); setChaves({gemini:'',youtube:'',email_senha:''}); return r; },'Guardado no servidor.');
+  const guardarChaves=(k:Partial<typeof chaves>)=>run(async()=>{ const r=await salvarChaves(settings,k); setChaves({gemini:'',youtube:'',email_senha:'',pexels:''}); return r; },'Guardado no servidor.');
 
   return <div className="agente">
     <section className="panel ag-topo">
@@ -322,10 +322,11 @@ export default function Agente(){
         <p className="hint tight">Os agentes trabalham com o aplicativo fechado, então as chaves precisam ficar no servidor. Elas não voltam para esta tela.</p>
         <div className="ag-grade">
           <label>Chave do Gemini {v.chaves.gemini&&<span className="tag ok">guardada</span>}<input type="password" autoComplete="off" value={chaves.gemini} onChange={e=>setChaves(s=>({...s,gemini:e.target.value}))} placeholder={v.chaves.gemini?'Digite só para trocar':'Cole a chave'}/></label>
+          <label>Chave do Pexels (fotos grátis para os vídeos) {v.chaves.pexels&&<span className="tag ok">guardada</span>}<input type="password" autoComplete="off" value={chaves.pexels} onChange={e=>setChaves(s=>({...s,pexels:e.target.value}))} placeholder={v.chaves.pexels?'Digite só para trocar':'Opcional: pexels.com/api, é grátis'}/></label>
           <label>Chave do YouTube {v.chaves.youtube&&<span className="tag ok">guardada</span>}<input type="password" autoComplete="off" value={chaves.youtube} onChange={e=>setChaves(s=>({...s,youtube:e.target.value}))} placeholder={v.chaves.youtube?'Digite só para trocar':'Cole a chave'}/></label>
         </div>
         <div className="row-gap left mt">
-          <button className="primary sm" disabled={!chaves.gemini.trim()&&!chaves.youtube.trim()} onClick={()=>guardarChaves({...(chaves.gemini.trim()?{gemini:chaves.gemini.trim()}:{}),...(chaves.youtube.trim()?{youtube:chaves.youtube.trim()}:{})})}><KeyRound size={14}/> Guardar no servidor</button>
+          <button className="primary sm" disabled={!chaves.gemini.trim()&&!chaves.youtube.trim()&&!chaves.pexels.trim()} onClick={()=>guardarChaves({...(chaves.pexels.trim()?{pexels:chaves.pexels.trim()}:{}),...(chaves.gemini.trim()?{gemini:chaves.gemini.trim()}:{}),...(chaves.youtube.trim()?{youtube:chaves.youtube.trim()}:{})})}><KeyRound size={14}/> Guardar no servidor</button>
           {(settings.geminiKey||settings.ytKey)&&<button className="subtle sm" onClick={()=>guardarChaves({...(settings.geminiKey?{gemini:settings.geminiKey}:{}),...(settings.ytKey?{youtube:settings.ytKey}:{})})}>Usar as chaves já salvas neste aparelho</button>}
         </div>
       </section>

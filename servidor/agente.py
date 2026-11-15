@@ -167,7 +167,7 @@ def salvar_config(novo: dict) -> dict:
 def segredos() -> dict:
     with LOCK:
         s = cofre.ler_json(ARQ_SEG, {})
-        return {k: str(s.get(k, '')) for k in ('gemini', 'youtube', 'email_senha')}
+        return {k: str(s.get(k, '')) for k in ('gemini', 'youtube', 'email_senha', 'pexels')}
 
 
 def salvar_segredos(novo: dict):
@@ -1436,7 +1436,7 @@ def ver() -> dict:
     c, s, e = config(), segredos(), estado()
     mo.biblioteca(c['cortes']['template'])
     return {
-        'config': c, 'chaves': {'gemini': bool(s['gemini']), 'youtube': bool(s['youtube']), 'email_senha': bool(s['email_senha'])},
+        'config': c, 'chaves': {'gemini': bool(s['gemini']), 'youtube': bool(s['youtube']), 'email_senha': bool(s['email_senha']), 'pexels': bool(s['pexels'])},
         'canais': sorted(e['canais'], key=lambda x: ({'aprovado': 0, 'sugerido': 1, 'recusado': 2}.get(x['status'], 3), -x.get('media', 0))),
         'cortes': [dict({k: v for k, v in x.items() if k != 'chave'}, conferencia=conferir(x, e) if x['status'] == 'pronto' else None)
                    for x in sorted(e['cortes'], key=lambda x: -x['criado'])][:80],

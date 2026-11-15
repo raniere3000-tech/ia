@@ -25,6 +25,7 @@ import agente as ag
 import banco as db
 import estilos_codigo as ec
 import fila
+import imagens as im
 import projetos as pj
 import renderizador as rd
 
@@ -73,7 +74,7 @@ def limpar_briefing(d: dict) -> dict:
         raise ErroProdutor('Números do briefing inválidos.')
     b['estilo'] = d.get('estilo') if d.get('estilo') in [e[0] for e in ec.ESTILOS] else 'vetor_chapado'
     b['voz'] = d.get('voz') if d.get('voz') in VOZES + ['nenhuma'] else 'Puck'
-    b['imagens'] = d.get('imagens') if d.get('imagens') in ('nenhuma', 'gemini') else 'nenhuma'
+    b['imagens'] = d.get('imagens') if d.get('imagens') in ('nenhuma', 'gemini', 'busca') else 'nenhuma'
     b['modo_aprovacao'] = d.get('modo_aprovacao') if d.get('modo_aprovacao') in ('assistido', 'supervisionado') else 'assistido'
     b['trilha'] = re.sub(r'[^a-f0-9]', '', str(d.get('trilha') or ''))[:16]
     b['paleta'] = [c for c in (d.get('paleta') or []) if re.fullmatch(r'#[0-9a-fA-F]{6}', str(c))][:3]
@@ -145,12 +146,12 @@ def _prompt_roteiro(b: dict, ideia: str, extra: str = '') -> str:
             'Cada cena tem: texto (a narração falada, frases curtas, máximo ~2,6 palavras por segundo da cena), titulo (até 6 palavras na tela), '
             'destaque (1 a 3 palavras), numero (só se a cena tiver um número importante, senão null), unidade (ex.: "%", "anos", "km" ou ""), '
             'elementos (até 4 itens {rotulo, valor de 0 a 100} quando fizer sentido comparar, senão []), camera (parado|aproximar|afastar|panoramica), '
-            'personagem, emocao, cenario, visual (descrição da imagem da cena), movimento, enquadramento, duracao_alvo (segundos). '
+            'personagem, emocao, cenario, visual (descrição da imagem da cena), busca (2 a 4 palavras EM INGLÊS para procurar uma foto real que ilustre a cena, ex.: "blue sky clouds"), movimento, enquadramento, duracao_alvo (segundos). '
             'A primeira cena é o gancho. Se for história/ciência/documentário, liste fontes confiáveis para conferir e não invente dados; '
             'quando não tiver certeza, deixe claro no texto. Não use marcas, personagens ou músicas de terceiros. '
             f'{extra}Responda só JSON: {{"titulo":"","alternativas":["",""],"gancho":"","publico":"","legenda":"","hashtags":[""],'
             '"fontes":[{"titulo":"","url":""}],"cenas":[{"texto":"","titulo":"","destaque":"","numero":null,"unidade":"","elementos":[],'
-            '"camera":"parado","personagem":"","emocao":"","cenario":"","visual":"","movimento":"","enquadramento":"","duracao_alvo":6}]}')
+            '"camera":"parado","personagem":"","emocao":"","cenario":"","visual":"","busca":"","movimento":"","enquadramento":"","duracao_alvo":6}]}')
 
 
 def validar_roteiro(j: dict, b: dict) -> dict:
@@ -459,8 +460,41 @@ def etapa_narracao(ctx, pid, p, b):
         fila.medir('narracao', time.time() - t0)
         info = pj.registrar_asset(arq, f'narracao-{c["id"]}.wav', 'audio/wav', pid, 'agente3')['asset']
         pj.mudar_dados(pid, lambda d, _p, i=i: d['cenas'][i].update(audio={'h': h, 'arquivo': str(arq), 'asset': info['id'], 'dur': round(dur, 3)}))
-    precisa = b['imagens'] == 'gemini' or ec.estilo(b['estilo'])['precisa_imagem']
+    precisa = b['imagens'] in ('gemini', 'busca') or ec.estilo(b['estilo'])['precisa_imagem']
     return {'proxima': True, 'recurso': 'leve' if precisa else 'pesado', 'etapa': 'Imagens' if precisa else 'Render'}
+
+
+def _foto_da_cena(pid, i, c, b, pasta, cenas):
+    """Busca uma foto real para a cena (Pexels ou Wikimedia). O estilo a remodela no render. Se não achar, a cena segue sem foto."""
+    consulta = c.get('busca') or ' '.join((c.get('destaque') or c.get('titulo') or '').split()[:4])
+    h = _h('busca', consulta, b['formato'])
+    atual = c.get('imagem') or {}
+    if atual.get('h') == h and Path(atual.get('arquivo', '')).exists():
+        return
+    atuais = pj.obter(pid)['dados'].get('cenas') or cenas          # relê: as fotos das cenas anteriores acabaram de ser gravadas
+    usadas = {str((x.get('imagem') or {}).get('id')) for j, x in enumerate(atuais) if j != i and (x.get('imagem') or {}).get('id')}
+    t0 = time.time()
+    try:
+        foto = im.buscar(consulta, b['formato'], pasta, ag.segredos().get('pexels', ''), usadas)
+    except im.SemFoto as e:
+        db.evento('agente3', 'foto_nao_achada', 'projeto:' + pid, {'cena': c.get('id'), 'consulta': consulta, 'motivo': str(e)[:200]})
+        pj.mudar_dados(pid, lambda d, _p, i=i: d['cenas'][i].pop('imagem', None))
+        return
+    fila.medir('visual', time.time() - t0)
+    arq = Path(foto['arquivo'])
+    info = pj.registrar_asset(arq, f'foto-{c["id"]}.jpg', 'image/jpeg', pid, 'agente3')['asset']
+    pj.mudar_dados(pid, lambda d, _p, i=i: d['cenas'][i].update(imagem={'h': h, 'arquivo': str(arq), 'asset': info['id'], 'id': foto['id'], 'fonte': foto['fonte'],
+                                                                         'credito': foto['credito'], 'link': foto['link']}))
+
+
+def creditos(dados: dict) -> list:
+    """Créditos das fotos usadas (sem repetir), para o e-mail e para a legenda."""
+    out = []
+    for c in dados.get('cenas') or []:
+        cr = (c.get('imagem') or {}).get('credito')
+        if cr and cr not in out:
+            out.append(cr)
+    return out
 
 
 def etapa_visual(ctx, pid, p, b):
@@ -472,6 +506,9 @@ def etapa_visual(ctx, pid, p, b):
         ctx.progresso(35 + 15 * i / max(1, len(cenas)), f'Imagem da cena {i + 1} de {len(cenas)}')
         if (c.get('imagem') or {}).get('manual'):
             continue        # imagem escolhida pela pessoa: não troca
+        if b['imagens'] == 'busca' and not estilo['precisa_imagem']:
+            _foto_da_cena(pid, i, c, b, pasta, cenas)
+            continue
         prompt = (f'Ilustração original no estilo "{estilo["nome"]}" ({estilo["tecnica"]}). Cena: {c.get("visual") or c.get("titulo")}. '
                   f'Cenário: {c.get("cenario") or "-"}. Personagem: {c.get("personagem") or "nenhum"}, {c.get("emocao") or ""}. '
                   f'Enquadramento: {c.get("enquadramento") or "plano médio"}.')
@@ -699,7 +736,7 @@ def estimar(job: dict) -> tuple[float, bool]:
         elif e == 'narracao' and b['voz'] != 'nenhuma':
             s, m = fila.media('narracao')
             total += s * sum(1 for c in cenas if not c or not c.get('audio'))
-        elif e == 'visual' and (b['imagens'] == 'gemini' or ec.estilo(b['estilo'])['precisa_imagem']):
+        elif e == 'visual' and (b['imagens'] in ('gemini', 'busca') or ec.estilo(b['estilo'])['precisa_imagem']):
             s, m = fila.media('visual')
             total += s * sum(1 for c in cenas if not c or not c.get('imagem'))
         elif e == 'render':

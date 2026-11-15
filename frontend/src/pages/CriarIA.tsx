@@ -19,7 +19,7 @@ export function CamposBriefing({b,set,cat}:{b:Partial<Briefing>;set:(p:Partial<B
     <label>Formato<select value={b.formato||'9:16'} onChange={e=>set({formato:e.target.value})}><option value="9:16">9:16 (Shorts, Reels, TikTok)</option><option value="16:9">16:9 (YouTube)</option><option value="1:1">1:1 (feed)</option></select></label>
     <label>Cenas<input type="number" min={2} max={30} value={b.cenas_qtd||6} onChange={e=>set({cenas_qtd:+e.target.value})}/></label>
     <label>Voz do narrador<select value={b.voz||'Puck'} onChange={e=>set({voz:e.target.value})}>{[...(cat?.vozes||['Puck']),'nenhuma'].map(v=><option key={v} value={v}>{v==='nenhuma'?'Sem narração':v}</option>)}</select></label>
-    <label>Imagens por IA<select value={b.imagens||'nenhuma'} onChange={e=>set({imagens:e.target.value})}><option value="nenhuma">Não (só o estilo por código, sem custo)</option><option value="gemini">Sim, uma por cena (Gemini, tem custo)</option></select></label>
+    <label>Imagens de cada cena<select value={b.imagens||'nenhuma'} onChange={e=>set({imagens:e.target.value})}><option value="busca">Fotos reais remodeladas no estilo (grátis)</option><option value="nenhuma">Não (só o estilo por código, sem custo)</option><option value="gemini">Sim, uma por cena (Gemini, tem custo)</option></select></label>
     <label>Aprovação<select value={b.modo_aprovacao||'assistido'} onChange={e=>set({modo_aprovacao:e.target.value as Briefing['modo_aprovacao']})}><option value="assistido">Assistido: aprovo o roteiro e o vídeo final</option><option value="supervisionado">Supervisionado: aprovo só o vídeo final</option></select></label>
     <label>Orçamento máximo de IA por vídeo (R$)<input type="number" min={0} step={0.5} value={b.orcamento_max??2} onChange={e=>set({orcamento_max:+e.target.value})}/></label>
   </div>;
@@ -61,7 +61,7 @@ function EditorCenas({cenas,set}:{cenas:Cena[];set:(c:Cena[])=>void}){
 export default function CriarIA(){
   const {settings,toast,go,rotaExtra}=useApp(); const cfg=useCfg();
   const cat=useServidor(catalogo);
-  const [b,setB]=useState<Partial<Briefing>>({tema:'',nicho:'Curiosidades',tipo:'curiosidades',duracao_alvo:45,formato:'9:16',cenas_qtd:6,voz:'Puck',imagens:'nenhuma',modo_aprovacao:'assistido',estilo:'vetor_chapado',destinos:{redes:[],quando:'proximo'}});
+  const [b,setB]=useState<Partial<Briefing>>({tema:'',nicho:'Curiosidades',tipo:'curiosidades',duracao_alvo:45,formato:'9:16',cenas_qtd:6,voz:'Puck',imagens:'busca',modo_aprovacao:'assistido',estilo:'vetor_chapado',destinos:{redes:[],quando:'proximo'}});
   const set=(p:Partial<Briefing>)=>setB(x=>({...x,...p}));
   const [ideias,setIdeias]=useState<Ideia[]>([]);
   const [roteiro,setRoteiro]=useState<Roteiro|null>(null);

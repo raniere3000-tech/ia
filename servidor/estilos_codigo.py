@@ -19,10 +19,11 @@ import re
 import textwrap
 from pathlib import Path
 
+import icones
 import motor3d
 import raster
 
-VERSAO_MOTOR = 4
+VERSAO_MOTOR = 7
 FONTE = Path(__file__).parent / 'fontes' / 'Inter-Bold.otf'
 FPS = 30
 
@@ -130,6 +131,7 @@ def validar_cena(c: dict, i: int = 0) -> dict:
         'elementos': els,
         'camera': c.get('camera') if c.get('camera') in CAMERAS else 'parado',
         'personagem': _txt(c.get('personagem'), 40), 'emocao': _txt(c.get('emocao'), 30),
+        'busca': _txt(c.get('busca'), 60),
         'cenario': _txt(c.get('cenario'), 160), 'visual': _txt(c.get('visual') or c.get('prompt_visual'), 400),
         'movimento': _txt(c.get('movimento'), 160), 'enquadramento': _txt(c.get('enquadramento'), 60),
         'duracao_alvo': max(0.0, min(60.0, dur)),
@@ -296,27 +298,41 @@ def _ass_cor(h: str, a: int = 0) -> str:
     return f'&H{a:02X}{h[4:6]}{h[2:4]}{h[0:2]}'.upper()
 
 
-def legenda_ass(texto: str, dur: float, W: int, H: int, cor: str, borda: str, caixa: bool, arq: Path, tamanho: float = 0.042, y_rel: float = 0.86):
+def _acento(cor: str) -> str:
+    """Cor da palavra que está sendo falada: amarelo sobre texto claro, vermelho sobre texto escuro."""
+    r, g, b = raster.cor(cor)[:3]
+    return '#ffd23f' if (0.299 * r + 0.587 * g + 0.114 * b) > 120 else '#d62839'
+
+
+def legenda_ass(texto: str, dur: float, W: int, H: int, cor: str, borda: str, caixa: bool, arq: Path, tamanho: float = 0.05, y_rel: float = 0.86):
+    """Legenda grande com a palavra falada acesa (karaokê) e uma entrada com leve 'pop'. O tempo de cada palavra
+    é proporcional ao tamanho dela dentro da fala da cena."""
     pal = texto.split()
-    tam = int(min(W, H) * tamanho * (1.35 if H > W else 1.0))
+    tam = int(min(W, H) * tamanho * (1.45 if H > W else 1.0))
     blocos, atual = [], []
     for p in pal:
         atual.append(p)
-        if len(' '.join(atual)) > (26 if H > W else 42) or p.endswith(('.', '!', '?')):
-            blocos.append(' '.join(atual))
+        if len(' '.join(atual)) > (20 if H > W else 36) or p.endswith(('.', '!', '?')):
+            blocos.append(atual)
             atual = []
     if atual:
-        blocos.append(' '.join(atual))
-    total = sum(len(b) for b in blocos) or 1
+        blocos.append(atual)
+    total = sum(sum(len(w) + 1 for w in b) for b in blocos) or 1
     t = 0.15
     eventos = []
     for b in blocos:
-        d = max(0.6, (dur - 0.3) * len(b) / total)
-        eventos.append(f'Dialogue: 0,{_ass_t(t)},{_ass_t(min(dur, t + d))},L,,0,0,0,,{b.replace("{", "(").replace("}", ")")}')
+        peso = sum(len(w) + 1 for w in b)
+        d = max(0.6, (dur - 0.3) * peso / total)
+        partes = []
+        for w in b:
+            cs = max(8, int(round(d * 100 * (len(w) + 1) / peso)))
+            partes.append('{\\k%d}%s' % (cs, w.replace('{', '(').replace('}', ')')))
+        txt = '{\\fscx88\\fscy88\\t(0,140,\\fscx100\\fscy100)}' + ' '.join(partes)
+        eventos.append(f'Dialogue: 0,{_ass_t(t)},{_ass_t(min(dur, t + d))},L,,0,0,0,,{txt}')
         t += d
     margem = int(H * (1 - y_rel))
-    estilo_ln = (f'Style: L,Inter,{tam},{_ass_cor(cor)},{_ass_cor(cor)},{_ass_cor(borda)},{_ass_cor("#000000", 0x60)},-1,0,0,0,100,100,0,0,'
-                 f'{3 if caixa else 1},{max(2, tam // 12)},0,2,{int(W * 0.07)},{int(W * 0.07)},{margem},1')
+    estilo_ln = (f'Style: L,Inter,{tam},{_ass_cor(_acento(cor))},{_ass_cor(cor)},{_ass_cor(borda)},{_ass_cor("#000000", 0x60)},-1,0,0,0,100,100,0,0,'
+                 f'{3 if caixa else 1},{max(3, tam // 11)},0,2,{int(W * 0.06)},{int(W * 0.06)},{margem},1')
     arq.write_text('[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\nWrapStyle: 0\n\n[V4+ Styles]\n'
                    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, '
                    'ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n%s\n\n[Events]\n'
@@ -447,6 +463,67 @@ def _layout(W, H):
     }
 
 
+# ---------------------------------------------------------------- foto -> estilo (remodela a imagem para ficar no estilo da cena)
+def _duotone(bg: str, fg: str) -> str:
+    """Mapa de duas cores: preto vira bg e branco vira fg (a luminosidade da imagem vira o desenho)."""
+    b, f = raster.cor(bg)[:3], raster.cor(fg)[:3]
+    return 'lutrgb=' + ':'.join(f"{k}='clip({b[i]}+val*({f[i] - b[i]})/255,0,255)'" for i, k in enumerate(('r', 'g', 'b')))
+
+
+def _posterizar(n: int) -> str:
+    q = 256 // n
+    return 'lutrgb=' + ':'.join(f"{k}='trunc(val/{q})*{q}+{q // 2}'" for k in ('r', 'g', 'b'))
+
+
+_TRACO = 'dilation=threshold0=255:coordinates=255,dilation=threshold0=255:coordinates=255,lutyuv=y=min(255\\,val*3)'
+
+
+def _filtro_estilo(eid: str, w: int, h: int, pal: tuple) -> str | None:
+    p0, p1, p2 = pal
+    pre = f'scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1'
+    if eid == 'vetor_chapado':
+        return f'[0:v]{pre},gblur=sigma=3,eq=saturation=1.5:contrast=1.1,{_posterizar(5)}[o]'
+    if eid == 'quadrinhos':
+        return (f'[0:v]{pre},split[a][b];[a]format=gbrp,gblur=sigma=1.5,eq=saturation=1.7:contrast=1.25,{_posterizar(4)}[c];'
+                f'[b]gblur=sigma=1.2,edgedetect=low=0.08:high=0.22,{_TRACO},negate,format=gbrp[e];[c]format=gbrp[c2];[c2][e]blend=all_mode=multiply,format=rgb24[o]')
+    if eid == 'cartoon2d':
+        return (f'[0:v]{pre},split[a][b];[a]format=gbrp,gblur=sigma=2,eq=saturation=1.4:contrast=1.1,{_posterizar(7)}[c];'
+                f'[b]gblur=sigma=1.5,edgedetect=low=0.1:high=0.25,{_TRACO},negate,format=gbrp[e];[c]format=gbrp[c2];[c2][e]blend=all_mode=multiply,format=rgb24[o]')
+    if eid == 'traco_neon':
+        return (f'[0:v]{pre},gblur=sigma=1.6,edgedetect=low=0.05:high=0.16,{_TRACO},split[a][b];[b]gblur=sigma=7[g];'
+                f'[a][g]blend=all_mode=lighten,eq=brightness=0.05,{_duotone("#05010f", p1)}[o]')
+    if eid == 'lousa_giz':
+        return f'[0:v]{pre},gblur=sigma=2,edgedetect=low=0.04:high=0.14,{_TRACO},noise=alls=18:allf=t,{_duotone(p0, p1)}[o]'
+    if eid == 'quadro_branco':
+        return f'[0:v]{pre},gblur=sigma=2,edgedetect=low=0.04:high=0.14,{_TRACO},{_duotone(p0, p1)}[o]'
+    if eid == 'papel_recortado':
+        return f'[0:v]{pre},gblur=sigma=2.5,eq=saturation=1.25:contrast=1.05,{_posterizar(5)},noise=alls=10:allf=u[o]'
+    if eid == 'motion_graphics':
+        return f'[0:v]{pre},format=gray,eq=contrast=1.35,format=rgb24,{_duotone(p0, p1)}[o]'
+    if eid == 'pixel_art':
+        return (f'[0:v]scale={w // 8}:{h // 8}:force_original_aspect_ratio=increase:flags=area,crop={w // 8}:{h // 8},setsar=1,split[a][b];'
+                f'[a]palettegen=max_colors=14:stats_mode=single[p];[b][p]paletteuse=dither=bayer:bayer_scale=3,scale={w}:{h}:flags=neighbor[o]')
+    if eid == 'parallax_25d':
+        return f'[0:v]{pre},eq=saturation=1.25:contrast=1.08,vignette=PI/5[o]'
+    return None
+
+
+def estilizar(eid: str, imagem: Path | None, pasta: Path, w: int, h: int, pal: tuple) -> Path | None:
+    """Passa a foto pelo visual do estilo (posterizar, contornos, duas cores, pixel...). Sem filtro para o estilo, devolve a foto como veio."""
+    if not imagem:
+        return None
+    graf = _filtro_estilo(eid, w, h, pal)
+    if not graf:
+        return imagem
+    saida = pasta / f'estilizada-{eid}.png'
+    import renderizador
+    try:
+        renderizador.rodar(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', str(imagem), '-filter_complex', graf, '-map', '[o]', '-frames:v', '1', str(saida)], tempo_max=180)
+    except renderizador.ErroRender:
+        return imagem          # se o filtro falhar a cena sai com a foto original, nunca sem imagem
+    return saida
+
+
 def montar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, imagem: Path | None, audio: Path | None, saida: Path, paleta: list | None = None) -> list:
     """Devolve o comando do FFmpeg que faz o clipe desta cena."""
     e = estilo(eid)
@@ -454,6 +531,9 @@ def montar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, imagem
         e = estilo('vetor_chapado')
     p0, p1, p2 = (paleta or e['paleta'])[:3] if len(paleta or e['paleta']) >= 3 else e['paleta']
     L = _layout(W, H)
+    if imagem and e['id'] != 'cartoon2d':
+        pw, ph = L['painel'][2], L['painel'][3]
+        imagem = estilizar(e['id'], imagem, pasta, pw, ph, (p0, p1, p2))
     c = Comp(W, H, dur, pasta)
     titulo = cena.get('titulo') or ''
     destaque = cena.get('destaque') or ''
@@ -497,9 +577,31 @@ def _e_vetor_chapado(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque
     return '#ffffff', '#111111', True
 
 
+def _heroi(c, cena, L, pal, ini):
+    """Cena sem imagem nem barras: um pictograma ligado ao assunto, que entra, flutua e ganha anéis, em vez de um painel vazio."""
+    x, y, w, h = L['painel']
+    lado = int(min(w, h) * 0.9)
+    nome = icones.escolher(f"{cena.get('titulo', '')} {cena.get('destaque', '')} {cena.get('texto', '')}")
+    cor1, cor2 = pal[1], pal[2]
+    arq = c.pasta / f'ico_{nome}_{cor1.strip("#")}_{cor2.strip("#")}.png'
+    if not arq.exists():
+        icones.desenhar(nome, cor1, cor2).salvar(arq)
+    cx, cy = x + w // 2, y + h // 2
+    disco = _circulo(c.pasta, cor2, 120)
+    dl = int(lado * 1.05)
+    c.png(disco, f'{cx - dl // 2}', f'{cy - dl // 2}', ini, 0.4, (dl, dl))      # disco de fundo
+    ponto = _circulo(c.pasta, cor1, 14)
+    for k in range(3):                                                         # três pontos que giram em volta
+        raio = dl * 0.62
+        fase = k * 2.094
+        c.png(ponto, f'{cx - 14}+{raio:.0f}*cos(t*1.6+{fase:.3f})', f'{cy - 14}+{raio * 0.55:.0f}*sin(t*1.6+{fase:.3f})', ini + 0.2, 0.3, (28, 28))
+    c.png(arq, f'{cx - lado // 2}', f'{cy - lado // 2}+{lado * 0.035:.0f}*sin(t*2.4)', ini, 0.35, (lado, lado))
+
+
 def _barras(c, cena, L, W, H, pal, ini):
     els = cena.get('elementos') or []
     if not els:
+        _heroi(c, cena, L, pal, ini)
         return
     x, y, w, h = L['painel']
     n = len(els)
@@ -762,4 +864,4 @@ def demo_cena(eid: str) -> dict:
     """Cena de demonstração igual para todos os estilos (comparar lado a lado)."""
     return validar_cena({'titulo': 'Por que o céu é azul?', 'destaque': 'Luz do sol', 'texto': 'A luz do sol se espalha no ar e o azul se espalha mais.',
                          'numero': 71 if eid == 'motion_graphics' else None, 'unidade': '%',
-                         'elementos': [{'rotulo': 'Azul', 'valor': 90}, {'rotulo': 'Verde', 'valor': 55}, {'rotulo': 'Vermelho', 'valor': 25}]})
+                         'elementos': [{'rotulo': 'Azul', 'valor': 90}, {'rotulo': 'Verde', 'valor': 55}, {'rotulo': 'Vermelho', 'valor': 25}] if eid == 'motion_graphics' else []})

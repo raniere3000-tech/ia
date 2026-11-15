@@ -8,7 +8,7 @@ import { catalogo, produzirLote, rotinas as lerRotinas, criarRotina, mudarRotina
 import { store } from '../lib/store';
 
 const DIAS=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
-const PADRAO:Partial<Briefing>={nicho:'Curiosidades',tipo:'curiosidades',duracao_alvo:45,formato:'9:16',cenas_qtd:6,voz:'Puck',imagens:'nenhuma',modo_aprovacao:'supervisionado',estilo:'vetor_chapado',orcamento_max:2,destinos:{redes:[],quando:'proximo'},temas:[]};
+const PADRAO:Partial<Briefing>={nicho:'Curiosidades',tipo:'curiosidades',duracao_alvo:45,formato:'9:16',cenas_qtd:6,voz:'Puck',imagens:'busca',modo_aprovacao:'supervisionado',estilo:'vetor_chapado',orcamento_max:2,destinos:{redes:[],quando:'proximo'},temas:[]};
 
 export default function Automatico(){
   const {settings,toast,go}=useApp(); const cfg=useCfg();

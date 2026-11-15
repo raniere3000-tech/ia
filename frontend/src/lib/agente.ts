@@ -20,7 +20,7 @@ export type Desempenho = {
   filas:Record<string,{fila:number;postados:number;erros:number;manual:number;ultimo_erro:string}>; canais:Record<string,{n:number;views:number}>; medidos:number; indisponivel:string;
 };
 export type VisaoAgente = {
-  config:ConfigAgente; chaves:{gemini:boolean;youtube:boolean;email_senha:boolean}; canais:Canal[]; cortes:CorteAgente[];
+  config:ConfigAgente; chaves:{gemini:boolean;youtube:boolean;email_senha:boolean;pexels?:boolean}; canais:Canal[]; cortes:CorteAgente[];
   log:{t:number;tipo:string;texto:string}[]; gasto:{reais:number;chamadas:number}; semana:number; horarios:Record<string,{n:number;views:number}>;
   modelos:{id:string;nome:string;layout:string;formato:string}[]; ativos:string[]; desempenho:Desempenho;
   atual:{etapa:string;pct:number;ocupado:boolean}; opcoes:{idiomas:Record<string,string>;paises:Record<string,string>;nichos:string[];proibidos:string[];variacoes:Record<string,string>;motivos:string[]}; ffmpeg:boolean; agora:number;
@@ -43,7 +43,7 @@ async function chamar<T=VisaoAgente>(cfg:Cfg,metodo:string,caminho:string,corpo?
 
 export const verAgente=(c:Cfg)=>chamar(c,'GET','/agente');
 export const salvarAgente=(c:Cfg,parte:Parcial<ConfigAgente>)=>chamar(c,'POST','/agente/config',parte);
-export const salvarChaves=(c:Cfg,chaves:{gemini?:string;youtube?:string;email_senha?:string})=>chamar(c,'POST','/agente/chaves',chaves);
+export const salvarChaves=(c:Cfg,chaves:{gemini?:string;youtube?:string;email_senha?:string;pexels?:string})=>chamar(c,'POST','/agente/chaves',chaves);
 export const acaoCanal=(c:Cfg,d:{acao:'aprovar'|'recusar'|'remover'|'adicionar'|'editar';id?:string;link?:string;motivo?:string;comercial?:boolean|null;restricoes?:string;origem_aut?:string})=>chamar(c,'POST','/agente/canais',d);
 export const rodarAgente=(c:Cfg,oque:'buscar'|'cortar'|'postar'|'link',link?:string)=>chamar<{ok:boolean}>(c,'POST','/agente/rodar',{oque,link});
 /** Você define os pesos de uma rede à mão, ou zera tudo para voltar às chances iguais. */

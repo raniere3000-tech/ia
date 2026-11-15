@@ -15,6 +15,7 @@ import re
 import socket
 import socketserver
 import struct
+import subprocess
 import sys
 import tempfile
 import threading
@@ -60,6 +61,23 @@ class Gemini(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def do_GET(self):
+        # Pexels falso: busca devolve fotos do próprio servidor de teste; /fotoN.jpg serve uma imagem de verdade
+        if self.path.startswith('/v1/search'):
+            PEDIDOS.append('pexels:' + (self.headers.get('Authorization') or ''))
+            r = {'photos': [{'id': 900 + i, 'photographer': f'Fulano {i}', 'url': f'https://www.pexels.com/photo/{900 + i}/',
+                             'src': {'large2x': f'http://127.0.0.1:{pg_port}/foto{i}.jpg'}} for i in range(1, 7)]}
+            b = json.dumps(r).encode()
+            tipo = 'application/json'
+        else:
+            b = FOTO.read_bytes()
+            tipo = 'image/jpeg'
+        self.send_response(200)
+        self.send_header('Content-Type', tipo)
+        self.send_header('Content-Length', str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
     def do_POST(self):
         corpo = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         PEDIDOS.append(self.path)
@@ -84,9 +102,13 @@ def livre():
     return p
 
 
+FOTO = TMP / 'foto.jpg'
+subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=900x1200', '-frames:v', '1', str(FOTO)], check=True)
 pg_port = livre()
 threading.Thread(target=ThreadingHTTPServer(('127.0.0.1', pg_port), Gemini).serve_forever, daemon=True).start()
 os.environ['BASE_GEMINI'] = f'http://127.0.0.1:{pg_port}'
+os.environ['BASE_PEXELS'] = f'http://127.0.0.1:{pg_port}'
+os.environ['PERMITIR_QUALQUER_URL'] = '1'
 
 # ---------------------------------------------------------------- SMTP falso
 EMAILS = []
@@ -295,6 +317,24 @@ pd = api('GET', f'/api/v1/projetos/{rasc["id"]}', None, SES)[1]['dados']
 confere([c['texto'] for c in pd['cenas']] == ['Segunda cena, agora primeiro.', 'Nova.'] and pd['cenas'][0].get('bloqueada'), 'ordem, texto e cena travada guardados')
 st, _, _ = api('POST', f'/api/v1/projetos/{rasc["id"]}/storyboard', {'revisao': sb['revisao'], 'cenas': [{'texto': ''}]}, SES)
 confere(st == 400, 'storyboard vazio recusado')
+
+print('Fotos por cena remodeladas no estilo')
+st, _, _ = api('POST', '/agente/chaves', {'pexels': 'chave-pexels'}, SES)
+b2 = dict(briefing, tema='Fotos', imagens='busca', estilo='quadrinhos', modo_aprovacao='supervisionado', cenas_qtd=3, duracao_alvo=9)
+st, pf, _ = api('POST', '/api/v1/agente3/projetos', {'briefing': b2, 'produzir': True}, SES)
+t = time.time()
+while time.time() - t < 400:
+    rf = api('GET', f'/api/v1/projetos/{pf["id"]}/revisao', None, SES)[1]
+    if rf['projeto']['status'] in ('ready_for_review', 'failed'):
+        break
+    time.sleep(0.5)
+confere(rf['projeto']['status'] == 'ready_for_review', 'vídeo com fotos produzido e pronto para revisão')
+cf = rf['projeto']['dados']['cenas']
+confere(all((c.get('imagem') or {}).get('credito', '').startswith('Foto de Fulano') for c in cf), 'cada cena guardou a foto e o crédito')
+confere(len({c['imagem']['id'] for c in cf}) == len(cf), 'cenas não repetem a mesma foto')
+confere('pexels:chave-pexels' in PEDIDOS, 'a busca usou a chave do Pexels')
+confere(any('Fotos usadas' in (m.get_body(('plain',)).get_content() if m.get_body(('plain',)) else '') for m in EMAILS), 'e-mail lista os créditos das fotos')
+st, _, _ = api('POST', '/agente/chaves', {'pexels': ''}, SES)
 
 print('Estilos 3D')
 import estilos_codigo as ec3  # noqa: E402

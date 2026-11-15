@@ -118,6 +118,11 @@ def enviar_pronto(pid: str, sha: str) -> bool:
     redes = ', '.join(x.capitalize() for x in dest.get('redes') or []) or 'nenhuma rede escolhida (só fica salvo)'
     avisos = '\n'.join('  - ' + a for a in r.get('avisos') or []) or '  - nenhum'
     roteiro = p['dados'].get('roteiro') or {}
+    cred = []
+    for c in p['dados'].get('cenas') or []:
+        x = (c.get('imagem') or {}).get('credito')
+        if x and x not in cred:
+            cred.append(x)
     corpo = (f'O vídeo "{p["titulo"]}" ficou pronto e passou na conferência automática.\n\n'
              f'Duração: {r.get("duracao", 0):.0f} s   Formato: {r.get("largura")}x{r.get("altura")}   Versão: {r.get("versao")}\n'
              f'Estilo: {b.get("estilo")}   Redes: {redes}\n'
@@ -130,7 +135,8 @@ def enviar_pronto(pid: str, sha: str) -> bool:
              f'  CORRIGIR {referencia} {codigo} <o que mudar>\n'
              f'  REJEITAR {referencia} {codigo}\n\n'
              f'O código vale 7 dias, uma vez só, e só para esta versão do vídeo.\n'
-             f'Nada é publicado sem a sua aprovação.')
+             f'Nada é publicado sem a sua aprovação.'
+             + (('\n\nFotos usadas (remodeladas no estilo do vídeo):\n- ' + '\n- '.join(cred)) if cred else ''))
     prev = None
     try:
         aid = (r.get('assets') or {}).get('preview')
