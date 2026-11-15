@@ -262,6 +262,30 @@ def _cobrada(nome: str) -> bool:
 _COTA = re.compile(r'quota|rate limit|resource.?exhausted|spending cap|spend cap|billing', re.I)
 
 
+_OCUPADO = re.compile(r'high demand|overloaded|unavailable|try again later|deadline', re.I)
+ESPERAS_GEMINI = (5, 15, 40)
+
+
+def _pedir_gemini(caminho: str, corpo: dict, chave: str, tempo: int) -> tuple[int, dict]:
+    """Um pedido ao Gemini. Se o Google estiver ocupado (500/502/503/504, "high demand") ou a conexão cair,
+    espera e tenta de novo sozinho algumas vezes antes de desistir."""
+    ultimo: Exception | None = None
+    for i in range(len(ESPERAS_GEMINI) + 1):
+        try:
+            st, _, j = pg.http('POST', f'{URL_GEMINI}/v1beta/models/{caminho}', js=corpo, cab={'x-goog-api-key': chave}, tempo=tempo)
+            ultimo = None
+        except pg.ErroTemporario as e:
+            st, j, ultimo = 0, {}, e
+        ocupado = ultimo is not None or st in (500, 502, 503, 504) or (st >= 400 and st != 429 and _OCUPADO.search(pg._msg(j) or ''))
+        if not ocupado:
+            return st, j
+        if i < len(ESPERAS_GEMINI):
+            time.sleep(ESPERAS_GEMINI[i] + random.random() * 2)
+    if ultimo is not None:
+        raise ErroAgente('Não consegui falar com o Google (a conexão caiu várias vezes). Confira a internet do celular; o agente tenta de novo na próxima rodada.')
+    return st, j
+
+
 def http_gemini(uso: str, caminho: str, corpo: dict, tempo: int = 300) -> tuple[int, dict, str]:
     """Faz o pedido ao Gemini com a chave escolhida para a tarefa. Se ela estiver sem cota ou sem saldo e a reserva
     estiver ligada, tenta a outra. Devolve (status, resposta, nome da chave usada)."""
@@ -274,7 +298,7 @@ def http_gemini(uso: str, caminho: str, corpo: dict, tempo: int = 300) -> tuple[
                 if k + 1 < len(lista):
                     continue
                 raise ErroAgente(f'O teto de R$ {o["teto"]:.2f} da IA neste mês foi atingido. Aumente o teto em Agentes > Avisos e chaves ou espere o mês virar.')
-        st, _, j = pg.http('POST', f'{URL_GEMINI}/v1beta/models/{caminho}', js=corpo, cab={'x-goog-api-key': chave}, tempo=tempo)
+        st, j = _pedir_gemini(caminho, corpo, chave, tempo)
         if st < 300:
             if k:
                 anotar(f'A chave {"grátis" if lista[0][0] == "gratis" else "com saldo"} estava sem cota; usei a outra para "{USOS.get(uso, uso)}".', 'aviso')
@@ -292,6 +316,8 @@ def erro_gemini(st: int, j: dict, nome: str) -> str:
                 '(Monthly spend cap) ou mude esta tarefa para a outra chave em Agentes > Avisos e chaves.')
     if st == 429 or re.search(r'quota|resource.?exhausted', msg, re.I):
         return f'A chave {qual} está sem cota agora (limite por minuto ou por dia do Google). Tento de novo mais tarde, ou mude a tarefa para a outra chave.'
+    if st in (500, 502, 503, 504) or _OCUPADO.search(msg):
+        return 'O Google está com muita procura agora (o servidor da IA está lotado). Tentei de novo algumas vezes; o agente tenta outra vez na próxima rodada.'
     return f'A IA (Gemini, chave {qual}) recusou o pedido: {msg}'
 
 
