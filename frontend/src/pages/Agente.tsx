@@ -6,6 +6,7 @@ import { verAgente, salvarAgente, salvarChaves, acaoCanal, rodarAgente, pararAge
 
 type Parte = 'cortes'|'postagem'|'desempenho'|'avisos'|'fila';
 const num=(n:number)=>n.toLocaleString('pt-BR');
+const tempo=(s:number)=>s<60?`${s} s`:`${Math.floor(s/60)} min${s%60?` e ${s%60} s`:''}`;
 const quando=(ts:number)=>new Date(ts*1000).toLocaleString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
 const ST:Record<string,[string,string]>={pronto:['Pronto','info'],agendado:['Agendado','warn'],postado:['Enviado','ok'],descartado:['Descartado','']};
 
@@ -198,8 +199,8 @@ export default function Agente(){
           <label>País dos canais<select value={co.regiao} onChange={e=>salvar({cortes:{regiao:e.target.value}})}>{Object.entries(v.opcoes.paises||{BR:'Brasil'}).map(([k,t])=><option key={k} value={k}>{t}</option>)}</select></label>
           <label>Média mínima de visualizações na semana<Campo tipo="number" min={0} step={50000} valor={co.min_views} salvar={x=>salvar({cortes:{min_views:+x}})}/></label>
           <label>Vídeos de até quantos dias atrás<Campo tipo="number" min={1} max={90} valor={co.dias_video} salvar={x=>salvar({cortes:{dias_video:+x}})}/></label>
-          <label>Duração do vídeo de origem, mínimo (min)<Campo tipo="number" min={1} valor={co.video_min} salvar={x=>salvar({cortes:{video_min:+x}})}/></label>
-          <label>Duração do vídeo de origem, máximo (min)<Campo tipo="number" min={2} valor={co.video_max} salvar={x=>salvar({cortes:{video_max:+x}})}/></label>
+          <label>Vídeo original: tamanho mínimo, em MINUTOS (não é o corte)<Campo tipo="number" min={1} valor={co.video_min} salvar={x=>salvar({cortes:{video_min:+x}})}/></label>
+          <label>Vídeo original: tamanho máximo, em MINUTOS (não é o corte)<Campo tipo="number" min={2} valor={co.video_max} salvar={x=>salvar({cortes:{video_max:+x}})}/></label>
         </div>
         <p className="hint">O idioma vale para a busca de canais, para a leitura da fala e para a legenda dos cortes. O YouTube trata o idioma como preferência: confira o canal antes de aprovar.</p>
         <Lista titulo="Nunca postar (assuntos e palavras proibidas)" escolhidos={co.proibidos} sugestoes={v.opcoes.proibidos} mudar={l=>salvar({cortes:{proibidos:l}})} placeholder="Outra palavra ou assunto"/>
@@ -209,8 +210,8 @@ export default function Agente(){
         <div className="ag-grade">
           <label>Cortes por semana<Campo tipo="number" min={1} max={21} valor={co.por_semana} salvar={x=>salvar({cortes:{por_semana:+x}})}/></label>
           <label>Cortes por vídeo<Campo tipo="number" min={1} max={6} valor={co.por_video} salvar={x=>salvar({cortes:{por_video:+x}})}/></label>
-          <label>Duração mínima do corte (s)<Campo tipo="number" min={8} valor={co.dur_min} salvar={x=>salvar({cortes:{dur_min:+x}})}/></label>
-          <label>Duração máxima do corte (s)<Campo tipo="number" min={15} valor={co.dur_max} salvar={x=>salvar({cortes:{dur_max:+x}})}/></label>
+          <label>Cada corte dura no mínimo (em SEGUNDOS){' '}<small className="muted">= {tempo(co.dur_min)}</small><Campo tipo="number" min={10} max={175} valor={co.dur_min} salvar={x=>salvar({cortes:{dur_min:+x}})}/></label>
+          <label>Cada corte dura no máximo (em SEGUNDOS){' '}<small className="muted">= {tempo(co.dur_max)}</small><Campo tipo="number" min={15} max={180} valor={co.dur_max} salvar={x=>salvar({cortes:{dur_max:+x}})}/></label>
           <label>Pontuação mínima (0 a 99)<Campo tipo="number" min={0} max={99} valor={co.nota_min} salvar={x=>salvar({cortes:{nota_min:+x}})}/></label>
           <label>Trabalhar das (hora)<Campo tipo="number" min={0} max={23} valor={co.hora_ini} salvar={x=>salvar({cortes:{hora_ini:+x}})}/></label>
           <label>até as (hora)<Campo tipo="number" min={1} max={24} valor={co.hora_fim} salvar={x=>salvar({cortes:{hora_fim:+x}})}/></label>
