@@ -19,9 +19,10 @@ import re
 import textwrap
 from pathlib import Path
 
+import motor3d
 import raster
 
-VERSAO_MOTOR = 3
+VERSAO_MOTOR = 4
 FONTE = Path(__file__).parent / 'fontes' / 'Inter-Bold.otf'
 FPS = 30
 
@@ -69,6 +70,13 @@ def catalogo() -> list:
     out = []
     for e in ESTILOS:
         d = dict(zip(CAMPOS, e))
+        if d['id'] in motor3d.ESTILOS_3D:
+            if motor3d.disponivel():
+                d['status'] = 'beta'
+                d['descricao'] = ('Fundo 3D em loop de 4 s (desenhado por software, sem placa de vídeo), com o texto por cima. '
+                                  'Lento: o primeiro uso de cada formato leva cerca de 30 s; depois fica guardado. Cenas de até 30 s.')
+            else:
+                d['descricao'] = 'Precisa do numpy no Termux: pkg install python-numpy'
         d['servidor'] = d['status'] != 'indisponivel'
         d['formatos'] = list(FORMATOS) if d['servidor'] else []
         d['custo'] = 'Só o processamento do celular' if d['id'] != 'cartoon2d' else 'Uma imagem de IA por cena (custo do Gemini)'
@@ -166,6 +174,12 @@ class Comp:
             i = self.entrada(['-f', 'lavfi', '-i', f'color=c=0x{c}:s={self.W}x{self.H}:r={FPS}:d={self.dur:.3f}'])
         self.v = f'[{i}:v]'
         self.filtro('format=yuv420p')
+
+    def fundo_video(self, arq: Path):
+        """Fundo vindo de um vídeo em loop (usado pelos estilos 3D)."""
+        i = self.entrada(['-stream_loop', '-1', '-i', str(arq)])
+        self.v = f'[{i}:v]'
+        self.filtro(f'scale={self.W}:{self.H},setsar=1,fps={FPS},format=yuv420p')
 
     def filtro(self, expr: str):
         r = self._rot()
@@ -702,6 +716,41 @@ def _e_cartoon2d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m,
     ln = quebrar(titulo, W - 2 * m, tam)
     c.texto('\n'.join(ln), '(w-text_w)/2', f"{L['titulo_y']}", tam, '#ffffff', ini=0.3, borda=max(5, W // 180), cor_borda=p2)
     return '#ffffff', '#000000', True
+
+
+def _e_3d(eid, c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    p0, p1, p2 = pal
+    c.fundo_video(motor3d.caminho(eid, W, H, list(pal)))
+    ln = quebrar(titulo, W - 2 * m, tam)
+    c.texto('\n'.join(ln), '(w-text_w)/2', f"{L['titulo_y']}", tam, '#ffffff', ini=0.2, borda=max(5, W // 180), cor_borda='#000000', sombra=3)
+    if destaque:
+        c.texto(destaque.upper(), '(w-text_w)/2', f'{_y_dest(L, H)}', tam * 0.9, p1 if eid != 'brinquedo_blocos' else p0, ini=0.8, borda=max(4, W // 220), cor_borda='#000000')
+    return '#ffffff', '#000000', True
+
+
+def _e_cinema3d(*a):
+    return _e_3d('cinema3d', *a)
+
+
+def _e_brinquedo_blocos(*a):
+    return _e_3d('brinquedo_blocos', *a)
+
+
+def _e_plastico3d(*a):
+    return _e_3d('plastico3d', *a)
+
+
+def _e_retro3d_2000(*a):
+    return _e_3d('retro3d_2000', *a)
+
+
+def preparar(eid: str, W: int, H: int, dur: float, paleta: list | None, cancelado=None, progresso=None):
+    """Passo prévio dos estilos que precisam de um arquivo pronto (3D). Os outros não fazem nada."""
+    if eid in motor3d.ESTILOS_3D and utilizavel(eid):
+        if dur > 30.5:
+            raise ValueError('Os estilos 3D aceitam cenas de até 30 s. Divida a cena em duas.')
+        pal = (paleta or estilo(eid)['paleta'])
+        motor3d.gerar_loop(eid, W, H, list(pal)[:3] if len(pal) >= 3 else estilo(eid)['paleta'], cancelado, progresso)
 
 
 def chave_cena(eid: str, cena: dict, W: int, H: int, dur: float, audio_sha: str, imagem_sha: str, paleta) -> str:

@@ -98,7 +98,8 @@ def job_demo(ctx):
     shutil.rmtree(pasta, ignore_errors=True)
     pasta.mkdir(parents=True)
     saida = pasta / 'demo.mp4'
-    ctx.progresso(10, 'Desenhando as peças')
+    ctx.progresso(10, 'Desenhando as peças' if eid not in ec.motor3d.ESTILOS_3D else 'Desenhando o fundo 3D (só na primeira vez, uns 30 s)')
+    ec.preparar(eid, W, H, 5.0, None, ctx.cancelado)
     t0 = time.time()
     cmd = ec.montar(eid, ec.demo_cena(eid), W, H, 5.0, pasta, None, None, saida)
     ctx.progresso(30, 'Renderizando 5 segundos')

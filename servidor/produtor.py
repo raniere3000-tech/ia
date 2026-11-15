@@ -531,6 +531,7 @@ def etapa_render(ctx, pid, p, b):
             t0 = time.time()
             base_pct = 50 + 35 * feito / total
             try:
+                ec.preparar(eid, W, H, dur, b['paleta'] or None, _cancelado(ctx))
                 rd.rodar(ec.montar(eid, c, W, H, dur, trab, img, audio, tmp, b['paleta'] or None), _cancelado(ctx),
                          progresso=lambda x, i=i, base_pct=base_pct, dur=dur: ctx.progresso(base_pct + 35 * dur / total * x, f'Renderizando cena {i + 1} de {len(cenas)}'),
                          dur=dur)

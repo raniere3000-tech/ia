@@ -77,7 +77,7 @@ export function GradeEstilos({escolher,selecionado}:{escolher?:(id:string)=>void
 export default function Galeria(){
   return <section className="panel">
     <div className="section-head"><h2>16 estilos de animação <HelpButton topic="estilos3"/></h2></div>
-    <p className="subtitle">A demonstração usa a mesma cena em todos os estilos para comparar. Ela é renderizada de verdade no seu celular (não é imagem ilustrativa). Os 3D e os mapas ficam marcados como indisponíveis até um teste real no Android; nenhum pedido 3D vira outro estilo escondido.</p>
+    <p className="subtitle">A demonstração usa a mesma cena em todos os estilos para comparar. Ela é renderizada de verdade no seu celular (não é imagem ilustrativa). Os 3D foram testados no celular: são beta e lentos (o 3D é um fundo em loop, guardado depois da primeira vez). Os mapas seguem indisponíveis. Nenhum pedido vira outro estilo escondido.</p>
     <GradeEstilos/>
   </section>;
 }

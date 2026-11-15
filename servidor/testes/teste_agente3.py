@@ -296,6 +296,19 @@ confere([c['texto'] for c in pd['cenas']] == ['Segunda cena, agora primeiro.', '
 st, _, _ = api('POST', f'/api/v1/projetos/{rasc["id"]}/storyboard', {'revisao': sb['revisao'], 'cenas': [{'texto': ''}]}, SES)
 confere(st == 400, 'storyboard vazio recusado')
 
+print('Estilos 3D')
+import estilos_codigo as ec3  # noqa: E402
+import motor3d  # noqa: E402
+if motor3d.disponivel():
+    cat3 = {e['id']: e for e in ec3.catalogo()}
+    confere(all(cat3[i]['status'] == 'beta' and cat3[i]['servidor'] for i in motor3d.ESTILOS_3D), '3D aparece como beta quando há numpy')
+    ec3.preparar('retro3d_2000', 1080, 1920, 5.0, None)
+    confere(motor3d.caminho('retro3d_2000', 1080, 1920, ec3.estilo('retro3d_2000')['paleta']).exists(), 'fundo 3D em loop gerado e guardado')
+    st, e3, _ = api('POST', '/api/v1/estilos/retro3d_2000/demo', {'formato': '9:16'}, SES)
+    confere(st == 200, 'demonstração 3D entra na fila')
+else:
+    print('  (sem numpy: 3D continua indisponível)')
+
 print('Fila, capacidade, backup')
 st, f, _ = api('GET', '/api/v1/fila', None, SES)
 confere(st == 200 and f['contagem']['concluidos'] >= 1, 'fila lista os concluídos')

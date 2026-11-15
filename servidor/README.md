@@ -99,6 +99,7 @@ O celular (Termux) é o servidor central. Tudo abaixo roda nele, com o site fech
 ```bash
 cd ~/ia && git pull
 pkg install -y ffmpeg tmux curl     # se ainda não tiver
+pkg install -y python-numpy         # opcional: liga os 4 estilos 3D (beta, lentos)
 cd servidor && bash iniciar-termux.sh link
 ```
 

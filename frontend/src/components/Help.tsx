@@ -147,7 +147,7 @@ export const TOPICS:Record<string,Topic> = {
     <p>Ao produzir, o servidor narra e renderiza cena por cena. Se você muda uma cena depois, só ela é refeita.</p>
   </>},
   estilos3:{titulo:'Estilos de animação',corpo:<>
-    <p>Os estilos <b>operacionais</b> são desenhados por código no servidor do celular (FFmpeg): não gastam IA. Os <b>beta</b> funcionam com limitações. Os <b>indisponíveis</b> (3D e mapas) ainda não rodam no Android e não são trocados por outro estilo escondido.</p>
+    <p>Os estilos <b>operacionais</b> são desenhados por código no servidor do celular (FFmpeg): não gastam IA. Os <b>beta</b> funcionam com limitações. Os <b>3D</b> são beta: rodam por software no celular e são lentos (cerca de 30 s na primeira vez de cada formato; cenas de até 30 s). Os <b>indisponíveis</b> (mapas) ainda não estão prontos e não são trocados por outro estilo escondido.</p>
     <p>Toque em <b>Ver demonstração</b> para o servidor renderizar 5 segundos de exemplo no seu celular, com a mesma cena em todos os estilos.</p>
   </>},
   aparelhos:{titulo:'Conectar aparelhos ao servidor',corpo:<>
