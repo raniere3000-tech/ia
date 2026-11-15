@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bot, Scissors, Send, Square, Play, Search, Link2, Loader2, CheckCircle2, AlertTriangle, Trash2, Mail, Download, Eye, Plus, X, KeyRound, Clock, RefreshCw, ExternalLink, CalendarClock } from 'lucide-react';
 import { useApp } from '../state';
 import { REDES } from '../lib/agenda';
+import { useServidor } from '../components/Servidor2';
+import { lerFila, pendentes, listarProjetos, catalogo, horaTexto } from '../lib/api';
 import { verAgente, salvarAgente, salvarChaves, acaoCanal, rodarAgente, pararAgente, testarEmail, acaoCorte, videoDoCorte, salvarPesos, aprenderAgora, DIAS, MOTIVOS, type VisaoAgente, type ConfigAgente, type Canal, type CorteAgente } from '../lib/agente';
 
-type Parte = 'cortes'|'postagem'|'desempenho'|'avisos'|'fila';
+type Parte = 'cortes'|'postagem'|'agente3'|'desempenho'|'avisos'|'fila';
 const num=(n:number)=>n.toLocaleString('pt-BR');
 const tempo=(s:number)=>s<60?`${s} s`:`${Math.floor(s/60)} min${s%60?` e ${s%60} s`:''}`;
 const quando=(ts:number)=>new Date(ts*1000).toLocaleString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
@@ -115,9 +117,53 @@ function PesosRede({rede,nome,ids,pesos,definido,guardar}:{rede:string;nome:stri
     <td>{mudou&&<button className="primary sm" onClick={()=>guardar(Object.fromEntries(ids.map(i=>[i,+val[i]||0])))}>Guardar</button>}</td></tr>;
 }
 
+/** Cartão do Agente 3 no topo da tela de agentes (mesmo jeito dos outros dois). */
+function Agente3Cartao(){
+  const {go}=useApp();
+  const fila=useServidor(c=>lerFila(c),10); const pend=useServidor(pendentes,20);
+  const j3=(fila.dados?.jobs||[]).filter(j=>j.agente==='agente3'&&['rodando','na_fila','agendado','aguardando_tentativa'].includes(j.status));
+  const rodando=j3.find(j=>j.status==='rodando'); const esp=(pend.dados?.pendentes||[]).length;
+  return <div className={'ag-card '+(j3.length?'on':'')}>
+    <div className="label-row"><Bot size={18}/><strong>Agente 3 · Vídeos com IA</strong><span className={'tag '+(rodando?'ok':'')}>{rodando?'Trabalhando':j3.length?'Na fila':'Parado'}</span></div>
+    <p>Cria vídeos originais: escreve o roteiro, narra, busca fotos, monta no estilo escolhido e manda para você aprovar.</p>
+    <small>{rodando?<>Agora: <b>{rodando.titulo?.slice(0,40)}</b> · {rodando.etapa} · {Math.round(rodando.progresso||0)}%<br/></>:null}{j3.length} na fila · {esp} esperando você</small>
+    <div className="row-gap left">
+      <button className="primary sm" onClick={()=>go('ia','','criar')}><Play size={13}/> Criar um vídeo</button>
+      <button className="subtle sm" onClick={()=>go('automatico','','criar')}><CalendarClock size={13}/> Vários / rotina</button>
+      {esp>0&&<button className="subtle sm" onClick={()=>go('fila')}>Aprovar ({esp})</button>}
+    </div>
+  </div>;
+}
+
+/** Aba do Agente 3: o que está na fila e os vídeos que ele já fez. */
+function Agente3Aba(){
+  const {go}=useApp();
+  const fila=useServidor(c=>lerFila(c),10);
+  const proj=useServidor(c=>listarProjetos(c,'agente3'),20);
+  const cat=useServidor(catalogo);
+  const j3=(fila.dados?.jobs||[]).filter(j=>j.agente==='agente3'&&['rodando','na_fila','agendado','aguardando_tentativa','aguardando_aprovacao'].includes(j.status));
+  return <>
+    <section className="panel">
+      <h3>Fazendo agora e na fila ({j3.length})</h3>
+      {j3.length?<ul className="ag-cortes">{j3.map(j=><li key={j.id} className="ag-corte"><div className="grow">
+        <div className="label-row"><strong>{j.titulo||'Vídeo'}</strong><span className="tag">{j.status==='rodando'?'Fazendo':j.status==='agendado'?'Agendado':j.status==='aguardando_aprovacao'?'Esperando você':'Na fila'}</span></div>
+        <small>{j.etapa}{j.status==='rodando'?` · ${Math.round(j.progresso||0)}%`:''}{j.status==='agendado'?` · começa ${horaTexto(j.run_at)}`:''}</small>
+        {j.status==='rodando'&&<div className="progress"><span style={{width:`${Math.min(100,j.progresso||0)}%`}}/></div>}</div>
+        {j.projeto&&<button className="subtle sm" onClick={()=>go('revisar',j.projeto,'fila')}><Eye size={14}/> Abrir</button>}</li>)}</ul>
+      :<div className="empty"><strong>Nada na fila</strong><p>Toque em Criar um vídeo, no cartão do Agente 3 acima.</p></div>}
+    </section>
+    <section className="panel">
+      <h3>Vídeos do Agente 3 ({proj.dados?.projetos.length||0})</h3>
+      {(proj.dados?.projetos||[]).length?<ul className="ag-cortes">{proj.dados!.projetos.slice(0,40).map(p=><li key={p.id} className="ag-corte"><div className="grow">
+        <div className="label-row"><strong>{p.titulo}</strong><span className="tag">{cat.dados?.estados[p.status]||p.status}</span></div><small>{horaTexto(p.atualizado)}</small></div>
+        <button className="subtle sm" onClick={()=>go('revisar',p.id,'fila')}><Eye size={14}/> Ver</button></li>)}</ul>:<p className="hint">Nenhum vídeo ainda.</p>}
+    </section>
+  </>;
+}
+
 export default function Agente(){
   const {settings,toast,go,rotaExtra}=useApp();
-  const PARTES:Parte[]=['cortes','postagem','desempenho','avisos','fila'];
+  const PARTES:Parte[]=['cortes','postagem','agente3','desempenho','avisos','fila'];
   const [v,setV]=useState<VisaoAgente|null>(null); const [erro,setErro]=useState(''); const [parte,setParte]=useState<Parte>(()=>PARTES.includes(rotaExtra as Parte)?rotaExtra as Parte:'cortes');
   useEffect(()=>{ if(PARTES.includes(rotaExtra as Parte)) setParte(rotaExtra as Parte); },[rotaExtra]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [link,setLink]=useState(''); const [canalLink,setCanalLink]=useState(''); const [canalMotivo,setCanalMotivo]=useState('');
@@ -151,7 +197,7 @@ export default function Agente(){
   return <div className="agente">
     <section className="panel ag-topo">
       <div className={'ag-card '+(co.ligado?'on':'')}>
-        <div className="label-row"><Scissors size={18}/><strong>Agente de cortes</strong><span className={'tag '+(co.ligado?'ok':'')}>{co.ligado?'Ligado':'Desligado'}</span></div>
+        <div className="label-row"><Scissors size={18}/><strong>Agente 1 · Cortes</strong><span className={'tag '+(co.ligado?'ok':'')}>{co.ligado?'Ligado':'Desligado'}</span></div>
         <p>Procura canais, acha vídeos novos dos canais aprovados, corta, edita no seu template e manda cada corte por e-mail.</p>
         <small>Nesta semana: <b>{v.semana}</b> de {co.por_semana} cortes · {aprovados.length} canal(is) aprovado(s){sugeridos.length?` · ${sugeridos.length} esperando você`:''}</small>
         <div className="row-gap left">
@@ -161,7 +207,7 @@ export default function Agente(){
         </div>
       </div>
       <div className={'ag-card '+(po.ligado?'on':'')}>
-        <div className="label-row"><Send size={18}/><strong>Agente de postagem</strong><span className={'tag '+(po.ligado?'ok':'')}>{po.ligado?'Ligado':'Desligado'}</span></div>
+        <div className="label-row"><Send size={18}/><strong>Agente 2 · Postagem</strong><span className={'tag '+(po.ligado?'ok':'')}>{po.ligado?'Ligado':'Desligado'}</span></div>
         <p>Pega os cortes prontos, agenda nas redes nos horários escolhidos, avisa por e-mail e aprende os melhores horários.</p>
         <small>{prontos} corte(s) pronto(s) na fila · {v.cortes.filter(x=>x.status==='agendado').length} agendado(s)</small>
         <div className="row-gap left">
@@ -169,15 +215,18 @@ export default function Agente(){
           <button className="subtle sm" disabled={ocupado||!prontos} onClick={()=>run(()=>rodarAgente(settings,'postar'),'Agendando os cortes prontos.')}><CalendarClock size={13}/> Agendar prontos agora</button>
         </div>
       </div>
+      <Agente3Cartao/>
       <div className="ag-geral">
-        {v.atual.etapa?<div className="ag-etapa" role="status"><Loader2 size={15} className="spin"/> <span>{v.atual.etapa}</span><div className="barra"><i style={{width:Math.max(4,v.atual.pct)+'%'}}/></div></div>:<span className="muted">{co.ligado||po.ligado?'Esperando a próxima tarefa.':'Os dois agentes estão parados.'}</span>}
-        <button className="danger sm" onClick={()=>{ if(confirm('Parar os dois agentes e tirar da agenda os posts que eles marcaram?')) run(()=>pararAgente(settings),'Tudo parado.'); }}><Square size={13}/> Parar tudo</button>
+        {v.atual.etapa?<div className="ag-etapa" role="status"><Loader2 size={15} className="spin"/> <span>{v.atual.etapa}</span><div className="barra"><i style={{width:Math.max(4,v.atual.pct)+'%'}}/></div></div>:<span className="muted">{co.ligado||po.ligado?'Agentes 1 e 2 esperando a próxima tarefa.':'Os agentes 1 e 2 estão parados.'}</span>}
+        <button className="danger sm" onClick={()=>{ if(confirm('Parar os agentes 1 e 2 e tirar da agenda os posts que eles marcaram? (O Agente 3 se pausa na Fila.)')) run(()=>pararAgente(settings),'Tudo parado.'); }}><Square size={13}/> Parar agentes 1 e 2</button>
       </div>
       {faltas.length>0&&<ul className="ag-faltas">{faltas.map(f=><li key={f}><AlertTriangle size={13}/> {f}</li>)}</ul>}
       {erro&&<p className="hint bad"><AlertTriangle size={13}/> {erro}</p>}
     </section>
 
-    <div className="ag-abas" role="tablist">{([['cortes','Cortes'],['postagem','Postagem'],['desempenho','Desempenho'],['avisos','Avisos e chaves'],['fila',`Cortes feitos e histórico${v.cortes.length?` (${v.cortes.length})`:''}`]] as [Parte,string][]).map(([k,t])=><button key={k} role="tab" aria-selected={parte===k} className={parte===k?'active':''} onClick={()=>setParte(k)}>{t}</button>)}</div>
+    <div className="ag-abas" role="tablist">{([['cortes','1 · Cortes'],['postagem','2 · Postagem'],['agente3','3 · Vídeos com IA'],['desempenho','Desempenho'],['avisos','Avisos e chaves'],['fila',`Cortes feitos e histórico${v.cortes.length?` (${v.cortes.length})`:''}`]] as [Parte,string][]).map(([k,t])=><button key={k} role="tab" aria-selected={parte===k} className={parte===k?'active':''} onClick={()=>setParte(k)}>{t}</button>)}</div>
+
+    {parte==='agente3'&&<Agente3Aba/>}
 
     {parte==='cortes'&&<>
       <section className="panel">

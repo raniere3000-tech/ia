@@ -1,6 +1,6 @@
 import ErroTela from './components/ErroTela';
 import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
-import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, Film, Bot, CheckCircle2, AlertTriangle, Info, X, Circle, ListChecks, Send, Wand2, FolderOpen, Palette, CalendarRange, HelpCircle, Cloud, CloudOff, RefreshCw, ChevronDown } from 'lucide-react';
+import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, Film, Bot, CheckCircle2, AlertTriangle, Info, X, Circle, ListChecks, Send, FolderOpen, Palette, CalendarRange, HelpCircle, Cloud, CloudOff, RefreshCw, ChevronDown } from 'lucide-react';
 import { AppCtx, PROJETO_VAZIO, captionPresets, type Marca, type Projeto, type Settings, type Tab } from './state';
 import { store } from './lib/store';
 import { salvos, temCofre, cofreAberto, separar, atualizarCofre } from './lib/cofre';
@@ -33,9 +33,9 @@ const VIVAS:Tab[]=['cortes','video','vozes','manual'];
 const adiantar=(t:Tab)=>{ CARGA[t]?.().catch(()=>{}); };
 
 const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'seguir-rosto',servidor:'',servidorToken:'',servidorCanal:'',geminiKey:'',ia:''};
-const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['video','Animado no navegador',Sparkles],['ia','Criar com IA',Wand2],['manual','Montagem manual',Film],['automatico','Vários de uma vez',CalendarRange],['projetos','Meus projetos',FolderOpen],
+const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['video','Animado no navegador',Sparkles],['ia','Agente 3',Bot],['manual','Montagem manual',Film],['automatico','Vários de uma vez',CalendarRange],['projetos','Meus projetos',FolderOpen],
   ['vozes','Estúdio de vozes',Mic],['galeria','Estilos de animação',Palette],['templates','Templates',LayoutTemplate],['estilos','Legendas e efeitos',Captions],
-  ['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['agente','Agentes',Bot],['fila','Fila e aprovações',ListChecks],['revisar','Revisar vídeo',CheckCircle2],
+  ['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['agente','Agentes 1, 2 e 3',Bot],['fila','Fila e aprovações',ListChecks],['revisar','Revisar vídeo',CheckCircle2],
   ['agendar','Agenda e contas',CalendarClock],['config','Ajustes',Gear]];
 /** As cinco áreas (barra de baixo no celular, menu lateral no computador). A engrenagem fica fora delas. */
 type AreaNav={id:string;nome:string;curto:string;Icon:typeof Home;abas:Tab[];extras?:[Tab,string][]};
@@ -44,7 +44,7 @@ const AREAS_NAV:AreaNav[] = [
   {id:'criar',nome:'Criar vídeos',curto:'Criar',Icon:Clapperboard,abas:['ia','automatico','video','manual','projetos','vozes','galeria','templates','estilos']},
   {id:'radar',nome:'Radar e cortes',curto:'Radar',Icon:Search,abas:['radar','cortes','agente']},
   {id:'fila',nome:'Fila e aprovações',curto:'Fila',Icon:ListChecks,abas:['fila','revisar']},
-  {id:'posts',nome:'Publicações',curto:'Posts',Icon:Send,abas:['agendar','agente'],extras:[['agente','Agente de postagem']]},
+  {id:'posts',nome:'Publicações',curto:'Posts',Icon:Send,abas:['agendar','agente'],extras:[['agente','Agente 2 (postagem)']]},
 ];
 /** Os quatro modos de criar ficam juntos no topo da área Criar. */
 const MODOS:Tab[]=['ia','automatico','video','manual'];
@@ -59,11 +59,11 @@ const TITLES:Record<Tab,[string,string]> = {
   manual:['Montagem manual','Mande as imagens dos quadros, a narração, a trilha e os efeitos. O site lê o roteiro de quadros, sincroniza tudo e grava o vídeo.'],
   video:['Criar vídeo animado','Digite um tema: a IA escreve o roteiro e o site monta um vídeo vertical animado, com narração e batida, pronto para postar.'],
   agendar:['Agendar posts','Conecte suas contas uma vez e agende os cortes no YouTube, Instagram, Facebook e TikTok. O Kwai fica com o botão de baixar.'],
-  agente:['Agentes','Dois agentes trabalham sozinhos no seu servidor: um procura vídeos e faz os cortes, o outro agenda e posta. Você aprova os canais e recebe tudo por e-mail.'],
+  agente:['Seus agentes','Três agentes trabalham sozinhos no celular: o Agente 1 faz cortes, o Agente 2 agenda e posta, o Agente 3 cria vídeos originais com IA. Você aprova e recebe tudo por e-mail.'],
   estilos:['Legendas e efeitos','Escolha o visual padrão das legendas e o efeito aplicado nos cortes.'],
   templates:['Templates','Modelos de vídeo usados na edição manual e pelos agentes: composição, legenda, tarjas, marca e exportação.'],
   config:['Ajustes','Servidor do celular, aparelhos conectados, chaves, e-mail, backups e tutorial.'],
-  ia:['Criar com IA','Escreva o assunto e o celular faz o vídeo. Se preferir, veja e edite o roteiro antes.'],
+  ia:['Agente 3: vídeos com IA','Escreva o assunto e o Agente 3 faz o vídeo no celular. Se preferir, veja e edite o roteiro antes.'],
   automatico:['Vários vídeos de uma vez','O celular faz vários vídeos sozinho: agora, em data marcada ou todo dia na hora que você escolher.'],
   projetos:['Meus projetos','Tudo o que está salvo no servidor do celular, com versões. Daqui você também envia os dados deste navegador.'],
   galeria:['Estilos de animação','Veja como fica cada visual antes de escolher. Os marcados como prontos já funcionam no celular.'],

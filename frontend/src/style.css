@@ -793,3 +793,14 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .pa-video{width:100%;max-height:420px;border-radius:10px;background:#000}
 .pa-log{margin-top:12px}.pa-log summary{cursor:pointer;font-weight:600;font-size:13px}
 .pa-item>.tag{align-self:flex-start}
+/* ---- resumo dos três agentes (Início) */
+.ar-grade{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.ar-card{display:flex;flex-direction:column;gap:6px;text-align:left;border:1px solid var(--line);background:#0f131e;border-radius:14px;padding:12px 14px;color:#b5bccf;min-width:0}
+.ar-card:hover{border-color:#5a4fa0}.ar-card.ocupado{border-color:var(--brand);background:#151330}
+.ar-topo{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.ar-topo b{color:#fff;font-size:14px}.ar-nome{flex:1;font-size:12.5px;color:var(--muted)}
+.ar-agora{margin:0;font-size:12.5px;color:#d7dbe8;display:flex;gap:6px;align-items:center;min-height:18px;overflow:hidden;text-overflow:ellipsis}
+.ar-nums{display:flex;gap:14px;flex-wrap:wrap}.ar-nums span{display:flex;flex-direction:column;font-size:11px;color:var(--muted)}.ar-nums b{font-size:20px;color:#fff;line-height:1.1}
+.ar-alerta{margin:0;font-size:12px;color:#f4d27a;display:flex;gap:5px;align-items:center}
+.ar-ir{margin-top:auto;font-size:12px;color:var(--brand2);display:flex;align-items:center;gap:4px}
+@media (max-width:760px){.ar-grade{grid-template-columns:1fr}.ar-card{padding:10px 12px}.ar-nums b{font-size:18px}}
+.ag-topo{grid-template-columns:repeat(3,minmax(0,1fr))}.ag-topo>.ag-geral,.ag-topo>.ag-faltas,.ag-topo>.hint{grid-column:1/-1}@media(max-width:820px){.ag-topo{grid-template-columns:minmax(0,1fr)}}
