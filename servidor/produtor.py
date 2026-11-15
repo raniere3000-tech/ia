@@ -67,7 +67,7 @@ def requisitos() -> dict:
     """O que já está pronto no servidor para o Agente 3 trabalhar (o site mostra o que falta e onde resolver)."""
     seg, em = ag.segredos(), ag.config().get('email', {})
     return {'ffmpeg': rd.tem_ffmpeg(), 'gemini': bool(seg.get('gemini') or seg.get('gemini_pago')), 'email': bool(em.get('para') and seg.get('email_senha')),
-            'pexels': bool(seg.get('pexels')), 'numpy': ec.motor3d.disponivel()}
+            'pexels': bool(seg.get('pexels') or seg.get('pixabay')), 'numpy': ec.motor3d.disponivel()}
 
 
 def limpar_briefing(d: dict) -> dict:
@@ -588,7 +588,7 @@ def _foto_da_cena(pid, i, c, b, pasta, cenas):
     foto, e = None, None
     for q in tentativas:
         try:
-            foto = im.buscar(q, b['formato'], pasta, ag.segredos().get('pexels', ''), usadas)
+            foto = im.buscar(q, b['formato'], pasta, ag.segredos().get('pexels', ''), usadas, ag.segredos().get('pixabay', ''))
             break
         except im.SemFoto as x:
             e = x

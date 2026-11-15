@@ -1,4 +1,4 @@
-"""Busca de fotos para as cenas (Pexels com chave grátis; sem chave, Wikimedia Commons só com domínio público, CC0 ou CC BY com crédito).
+"""Busca de fotos para as cenas (Pexels ou Pixabay com chave grátis; sem chave, Wikimedia Commons só com domínio público, CC0 ou CC BY com crédito).
 
 A foto é só matéria-prima: o estilo da cena a remodela (estilos_codigo.estilizar). Só baixa de endereços que a própria
 API devolveu e só de domínios conhecidos. O crédito de cada foto fica guardado para aparecer no e-mail do vídeo.
@@ -15,8 +15,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 URL_PEXELS = os.getenv('BASE_PEXELS', 'https://api.pexels.com')
+URL_PIXABAY = os.getenv('BASE_PIXABAY', 'https://pixabay.com')
 URL_WIKI = os.getenv('BASE_WIKI', 'https://commons.wikimedia.org')
-HOSTS_OK = ('images.pexels.com', 'upload.wikimedia.org')
+HOSTS_OK = ('images.pexels.com', 'upload.wikimedia.org', 'pixabay.com', 'cdn.pixabay.com')
 MAX_BYTES = 12 * 1024 * 1024
 LICENCAS_LIVRES = ('public domain', 'cc0', 'pd', 'dominio publico')
 
@@ -71,6 +72,19 @@ def _pexels(consulta: str, vertical: bool, chave: str, pular: set) -> list:
     return out
 
 
+def _pixabay(consulta: str, vertical: bool, chave: str, pular: set) -> list:
+    q = urllib.parse.urlencode({'key': chave, 'q': consulta[:100], 'image_type': 'photo', 'orientation': 'vertical' if vertical else 'horizontal',
+                                'per_page': 20, 'safesearch': 'true', 'min_width': 800})
+    j = _get_json(f'{URL_PIXABAY}/api/?{q}')
+    out = []
+    for f in j.get('hits') or []:
+        url = f.get('largeImageURL') or f.get('webformatURL')
+        if url and str(f.get('id')) not in pular:
+            out.append({'id': 'px' + str(f.get('id')), 'url': url, 'fonte': 'pixabay', 'credito': f'Imagem de {f.get("user") or "autor desconhecido"} no Pixabay',
+                        'link': f.get('pageURL') or ''})
+    return out
+
+
 def _wikimedia(consulta: str, pular: set) -> list:
     q = urllib.parse.urlencode({'action': 'query', 'format': 'json', 'generator': 'search', 'gsrsearch': f'filetype:bitmap {consulta}', 'gsrnamespace': 6,
                                 'gsrlimit': 20, 'prop': 'imageinfo', 'iiprop': 'url|extmetadata|size|mime', 'iiurlwidth': 1280})
@@ -93,18 +107,27 @@ def _wikimedia(consulta: str, pular: set) -> list:
     return out
 
 
-def buscar(consulta: str, formato: str, pasta: Path, chave_pexels: str = '', pular: set | None = None) -> dict:
+def buscar(consulta: str, formato: str, pasta: Path, chave_pexels: str = '', pular: set | None = None, chave_pixabay: str = '') -> dict:
     """Devolve {arquivo, fonte, credito, link, id}. Levanta SemFoto se nada servir."""
     consulta = re.sub(r'\s+', ' ', consulta or '').strip()[:80]
     if not consulta:
         raise SemFoto('Sem palavras para procurar a foto.')
     pular = pular or set()
     vertical = formato != '16:9'
-    candidatos = []
-    try:
-        candidatos = _pexels(consulta, vertical, chave_pexels, pular) if chave_pexels else _wikimedia(consulta, pular)
-    except Exception as e:           # rede fora, chave recusada... a cena segue sem foto
-        raise SemFoto(f'A busca de fotos falhou: {e}')
+    candidatos, falhas = [], []
+    # ordem: Pexels, Pixabay (as duas com chave grátis), e por fim Wikimedia (sem chave, acha menos)
+    fontes = ([lambda: _pexels(consulta, vertical, chave_pexels, pular)] if chave_pexels else []) + \
+             ([lambda: _pixabay(consulta, vertical, chave_pixabay, pular)] if chave_pixabay else []) + [lambda: _wikimedia(consulta, pular)]
+    for f in fontes:
+        try:
+            candidatos = f()
+        except Exception as e:       # rede fora, chave recusada... tenta a próxima fonte
+            falhas.append(str(e)[:120])
+            continue
+        if candidatos:
+            break
+    if not candidatos and falhas:
+        raise SemFoto('A busca de fotos falhou: ' + '; '.join(falhas))
     pasta.mkdir(parents=True, exist_ok=True)
     for c in candidatos[:4]:
         arq = pasta / f'{c["fonte"]}-{hashlib.sha1(c["id"].encode()).hexdigest()[:12]}.jpg'
