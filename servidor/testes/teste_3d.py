@@ -3,9 +3,10 @@
 Rodar:  python servidor/testes/teste_3d.py
 Precisa de: python-numpy (pkg install python-numpy) e ffmpeg.
 Desenha uma esfera e um cubo girando com luz e sombra (rasterizador em software, sem placa de vídeo),
-mede o tempo por quadro, grava /tmp/teste3d.mp4 e diz se vale a pena ligar os estilos 3D neste aparelho.
+mede o tempo por quadro, grava ~/teste3d.mp4 e diz se vale a pena ligar os estilos 3D neste aparelho.
 """
 import math
+import os
 import shutil
 import subprocess
 import sys
@@ -22,7 +23,7 @@ if not shutil.which('ffmpeg'):
     sys.exit(2)
 
 W, H, FPS, QUADROS = 540, 960, 30, 60          # meia resolução: o FFmpeg amplia para 1080x1920 no vídeo final
-SAIDA = '/tmp/teste3d.mp4'
+SAIDA = os.path.join(os.path.expanduser('~'), 'teste3d.mp4')   # no Termux não existe /tmp
 
 
 def esfera(n=14):
