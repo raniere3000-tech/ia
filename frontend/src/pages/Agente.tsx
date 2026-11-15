@@ -115,8 +115,10 @@ function PesosRede({rede,nome,ids,pesos,definido,guardar}:{rede:string;nome:stri
 }
 
 export default function Agente(){
-  const {settings,toast,go}=useApp();
-  const [v,setV]=useState<VisaoAgente|null>(null); const [erro,setErro]=useState(''); const [parte,setParte]=useState<Parte>('cortes');
+  const {settings,toast,go,rotaExtra}=useApp();
+  const PARTES:Parte[]=['cortes','postagem','desempenho','avisos','fila'];
+  const [v,setV]=useState<VisaoAgente|null>(null); const [erro,setErro]=useState(''); const [parte,setParte]=useState<Parte>(()=>PARTES.includes(rotaExtra as Parte)?rotaExtra as Parte:'cortes');
+  useEffect(()=>{ if(PARTES.includes(rotaExtra as Parte)) setParte(rotaExtra as Parte); },[rotaExtra]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [link,setLink]=useState(''); const [canalLink,setCanalLink]=useState(''); const [canalMotivo,setCanalMotivo]=useState('');
   const [chaves,setChaves]=useState({gemini:'',youtube:'',email_senha:'',pexels:''}); const [hora,setHora]=useState('18:00'); const [diasSel,setDiasSel]=useState<number[]>([0,1,2,3,4,5]);
   const vivo=useRef(true);
@@ -174,7 +176,7 @@ export default function Agente(){
       {erro&&<p className="hint bad"><AlertTriangle size={13}/> {erro}</p>}
     </section>
 
-    <div className="ag-abas" role="tablist">{([['cortes','Cortes'],['postagem','Postagem'],['desempenho','Desempenho'],['avisos','Avisos e chaves'],['fila',`Fila e histórico${v.cortes.length?` (${v.cortes.length})`:''}`]] as [Parte,string][]).map(([k,t])=><button key={k} role="tab" aria-selected={parte===k} className={parte===k?'active':''} onClick={()=>setParte(k)}>{t}</button>)}</div>
+    <div className="ag-abas" role="tablist">{([['cortes','Cortes'],['postagem','Postagem'],['desempenho','Desempenho'],['avisos','Avisos e chaves'],['fila',`Cortes feitos e histórico${v.cortes.length?` (${v.cortes.length})`:''}`]] as [Parte,string][]).map(([k,t])=><button key={k} role="tab" aria-selected={parte===k} className={parte===k?'active':''} onClick={()=>setParte(k)}>{t}</button>)}</div>
 
     {parte==='cortes'&&<>
       <section className="panel">

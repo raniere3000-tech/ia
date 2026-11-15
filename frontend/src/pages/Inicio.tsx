@@ -5,6 +5,7 @@ import { HelpButton } from '../components/Help';
 import { useServidor } from '../components/Servidor2';
 import { lerFila, pendentes, catalogo } from '../lib/api';
 import { Prontidao, CriarRapido } from '../components/Prontidao';
+import PainelAgentes from '../components/PainelAgentes';
 
 function CriarNoInicio(){ const cat=useServidor(catalogo); return <><Prontidao cat={cat.dados}/><CriarRapido compacto/></>; }
 
@@ -48,7 +49,7 @@ export default function Inicio(){
     {ok:true,t:'Legendas automáticas (Whisper)',d:'Já funciona, sem chave. O modelo é baixado na primeira vez.',help:'whisper' as const,need:'Sem chave'},
   ];
   return <>
-   {settings.servidor?<><CriarNoInicio/><ResumoServidor/></>:<section className="panel"><div className="section-head"><h2><Film size={18}/> Vídeos feitos sozinhos pelo celular</h2></div>
+   {settings.servidor?<><CriarNoInicio/><PainelAgentes/><ResumoServidor/></>:<section className="panel"><div className="section-head"><h2><Film size={18}/> Vídeos feitos sozinhos pelo celular</h2></div>
     <p className="subtitle">Com o servidor do celular ligado, você escreve um assunto e o celular faz o vídeo inteiro (roteiro, fotos, narração e montagem). Falta conectar este aparelho ao servidor.</p>
     <button className="primary" onClick={()=>go('config')}>Conectar o servidor do celular</button></section>}
    {continuar.length>0&&<section className="panel">

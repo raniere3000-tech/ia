@@ -779,3 +779,17 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .criar-ia>.subtle{white-space:normal;width:100%;text-align:left;height:auto;padding:12px 14px}
 @media (max-width:640px){.prontidao .check-item>div{flex:1 1 70%}.prontidao .check-item .subtle{margin-left:34px}}
 @media (max-width:640px){.inicio-resumo{grid-template-columns:1fr 1fr}}
+/* ---- painel dos agentes no Início */
+.pa-grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.pa-card{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);background:#0f131e;border-radius:14px;padding:14px;min-width:0}
+.pa-card>button{align-self:flex-start;margin-top:auto}
+.pa-topo{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.pa-topo b{flex:1;font-size:14px}
+.pa-agora{margin:0;font-size:12.5px;color:#b5bccf;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pa-num{margin:0;font-size:12.5px;color:var(--muted)}.pa-num b{color:#fff;font-size:15px}
+.pa-lista{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.pa-item{display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--line);padding-top:8px;min-width:0}
+.pa-item .link-btn{text-align:left;white-space:normal}
+.pa-linha{display:flex;gap:8px;align-items:flex-start}.pa-linha b{flex:1;font-size:13px;overflow-wrap:anywhere}
+.pa-video{width:100%;max-height:420px;border-radius:10px;background:#000}
+.pa-log{margin-top:12px}.pa-log summary{cursor:pointer;font-weight:600;font-size:13px}
+.pa-item>.tag{align-self:flex-start}

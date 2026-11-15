@@ -41,7 +41,7 @@ TONS = {'curiosidades': 'animado e curioso, como quem conta uma descoberta', 'hi
         'tutorial': 'direto e calmo, passo a passo', 'quiz': 'animado, de apresentador de jogo', 'motivacional': 'confiante e inspirador, com pausas curtas',
         'animação com personagens': 'expressivo e divertido', 'motion graphics': 'claro, moderno e direto', 'outro': 'natural e animado'}
 ESTADOS = {
-    'draft': 'Rascunho', 'researching': 'Pesquisando', 'script_ready': 'Roteiro pronto', 'storyboard_ready': 'Storyboard pronto',
+    'draft': 'Rascunho', 'researching': 'Pesquisando', 'script_ready': 'Roteiro pronto', 'storyboard_ready': 'Roteiro pronto para conferir',
     'waiting_brief_approval': 'Esperando você aprovar o roteiro', 'scheduled': 'Agendado', 'queued': 'Na fila',
     'generating_assets': 'Gerando imagens', 'narrating': 'Narrando', 'assembling': 'Montando', 'rendering': 'Renderizando',
     'validating': 'Conferindo o vídeo', 'ready_for_review': 'Pronto para revisão', 'approved': 'Aprovado',
