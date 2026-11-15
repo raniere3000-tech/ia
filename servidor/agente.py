@@ -243,7 +243,11 @@ def gemini(partes: list, audio: bool = False, tempo: int = 300):
     st, _, j = pg.http('POST', f'{URL_GEMINI}/v1beta/models/{MODELO}:generateContent', js=corpo,
                        cab={'x-goog-api-key': chave}, tempo=tempo)
     if st >= 300:
-        raise ErroAgente('A IA (Gemini) recusou o pedido: ' + pg._msg(j))
+        msg = pg._msg(j)
+        if re.search(r'spending cap|spend cap', msg, re.I):
+            raise ErroAgente('O seu projeto do Google chegou no limite de gasto do mês que você definiu. Aumente o limite em ai.studio/spend '
+                             '(Spend > Monthly spend cap) ou use no servidor uma chave de um projeto sem cobrança (cota grátis). Até lá, a IA fica parada.')
+        raise ErroAgente('A IA (Gemini) recusou o pedido: ' + msg)
     _somar_gasto(j.get('usageMetadata') or {}, audio)
     try:
         texto = ''.join(p.get('text', '') for p in j['candidates'][0]['content']['parts'])
