@@ -819,23 +819,30 @@ def enviar_email(assunto: str, corpo: str, anexo: Path | None = None, nome_anexo
     m.set_content(corpo + '\n\nEnviado pelo agente do EstúdioClip no seu servidor.')
     if anexo and anexo.exists():
         m.add_attachment(anexo.read_bytes(), maintype='video', subtype='mp4', filename=nome_anexo)
-    try:
-        if os.getenv('EMAIL_SEM_TLS') == '1':      # só para testes locais
-            s = smtplib.SMTP(host, porta, timeout=60)
-        elif porta == 465:
-            s = smtplib.SMTP_SSL(host, porta, timeout=120, context=ssl.create_default_context())
-        else:
-            s = smtplib.SMTP(host, porta, timeout=120)
-            s.starttls(context=ssl.create_default_context())
-        with s:
-            if os.getenv('EMAIL_SEM_TLS') != '1':
-                s.login(cfg['de'], senha)
-            s.send_message(m)
-    except smtplib.SMTPAuthenticationError:
-        raise ErroAgente('O e-mail recusou a senha. Use uma SENHA DE APLICATIVO (não a senha normal da conta); no Gmail ela fica em Conta Google > Segurança > Senhas de app.')
-    except (smtplib.SMTPException, OSError) as e:
-        raise ErroAgente(f'Não consegui enviar o e-mail por {host}: {e}')
-    return mid
+    # Gmail e Yahoo aceitam as duas portas: se uma delas for fechada pela rede ou pelo servidor, tenta a outra.
+    tentativas = [porta] + ([587 if porta == 465 else 465] if os.getenv('EMAIL_SEM_TLS') != '1' and not cfg['smtp'] else [])
+    ultimo = None
+    for pt in tentativas:
+        try:
+            if os.getenv('EMAIL_SEM_TLS') == '1':      # só para testes locais
+                s = smtplib.SMTP(host, pt, timeout=60)
+            elif pt == 465:
+                s = smtplib.SMTP_SSL(host, pt, timeout=120, context=ssl.create_default_context())
+            else:
+                s = smtplib.SMTP(host, pt, timeout=120)
+                s.starttls(context=ssl.create_default_context())
+            with s:
+                if os.getenv('EMAIL_SEM_TLS') != '1':
+                    s.login(cfg['de'], senha)
+                s.send_message(m)
+            return mid
+        except smtplib.SMTPAuthenticationError:
+            raise ErroAgente('O e-mail recusou a senha. Use uma SENHA DE APLICATIVO (não a senha normal da conta); no Gmail ela fica em Conta Google > Segurança > Senhas de app.')
+        except smtplib.SMTPSenderRefused as e:
+            raise ErroAgente(f'O e-mail recusou o envio ({e.smtp_code}): provavelmente o anexo é grande demais. Baixe o limite com LIMITE_ANEXO_MB=8 no servidor.')
+        except (smtplib.SMTPException, OSError) as e:
+            ultimo = e
+    raise ErroAgente(f'Não consegui enviar o e-mail por {host} (portas {", ".join(map(str, tentativas))}): {ultimo}')
 
 
 def avisar(tipo: str, assunto: str, corpo: str, anexo: Path | None = None, nome_anexo: str = 'corte.mp4') -> bool:

@@ -29,7 +29,7 @@ import aprovacoes as apv
 import banco as db
 import projetos as pj
 
-LIMITE_ANEXO = int(os.getenv('LIMITE_ANEXO_MB', '18')) * 1048576
+LIMITE_ANEXO = int(os.getenv('LIMITE_ANEXO_MB', '12')) * 1048576
 PADRAO_RESP = {'ativo': False, 'imap': '', 'porta': 993, 'remetentes': [], 'intervalo': 120}
 CMD = re.compile(r'\b(APROVAR|APROVO|CORRIGIR|ALTERAR|REJEITAR)\b[\s:]+(VID-[A-Z0-9]{6})[\s:]+([A-Z0-9]{4}-?[A-Z0-9]{4})\b(.*)', re.I | re.S)
 
