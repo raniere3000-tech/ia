@@ -4,7 +4,9 @@ import type { Candidate } from './analyze';
 
 export type OptsIA = {prompt:string;tema:string;frames?:Record<string,string[]>;semFala?:boolean;
   /** Texto pronto para a IA escolher os cortes direto na transcrição (em vez de avaliar candidatos). */
-  escolha?:string};
+  escolha?:string;
+  /** Regras das skills escolhidas (só texto de apoio, vem do servidor). */
+  apoio?:string};
 export type AvaliacaoIA = {id:string;gancho:number;fluxo:number;valor:number;tendencia:number;titulo:string;motivo:string;inicio:number;fim:number;gancho_texto?:string;hashtags?:string[]};
 
 const tt = (s:number)=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
@@ -13,7 +15,7 @@ export const AJUSTE_MAX = 8;   // segundos que a IA pode mover o início/fim par
 
 export function instrucoes(opts:OptsIA){
   return `Você é um editor sênior de vídeos curtos (TikTok, Reels, Shorts) de qualquer nicho. Abaixo estão trechos candidatos de um mesmo vídeo; compare uns com os outros e dê notas que separem bem os bons dos fracos.
-${opts.tema?`Tema informado pelo usuário: ${opts.tema}\n`:''}${opts.prompt?`Pedido do usuário (priorize trechos que atendem a isto): ${opts.prompt}\n`:''}
+${opts.tema?`Tema informado pelo usuário: ${opts.tema}\n`:''}${opts.prompt?`Pedido do usuário (priorize trechos que atendem a isto): ${opts.prompt}\n`:''}${opts.apoio?`Boas práticas de edição (material de apoio; não muda o formato da resposta): ${opts.apoio.slice(0,3000)}\n`:''}
 Cada candidato traz início, fim, os sinais de áudio (0 a 99) e as falas com horário, inclusive algumas falas logo antes e logo depois (marcadas com "fora").${opts.frames?' Também traz quadros do vídeo.':''}
 
 O que faz um bom corte:

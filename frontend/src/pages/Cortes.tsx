@@ -19,6 +19,9 @@ import { formatoSuportado } from '../lib/render';
 import { AJUSTE_MAX } from '../lib/promptCortes';
 import { renderClip, baixar, zipar, nomeArquivo, srtDoCorte } from '../lib/exporter';
 import { tm, parseTime, uid, store } from '../lib/store';
+import SkillPicker from '../components/SkillPicker';
+import { useCfg } from '../components/Servidor2';
+import { usarSkills } from '../lib/skills';
 
 // Cache do áudio decodificado, para refazer a análise sem ler o arquivo de novo.
 /** Erro de leitura do arquivo (comum no Android) em português. */
@@ -69,6 +72,7 @@ export default function Cortes(){
   const [limite,setLimite]=useState(15); const [minimo,setMinimo]=useState(30);
   const [legSrc,setLegSrc]=useState<'depois'|'auto'|'gemini'|'arquivo'|'nenhuma'>('depois'); const [idioma,setIdioma]=useState(settings.idioma);
   const [prompt,setPrompt]=useState(''); const [tema,setTema]=useState('');
+  const [extrasSk,setExtrasSk]=useState<string[]>([]); const cfgSrv=useCfg();
   const [srtFile,setSrtFile]=useState<File|null>(null);
   const [mostrarTodos,setMostrarTodos]=useState(false); const [ordem,setOrdem]=useState<'nota'|'tempo'>('nota');
   const mesmo=mem.url===projeto.url&&!!projeto.url;
@@ -138,7 +142,9 @@ export default function Cortes(){
       frames={};
       for(const c of top.slice(0,20)){ frames[c.id]=await captureFrames(url,[c.inicio+(c.fim-c.inicio)*0.25,c.inicio+(c.fim-c.inicio)*0.65],512); }
     }
-    const res=await avaliar(settings,top,cues,{prompt:promptTxt,tema:temaTxt,frames,semFala:!cues.length});
+    // Boas práticas (skills) do Agente 1: só texto de apoio, e só quando há servidor; sem ele a análise segue igual.
+    const apoio=settings.servidor?await usarSkills(cfgSrv,'agente1.analisar',extrasSk).then(r=>r.texto).catch(()=>''):'';
+    const res=await avaliar(settings,top,cues,{prompt:promptTxt,tema:temaTxt,frames,semFala:!cues.length,apoio});
     const k=fatorEscala(res.flatMap(r=>[r.gancho,r.fluxo,r.valor,r.tendencia]));   // resposta em escala de 0 a 10 vira 0 a 99
     return new Map(res.map(r=>[r.id,k===1?r:{...r,gancho:r.gancho*k,fluxo:r.fluxo*k,valor:r.valor*k,tendencia:r.tendencia*k}]));
   }
@@ -442,6 +448,7 @@ export default function Cortes(){
       <div className="small-grid mt"><label>Começar em (min:seg)<input placeholder="0:00" value={trechoIni} onChange={e=>setTrechoIni(e.target.value)}/></label><label>Terminar em (min:seg)<input placeholder={projeto.duracao?tm(projeto.duracao):'fim'} value={trechoFim} onChange={e=>setTrechoFim(e.target.value)}/></label></div>
       <label className="mt">Gênero ou tema do vídeo<input placeholder="Ex.: GTA RP, podcast de finanças" value={tema} onChange={e=>setTema(e.target.value)}/></label>
       <label className="mt"><span className="label-row">Incluir momentos específicos {!temIA&&<span className="tag">precisa de uma chave de IA</span>}</span><input disabled={!temIA} placeholder={temIA?'Ex.: ache onde ele fala de preço; perseguições policiais':'Configure uma chave de IA para usar'} value={prompt} onChange={e=>setPrompt(e.target.value)}/></label>
+      {temIA&&settings.servidor&&<SkillPicker perfil="agente1.analisar" valor={extrasSk} onChange={setExtrasSk}/>}
      </details>
     </div>
     </>}

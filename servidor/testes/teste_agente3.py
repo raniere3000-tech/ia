@@ -102,6 +102,17 @@ class Gemini(BaseHTTPRequestHandler):
         else:
             txt = json.dumps(corpo)
             PROMPTS.append(txt)
+            if 'REVISOR DE ROTEIRO' in txt:
+                m = re.search(r'\\n\[([^\]]+)\]', txt)
+                rot = {'pontos': [{'cena': m.group(1) if m else '', 'gravidade': 'baixa', 'problema': 'Gancho fraco no começo', 'sugestao': 'Comece pela pergunta.'}]}
+                r = {'candidates': [{'content': {'parts': [{'text': json.dumps(rot, ensure_ascii=False)}]}}], 'usageMetadata': {}}
+                b = json.dumps(r).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+                return
             rot = ROTEIRO_SERIE if 'ANIMA\\u00c7\\u00c3O COM PERSONAGENS' in txt or 'ANIMAÇÃO COM PERSONAGENS' in txt else ROTEIRO
             r = {'candidates': [{'content': {'parts': [{'text': json.dumps(rot, ensure_ascii=False)}]}}], 'usageMetadata': {}}
         b = json.dumps(r).encode()
@@ -388,6 +399,9 @@ confere(len(ids) == len(set(ids)), 'planos e cenas não repetem foto')
 qp = rp['projeto']['dados'].get('qualidade') or {}
 confere(qp.get('status') in ('apto_para_revisao_humana', 'alerta_visual') and 'tecnico' in qp, 'diretor de qualidade deixou o relatório no projeto')
 confere(all(set(x) >= {'tipo', 'severidade', 'cena_id', 'timecode', 'descricao'} for x in qp.get('problemas', [])), 'cada alerta tem cena, instante e descrição')
+nar = [x for x in qp.get('problemas', []) if x['tipo'] == 'narrativa']
+confere(len(nar) == 1 and nar[0]['cena_id'] == cp[0]['id'] and 'Gancho' in nar[0]['descricao'], 'leitura crítica do roteiro vira alerta na cena certa')
+confere(rp['projeto']['dados'].get('revisao_narrativa', {}).get('h'), 'leitura crítica guardada para não pagar de novo')
 for c in ROTEIRO['cenas']:
     c.pop('planos', None)
 st, _, _ = api('POST', '/agente/chaves', {'pexels': ''}, SES)

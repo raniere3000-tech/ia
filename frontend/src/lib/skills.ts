@@ -18,6 +18,7 @@ export const acaoSkill=(cfg:CfgSrv,id:string,acao:'ativar'|'desativar'|'rollback
 export const lerPerfis=(cfg:CfgSrv)=>api<{perfis:PerfilSkills[];limite_max:number}>(cfg,'GET','/api/v1/skills/perfis');
 export const salvarPerfil=(cfg:CfgSrv,id:string,d:Partial<Pick<PerfilSkills,'skills'|'limite'|'ligado'>>)=>api<PerfilSkills>(cfg,'PUT','/api/v1/skills/perfis/'+id,d);
 export const selecionarSkills=(cfg:CfgSrv,perfil:string,skills:string[]=[])=>api<{perfil:string;usar:string[];fora:{id:string;motivo:string}[]}>(cfg,'POST','/api/v1/skills/selecionar',{perfil,skills});
+export const usarSkills=(cfg:CfgSrv,perfil:string,skills:string[]=[],projeto='')=>api<{texto:string;usadas:string[]}>(cfg,'POST','/api/v1/skills/usar',{perfil,skills,projeto});
 export const historicoSkills=(cfg:CfgSrv,f:{job_id?:string;projeto_id?:string}={})=>api<{historico:Ativacao[]}>(cfg,'GET','/api/v1/skills/historico?'+new URLSearchParams(f as Record<string,string>).toString());
 
 export const NOME_AGENTE:Record<string,string>={agente1:'Agente 1',agente2:'Agente 2',agente3:'Agente 3',radar:'Radar',editor:'Editor do site',qualidade:'Qualidade',desenvolvimento:'Desenvolvimento',infra:'Servidor'};
