@@ -77,6 +77,10 @@ export function DiagnosticoCard(){
       <ul className="diag">
        <li>{x.ffmpeg?<CheckCircle2 size={14} className="ok"/>:<AlertTriangle size={14} className="bad"/>} FFmpeg {x.ffmpeg?'instalado':'faltando (pkg install ffmpeg)'}</li>
        <li><HardDrive size={14}/> {(x.livre_mb/1024).toFixed(1)} GB livres (mínimo para render: {x.minimo_mb} MB) • banco {(x.banco.tamanho/1048576).toFixed(1)} MB</li>
+       {x.livre_mb>=0&&x.livre_mb<x.minimo_mb*2&&<li className="bad"><AlertTriangle size={14}/> Pouco espaço no celular: apague vídeos antigos ou mude o backup das mídias para o cartão. Com menos de {x.minimo_mb} MB o render espera.</li>}
+       {(x.memoria_mb!=null||x.temperatura!=null)&&<li>{x.memoria_mb!=null&&<>Servidor usando {x.memoria_mb.toFixed(0)} MB de memória</>}{x.temperatura!=null&&<> • aparelho a {x.temperatura.toFixed(0)} °C</>}</li>}
+       {(x.motores||[]).filter(m=>m.estilo!=='_resumo').length>0&&<li>Tempo de render medido: {(x.motores||[]).filter(m=>m.estilo!=='_resumo').slice(0,4).map(m=>`${m.estilo.replace('_',' ')} ${m.seg_por_seg} s por segundo de vídeo`).join(' • ')}</li>}
+       {(x.motores||[]).filter(m=>m.estilo==='_resumo').map(m=><li key="r">Última semana: {m.correcoes_qualidade} correção(ões) do diretor de qualidade • {m.falhas_ffmpeg} falha(s) de FFmpeg</li>)}
        <li>Trabalhos: {Object.entries(x.jobs).map(([k,v])=>`${k} ${v}`).join(' • ')||'nenhum'}</li>
        {x.falhas_recentes.length>0&&<li>Últimas falhas: {x.falhas_recentes.slice(0,3).map(f=>`${f.acao} (${horaTexto(f.t)})`).join(' • ')}</li>}
       </ul>

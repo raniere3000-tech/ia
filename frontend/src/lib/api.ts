@@ -186,7 +186,7 @@ export const salvarEmail=(cfg:CfgSrv,d:Partial<EstadoEmail>)=>api<EstadoEmail>(c
 export const lerRespostasAgora=(cfg:CfgSrv)=>api<{ok:boolean;lidos:number;aplicados:number;erro:string}>(cfg,'POST','/api/v1/email/respostas/ler',{});
 
 // ---------------------------------------------------------------- servidor
-export type Diagnostico={ffmpeg:boolean;livre_mb:number;minimo_mb:number;capacidade:Capacidade;jobs:Record<string,number>;falhas_recentes:{t:number;ator:string;acao:string;recurso:string}[];backups:{arquivo:string;tamanho:number;criado:number}[];banco:{arquivo:string;tamanho:number}};
+export type Diagnostico={memoria_mb?:number|null;temperatura?:number|null;motores?:{estilo:string;seg_por_seg?:number;cenas?:number;correcoes_qualidade?:number;falhas_ffmpeg?:number}[];ffmpeg:boolean;livre_mb:number;minimo_mb:number;capacidade:Capacidade;jobs:Record<string,number>;falhas_recentes:{t:number;ator:string;acao:string;recurso:string}[];backups:{arquivo:string;tamanho:number;criado:number}[];banco:{arquivo:string;tamanho:number}};
 export const diagnostico=(cfg:CfgSrv)=>api<Diagnostico>(cfg,'GET','/api/v1/diagnostico');
 export const fazerBackup=(cfg:CfgSrv)=>api<{arquivo:string;tamanho:number}>(cfg,'POST','/api/v1/backups',{});
 export type MidiasBackup={config:{ligado:boolean;categorias:string[];destino:string};destino:string;categorias:Record<string,{nome:string;arquivos:number;mb:number}>;escolhidos:number;ja_copiados:number;falta_mb:number;livre_mb:number;mesmo_aparelho:boolean;ultimos:{arquivo:string;criado:number}[]};

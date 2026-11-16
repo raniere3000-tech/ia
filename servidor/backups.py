@@ -95,12 +95,50 @@ def testar_restauracao(nome: str) -> dict:
     return {'ok': not erros and ok_banco, 'erros': erros, 'banco_ok': ok_banco, 'projetos': projetos, 'pasta': str(destino)}
 
 
+def _memoria_mb() -> float | None:
+    """Memória usada pelo servidor agora (lida do próprio sistema; None se não der para ler)."""
+    try:
+        for ln in open('/proc/self/status', encoding='utf-8'):
+            if ln.startswith('VmRSS:'):
+                return round(int(ln.split()[1]) / 1024, 1)
+    except OSError:
+        pass
+    return None
+
+
+def _temperatura() -> float | None:
+    """Temperatura do aparelho só se o Android deixar ler (muitos não deixam). Nunca inventa um número."""
+    for z in sorted(Path('/sys/class/thermal').glob('thermal_zone*/temp'))[:12]:
+        try:
+            v = int(z.read_text().strip())
+        except (OSError, ValueError):
+            continue
+        c = v / 1000 if v > 1000 else v
+        if 15 <= c <= 110:
+            return round(c, 1)
+    return None
+
+
+def motores() -> list:
+    """Quanto tempo o celular leva por segundo de vídeo em cada estilo (medido de verdade nas últimas 20 cenas),
+    e quantas correções o diretor de qualidade fez e quantas falhas de FFmpeg houve na última semana."""
+    out = []
+    for r in db.todos("SELECT etapa, SUM(segundos) AS s, SUM(unidades) AS u, COUNT(*) AS n FROM (SELECT * FROM medidas WHERE etapa LIKE 'render_cena_%' ORDER BY id DESC LIMIT 400) GROUP BY etapa"):
+        if r['u']:
+            out.append({'estilo': r['etapa'].replace('render_cena_', ''), 'seg_por_seg': round(r['s'] / r['u'], 2), 'cenas': r['n']})
+    semana = time.time() - 7 * 86400
+    corr = (db.um("SELECT COUNT(*) AS n FROM eventos WHERE acao='qualidade_corrigiu' AND t>?", semana) or {'n': 0})['n']
+    falhas = (db.um("SELECT COUNT(*) AS n FROM eventos WHERE detalhe LIKE '%FFmpeg%' AND t>?", semana) or {'n': 0})['n']
+    return sorted(out, key=lambda x: -x['cenas']) + [{'estilo': '_resumo', 'correcoes_qualidade': corr, 'falhas_ffmpeg': falhas}]
+
+
 def diagnostico() -> dict:
     import fila
     import renderizador as rd
     jobs = db.todos('SELECT status, COUNT(*) AS n FROM jobs GROUP BY status')
     ult = db.todos("SELECT t, ator, acao, recurso FROM eventos WHERE acao LIKE '%falh%' OR acao LIKE '%erro%' ORDER BY n DESC LIMIT 10")
     return {'ffmpeg': rd.tem_ffmpeg(), 'livre_mb': rd.livre_mb(pg.DADOS), 'minimo_mb': rd.MIN_LIVRE_MB, 'capacidade': fila.capacidade(),
+            'motores': motores(), 'memoria_mb': _memoria_mb(), 'temperatura': _temperatura(),
             'jobs': {j['status']: j['n'] for j in jobs}, 'falhas_recentes': ult, 'backups': listar()[:3],
             'banco': {'arquivo': str(db.ARQ), 'tamanho': db.ARQ.stat().st_size if db.ARQ.exists() else 0}}
 
