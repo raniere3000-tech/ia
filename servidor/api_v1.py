@@ -18,6 +18,7 @@ import autenticacao as au
 import backups
 import banco as db
 import emails
+import diretor
 import estilos_codigo as ec
 import exportacao
 import fila
@@ -240,6 +241,7 @@ def iniciar():
     fila.registrar('estilo.demo', job_demo, 'pesado')
     fila.registrar('skills.instalar', job_skills, 'leve')
     exportacao.iniciar()
+    diretor.iniciar()
     try:
         skcat.sincronizar()
     except Exception as e:  # catálogo com problema não impede o servidor de subir
@@ -288,6 +290,20 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         return {'projetos': pj.listar(q.get('tipo', [''])[0]), 'livre_mb': rd.livre_mb(pg.DADOS)}
     if rota == ('POST', '/api/v1/projetos'):
         return pj.criar(corpo(), quem, 'site')
+    # ---- diretor de cena: mapa de palco, animatic e prévia A/B (render pequeno de verdade)
+    m = re.fullmatch(r'/api/v1/projetos/(\w+)/diretor', caminho)
+    if m and metodo == 'GET':
+        return diretor.mapa(m.group(1))
+    m = re.fullmatch(r'/api/v1/projetos/(\w+)/animatic', caminho)
+    if m and metodo == 'POST':
+        return diretor.pedir_animatic(m.group(1))
+    m = re.fullmatch(r'/api/v1/projetos/(\w+)/cenas/(\d{1,3})/previa-ab', caminho)
+    if m and metodo == 'POST':
+        d = corpo()
+        return diretor.pedir_ab(m.group(1), int(m.group(2)), d.get('a') or [], d.get('b') or [])
+    m = re.fullmatch(r'/api/v1/diretor/(\w{6,40})', caminho)
+    if m and metodo == 'GET':
+        return diretor.estado(m.group(1))
     m = re.fullmatch(r'/api/v1/projetos/(\w+)', caminho)
     if m:
         pid = m.group(1)

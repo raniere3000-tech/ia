@@ -479,6 +479,50 @@ confere(any(x['texto'] == 'Ana agora guarda a chave do sótão.' and x['estado']
 st, so, _ = api('GET', f'/api/v1/series/{SID}', None, SES)
 confere(so['episodios'][0]['status'] == 'ready_for_review' and len(so['personagens']) == 2, 'série mostra episódios com a situação do vídeo')
 
+print('Diretor: mapa de palco, eixo, animatic e prévia A/B')
+EPID = ep['projeto_id']
+st, mp, _ = api('GET', f'/api/v1/projetos/{EPID}/diretor', None, SES)
+confere(st == 200 and [a['id'] for a in mp['cenas'][0]['atores']] == ['ana', 'beto'] and mp['cenas'][0]['eixo'] == [0.27, 0.73], 'mapa de palco com atores e eixo')
+import diretor  # noqa: E402
+cx = [{'id': 'a', 'cenario_id': 'sala', 'elenco': [{'personagem_id': 'ana', 'posicao': 'esquerda', 'acoes': []}, {'personagem_id': 'beto', 'posicao': 'direita', 'acoes': []}]},
+      {'id': 'b', 'cenario_id': 'sala', 'planos': [{'id': 'p1', 'plano': 'CU', 'personagem': ''}],
+       'elenco': [{'personagem_id': 'ana', 'posicao': 'direita', 'acoes': [{'tipo': 'olhar', 'alvo': 'direita'}]}, {'personagem_id': 'beto', 'posicao': 'esquerda', 'acoes': []}]},
+      {'id': 'c', 'cenario_id': 'sala', 'elenco': [{'personagem_id': 'ana', 'posicao': 'esquerda', 'acoes': [{'tipo': 'andar', 'alvo': 'esquerda'}]},
+                                                   {'personagem_id': 'beto', 'posicao': 'direita', 'acoes': []}]}]
+tipos = [(x['cena'], x['tipo']) for x in diretor.checar(cx)]
+confere(('b', 'eixo') in tipos and ('b', 'direcao_olhar') in tipos and ('b', 'close_sem_foco') in tipos and ('c', 'eixo') not in tipos,
+        'eixo de 180°: troca de lado sem motivo avisa; andando para o outro lado não avisa')
+st, an, _ = api('POST', f'/api/v1/projetos/{EPID}/animatic', {}, SES)
+t = time.time()
+while time.time() - t < 300:
+    ea = api('GET', f'/api/v1/diretor/{an["job"]}', None, SES)[1]
+    if ea['status'] in ('concluido', 'falhou'):
+        break
+    time.sleep(0.5)
+confere(ea['status'] == 'concluido', f'animatic feito ({ea.get("erro")})')
+if ea['status'] == 'concluido':
+    r = ea['resultado']
+    arq = Path(db.um('SELECT caminho FROM assets WHERE id=?', r['asset'])['caminho'])
+    vs = [s for s in rd.sonda(arq)['streams'] if s['codec_type'] == 'video'][0]
+    print(f'     (animatic de {r["duracao"]}s levou {r["segundos_para_fazer"]}s)')
+    confere((vs['width'], vs['height']) == (360, 640) and vs['avg_frame_rate'] in ('8/1', '8/1.0') and abs(r['duracao'] - sum(c['duracao_real'] for c in dp['cenas'])) < 1,
+            'animatic pequeno (360x640, 8 quadros/s) com a duração do vídeo')
+    confere(api('GET', f'/api/v1/projetos/{EPID}/diretor', None, SES)[1]['animatic']['asset'] == r['asset'], 'mapa mostra o animatic atual')
+st, ab, _ = api('POST', f'/api/v1/projetos/{EPID}/cenas/0/previa-ab', {'a': [{'plano': 'WS'}], 'b': [{'plano': 'WS'}, {'plano': 'CU', 'personagem': 'beto'}]}, SES)
+t = time.time()
+while time.time() - t < 300:
+    eb = api('GET', f'/api/v1/diretor/{ab["job"]}', None, SES)[1]
+    if eb['status'] in ('concluido', 'falhou'):
+        break
+    time.sleep(0.5)
+confere(eb['status'] == 'concluido' and len(eb['resultado']['a']) == 1 and [x['plano'] for x in eb['resultado']['b']] == ['WS', 'CU']
+        and all(x['img'].startswith('data:image/jpeg;base64,') for x in eb['resultado']['b']), f'prévia A/B com quadros desenhados de verdade ({eb.get("erro")})')
+if eb['status'] == 'concluido':
+    for k, x in enumerate(eb['resultado']['a'] + eb['resultado']['b']):
+        (TMP / f'ab-{k}.jpg').write_bytes(base64.b64decode(x['img'].split(',', 1)[1]))
+st, ab2, _ = api('POST', f'/api/v1/projetos/{EPID}/cenas/9/previa-ab', {'a': [], 'b': []}, SES)
+confere(st == 404, 'cena que não existe é recusada')
+
 print(f'\n{ok_n} ok, {falhas} falhas   (pasta {TMP})')
 if os.getenv('MANTER_SERVIDOR'):
     # Para testar o site no navegador contra este servidor de teste.

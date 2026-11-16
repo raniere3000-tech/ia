@@ -6,6 +6,7 @@ import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/S
 import { GradeEstilos } from './Galeria';
 import { Prontidao, CriarRapido } from '../components/Prontidao';
 import SkillPicker from '../components/SkillPicker';
+import Diretor from '../components/Diretor';
 import { catalogo, ideias as pedirIdeias, gerarRoteiro, novoVideo, obterProjeto, salvarStoryboard, aprovarRoteiro, type Briefing, type Cena, type Roteiro, type Ideia, type Plano } from '../lib/api';
 
 const REDES:[string,string][]=[['youtube','YouTube'],['instagram','Instagram'],['facebook','Facebook'],['tiktok','TikTok'],['kwai','Kwai']];
@@ -49,7 +50,8 @@ function EditorPlanos({c,mudar}:{c:Cena;mudar:(p:Partial<Cena>)=>void}){
     {ps.map((p,k)=><div key={p.id} className="plano-linha">
       <b>{k+1}</b>
       <select value={p.plano} onChange={e=>set(ps.map((x,j)=>j===k?{...x,plano:e.target.value as Plano['plano']}:x))} aria-label="Enquadramento">{TIPOS_PLANO.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select>
-      <input value={p.busca||''} onChange={e=>set(ps.map((x,j)=>j===k?{...x,busca:e.target.value}:x))} placeholder="Outra foto (em inglês, opcional)" maxLength={60}/>
+      {c.elenco?.length?<select value={p.personagem||''} onChange={e=>set(ps.map((x,j)=>j===k?{...x,personagem:e.target.value}:x))} aria-label="Em quem fica o plano"><option value="">Em quem fala</option>{c.elenco.map(e=><option key={e.personagem_id} value={e.personagem_id}>{e.personagem_id}</option>)}</select>
+      :<input value={p.busca||''} onChange={e=>set(ps.map((x,j)=>j===k?{...x,busca:e.target.value}:x))} placeholder="Outra foto (em inglês, opcional)" maxLength={60}/>}
       <button className="icon-btn" onClick={()=>set(ps.filter((_,j)=>j!==k))} aria-label="Tirar plano"><Trash2 size={14}/></button>
     </div>)}
     {ps.length<6&&<button className="link-btn" onClick={()=>set([...ps,{id:'p'+Math.random().toString(36).slice(2,7),plano:(['WS','MS','CU'] as const)[ps.length%3],busca:''}])}><Plus size={13}/> Plano</button>}
@@ -144,6 +146,8 @@ export default function CriarIA(){
      <EditorCenas cenas={roteiro.cenas} set={c=>setRoteiro({...roteiro,cenas:c})}/>
     </>}
    </section>
+
+   {roteiro&&pid&&<Diretor pid={pid} cenas={roteiro.cenas} salvar={salvarExistente} mudar={(i,p)=>setRoteiro({...roteiro,cenas:roteiro.cenas.map((c,k)=>k===i?{...c,...p}:c)})}/>}
 
    {roteiro&&<section className="panel">
     <div className="section-head"><h2>3. Visual do vídeo <HelpButton topic="estilos3"/></h2><span className="tag ok">{cat.dados?.estilos.find(e=>e.id===b.estilo)?.nome||b.estilo}</span></div>

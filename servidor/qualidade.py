@@ -43,6 +43,9 @@ def antes(cenas: list, estilo: str) -> list:
         if estilo == 'documentario' and not (c.get('imagem') or {}).get('arquivo'):
             out.append(_problema('sem_imagem', 'media', f'A cena "{nome}" ficou sem foto própria e usa a de outra cena.',
                                  'Troque a busca da cena ou cole uma chave de fotos (Pixabay ou Pexels).', cid))
+    import diretor   # regras de direção (eixo de 180°, olhar, close sem dono) para cenas com personagens
+    for x in diretor.checar(cenas):
+        out.append(_problema(x['tipo'], x['severidade'], x['descricao'], x['correcao'], x['cena'], x.get('plano', '')))
     return out
 
 

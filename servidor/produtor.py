@@ -811,8 +811,8 @@ def _foto_emprestada(cenas: list, i: int):
     return None
 
 
-def _render_cena(ctx, pid, i, c, cenas, b, W, H, dur, pasta, feito, total):
-    """Faz o clipe de uma cena (ou reaproveita o que já existe com a mesma chave). Devolve (estilo usado, arquivo)."""
+def preparar_cena(pid, i, c, cenas, b, dados=None):
+    """O que a cena precisa para ser desenhada: estilo usado, cena com personagens/cenário da série, imagem, narração e fotos dos planos."""
     eid = c.get('estilo') or b['estilo']
     img = _imagem_da_cena(c)
     if not img and eid == 'documentario':
@@ -823,10 +823,16 @@ def _render_cena(ctx, pid, i, c, cenas, b, W, H, dur, pasta, feito, total):
     imgs_pl = _imagens_planos(c) if eid == 'documentario' else []
     extra = ''
     if eid == 'animado2d':
-        serie = pj.obter(pid)['dados'].get('serie') or {}
+        serie = (dados if dados is not None else pj.obter(pid)['dados']).get('serie') or {}
         c = dict(c, _personagens=serie.get('personagens') or {}, _cenario=(serie.get('cenarios') or {}).get(c.get('cenario_id') or ''),
                  _audio=str(audio) if audio else None)
         extra = json.dumps([c['_personagens'], c['_cenario']], sort_keys=True)
+    return eid, c, img, audio, imgs_pl, extra
+
+
+def _render_cena(ctx, pid, i, c, cenas, b, W, H, dur, pasta, feito, total):
+    """Faz o clipe de uma cena (ou reaproveita o que já existe com a mesma chave). Devolve (estilo usado, arquivo)."""
+    eid, c, img, audio, imgs_pl, extra = preparar_cena(pid, i, c, cenas, b)
     chave = ec.chave_cena(eid, {k: c.get(k) for k in ('texto', 'titulo', 'destaque', 'numero', 'unidade', 'elementos', 'camera', 'planos')
                                 + (('elenco', 'cenario_id', 'personagem') if eid == 'animado2d' else ())},
                           W, H, dur, (c.get('audio') or {}).get('h', ''),

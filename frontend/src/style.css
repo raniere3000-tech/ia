@@ -860,3 +860,40 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .ed-srv pre{white-space:pre-wrap;word-break:break-word;font-size:12px;max-height:220px;overflow:auto;background:rgba(0,0,0,.25);padding:8px;border-radius:6px}
 .ed-srv-barra{height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
 .ed-srv-barra i{display:block;height:100%;background:var(--accent,#7c6cf0);transition:width .4s}
+
+/* diretor de cena */
+.diretor-avisos{list-style:none;padding:0;margin:8px 0;display:flex;flex-direction:column;gap:6px}
+.diretor-avisos li{display:flex;gap:6px;align-items:flex-start;font-size:14px;background:rgba(245,165,36,.08);border:1px solid rgba(245,165,36,.35);border-radius:8px;padding:6px 8px}
+.diretor-avisos li svg{flex:none;margin-top:3px;color:#f5a524}
+.diretor-avisos small{display:block;opacity:.8}
+.diretor-animatic{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.diretor-animatic video{max-width:100%;max-height:60vh;border-radius:10px;background:#000}
+.diretor-cena{display:flex;flex-direction:column;gap:10px}
+.palco{margin:0;max-width:420px}
+.palco svg{width:100%;height:auto;display:block}
+.palco-chao{fill:rgba(255,255,255,.03);stroke:var(--line,#2a2f3d)}
+.palco-fundo{fill:rgba(255,255,255,.08)}
+.palco-proibido{fill:rgba(229,106,106,.05)}
+.palco-eixo{stroke:#e56a6a;stroke-width:1.5;stroke-dasharray:5 4}
+.palco-rot{font-size:8px;fill:currentColor;opacity:.6}
+.palco-rot.eixo{fill:#e56a6a;opacity:.9}
+.palco-visao{fill-opacity:.12;stroke-opacity:.6;stroke-width:1}
+.palco-ator{stroke:#fff;stroke-width:1.5}
+.palco-ator.fala{stroke:#f5a524;stroke-width:3}
+.palco-nome{font-size:9px;fill:currentColor}
+.palco-passo{stroke:currentColor;stroke-width:1.2;stroke-dasharray:3 2;opacity:.7}
+.palco-seta,.palco-cam{fill:currentColor;opacity:.8}
+.palco figcaption{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.palco-chip{font-size:12px;border:1.5px solid;border-radius:999px;padding:1px 8px}
+.ab-editor{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.ab-planos{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.ab-res{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ab-col{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ab-quadros{display:flex;gap:6px;overflow-x:auto}
+.ab-quadros figure{margin:0;flex:none;width:min(120px,40vw)}
+.ab-quadros img{width:100%;border-radius:6px;display:block}
+.ab-quadros figcaption{font-size:11px;opacity:.8}
+.ab-planos .plano-linha,.sb-planos .plano-linha:has(select+select){grid-template-columns:auto minmax(0,1fr) minmax(0,1fr) auto}
+.ab-planos .plano-linha select{min-width:0}
+.palco-dica{margin:4px 0 0;font-size:12px}
+.ab-quadros{flex-wrap:wrap;overflow:visible}.ab-quadros figure{width:calc(50% - 3px)}
