@@ -174,11 +174,15 @@ def _prompt_roteiro(b: dict, ideia: str, extra: str = '') -> str:
             '8. camera: varie entre aproximar, afastar e panoramica (parado só em cena de número). visual: descrição da imagem da cena. duracao_alvo: segundos da cena.\n'
             '9. Não invente dados. Em temas de fato (história, ciência, saúde), liste fontes confiáveis para conferir e, se não tiver certeza, diga isso no texto. '
             'Não use marcas, personagens ou músicas de terceiros.\n'
+            + ('11. planos: divida CADA cena em 2 ou 3 planos de câmera, como um editor de vídeo curto: {"plano":"WS|MS|CU","busca":"","intencao":""}. '
+               'WS = aberto (mostra o lugar), MS = médio, CU = close (detalhe, rosto, objeto). Comece aberto e feche no detalhe, ou o contrário para revelar. '
+               'busca do plano: 2 a 4 palavras EM INGLÊS de OUTRA foto que combine com o plano (diferente da busca da cena e das outras). intencao: o que o plano mostra, em poucas palavras.\n'
+               if b.get('estilo') == 'documentario' else '') +
             '10. titulo do vídeo: até 60 caracteres, curioso e verdadeiro. legenda: 1 ou 2 frases com um convite para comentar. hashtags: 5 a 8, do tema.\n'
             'Antes de responder, releia: o gancho prende em 2 segundos? Alguma cena está longa ou repetida? O total cabe na duração? Corrija e só então responda.\n'
             f'{extra}Responda só JSON: {{"titulo":"","alternativas":["",""],"gancho":"","publico":"","legenda":"","hashtags":[""],'
             '"fontes":[{"titulo":"","url":""}],"cenas":[{"texto":"","titulo":"","destaque":"","numero":null,"unidade":"","elementos":[],'
-            '"camera":"aproximar","personagem":"","emocao":"","cenario":"","visual":"","busca":"","movimento":"","enquadramento":"","duracao_alvo":6}]}')
+            '"camera":"aproximar","personagem":"","emocao":"","cenario":"","visual":"","busca":"","movimento":"","enquadramento":"","duracao_alvo":6' + (',"planos":[{"plano":"WS","busca":"","intencao":""}]' if b.get('estilo') == 'documentario' else '') + '}]}')
 
 
 _VAZIAS = set('a o e de da do das dos um uma uns umas que em no na nos nas por para com sem se mas ou como mais muito isso esse essa este esta ele ela eles elas seu sua foi ser tem não sim já quando onde porque você the and of'.split())
@@ -201,7 +205,7 @@ def afinar_roteiro(cenas: list) -> tuple[list, list]:
                     if acum >= meio:
                         break
                 a, b2 = ' '.join(frases[:corte]), ' '.join(frases[corte:])
-                seg = dict(c, texto=b2, titulo=c.get('destaque') or ' '.join(b2.split()[:4]), numero=None, elementos=[], destaque='', busca='')
+                seg = dict(c, texto=b2, titulo=c.get('destaque') or ' '.join(b2.split()[:4]), numero=None, elementos=[], destaque='', busca='', planos=[])
                 seg.pop('audio', None); seg.pop('imagem', None); seg.pop('clipe', None)
                 partes = [dict(c, texto=a), seg]
                 avisos.append(f'A cena "{c.get("titulo") or c["texto"][:30]}" tinha narração longa e foi dividida em duas (cenas curtas prendem mais).')
@@ -310,7 +314,7 @@ def salvar_storyboard(pid: str, revisao: int, d: dict, dispositivo: str = '') ->
         if not (v['texto'] or v['titulo']):
             continue
         velha = antigas.get(v['id']) or {}
-        for k in ('audio', 'imagem', 'clipe'):
+        for k in ('audio', 'imagem', 'clipe', 'fotos_planos'):
             if velha.get(k):
                 v[k] = velha[k]
         if c.get('bloqueada'):
@@ -579,6 +583,7 @@ def _foto_da_cena(pid, i, c, b, pasta, cenas):
         return
     atuais = pj.obter(pid)['dados'].get('cenas') or cenas          # relê: as fotos das cenas anteriores acabaram de ser gravadas
     usadas = {str((x.get('imagem') or {}).get('id')) for j, x in enumerate(atuais) if j != i and (x.get('imagem') or {}).get('id')}
+    usadas |= {str(f.get('id')) for x in atuais for f in (x.get('fotos_planos') or {}).values() if f.get('id')}
     t0 = time.time()
     tentativas = [consulta]
     if len(consulta.split()) > 2:
@@ -604,13 +609,48 @@ def _foto_da_cena(pid, i, c, b, pasta, cenas):
                                                                          'credito': foto['credito'], 'link': foto['link']}))
 
 
+def _fotos_dos_planos(pid, i, c, b, pasta):
+    """Estilo documentário: uma foto própria para cada plano que pediu outra busca (mais variedade de imagem).
+    Plano sem foto achada reenquadra a foto da cena; não gasta IA aqui."""
+    planos = [p for p in (c.get('planos') or []) if p.get('busca')]
+    if not planos:
+        return
+    feitas = dict(c.get('fotos_planos') or {})
+    atuais = pj.obter(pid)['dados'].get('cenas') or []
+    usadas = {str((x.get('imagem') or {}).get('id')) for x in atuais if (x.get('imagem') or {}).get('id')}
+    usadas |= {str(f.get('id')) for x in atuais for f in (x.get('fotos_planos') or {}).values() if f.get('id')}
+    seg = ag.segredos()
+    for p in planos:
+        h = _h('busca-plano', p['busca'], b['formato'])
+        velha = feitas.get(p['id']) or {}
+        if velha.get('h') == h and Path(velha.get('arquivo', '')).exists():
+            continue
+        try:
+            foto = im.buscar(p['busca'], b['formato'], pasta, seg.get('pexels', ''), usadas, seg.get('pixabay', ''))
+        except im.SemFoto:
+            feitas.pop(p['id'], None)
+            continue
+        usadas.add(str(foto['id']))
+        feitas[p['id']] = {'h': h, 'arquivo': foto['arquivo'], 'id': foto['id'], 'fonte': foto['fonte'], 'credito': foto['credito'], 'link': foto['link']}
+    pj.mudar_dados(pid, lambda d, _p, i=i: d['cenas'][i].update(fotos_planos=feitas))
+
+
+def _imagens_planos(c: dict) -> list:
+    fp = c.get('fotos_planos') or {}
+    out = []
+    for p in c.get('planos') or []:
+        a = (fp.get(p['id']) or {}).get('arquivo')
+        out.append(Path(a) if a and Path(a).exists() else None)
+    return out
+
+
 def creditos(dados: dict) -> list:
     """Créditos das fotos usadas (sem repetir), para o e-mail e para a legenda."""
     out = []
     for c in dados.get('cenas') or []:
-        cr = (c.get('imagem') or {}).get('credito')
-        if cr and cr not in out:
-            out.append(cr)
+        for cr in [(c.get('imagem') or {}).get('credito')] + [f.get('credito') for f in (c.get('fotos_planos') or {}).values()]:
+            if cr and cr not in out:
+                out.append(cr)
     return out
 
 
@@ -649,6 +689,8 @@ def etapa_visual(ctx, pid, p, b):
             _foto_da_cena(pid, i, c, b, pasta, cenas)
             if b.get('ia_reserva', True) and not _imagem_da_cena(pj.obter(pid)['dados']['cenas'][i]):
                 _desenhar_reserva(ctx, pid, i, c, b, pasta, estilo)
+            if estilo['id'] == 'documentario':
+                _fotos_dos_planos(pid, i, c, b, pasta)
             continue
         prompt = (f'Ilustração original no estilo "{estilo["nome"]}" ({estilo["tecnica"]}). Cena: {c.get("visual") or c.get("titulo")}. '
                   f'Cenário: {c.get("cenario") or "-"}. Personagem: {c.get("personagem") or "nenhum"}, {c.get("emocao") or ""}. '
@@ -712,8 +754,9 @@ def etapa_render(ctx, pid, p, b):
         if not ec.utilizavel(eid, bool(img)):
             eid = b['estilo'] if ec.utilizavel(b['estilo'], bool(img)) else 'vetor_chapado'
         audio = Path(c['audio']['arquivo']) if (c.get('audio') or {}).get('arquivo') and Path(c['audio']['arquivo']).exists() else None
-        chave = ec.chave_cena(eid, {k: c.get(k) for k in ('texto', 'titulo', 'destaque', 'numero', 'unidade', 'elementos', 'camera')}, W, H, dur,
-                              (c.get('audio') or {}).get('h', ''), (c.get('imagem') or {}).get('h', '') + (str(img) if img else ''), b['paleta'])
+        imgs_pl = _imagens_planos(c) if eid == 'documentario' else []
+        chave = ec.chave_cena(eid, {k: c.get(k) for k in ('texto', 'titulo', 'destaque', 'numero', 'unidade', 'elementos', 'camera', 'planos')}, W, H, dur,
+                              (c.get('audio') or {}).get('h', ''), (c.get('imagem') or {}).get('h', '') + (str(img) if img else '') + ''.join(str(x) for x in imgs_pl), b['paleta'])
         saida = pasta / f'{chave}.mp4'
         if not (saida.exists() and saida.stat().st_size > 1000 and (c.get('clipe') or {}).get('chave') == chave):
             trab = pasta / f'trab-{chave}'
@@ -724,7 +767,7 @@ def etapa_render(ctx, pid, p, b):
             base_pct = 50 + 35 * feito / total
             try:
                 ec.preparar(eid, W, H, dur, b['paleta'] or None, _cancelado(ctx))
-                rd.rodar(ec.montar(eid, c, W, H, dur, trab, img, audio, tmp, b['paleta'] or None), _cancelado(ctx),
+                rd.rodar(ec.montar(eid, c, W, H, dur, trab, img, audio, tmp, b['paleta'] or None, imgs_pl), _cancelado(ctx),
                          progresso=lambda x, i=i, base_pct=base_pct, dur=dur: ctx.progresso(base_pct + 35 * dur / total * x, f'Renderizando cena {i + 1} de {len(cenas)}'),
                          dur=dur)
             except InterruptedError:

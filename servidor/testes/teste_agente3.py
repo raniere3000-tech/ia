@@ -354,6 +354,26 @@ while time.time() - t < 400:
 confere(rm['projeto']['status'] == 'ready_for_review', 'vídeo documentário sem fotos achadas ficou pronto')
 confere(all((c.get('imagem') or {}).get('fonte') == 'ia' for c in rm['projeto']['dados']['cenas']), 'cada cena sem foto ganhou imagem da IA')
 SEM_FOTOS = False
+
+print('Planos por cena (documentário)')
+ROTEIRO['cenas'][0]['planos'] = [{'plano': 'WS', 'busca': 'blue sky'}, {'plano': 'CU', 'busca': 'sun close'}]
+ROTEIRO['cenas'][2]['planos'] = [{'plano': 'MS', 'busca': 'air molecules'}, {'plano': 'XX', 'busca': 'clouds', 'foco_x': 9}]
+b4 = dict(briefing, tema='Planos', imagens='busca', estilo='documentario', modo_aprovacao='supervisionado', cenas_qtd=3, duracao_alvo=9)
+st, pp, _ = api('POST', '/api/v1/agente3/projetos', {'briefing': b4, 'produzir': True}, SES)
+t = time.time()
+while time.time() - t < 400:
+    rp = api('GET', f'/api/v1/projetos/{pp["id"]}/revisao', None, SES)[1]
+    if rp['projeto']['status'] in ('ready_for_review', 'failed'):
+        break
+    time.sleep(0.5)
+confere(rp['projeto']['status'] == 'ready_for_review', 'vídeo com planos ficou pronto')
+cp = rp['projeto']['dados']['cenas']
+confere([p['plano'] for p in cp[2]['planos']] == ['MS', 'WS'] and cp[2]['planos'][1]['foco_x'] == 1.0, 'plano inválido vira aberto e números ficam na faixa')
+confere(len(cp[0].get('fotos_planos') or {}) == 2, 'cada plano com busca ganhou a sua foto')
+ids = [f['id'] for c in cp for f in (c.get('fotos_planos') or {}).values()] + [c['imagem']['id'] for c in cp if c.get('imagem')]
+confere(len(ids) == len(set(ids)), 'planos e cenas não repetem foto')
+for c in ROTEIRO['cenas']:
+    c.pop('planos', None)
 st, _, _ = api('POST', '/agente/chaves', {'pexels': ''}, SES)
 
 print('Estilos 3D')

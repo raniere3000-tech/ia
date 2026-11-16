@@ -67,6 +67,9 @@ ESTILOS = [
 ]
 CAMPOS = ('id', 'nome', 'tecnica', 'status', 'prioridade', 'descricao', 'paleta')
 CAMERAS = ('parado', 'aproximar', 'afastar', 'panoramica')
+PLANOS = ('WS', 'MS', 'CU', 'ECU')                       # aberto, médio, close, close extremo
+ZOOM_PLANO = {'WS': 1.0, 'MS': 1.4, 'CU': 1.9, 'ECU': 2.6}
+NOME_PLANO = {'WS': 'aberto', 'MS': 'médio', 'CU': 'close', 'ECU': 'close extremo'}
 FORMATOS = {'9:16': (1080, 1920), '16:9': (1920, 1080), '1:1': (1080, 1080)}
 
 
@@ -107,6 +110,49 @@ def _txt(v, n: int) -> str:
     return s[:n]
 
 
+def _num(v, pad: float, lo: float, hi: float) -> float:
+    try:
+        return max(lo, min(hi, float(v)))
+    except (TypeError, ValueError):
+        return pad
+
+
+def validar_planos(lista) -> list:
+    """Planos da cena (schema 2). Só campos de uma lista fechada e números dentro de faixas; o resto é descartado.
+    inicio/fim são frações da cena (0 a 1), para continuarem certos quando a narração muda de duração."""
+    out = []
+    for k, p in enumerate(lista[:6] if isinstance(lista, list) else []):
+        if not isinstance(p, dict):
+            continue
+        out.append({'id': re.sub(r'[^a-z0-9]', '', str(p.get('id') or ''))[:8] or f'p{k + 1}',
+                    'plano': p.get('plano') if p.get('plano') in PLANOS else 'WS',
+                    'camera': p.get('camera') if p.get('camera') in CAMERAS else 'aproximar',
+                    'foco_x': _num(p.get('foco_x'), 0.5, 0.0, 1.0), 'foco_y': _num(p.get('foco_y'), 0.45, 0.0, 1.0),
+                    'peso': _num(p.get('peso'), 1.0, 0.3, 3.0),
+                    'busca': _txt(p.get('busca'), 60), 'intencao': _txt(p.get('intencao'), 120)})
+    return out
+
+
+def planos_auto(cena: dict, dur: float) -> list:
+    """Sem planos escritos: corta a cena a cada ~2,6 s alternando aberto, médio e close (ritmo de vídeo curto)."""
+    n = max(1, min(4, round(dur / 2.6)))
+    seq = ('WS', 'MS', 'CU', 'MS') if (cena.get('camera') != 'afastar') else ('CU', 'MS', 'WS', 'MS')
+    cams = ('aproximar', 'panoramica', 'aproximar', 'afastar')
+    focos = ((0.5, 0.45), (0.42, 0.42), (0.58, 0.4), (0.5, 0.5))
+    return [{'id': f'p{k + 1}', 'plano': seq[k], 'camera': cams[k], 'foco_x': focos[k][0], 'foco_y': focos[k][1], 'peso': 1.0, 'busca': '', 'intencao': ''}
+            for k in range(n)]
+
+
+def tempos_planos(planos: list, dur: float) -> list[tuple[float, float]]:
+    tot = sum(p['peso'] for p in planos) or 1
+    t, out = 0.0, []
+    for p in planos:
+        d = dur * p['peso'] / tot
+        out.append((round(t, 3), round(min(dur, t + d), 3)))
+        t += d
+    return out
+
+
 def validar_cena(c: dict, i: int = 0) -> dict:
     els = []
     for e in (c.get('elementos') or [])[:5] if isinstance(c.get('elementos'), list) else []:
@@ -139,6 +185,7 @@ def validar_cena(c: dict, i: int = 0) -> dict:
         'movimento': _txt(c.get('movimento'), 160), 'enquadramento': _txt(c.get('enquadramento'), 60),
         'duracao_alvo': max(0.0, min(60.0, dur)),
         'estilo': c.get('estilo') if c.get('estilo') in [e[0] for e in ESTILOS] else '',
+        'planos': validar_planos(c.get('planos')),
     }
 
 
@@ -161,6 +208,8 @@ class Comp:
         self.k = 0
         self.v = ''
         self.nt = 0
+        self.efeitos = True
+        self.sons: list[float] = []      # instantes de 'whoosh' (corte de plano)
 
     def _rot(self) -> str:
         self.k += 1
@@ -218,6 +267,27 @@ class Comp:
             self.f[-1] = self.f[-1][:-len(f'[{r}]')] + f",drawbox=x=0:y=0:w=iw:h=ih:color={borda}:t=8[{r}]"
         o = self._rot()
         self.f.append(f"{self.v}[{r}]overlay=x={x}:y={y}:eval=init:shortest=0[{o}]")
+        self.v = f'[{o}]'
+
+    def imagem_plano(self, arq: Path, ini: float, fim: float, plano: dict, primeiro: bool = False):
+        """Um plano da cena em tela cheia: enquadramento (aberto/médio/close) em volta do foco, movimento da câmera
+        e um pequeno 'soco' de zoom no corte, que dá a sensação de câmera viva."""
+        W, H = self.W, self.H
+        frames = max(2, int(round((fim - ini) * FPS)) + 1)
+        z0 = min(ZOOM_PLANO.get(plano.get('plano'), 1.0), plano.get('_zmax') or 2.6)
+        cam = plano.get('camera') or 'aproximar'
+        mov = {'aproximar': f'{z0:.3f}+{z0 * 0.09:.3f}*on/{frames}', 'afastar': f'{z0 * 1.09:.3f}-{z0 * 0.09:.3f}*on/{frames}',
+               'panoramica': f'{z0 * 1.06:.3f}', 'parado': f'{z0:.3f}'}[cam if cam in CAMERAS else 'aproximar']
+        soco = '' if primeiro else f'+0.06*max(0,1-on/7)'
+        fx, fy = plano.get('foco_x', 0.5), plano.get('foco_y', 0.45)
+        cx = f'({fx - 0.07:.3f}+0.14*on/{frames})*iw' if cam == 'panoramica' else f'{fx:.3f}*iw'
+        i = self.entrada(['-i', str(arq)])
+        r = self._rot()
+        self.f.append(f"[{i}:v]scale={W * 2}:{H * 2}:force_original_aspect_ratio=increase,crop={W * 2}:{H * 2},"
+                      f"zoompan=z='{mov}{soco}':x='max(0,min(iw-iw/zoom,{cx}-iw/zoom/2))':y='max(0,min(ih-ih/zoom,{fy:.3f}*ih-ih/zoom/2))':"
+                      f"d={frames}:s={W}x{H}:fps={FPS},setpts=PTS-STARTPTS+{ini:.3f}/TB,format=yuv420p[{r}]")
+        o = self._rot()
+        self.f.append(f"{self.v}[{r}]overlay=0:0:eof_action=pass:enable='between(t,{ini:.3f},{fim + 0.04:.3f})'[{o}]")
         self.v = f'[{o}]'
 
     def _arq_texto(self, texto: str) -> Path:
@@ -283,6 +353,20 @@ class Comp:
             ia = self.n
             cmd += ['-f', 'lavfi', '-i', f'anullsrc=r=48000:cl=stereo:d={self.dur:.3f}']
             afiltro = f'[{ia}:a]anull[a]'
+        if self.efeitos and self.sons:
+            # som curto de transição nos cortes, baixinho por baixo da voz
+            k = self.n + 1
+            cmd += ['-f', 'lavfi', '-i', 'anoisesrc=d=0.4:c=pink:a=0.5:r=48000']
+            ramos = []
+            parts = [afiltro.replace('[a]', '[voz]')]
+            parts.append(f'[{k}:a]highpass=f=500,lowpass=f=5000,afade=t=in:d=0.16,afade=t=out:st=0.16:d=0.24,volume=0.22,aformat=channel_layouts=stereo,asplit={len(self.sons)}' +
+                         ''.join(f'[w{j}]' for j in range(len(self.sons))))
+            for j, t in enumerate(self.sons):
+                ms = max(0, int((t - 0.18) * 1000))
+                parts.append(f'[w{j}]adelay={ms}|{ms}[d{j}]')
+                ramos.append(f'[d{j}]')
+            parts.append(f'[voz]{"".join(ramos)}amix=inputs={len(ramos) + 1}:duration=first:normalize=0[a]')
+            afiltro = ';'.join(parts)
         final = self.v
         grafo = ';'.join(self.f + [f'{final}format=yuv420p,setsar=1[vout]', afiltro])
         return cmd + ['-filter_complex', grafo, '-map', '[vout]', '-map', '[a]', '-r', str(FPS), '-c:v', 'libx264', '-preset', 'veryfast',
@@ -533,7 +617,7 @@ def estilizar(eid: str, imagem: Path | None, pasta: Path, w: int, h: int, pal: t
     graf = _filtro_estilo(eid, w, h, pal)
     if not graf:
         return imagem
-    saida = pasta / f'estilizada-{eid}.png'
+    saida = pasta / f'estilizada-{eid}-{hashlib.sha1(str(imagem).encode()).hexdigest()[:8]}.png'
     import renderizador
     try:
         renderizador.rodar(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', str(imagem), '-filter_complex', graf, '-map', '[o]', '-frames:v', '1', str(saida)], tempo_max=180)
@@ -542,17 +626,39 @@ def estilizar(eid: str, imagem: Path | None, pasta: Path, w: int, h: int, pal: t
     return saida
 
 
-def montar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, imagem: Path | None, audio: Path | None, saida: Path, paleta: list | None = None) -> list:
-    """Devolve o comando do FFmpeg que faz o clipe desta cena."""
+def _zoom_max(arq, W: int, H: int) -> float:
+    """Quanto dá para aproximar a foto sem ficar borrada: depende do tamanho real dela."""
+    try:
+        import renderizador
+        v = next(x for x in renderizador.sonda(Path(arq)).get('streams', []) if x.get('width'))
+        lado = min(v['width'] / W, v['height'] / H)       # quanto a foto cobre a tela, no lado mais curto
+        return max(1.3, min(2.6, lado * 1.6))
+    except Exception:
+        return 1.6
+
+
+def montar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, imagem: Path | None, audio: Path | None, saida: Path, paleta: list | None = None,
+           imagens_planos: list | None = None, efeitos: bool = True) -> list:
+    """Devolve o comando do FFmpeg que faz o clipe desta cena. `imagens_planos`: foto própria de cada plano (ou None),
+    usada pelo estilo documentário; sem ela, cada plano reenquadra a foto da cena."""
     e = estilo(eid)
     if not utilizavel(e['id'], bool(imagem)):
         e = estilo('vetor_chapado')
     p0, p1, p2 = (paleta or e['paleta'])[:3] if len(paleta or e['paleta']) >= 3 else e['paleta']
     L = _layout(W, H)
+    imagem_original = imagem
     if imagem and e['id'] != 'cartoon2d':
-        pw, ph = (W, H) if e['id'] == 'documentario' else (L['painel'][2], L['painel'][3])
+        pw, ph = (W * 3 // 2, H * 3 // 2) if e['id'] == 'documentario' else (L['painel'][2], L['painel'][3])
         imagem = estilizar(e['id'], imagem, pasta, pw, ph, (p0, p1, p2))
+    if e['id'] == 'documentario' and imagem:
+        planos = cena.get('planos') or planos_auto(cena, dur)
+        imgs = list(imagens_planos or [])[:len(planos)]
+        imgs += [None] * (len(planos) - len(imgs))
+        orig = [x or imagem_original for x in imgs]
+        planos = [dict(p, _zmax=_zoom_max(o, W, H)) for p, o in zip(planos, orig)]
+        cena = dict(cena, planos=planos, _imgs=[estilizar(e['id'], x, pasta, W * 3 // 2, H * 3 // 2, (p0, p1, p2)) if x else imagem for x in imgs])
     c = Comp(W, H, dur, pasta)
+    c.efeitos = efeitos
     titulo = cena.get('titulo') or ''
     destaque = cena.get('destaque') or ''
     m = L['margem']
@@ -842,7 +948,11 @@ def _e_documentario(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque,
     v = H > W
     if imagem:
         c.fundo(p0)
-        c.imagem(imagem, 0, 0, W, H, cena.get('camera') or 'aproximar', 0)
+        planos = cena.get('planos') or [{'plano': 'WS', 'camera': cena.get('camera') or 'aproximar'}]
+        for k, (pl, (t0, t1)) in enumerate(zip(planos, tempos_planos([dict(p, peso=p.get('peso', 1.0)) for p in planos], dur))):
+            c.imagem_plano((cena.get('_imgs') or [imagem] * len(planos))[k], t0, t1 if k < len(planos) - 1 else dur, pl, k == 0)
+            if k:
+                c.sons.append(t0)
     else:
         c.fundo(p0, ('#1a1a2e', '#3a2a5e'))
     c.png(_degrade(pasta, 200, False), '0', '0', 0, 0, (W, int(H * (0.34 if v else 0.30))))
@@ -865,6 +975,8 @@ def _e_documentario(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque,
             td = int(tg * 0.55)
             c.texto(destaque.upper(), '(w-text_w)/2', f'{y0 + int(tg * 1.18 * len(lg)) + td}', td, '#111111', ini=0.7, fade=0.2,
                     caixa=f'0x{p1.lstrip("#")}@0.97')
+    if c.efeitos:
+        c.filtro('fade=t=in:st=0:d=0.14:color=white')      # clarão curto na entrada da cena
     return '#ffffff', '#000000', False
 
 
