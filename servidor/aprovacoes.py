@@ -215,8 +215,15 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
                 continue            # este vídeo já foi entregue a esta rede antes
             novas.append(rede)
         if novas:
+            import produtor
+            creds = produtor.creditos(p['dados'])
+            if creds and not dest.get('legenda'):
+                # crédito das fotos vai na legenda (exigido pela licença CC BY do Wikimedia; cortesia para Pexels/Pixabay)
+                legenda = (legenda + '\n\nImagens: ' + '; '.join(creds))[:2200]
+            exigidos = [c for c in creds if 'Wikimedia' in c]
             post = pg.criar_post({'video': vid, 'redes': novas, 'quando': quando, 'titulo': titulo, 'legenda': legenda[:2200],
-                                  'origem': 'agente3', 'direitos': {'origem': 'meu', 'nota': 'Vídeo original do Agente 3, aprovado por ' + origem}})
+                                  'origem': 'agente3', 'direitos': {'origem': 'meu', 'nota': 'Vídeo original do Agente 3, aprovado por ' + origem},
+                                  'projeto': pid, 'render_sha': render_sha, 'creditos': exigidos})
             for rede in novas:
                 db.executar('INSERT OR IGNORE INTO publicacoes (id, aprovacao, render_sha, post, rede, chave, criado) VALUES (?,?,?,?,?,?,?)',
                             uuid.uuid4().hex[:16], aid, render_sha, post['id'], rede, f'{render_sha}:{rede}', agora)

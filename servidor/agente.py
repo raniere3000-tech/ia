@@ -1233,6 +1233,12 @@ def inspecionar_corte(arq: Path, c: dict, palavras: list, pasta: Path) -> dict:
     return {'ok': not erros, 'erros': erros, 'avisos': avisos[:6]}
 
 
+def _direitos_do_canal(c: dict) -> dict:
+    """Corte de canal: a origem dos direitos é o motivo com que o canal foi aprovado."""
+    canal = next((x for x in estado()['canais'] if x['id'] == c.get('canal')), None)
+    return {'origem': (canal or {}).get('motivo') or '', 'nota': ('Canal ' + canal['nome']) if canal else ''}
+
+
 def conferir(c: dict, e: dict | None = None) -> dict:
     """Direitos, originalidade e chance de monetizar, conferidos antes de qualquer publicação.
 
@@ -1366,7 +1372,8 @@ def agendar_corte(cid: str) -> dict:
     legenda = c.get('legenda_post') or (c['titulo'] + '\n\n' + ' '.join(c['hashtags'])).strip()
     p = pg.criar_post({'video': c['video'], 'redes': po['redes'], 'quando': vaga['quando'], 'titulo': c['titulo'], 'legenda': legenda,
                        'youtube_privacidade': po['youtube_privacidade'], 'tiktok_modo': po['tiktok_modo'],
-                       'modelo': c.get('modelo', ''), 'origem': 'agente-manual' if c.get('tipo') == 'manual' else 'agente', 'repetir': True})
+                       'modelo': c.get('modelo', ''), 'origem': 'agente-manual' if c.get('tipo') == 'manual' else 'agente', 'repetir': True,
+                       'direitos': c.get('direitos') or _direitos_do_canal(c)})
     _mudar(lambda e: [x.update(status='agendado', post=p['id'], quando=vaga['quando'], faixa=vaga['faixa'], espera=False) for x in e['cortes'] if x['id'] == cid])
     quando = datetime.fromtimestamp(vaga['quando']).strftime('%d/%m às %H:%M')
     nomes = ', '.join(r.capitalize() for r in po['redes'])

@@ -7,6 +7,7 @@ import { GradeEstilos } from './Galeria';
 import { Prontidao, CriarRapido } from '../components/Prontidao';
 import SkillPicker from '../components/SkillPicker';
 import VozGravada from '../components/VozGravada';
+import Ficha, { fichaDoServidor } from '../components/Ficha';
 import Diretor from '../components/Diretor';
 import { catalogo, ideias as pedirIdeias, gerarRoteiro, novoVideo, obterProjeto, salvarStoryboard, aprovarRoteiro, type Briefing, type Cena, type Roteiro, type Ideia, type Plano, type Chave } from '../lib/api';
 
@@ -149,7 +150,7 @@ export default function CriarIA(){
     <div className="row-gap left mt">
      <button className="subtle" disabled={!!busy} onClick={()=>fazer('ideias',async()=>{ const r=await pedirIdeias(cfg,{...b,quantidade:6}); setIdeias(r.ideias); if(!r.ideias.length) toast('A IA não trouxe ideias. Tente outro nicho.','info'); })}>{busy==='ideias'?<Loader2 size={15} className="spin"/>:<Lightbulb size={15}/>} Sugerir pautas originais</button>
     </div>
-    {ideias.length>0&&<div className="ideias">{ideias.map(x=><button key={x.titulo} className={'ideia'+(b.tema===x.titulo?' on':'')} onClick={()=>set({tema:x.titulo})}><b>{x.titulo}</b><small>{x.gancho||x.porque}</small>{x.fontes.length>0&&<small className="muted">{x.fontes.length} fonte(s) para conferir</small>}{!x.fato&&<span className="tag warn">opinião</span>}</button>)}</div>}
+    {ideias.length>0&&<div className="ideias">{ideias.map(x=><div key={x.titulo} className="ideia-item"><button className={'ideia'+(b.tema===x.titulo?' on':'')} onClick={()=>set({tema:x.titulo})}><b>{x.titulo}</b><small>{x.gancho||x.porque}</small>{x.fontes.length>0&&<small className="muted">{x.fontes.length} fonte(s) para conferir</small>}{!x.fato&&<span className="tag warn">opinião</span>}</button>{x.ficha&&<Ficha f={fichaDoServidor(x.ficha)}/>}</div>)}</div>}
     <div className="mt"><CamposBriefing b={b} set={set} cat={cat.dados}/></div>
    </section>
 

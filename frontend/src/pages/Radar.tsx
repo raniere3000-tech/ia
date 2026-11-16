@@ -7,6 +7,26 @@ import { usarVideoInteiro, abrirLote } from './Cortes';
 import { HelpButton } from '../components/Help';
 import { radarDireto, canaisDe, ordenar, testarChaveYouTube, type Video, type Canal, type RadarParams } from '../lib/radar';
 import { store, fmt, tm } from '../lib/store';
+import Ficha, { type FichaView } from '../components/Ficha';
+
+/** Ficha de um vídeo do Radar: o que o YouTube informou (medido) separado do que é conta nossa (estimado), e os riscos. */
+function fichaDoVideo(v:Video,canal:Canal|undefined,f:Filtros,coleta:string,mediana:number):FichaView{
+  const dias=Math.max(1,(Date.now()-new Date(v.publicado).getTime())/86400000);
+  const eng=v.views&&(v.likes!==null||v.comentarios!==null)?((v.likes??0)+(v.comentarios??0))/v.views:null;
+  const riscos:string[]=['Vídeo de outra pessoa: só use em cortes com autorização do dono ou regra pública de cortes do canal.'];
+  if(dias>60) riscos.push(`Publicado há ${Math.round(dias)} dias: o interesse pode já ter passado.`);
+  if(v.views===null) riscos.push('O YouTube não informou as views (dado escondido).');
+  if(v.likes===null) riscos.push('Curtidas escondidas pelo dono: o engajamento fica incompleto.');
+  const forca=v.velocidade&&mediana?v.velocidade/mediana:null;
+  return {coletado:coleta||'agora',fontes:[{descricao:'YouTube Data API: busca e estatísticas públicas do vídeo',url:v.link},{descricao:`Canal: ${v.canal}`,url:v.link_canal}],
+    filtros:[['Nicho',f.nicho],['Palavra-chave',f.tema||'-'],['Período',f.dias===3650?'qualquer data':`${f.dias} dias`],['Views mínimas',fmt(f.views)],['País',f.regiao||'qualquer'],['Idioma',f.idioma||'qualquer']],
+    observado:[['Views',v.views===null?'não informado':fmt(v.views)],['Curtidas',v.likes===null?'não informado':fmt(v.likes)],['Comentários',v.comentarios===null?'não informado':fmt(v.comentarios)],
+      ['Publicado',new Date(v.publicado).toLocaleDateString('pt-BR')],['Duração',tm(v.duracao_segundos)],['Inscritos do canal',canal?.inscritos==null?'não informado':fmt(canal.inscritos)]],
+    estimado:[['Views por dia (média desde a publicação)',v.velocidade===null?'-':fmt(v.velocidade)],['Engajamento (curtidas + comentários ÷ views)',eng===null?'-':(eng*100).toFixed(1)+'%'],
+      ['Força comparada aos outros desta busca',forca===null?'-':forca.toFixed(1)+'x a mediana']],
+    notaEstimado:'Contas feitas com os números acima. Views por dia é média: não diz se o vídeo ainda cresce hoje.',
+    risco:dias>60||v.views===null?'alto':'medio',riscos};
+}
 
 const NICHOS:[string,string][] = [['Todos os nichos',''],['Games e lives','gameplay'],['Podcasts e entrevistas','podcast entrevista'],['Humor','humor comédia'],['Esportes','esportes'],['Tecnologia e IA','tecnologia inteligência artificial'],['Educação e curiosidades','curiosidades'],['Ciência','ciência'],['História','história'],['Finanças e negócios','finanças investimentos'],['Empreendedorismo','empreendedorismo'],['Saúde e bem-estar','saúde bem-estar'],['Culinária','receita culinária'],['Viagens','viagem'],['Música','música'],['Cinema e séries','filmes séries'],['Cultura pop','cultura pop'],['Automóveis','carros'],['Beleza e moda','beleza moda'],['Notícias e análise','notícias análise']];
 type Filtros = {nicho:string;tema:string;dias:number;views:number;minutos:number;ordem:string;regiao:string;idioma:string};
@@ -46,6 +66,7 @@ export default function Radar(){
   const [loading,setLoading]=useState(false); const [buscou,setBuscou]=useState(false); const [coleta,setColeta]=useState('');
   const [chave,setChave]=useState('');
   const ordenados=useMemo(()=>ordenar(videos,f.ordem),[videos,f.ordem]);
+  const mediana=useMemo(()=>{ const vs=videos.map(v=>v.velocidade).filter((x):x is number=>x!==null).sort((a,b)=>a-b); return vs.length?vs[Math.floor(vs.length/2)]:0; },[videos]);
 
   async function pesquisar(){
     if(!settings.ytKey){ toast('Cole a chave do YouTube para pesquisar.','erro'); return; }
@@ -115,6 +136,7 @@ export default function Radar(){
       <a href={v.link} target="_blank" rel="noreferrer" className="thumb"><img src={v.thumbnail} alt="" loading="lazy"/><span className="dur">{tm(v.duracao_segundos)}</span></a>
       <div className="video-body">{v.duracao_segundos<=240&&<label className="check sel-video"><input type="checkbox" checked={marcados.has(v.id)} disabled={!!lote} onChange={e=>marcar(v.id,e.target.checked)}/> Selecionar</label>}<h3 title={v.titulo}>{v.titulo}</h3><a className="channel" href={v.link_canal} target="_blank" rel="noreferrer">{v.canal} <ExternalLink size={12}/></a>
        <div className="metrics"><span>▶ {v.views===null?'Não informado':fmt(v.views)+' views'}</span><span>⚡ {v.velocidade===null?'Não informado':fmt(v.velocidade)+'/dia'}</span><span>📅 {new Date(v.publicado).toLocaleDateString('pt-BR')}</span></div>
+       <Ficha f={fichaDoVideo(v,canais.find(c=>c.id===v.canal_id),f,coleta,mediana)}/>
        <div className="card-actions"><a className="subtle sm" href={v.link} target="_blank" rel="noreferrer"><ExternalLink size={13}/> Assistir</a>{v.duracao_segundos<=240?<button className="action-link" onClick={()=>usarInteiro(v.link)}><Smartphone size={13}/> Usar inteiro (sem cortar)</button>:<button className="action-link" onClick={()=>usar(v.link)}><Scissors size={13}/> Abrir no estúdio de cortes</button>}</div></div></article>)}</div>
       :<div className="empty"><Search size={30}/><strong>Nenhum vídeo encontrado</strong><p>Amplie o período, reduza as views mínimas ou mude a duração.</p></div>)
     :(canais.length?<div className="channel-list">{canais.map(c=><article key={c.id} className="channel-row">{c.thumbnail?<img src={c.thumbnail} alt=""/>:<span className="avatar"><Users size={18}/></span>}<div className="grow"><a href={c.link} target="_blank" rel="noreferrer"><strong>{c.nome}</strong> <ExternalLink size={12}/></a><small>{c.inscritos===null?'Inscritos: não informado':fmt(c.inscritos)+' inscritos'} • {c.videos} vídeo(s) nesta pesquisa • {fmt(c.views)} views somadas</small><small className="muted">Destaque: {c.melhor.titulo}</small></div><a className="subtle sm" href={c.melhor.link} target="_blank" rel="noreferrer">Ver destaque</a></article>)}</div>

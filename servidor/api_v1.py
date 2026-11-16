@@ -513,6 +513,12 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         except FileNotFoundError as e:
             raise pj.ErroProjeto(404, str(e))
     # ---- exportação da Montagem manual feita no servidor
+    m = re.fullmatch(r'/api/v1/posts/(\w+)/conferencia', caminho)
+    if m and metodo == 'GET':
+        post = next((x for x in pg.posts() if x['id'] == m.group(1)), None)
+        if not post:
+            raise pj.ErroProjeto(404, 'Post não encontrado.')
+        return {'redes': {r: pg.conferencia(post, r) for r in post['redes'] if r != 'kwai'}}
     if rota == ('POST', '/api/v1/exportar'):
         return exportacao.pedir(corpo(), quem)
     m = re.fullmatch(r'/api/v1/exportar/(\w{6,40})', caminho)

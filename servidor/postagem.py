@@ -489,6 +489,9 @@ def criar_post(d: dict) -> dict:
         'redes': {r: {'status': 'manual' if r == 'kwai' else 'agendado', 'link': '', 'erro': ''} for r in redes},
         'modelo': re.sub(r'[^a-zA-Z0-9_-]', '', str(d.get('modelo', '')))[:40], 'origem': str(d.get('origem', 'manual'))[:20], 'hash': marca,
         'direitos': {'origem': str((d.get('direitos') or {}).get('origem', ''))[:20], 'nota': str((d.get('direitos') or {}).get('nota', ''))[:300]} if isinstance(d.get('direitos'), dict) else None,
+        # Agente 3: de qual projeto/versão aprovada veio e quais créditos de imagem a legenda precisa levar
+        'projeto': re.sub(r'[^a-zA-Z0-9]', '', str(d.get('projeto', '')))[:40], 'render_sha': re.sub(r'[^a-f0-9]', '', str(d.get('render_sha', '')))[:64],
+        'creditos': [str(x)[:160] for x in (d.get('creditos') or [])[:12]] if isinstance(d.get('creditos'), list) else [],
     }
     with LOCK:
         ps = posts()
@@ -751,41 +754,106 @@ def _anotar(p: dict, rede: str, evento: str, detalhe: str = ''):
     p['relatorio'] = p['relatorio'][-40:]
 
 
-def preflight(p: dict, rede: str) -> list:
-    """Conferência antes de postar. Devolve os bloqueios (vazio = pode postar). Não gasta tentativa."""
+DONOS = ('meu', 'autorizado', 'regra')       # de quem é o vídeo (mesma lista do Agente 1)
+
+
+def conferencia(p: dict, rede: str) -> list[dict]:
+    """Portões do Agente 2 antes de postar, item por item: {item, ok, bloqueia, detalhe}.
+    Bloqueio impede o envio desta rede; aviso só fica no relatório. Não gasta tentativa."""
     out = []
+
+    def item(nome, ok, detalhe, bloqueia=True):
+        out.append({'item': nome, 'ok': bool(ok), 'bloqueia': bool(bloqueia and not ok), 'detalhe': detalhe})
     try:
         arq = video_path(p['video'])
     except ErroRede as e:
-        return [str(e)]
-    if arq.stat().st_size < 1000:
-        out.append('O arquivo do vídeo está vazio.')
-    if p.get('hash') and assinatura(p['video']) not in ('', p['hash']):
-        out.append('O arquivo mudou depois de agendado (não é a versão que você aprovou). Agende de novo.')
+        item('arquivo', False, str(e))
+        return out
+    item('arquivo', arq.stat().st_size >= 1000, 'Arquivo do vídeo no servidor.' if arq.stat().st_size >= 1000 else 'O arquivo do vídeo está vazio.')
+    if p.get('hash'):
+        igual = assinatura(p['video']) in ('', p['hash'])
+        item('versao', igual, 'É o mesmo arquivo que foi agendado.' if igual else 'O arquivo mudou depois de agendado (não é a versão que você aprovou). Agende de novo.')
     prov = PROV.get(rede)
     if prov:
         c = status_contas()[prov]
         if not c['conectado']:
-            out.append(f'A conta do {rede.capitalize()} não está conectada. Entre em Publicações > Contas.')
+            item('conta', False, f'A conta do {rede.capitalize()} não está conectada. Entre em Publicações > Contas.')
         elif c['erro']:
-            out.append(f'A conta do {rede.capitalize()} precisa de login de novo: {c["erro"][:160]}')
-        if rede == 'instagram' and c['conectado'] and not any(x.get('instagram') for x in c['paginas'] if x['id'] == c['pagina']):
-            out.append('A Página escolhida não tem um Instagram profissional ligado.')
+            item('conta', False, f'A conta do {rede.capitalize()} precisa de login de novo: {c["erro"][:160]}')
+        elif rede == 'instagram' and not any(x.get('instagram') for x in c['paginas'] if x['id'] == c['pagina']):
+            item('conta', False, 'A Página escolhida não tem um Instagram profissional ligado.')
+        else:
+            item('conta', True, f'Conta do {rede.capitalize()} conectada.')
     try:
         import renderizador as rd
         dur = rd.duracao(arq)
     except Exception:  # noqa: BLE001
         dur = 0
-    if dur and rede in MAX_SEG and dur > MAX_SEG[rede] + 0.5:
-        out.append(f'O vídeo tem {dur:.0f} s e o {rede.capitalize()} aceita até {MAX_SEG[rede]} s neste formato.')
+    if dur and rede in MAX_SEG:
+        item('duracao', dur <= MAX_SEG[rede] + 0.5, f'{dur:.0f} s (o {rede.capitalize()} aceita até {MAX_SEG[rede]} s).')
+    # direitos: de quem é o vídeo
+    dono = (p.get('direitos') or {}).get('origem', '')
+    if p.get('origem', 'manual') in ('agente', 'agente-manual', 'agente3'):
+        item('direitos', dono in DONOS, f'Origem registrada: {dono}.' if dono in DONOS else 'Falta registrar de quem é o vídeo (seu, autorizado ou regra pública de cortes).')
+    else:
+        item('direitos', True, f'Origem registrada: {dono}.' if dono else 'Enviado por você, sem origem registrada (confira se pode postar).', False)
+    if p.get('origem') in ('agente', 'agente-manual'):
+        _portao_agente1(p, item)
+    if p.get('origem') == 'agente3' and p.get('projeto'):
+        _portao_agente3(p, item)
+    # créditos das imagens que pedem atribuição (ex.: Wikimedia CC BY) precisam estar no texto do post
+    faltam = [cr for cr in p.get('creditos') or [] if cr not in (p.get('legenda') or '') and cr not in (p.get('titulo') or '')]
+    if p.get('creditos'):
+        item('creditos', not faltam, 'Créditos das imagens na legenda.' if not faltam else 'Falta na legenda o crédito: ' + '; '.join(faltam[:3]))
+    try:
+        from skills import roteador
+        _t, usadas = roteador.orientacao('agente2.publicar', origem='agente2')
+        if usadas:
+            item('boas_praticas', True, 'Regras de conferência consultadas (skills): ' + ', '.join(usadas) + '.', False)
+    except Exception:  # noqa: BLE001
+        pass
     return out
+
+
+def _portao_agente1(p: dict, item):
+    """Corte do Agente 1: confere de novo o canal de origem e a inspeção do corte (algo pode ter mudado desde o agendamento)."""
+    try:
+        import agente as ag
+        c = next((x for x in ag.estado()['cortes'] if x.get('post') == p['id']), None)
+        if not c:
+            return
+        r = ag.conferir(c)
+        item('origem_do_corte', not r['bloqueios'], 'Canal de origem e inspeção do corte ok.' if not r['bloqueios'] else ' '.join(r['bloqueios']))
+    except Exception as e:  # noqa: BLE001
+        item('origem_do_corte', True, f'Não deu para conferir o corte agora: {str(e)[:120]}', False)
+
+
+def _portao_agente3(p: dict, item):
+    """Vídeo do Agente 3: só a versão aprovada, sem falha técnica na conferência de qualidade."""
+    try:
+        import banco as db
+        import projetos as pj
+        ap = db.um("SELECT * FROM aprovacoes WHERE projeto=? AND render_sha=? AND decisao='aprovado' ORDER BY criado DESC LIMIT 1", p['projeto'], p.get('render_sha') or '')
+        depois = db.um("SELECT id FROM aprovacoes WHERE projeto=? AND render_sha=? AND decisao='rejeitado' AND criado>?", p['projeto'], p.get('render_sha') or '',
+                       (ap or {}).get('criado') or 0)
+        item('aprovacao', bool(ap) and not depois, 'Versão aprovada por você.' if ap and not depois else 'Esta versão do vídeo não está aprovada (ou foi rejeitada depois).')
+        q = (pj.obter(p['projeto'])['dados'].get('qualidade') or {}).get('status', '')
+        item('qualidade', q != 'falha_tecnica', 'Conferência de qualidade sem falha técnica.' if q != 'falha_tecnica' else 'A conferência de qualidade achou falha técnica neste vídeo.')
+    except Exception as e:  # noqa: BLE001  (projeto apagado etc.)
+        item('aprovacao', False, f'Não achei a aprovação deste vídeo: {str(e)[:120]}')
+
+
+def preflight(p: dict, rede: str) -> list:
+    """Conferência antes de postar. Devolve os bloqueios (vazio = pode postar)."""
+    return [x['detalhe'] for x in conferencia(p, rede) if x['bloqueia']]
 
 
 def _publicar_um(pid: str, rede: str):
     atual = next((x for x in posts() if x['id'] == pid), None)
     if atual is None:
         return
-    bloqueios = preflight(atual, rede)
+    conf = conferencia(atual, rede)
+    bloqueios = [x['detalhe'] for x in conf if x['bloqueia']]
     if bloqueios:
         msg = 'Conferência antes de postar: ' + ' '.join(bloqueios)
         def barrar(q):
@@ -796,7 +864,8 @@ def _publicar_um(pid: str, rede: str):
 
     def iniciar(p):
         p['redes'][rede].update(status='postando', erro='', inicio=agora())
-        _anotar(p, rede, 'enviando', 'Conferência ok: conta, arquivo, versão e duração.')
+        _anotar(p, rede, 'enviando', 'Conferência ok: ' + ', '.join(x['item'] for x in conf if x['ok']) +
+                ''.join(f' Aviso: {x["detalhe"]}' for x in conf if not x['ok'] and not x['bloqueia']))
     p = _mudar(pid, iniciar)
     try:
         REF.pop(rede, None)

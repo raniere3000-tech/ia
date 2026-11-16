@@ -3,6 +3,7 @@ import { Youtube, Instagram, Music2, CalendarClock, LogIn, LogOut, Loader2, Serv
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import AgendarPost from '../components/AgendarPost';
+import ConferenciaPost from '../components/ConferenciaPost';
 import { REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, editarPost, cancelarPost, marcarFeito, baixarVideoPost, enderecoRetorno, type Contas, type Prov, type Post, type Rede, type StatusRede } from '../lib/agenda';
 
 const PROVS:{id:Prov;nome:string;redes:string;icone:typeof Youtube;help:'app_google'|'app_meta'|'app_tiktok';idLabel:string;segLabel:string}[] = [
@@ -91,6 +92,7 @@ function PostLinha({p,acao}:{p:Post;acao:(f:()=>Promise<unknown>,ok:string)=>voi
      {atrasado&&<p className="hint warn">Passou da hora e ainda não saiu. O servidor está ligado? Use Postar agora.</p>}
      <div className="post-redes">{(Object.entries(p.redes) as [Rede,StatusRede][]).map(([r,s])=><span key={r} className={'tag '+ST[s.status][1]} title={s.erro||s.link}>{REDES.find(x=>x.id===r)?.nome.replace(' (manual)','')}: {ST[s.status][0]}{s.status==='postado'&&s.link.startsWith('http')&&<a href={s.link.split(' ')[0]} target="_blank" rel="noreferrer"> <ExternalLink size={11}/></a>}</span>)}</div>
      {Object.entries(p.redes).filter(([,s])=>s&&(s.status==='erro'||(s.status==='agendado'&&!!s.erro)||(s.status==='postado'&&!s.link.startsWith('http'))||s.link.includes('('))).map(([r,s])=><p key={r} className={'hint '+(s!.status==='erro'?'bad':s!.status==='agendado'?'warn':'')}><b>{REDES.find(x=>x.id===r)?.nome}:</b> {s!.erro||s!.link}</p>)}
+     {settings.servidor&&pendente(p)&&<ConferenciaPost id={p.id}/>}
      {!!p.relatorio?.length&&<details className="post-rel"><summary>Relatório da publicação</summary><ul>{p.relatorio.slice().reverse().map((e,k)=><li key={k}><small className="muted">{fmtData(e.t)}</small> <b>{REDES.find(x=>x.id===e.rede)?.nome.replace(' (manual)','')||e.rede}</b>: {EV[e.evento]||e.evento}{e.detalhe&&e.evento!=='postado'?` — ${e.detalhe}`:''}{e.evento==='postado'&&e.detalhe.startsWith('http')&&<a href={e.detalhe} target="_blank" rel="noreferrer"> abrir</a>}</li>)}</ul></details>}
      {editar&&<div className="post-editar">
        <label>Novo dia e hora<input type="datetime-local" value={hora} onChange={e=>setHora(e.target.value)}/></label>

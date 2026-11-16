@@ -102,6 +102,18 @@ class Gemini(BaseHTTPRequestHandler):
         else:
             txt = json.dumps(corpo)
             PROMPTS.append(txt)
+            if 'pauteiro de v' in txt:
+                rot = {'ideias': [{'titulo': 'Por que o mar é salgado', 'gancho': 'g', 'porque': 'p', 'tipo': 'curiosidade', 'fato': True, 'risco': 'baixo', 'fontes': []},
+                                  {'titulo': 'Remédio caseiro cura gripe?', 'gancho': 'g', 'porque': 'p', 'tipo': 'saúde', 'fato': True, 'risco': 'alto',
+                                   'motivo_risco': 'saúde', 'fontes': [{'titulo': 'OMS', 'url': 'https://www.who.int'}]}]}
+                r = {'candidates': [{'content': {'parts': [{'text': json.dumps(rot, ensure_ascii=False)}]}}], 'usageMetadata': {}}
+                b = json.dumps(r).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+                return
             if 'REVISOR DE ROTEIRO' in txt or 'VERIFICADOR DE CONTINUIDADE' in txt:
                 m = re.search(r'\\n\[([^\]]+)\]', txt)
                 rot = ({'pontos': [{'cena': m.group(1) if m else '', 'gravidade': 'baixa', 'problema': 'Gancho fraco no começo', 'sugestao': 'Comece pela pergunta.'}]}
@@ -337,6 +349,25 @@ st, r2, _ = api('POST', f'/api/v1/projetos/{PID}/aprovar', {'render_sha': render
 confere(len(pg.posts()) == 1, 'aprovar de novo pelo site não duplica o post')
 p = api('GET', f'/api/v1/projetos/{PID}', None, SES)[1]
 confere(p['status'] == 'queued_to_publish', 'situação: na fila de postagem')
+
+print('Agente 2: portões antes de postar')
+post = pg.posts()[0]
+confere(post['projeto'] == PID and post['render_sha'] == render['sha'], 'post do Agente 3 sabe de qual versão aprovada veio')
+cf = {x['item']: x for x in pg.conferencia(post, 'youtube')}
+confere(cf['aprovacao']['ok'] and cf['direitos']['ok'] and cf['qualidade']['ok'] and cf['versao']['ok'], 'versão aprovada, direitos, qualidade e arquivo conferidos')
+confere(cf['conta']['bloqueia'], 'conta não conectada bloqueia a rede')
+confere({x['item']: x for x in pg.conferencia(dict(post, render_sha='ab' * 32), 'youtube')}['aprovacao']['bloqueia'], 'versão não aprovada é barrada')
+confere({x['item']: x for x in pg.conferencia(dict(post, creditos=['Ana, Wikimedia Commons (CC BY 4.0)']), 'youtube')}['creditos']['bloqueia'], 'crédito exigido fora da legenda é barrado')
+confere({x['item']: x for x in pg.conferencia(dict(post, origem='agente', direitos=None), 'youtube')}['direitos']['bloqueia'], 'corte sem dono registrado é barrado')
+confere(not {x['item']: x for x in pg.conferencia(dict(post, origem='manual', direitos=None), 'youtube')}['direitos']['bloqueia'], 'post enviado à mão só recebe aviso')
+st, cfr, _ = api('GET', f'/api/v1/posts/{post["id"]}/conferencia', None, SES)
+confere(st == 200 and 'kwai' not in cfr['redes'] and all(isinstance(v, list) for v in cfr['redes'].values()), 'site consegue ver a conferência antes de postar')
+
+print('Radar: ficha de oportunidade')
+st, idz, _ = api('POST', '/api/v1/agente3/ideias', {'nicho': 'Ciência', 'tema': 'mar', 'usar_radar': False}, SES)
+f0, f1 = idz['ideias'][0]['ficha'], idz['ideias'][1]['ficha']
+confere(st == 200 and f0['coletado_em'] and f0['filtros']['nicho'] == 'Ciência' and f0['estimado']['interesse'] == 'desconhecido', 'ficha diz quando, com quais filtros e que o interesse é desconhecido sem dados')
+confere(any('sem fonte' in r for r in f0['riscos']) and f1['risco'] == 'alto' and any(x['tipo'] == 'conferir' for x in f1['fontes']), 'ficha mostra fontes e riscos (saúde = alto)')
 
 print('Storyboard editado no site')
 st, rasc, _ = api('POST', '/api/v1/agente3/projetos', {'briefing': dict(briefing, tema='Rascunho'), 'cenas': [{'titulo': 'A', 'texto': 'Primeira cena.'}, {'titulo': 'B', 'texto': 'Segunda cena.'}]}, SES)

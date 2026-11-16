@@ -150,7 +150,7 @@ export type Briefing={tema:string;nicho:string;publico:string;objetivo:string;id
   estilo:string;paleta:string[];voz:string;ritmo?:string;trilha:string;imagens:string;modo_aprovacao:'assistido'|'supervisionado';prioridade:number;orcamento_max:number;max_tentativas:number;
   destinos:{redes:string[];quando:'proximo'|'agora'|'data';data?:number;titulo?:string;legenda?:string};temas:string[]};
 export type Catalogo={estilos:EstiloInfo[];vozes:string[];tipos:string[];estados:Record<string,string>;briefing:Briefing;formatos:string[];ffmpeg:boolean;requisitos?:{ffmpeg:boolean;gemini:boolean;email:boolean;pexels:boolean;numpy:boolean};demos:Record<string,{asset:string;segundos:number}>};
-export type Ideia={titulo:string;gancho:string;porque:string;tipo:string;fato:boolean;fontes:{titulo:string;url:string}[]};
+export type Ideia={titulo:string;gancho:string;porque:string;tipo:string;fato:boolean;fontes:{titulo:string;url:string}[];ficha?:import('../components/Ficha').FichaServidor};
 export type Roteiro={titulo:string;alternativas:string[];gancho:string;publico:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[];cenas:Cena[];avisos?:string[];skills_usadas?:string[]};
 export const catalogo=(cfg:CfgSrv)=>api<Catalogo>(cfg,'GET','/api/v1/agente3/catalogo');
 export const ideias=(cfg:CfgSrv,b:Partial<Briefing>&{quantidade?:number})=>api<{ideias:Ideia[];radar:{titulo:string;canal:string}[]}>(cfg,'POST','/api/v1/agente3/ideias',b);

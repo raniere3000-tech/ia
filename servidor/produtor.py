@@ -128,6 +128,7 @@ def ideias(d: dict) -> dict:
     """De 3 a 10 pautas ORIGINAIS a partir de um nicho/tema. Títulos em alta no YouTube (se houver chave) servem só de termômetro."""
     b = limpar_briefing({**d, 'estilo': 'vetor_chapado'})
     qtd = max(3, min(int(d.get('quantidade') or 5), 10))
+    agora = time.time()
     radar = []
     if ag.segredos().get('youtube') and d.get('usar_radar', True):
         try:
@@ -141,8 +142,9 @@ def ideias(d: dict) -> dict:
     prompt = (f'Você é pauteiro de vídeos curtos ORIGINAIS em {b["idioma"]}. Nicho: {b["nicho"]}. Tema pedido: {b["tema"] or "livre dentro do nicho"}. '
               f'Tipo: {b["tipo"]}. Público: {b["publico"] or "geral"}. Proponha {qtd} pautas originais (não copie títulos nem conteúdo de terceiros). '
               'Para cada uma: titulo, gancho (1 frase), porque (por que deve interessar agora), tipo, fontes (lista de {titulo, url} de fontes confiáveis '
-              'que um humano deve conferir; deixe vazio se não souber), e se é tema de fato (fato:true) ou opinião. '
-              'Responda só JSON: {"ideias":[{"titulo":"","gancho":"","porque":"","tipo":"","fato":true,"fontes":[{"titulo":"","url":""}]}]}')
+              'que um humano deve conferir; deixe vazio se não souber), se é tema de fato (fato:true) ou opinião, e o risco de publicar '
+              '(risco: baixo|medio|alto; motivo_risco: saúde, política, pessoa real, direitos autorais, informação que muda rápido etc.). '
+              'Responda só JSON: {"ideias":[{"titulo":"","gancho":"","porque":"","tipo":"","fato":true,"risco":"baixo","motivo_risco":"","fontes":[{"titulo":"","url":""}]}]}')
     if radar:
         prompt += ('\nTítulos que estão em alta no YouTube neste nicho (use SÓ como termômetro de interesse; '
                    'interesse no YouTube não prova que o assunto é popular fora dele): ' + json.dumps(radar[:15], ensure_ascii=False))
@@ -160,9 +162,43 @@ def ideias(d: dict) -> dict:
             continue
         fontes = [{'titulo': str(f.get('titulo', ''))[:120], 'url': str(f.get('url', ''))[:300]} for f in (it.get('fontes') or [])[:5]
                   if isinstance(f, dict) and re.match(r'https?://', str(f.get('url', '')))]
-        out.append({'titulo': str(it['titulo'])[:140], 'gancho': str(it.get('gancho', ''))[:240], 'porque': str(it.get('porque', ''))[:400],
-                    'tipo': str(it.get('tipo', ''))[:40], 'fato': bool(it.get('fato', True)), 'fontes': fontes})
-    return {'ideias': out[:qtd], 'radar': radar, 'consultado_em': time.time()}
+        ideia = {'titulo': str(it['titulo'])[:140], 'gancho': str(it.get('gancho', ''))[:240], 'porque': str(it.get('porque', ''))[:400],
+                 'tipo': str(it.get('tipo', ''))[:40], 'fato': bool(it.get('fato', True)), 'fontes': fontes}
+        ideia['ficha'] = ficha_oportunidade(ideia, it, radar, b, d, agora)
+        out.append(ideia)
+    out = out[:qtd]
+    try:
+        ant = db.kv('fichas_oportunidade', []) or []
+        db.kv_gravar('fichas_oportunidade', (ant + [dict(x['ficha'], titulo=x['titulo']) for x in out])[-200:])
+    except Exception:  # noqa: BLE001
+        pass
+    return {'ideias': out, 'radar': radar, 'consultado_em': agora}
+
+
+_PALAVRA = re.compile(r'[a-zà-ú0-9]{4,}')
+
+
+def ficha_oportunidade(ideia: dict, bruto: dict, radar: list, b: dict, d: dict, agora: float) -> dict:
+    """Ficha da pauta (D11): de onde veio, quando, com quais filtros, o que foi MEDIDO e o que é ESTIMATIVA, e o risco."""
+    pal = set(_PALAVRA.findall(ideia['titulo'].lower()))
+    parecidos = [r for r in radar if len(pal & set(_PALAVRA.findall(r['titulo'].lower()))) >= 2]
+    riscos = []
+    if bruto.get('risco') in ('medio', 'alto'):
+        riscos.append(f'Risco {bruto["risco"]} apontado pela IA: {str(bruto.get("motivo_risco") or "sem motivo informado")[:160]}')
+    if ideia['fato'] and not ideia['fontes']:
+        riscos.append('Tema de fato sem fonte para conferir: confira antes de produzir.')
+    if not ideia['fato']:
+        riscos.append('É opinião: deixe claro no vídeo.')
+    if not radar:
+        riscos.append('Sem dados do YouTube nesta consulta: o interesse é só palpite da IA.')
+    return {'id': hashlib.sha256((ideia['titulo'] + str(agora)).encode()).hexdigest()[:12], 'coletado_em': agora,
+            'fontes': ([{'tipo': 'youtube', 'descricao': f'{len(radar)} títulos mais vistos dos últimos {int(d.get("dias") or 30)} dias (busca do YouTube, Brasil)'}] if radar else [])
+                      + [{'tipo': 'ia', 'descricao': 'Pauta escrita pela IA (Gemini)'}] + [{'tipo': 'conferir', 'descricao': f['titulo'] or f['url'], 'url': f['url']} for f in ideia['fontes']],
+            'filtros': {'nicho': b['nicho'], 'tema': b['tema'], 'dias': int(d.get('dias') or 30), 'idioma': b['idioma'], 'usou_youtube': bool(radar)},
+            'observado': {'titulos_em_alta_consultados': len(radar), 'titulos_parecidos': len(parecidos), 'exemplos': [r['titulo'] for r in parecidos[:3]]},
+            'estimado': {'interesse': ('alto' if len(parecidos) >= 3 else 'medio' if parecidos else 'desconhecido' if not radar else 'baixo'),
+                         'como': 'Estimativa: quantos títulos em alta se parecem com a pauta. Não é medição de público.'},
+            'risco': 'alto' if bruto.get('risco') == 'alto' else 'medio' if riscos else 'baixo', 'riscos': riscos}
 
 
 def _regras_animado(serie: dict | None) -> str:
