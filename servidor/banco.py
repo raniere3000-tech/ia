@@ -93,6 +93,18 @@ ESQUEMA = [
     CREATE INDEX IF NOT EXISTS episodios_serie ON episodios (serie_id, ordem);
     CREATE INDEX IF NOT EXISTS biblia_serie ON biblia (serie_id, estado);
     """,
+    # 4: skills ligadas ao que cada agente produz (lote 2, K1–K5; só acrescenta)
+    """
+    ALTER TABLE skills_ativacoes ADD COLUMN perfil TEXT;
+    ALTER TABLE skills_ativacoes ADD COLUMN etapa TEXT;
+    ALTER TABLE skills_ativacoes ADD COLUMN versao TEXT;
+    ALTER TABLE skills_ativacoes ADD COLUMN artefato TEXT;
+    ALTER TABLE skills_ativacoes ADD COLUMN decisao TEXT;
+    ALTER TABLE skills_ativacoes ADD COLUMN chars INTEGER;
+    ALTER TABLE skills_perfis ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}';
+    CREATE TABLE IF NOT EXISTS skills_manifestos (sha256 TEXT PRIMARY KEY, versao TEXT, total INTEGER, fonte TEXT, conteudo TEXT NOT NULL, t REAL);
+    CREATE INDEX IF NOT EXISTS skills_ativacoes_etapa ON skills_ativacoes (etapa, t);
+    """,
 ]
 
 
@@ -146,6 +158,14 @@ def migrar():
         pass
     c = con()
     v = c.execute('PRAGMA user_version').fetchone()[0]
+    if 0 < v < len(ESQUEMA):
+        # mudança de estrutura: guarda uma cópia do banco antes (uma por versão), para poder voltar
+        copia = ARQ.with_name(f'{ARQ.stem}-antes-v{len(ESQUEMA)}.sqlite')
+        if not copia.exists():
+            try:
+                copia_consistente(copia)
+            except (sqlite3.Error, OSError) as e:
+                print('banco: cópia antes da migração falhou:', e)
     for i, sql in enumerate(ESQUEMA[v:], start=v + 1):
         with _LOCK_ESCRITA:
             c.executescript(sql)

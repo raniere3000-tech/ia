@@ -168,13 +168,17 @@ def job_skills(ctx):
             'etapa': f'{len(r["instaladas"]) + len(r["ja_estavam"])} prontas, {len(r["falhas"])} com problema'}
 
 
-def _skills(metodo: str, caminho: str, q: dict, corpo) -> dict:
+def _skills(metodo: str, caminho: str, q: dict, corpo, quem: str = '') -> dict:
     rota = (metodo, caminho)
     if rota == ('GET', '/api/v1/skills'):
         p = lambda k: q.get(k, [''])[0]
         return {'skills': skcat.listar(p('agente'), p('estado'), p('busca')), 'resumo': skcat.resumo()}
     if rota == ('POST', '/api/v1/skills/instalar'):
         ids = [str(x) for x in (corpo().get('ids') or []) if isinstance(x, str)][:200]
+        estranhas = [i for i in ids if i not in skcat.manifesto()['por_id']]
+        if estranhas:   # só o que está no manifesto fixado (commit + hash) pode ser instalado
+            db.evento(quem or 'skills', 'skill_recusada', 'catalogo', {'ids': estranhas[:10]})
+            raise skcat.ErroSkill(400, 'Skill fora do catálogo autorizado: ' + ', '.join(estranhas[:5]) + '.')
         j = fila.enfileirar('skills.instalar', agente='skills', dados={'ids': ids}, titulo='Instalar skills (só texto)',
                             chave='skills-instalar-' + str(int(time.time() // 30)), max_tentativas=2)
         return {'job': j['id']}
@@ -184,23 +188,45 @@ def _skills(metodo: str, caminho: str, q: dict, corpo) -> dict:
         j = fila.enfileirar('skills.instalar', agente='skills', dados={'oque': 'atualizacoes'}, titulo='Procurar versões novas das skills',
                             chave='skills-atualizacoes-' + str(int(time.time() // 30)), max_tentativas=1)
         return {'job': j['id']}
+    if rota == ('GET', '/api/v1/skills/relatorio'):
+        return skcat.relatorio(gravar=False)
+    if rota == ('POST', '/api/v1/skills/conferir-catalogo'):
+        return skcat.conferir_catalogo(json.loads(skcat.CATALOGO_118.read_text(encoding='utf-8')))
+    if rota == ('POST', '/api/v1/skills/desfazer-lote'):
+        return skcat.desfazer_lote()
+    if rota == ('GET', '/api/v1/skills/ponta-a-ponta'):
+        return {'consumidores': skrot.ponta_a_ponta()}
     if rota == ('GET', '/api/v1/skills/perfis'):
         return {'perfis': skrot.perfis(), 'limite_max': skrot.LIMITE_MAX}
     m = re.fullmatch(r'/api/v1/skills/perfis/([\w.]+)', caminho)
     if m and metodo == 'PUT':
-        return skrot.salvar_perfil(m.group(1), corpo())
+        return skrot.salvar_perfil(m.group(1), corpo(), quem)
+    m = re.fullmatch(r'/api/v1/skills/perfis/([\w.]+)/desfazer', caminho)
+    if m and metodo == 'POST':
+        return skrot.desfazer_perfil(m.group(1), quem)
     if rota == ('POST', '/api/v1/skills/selecionar'):
         d = corpo()
+        if not d.get('perfil'):    # roteador: agente, tarefa, estilo, preferências, assets, permissão e custo máximo
+            return skrot.escolher(d)
         return skrot.selecionar(str(d.get('perfil') or ''), [str(x) for x in (d.get('skills') or []) if isinstance(x, str)][:6])
     if rota == ('POST', '/api/v1/skills/usar'):
-        # prévia do texto de apoio que entraria no pedido à IA; não roda nada e não muda conteúdo
+        # prévia do texto de apoio que entraria no pedido à IA; não roda nada e não muda conteúdo.
+        # Só perfis de tarefas que existem no servidor (lista fechada); quem pediu fica no registro de eventos.
         d = corpo()
-        texto, usadas = skrot.orientacao(str(d.get('perfil') or ''), projeto_id=str(d.get('projeto') or '')[:40], origem='manual',
-                                         extras=[str(x) for x in (d.get('skills') or []) if isinstance(x, str)][:6])
-        return {'texto': texto, 'usadas': usadas}
+        perfil = str(d.get('perfil') or '')
+        if perfil not in skrot.PERFIS:
+            raise skcat.ErroSkill(403, 'Ação manual não permitida para este perfil.')
+        extras = [str(x) for x in (d.get('skills') or []) if isinstance(x, str)][:6]
+        estranhas = [x for x in extras if x not in skcat.manifesto()['por_id']]
+        if estranhas:
+            raise skcat.ErroSkill(400, 'Skill fora do catálogo autorizado: ' + ', '.join(estranhas[:5]) + '.')
+        texto, usadas = skrot.orientacao(perfil, projeto_id=str(d.get('projeto') or '')[:40], origem='manual', extras=extras, registrar_carga=False)
+        db.evento(quem or 'skills', 'skill_previa_manual', 'perfil:' + perfil, {'skills': usadas})
+        return {'texto': texto, 'usadas': usadas, 'executa': False}
     if rota == ('GET', '/api/v1/skills/historico'):
-        return {'historico': skrot.historico(q.get('job_id', [''])[0], q.get('projeto_id', [''])[0])}
-    m = re.fullmatch(r'/api/v1/skills/([a-z0-9._-]+)(?:/(ativar|desativar|rollback|atualizar))?', caminho)
+        p = lambda k: q.get(k, [''])[0]
+        return {'historico': skrot.historico(p('job_id'), p('projeto_id'), _int(p('limite') or '100', 100), p('etapa'), p('perfil'))}
+    m = re.fullmatch(r'/api/v1/skills/([a-z0-9._-]+)(?:/(ativar|desativar|rollback|atualizar|testar-atualizacao))?', caminho)
     if m:
         sid, acao = m.groups()
         if metodo == 'GET' and not acao:
@@ -209,6 +235,8 @@ def _skills(metodo: str, caminho: str, q: dict, corpo) -> dict:
             return skcat.ativar(sid, acao == 'ativar')
         if metodo == 'POST' and acao == 'rollback':
             return skcat.rollback(sid)
+        if metodo == 'POST' and acao == 'testar-atualizacao':
+            return skcat.testar_atualizacao(sid)
         if metodo == 'POST' and acao == 'atualizar':
             return skcat.aplicar_atualizacao(sid)
     raise pj.ErroProjeto(404, 'Rota não encontrada.')
@@ -596,7 +624,7 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     # ---- biblioteca de skills (só texto de orientação; nada é executado)
     if caminho.startswith('/api/v1/skills'):
         try:
-            return _skills(metodo, caminho, q, corpo)
+            return _skills(metodo, caminho, q, corpo, quem)
         except skcat.ErroSkill as e:
             raise pj.ErroProjeto(e.status, str(e))
     if rota == ('GET', '/api/v1/eventos'):

@@ -216,7 +216,7 @@ label.inline{flex-direction:row;align-items:center;gap:8px;font-size:12px}label.
  .sidebar-bottom{display:none}
  main{padding:22px 16px 12px}.panel{padding:16px;border-radius:14px}.hero{padding:22px}.hero-title{font-size:22px}h1{font-size:25px}
  .steps{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.filter-grid{grid-template-columns:1fr 1fr;gap:12px}
- .video-grid{grid-template-columns:1fr}.config-card{flex-direction:column;gap:12px}.input-wrap{min-width:0;width:100%}
+ .video-grid{grid-template-columns:1fr}.config-card{flex-direction:column;gap:12px}.config-card .config-body{align-self:stretch;width:100%}.input-wrap{min-width:0;width:100%}
  .key-row>.primary,.key-row>.subtle{flex:1}.clip-grid{grid-template-columns:1fr}.check-item{flex-wrap:wrap}
 }
 .label-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -924,3 +924,4 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .ab-planos .plano-linha:has(select+select+select){grid-template-columns:auto repeat(3,minmax(0,1fr)) auto}
 .teste-aparelho{margin:14px 0 6px;padding-top:12px;border-top:1px solid var(--line,#2a3142)}.teste-aparelho .diag .tag{margin:0 4px 4px 0}.log-teste{max-height:220px;overflow:auto;font-size:11.5px;white-space:pre-wrap;background:rgba(0,0,0,.25);padding:8px;border-radius:8px}
 .video-3d{width:min(100%,320px);border-radius:10px;margin-top:8px;background:#000}
+.perfil-top .tag{white-space:normal;max-width:100%}.diag .muted{overflow-wrap:anywhere}

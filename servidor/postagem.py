@@ -789,6 +789,18 @@ def conferencia(p: dict, rede: str) -> list[dict]:
         dur = rd.duracao(arq)
     except Exception:  # noqa: BLE001
         dur = 0
+    # formato do arquivo (codec): as redes aceitam H.264/H.265 com áudio AAC num MP4/MOV
+    try:
+        import renderizador as rd
+        sd = rd.sonda(arq)
+        vs = [x for x in sd.get('streams', []) if x.get('codec_type') == 'video']
+        aus = [x for x in sd.get('streams', []) if x.get('codec_type') == 'audio']
+        cv, ca = (vs[0].get('codec_name', '') if vs else ''), (aus[0].get('codec_name', '') if aus else '')
+        ok_fmt = cv in ('h264', 'hevc') and ca in ('aac', '')
+        item('formato', ok_fmt, f'Vídeo {cv or "sem imagem"}{", áudio " + ca if ca else ", sem áudio"}' + ('.' if ok_fmt else
+             ': as redes pedem H.264 com áudio AAC. Exporte de novo.'), bool(vs) and not ok_fmt)
+    except Exception as e:  # noqa: BLE001  (sem ffprobe não bloqueia: só avisa)
+        item('formato', True, f'Não deu para ler o formato do arquivo ({str(e)[:80]}).', False)
     if dur and rede in MAX_SEG:
         item('duracao', dur <= MAX_SEG[rede] + 0.5, f'{dur:.0f} s (o {rede.capitalize()} aceita até {MAX_SEG[rede]} s).')
     # direitos: de quem é o vídeo
@@ -805,11 +817,23 @@ def conferencia(p: dict, rede: str) -> list[dict]:
     faltam = [cr for cr in p.get('creditos') or [] if cr not in (p.get('legenda') or '') and cr not in (p.get('titulo') or '')]
     if p.get('creditos'):
         item('creditos', not faltam, 'Créditos das imagens na legenda.' if not faltam else 'Falta na legenda o crédito: ' + '; '.join(faltam[:3]))
+    # K4: as regras das skills do Agente 2 viram uma lista para VOCÊ conferir (não decidem nada sozinhas e nunca liberam o post)
     try:
         from skills import roteador
-        _t, usadas = roteador.orientacao('agente2.publicar', origem='agente2')
-        if usadas:
-            item('boas_praticas', True, 'Regras de conferência consultadas (skills): ' + ', '.join(usadas) + '.', False)
+        from skills import catalogo as skcat
+        sel = roteador.selecionar('agente2.publicar')
+        regras = []
+        for sid in sel['usar']:
+            _d, rg = skcat.regras(sid) or ('', [])
+            regras += [f'[{sid}] {x}' for x in rg[:2]]
+        if regras:
+            item('boas_praticas', True, 'Confira também: ' + ' | '.join(regras[:5]), False)
+            bloq = [x['item'] for x in out if x['bloqueia']]
+            roteador.concluir(sel['usar'], 'agente2.publicar', artefato=f'post:{p.get("id", "")}:{rede}:{(p.get("hash") or "")[:12]}', origem='agente2',
+                              saida=f'conferência de {len(out)} itens: ' + ('liberado' if not bloq else 'bloqueado em ' + ', '.join(bloq[:4])))
+        elif not sel['usar']:
+            item('boas_praticas', True, 'Sem lista extra de conferência (skills desligadas): ' + (sel.get('fallback') or ''), False)
+            roteador._fallback('agente2.publicar', 'agente2', '', '', sel)
     except Exception:  # noqa: BLE001
         pass
     return out

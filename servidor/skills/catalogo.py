@@ -31,6 +31,12 @@ NOMES_ESTADO = {
     'incompativel': 'Incompatível', 'desativada': 'Desligada', 'falha_integridade': 'Arquivo alterado ou sumiu',
 }
 USAVEIS = ('regras_disponiveis', 'dep_externa_pendente')
+# nomes do documento do lote 2 (K1) para os estados guardados aqui
+ESTADO_LOTE = {'nao_instalada': 'nao_instalada', 'definicao_instalada': 'definicao_instalada', 'regras_disponiveis': 'disponivel',
+               'dep_externa_pendente': 'dep_pendente', 'executor_em_teste': 'executor_em_teste', 'executor_operacional': 'operacional',
+               'incompativel': 'incompativel', 'desativada': 'desativada', 'falha_integridade': 'falha_integridade'}
+EXECUTOR = 'nenhum: só texto de orientação (nenhum programa da skill roda neste servidor)'
+CATALOGO_118 = Path(__file__).with_name('catalogo_118.json')
 _cache: dict = {}
 
 
@@ -87,8 +93,26 @@ def _linha(sid: str) -> dict | None:
     return db.um('SELECT * FROM skills_catalogo WHERE id=?', sid)
 
 
+def estado_lote(r: dict) -> str:
+    if not r.get('ativa') and r.get('estado') in (*USAVEIS, 'definicao_instalada'):
+        return 'desativada'
+    return ESTADO_LOTE.get(r.get('estado', ''), r.get('estado', ''))
+
+
+def _guardar_manifesto():
+    """Uma cópia de cada versão do manifesto fica no banco (histórico do que foi fixado e quando)."""
+    b = MANIFESTO.read_bytes()
+    m = manifesto()
+    db.executar('INSERT OR IGNORE INTO skills_manifestos (sha256, versao, total, fonte, conteudo, t) VALUES (?,?,?,?,?,?)',
+                _sha(b), str(m.get('versao', '')), len(m['skills']), str(m.get('fonte', ''))[:200], b.decode('utf-8'), time.time())
+
+
 def sincronizar():
     """Garante uma linha por skill do manifesto (sem apagar nada) e confere os arquivos já instalados."""
+    try:
+        _guardar_manifesto()
+    except Exception as e:  # noqa: BLE001  (banco antigo sem a tabela: segue sem o histórico)
+        print('skills: histórico do manifesto', e)
     for s in manifesto()['skills']:
         if sg.item_manifesto_valido(s) or _linha(s['id']):
             continue
@@ -157,6 +181,7 @@ def instalar(ids: list | None = None, ctx=None) -> dict:
     lista = [s['id'] for s in manifesto()['skills'] if not ids or s['id'] in ids]
     ordem = {'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3}
     lista.sort(key=lambda i: ordem.get(manifesto()['por_id'][i]['prioridade'], 9))
+    _foto_lote()
     rel = {'instaladas': [], 'ja_estavam': [], 'falhas': []}
     for n, sid in enumerate(lista):
         if ctx:
@@ -276,6 +301,8 @@ def aplicar_atualizacao(sid: str) -> dict:
     c = (db.kv('skills_candidatas') or {}).get(sid)
     if not c:
         raise ErroSkill(409, 'Não há versão nova conferida desta skill. Procure atualizações primeiro.')
+    if not (c.get('teste') or {}).get('ok'):
+        raise ErroSkill(409, 'Teste a versão nova antes de ativar (botão "Testar versão nova").')
     r = _linha(sid) or {}
     if r.get('sha256') and r.get('commit_sha'):
         _lembrar_commit(r['sha256'], r['commit_sha'])
@@ -297,7 +324,9 @@ def _publico(r: dict, detalhe: bool = False) -> dict:
          'tem_anterior': bool(r['versao_anterior']), 'uso': s.get('uso', ''), 'agentes': s.get('agentes', []), 'modalidade': s.get('modalidade', ''),
          'prioridade': s.get('prioridade', ''), 'gatilho': s.get('gatilho', ''), 'descricao': info.get('descricao', ''), 'n_regras': len(info.get('regras', [])),
          'usavel': bool(r['ativa']) and r['estado'] in USAVEIS and bool(info.get('regras')),
-         'nova_versao': bool((db.kv('skills_candidatas') or {}).get(r['id']))}
+         'nova_versao': bool((db.kv('skills_candidatas') or {}).get(r['id'])),
+         'estado_lote': estado_lote(r), 'executor': EXECUTOR, 'servico_externo': s.get('modalidade') == 'externo-condicional',
+         'versao_testada': bool(((db.kv('skills_candidatas') or {}).get(r['id']) or {}).get('teste', {}).get('ok'))}
     if detalhe:
         d['regras'] = [x['texto'] for x in info.get('regras', [])][:40]
         d['descartadas'] = info.get('descartadas', 0)
@@ -339,3 +368,133 @@ def resumo() -> dict:
     return {'total': len(manifesto()['skills']), 'estados': est, 'usaveis': usaveis, 'ultima_instalacao': db.kv('skills_ultima_instalacao'),
             'candidatas': len(db.kv('skills_candidatas') or {}), 'pasta': str(PASTA),
             'trabalho': db.um("SELECT id, status, etapa, progresso, erro, dados FROM jobs WHERE tipo='skills.instalar' ORDER BY criado DESC LIMIT 1")}
+
+
+# ---------------------------------------------------------------- K1: catálogo, relatório e volta do lote inteiro
+def _foto_lote():
+    """Antes de instalar um lote, guarda como cada skill estava (para desfazer o lote inteiro). Arquivos antigos nunca são apagados."""
+    linhas = db.todos('SELECT id, sha256, commit_sha, versao, estado, ativa, motivo, versao_anterior, regras_json FROM skills_catalogo')
+    db.kv_gravar('skills_lote_anterior', {'t': time.time(), 'linhas': linhas})
+
+
+def desfazer_lote() -> dict:
+    """Volta todas as skills para como estavam antes da última instalação em lote (só onde o arquivo antigo ainda confere)."""
+    foto = db.kv('skills_lote_anterior')
+    if not foto:
+        raise ErroSkill(409, 'Não há instalação anterior guardada para desfazer.')
+    voltou, ficou = [], []
+    for r in foto['linhas']:
+        atual = _linha(r['id'])
+        if not atual or (atual['sha256'], atual['estado'], atual['ativa']) == (r['sha256'], r['estado'], r['ativa']):
+            continue
+        arq = _arquivo(r['id'], r['sha256'])
+        if r['estado'] != 'nao_instalada' and not (arq.is_file() and _sha(arq.read_bytes()) == r['sha256']):
+            ficou.append({'id': r['id'], 'motivo': 'o arquivo da versão anterior não confere mais'})
+            continue
+        db.executar('UPDATE skills_catalogo SET sha256=?, commit_sha=?, versao=?, estado=?, ativa=?, motivo=?, versao_anterior=?, regras_json=?, '
+                    'atualizado=? WHERE id=?', r['sha256'], r['commit_sha'], r['versao'], r['estado'], r['ativa'], r['motivo'],
+                    r['versao_anterior'], r['regras_json'], time.time(), r['id'])
+        voltou.append(r['id'])
+    db.evento('skills', 'lote_desfeito', 'catalogo', {'voltaram': len(voltou), 'ficaram': len(ficou)})
+    return {'voltaram': voltou, 'ficaram': ficou}
+
+
+def conferir_catalogo(c: dict) -> dict:
+    """Confere, por programa, o catálogo de 118 skills (JSON do documento) contra o manifesto fixado: ids, origem, caminho e URL.
+    O catálogo é só uma lista de intenções: o que vale para instalar é o manifesto (commit e hash fixados)."""
+    man = manifesto()['por_id']
+    itens = [s for s in (c.get('skills') or []) if isinstance(s, dict)]
+    ids = [str(s.get('id', '')) for s in itens]
+    linhas = []
+    for s in itens:
+        sid, prob = str(s.get('id', '')), []
+        cam, repo = str(s.get('source_path', '')), str(s.get('repository', ''))
+        if not sg.id_valido(sid):
+            prob.append('id inválido')
+        if not cam.endswith('SKILL.md') or '..' in cam or cam.startswith('/'):
+            prob.append('caminho não é um SKILL.md')
+        if str(s.get('source_url', '')) != f'https://github.com/{repo}/blob/{s.get("source_branch", "")}/{cam}':
+            prob.append('URL não bate com repositório, ramo e caminho')
+        mi = man.get(sid)
+        if not mi:
+            prob.append('não está no manifesto fixado: não será instalada')
+        elif (mi['repo'], mi['caminho']) != (repo, cam):
+            prob.append('origem diferente do manifesto fixado')
+        linhas.append({'id': sid, 'ok': not prob, 'problemas': prob, 'modo': s.get('mode', ''), 'prioridade': s.get('priority', '')})
+    dup = sorted({i for i in ids if ids.count(i) > 1})
+    fora = sorted(set(man) - set(ids))
+    return {'total': len(itens), 'declarado': c.get('count'), 'ids_unicos': len(set(ids)), 'duplicados': dup, 'no_manifesto_e_nao_no_catalogo': fora,
+            'com_problema': [x for x in linhas if not x['ok']], 'ok': len(itens) == c.get('count') == len(set(ids)) and not dup and all(x['ok'] for x in linhas),
+            'linhas': linhas}
+
+
+def _dependencia(s: dict) -> str:
+    return {'externo-condicional': 'serviço ou programa externo (pode ser pago): só o texto é lido',
+            'runtime-auditar': 'traz programa próprio: NÃO roda aqui, só o texto é lido'}.get(s.get('modalidade', ''), 'nenhuma')
+
+
+def relatorio(gravar: bool = True) -> dict:
+    """Uma linha por skill do manifesto, com o estado conferido de verdade (nada de 118/118 só porque há 118 arquivos)."""
+    linhas = []
+    for s in manifesto()['skills']:
+        r = _linha(s['id']) or {'estado': 'nao_instalada', 'ativa': 0, 'sha256': s['sha256'], 'commit_sha': s['commit'], 'motivo': 'sem linha no banco'}
+        arq = _arquivo(s['id'], r['sha256'])
+        info = json.loads(r.get('regras_json') or '{}')
+        linhas.append({'id': s['id'], 'estado': r['estado'], 'estado_lote': estado_lote(r), 'ativa': bool(r['ativa']), 'licenca': s.get('licenca') or '',
+                       'commit': r['commit_sha'][:12], 'sha256': r['sha256'][:16], 'arquivo': arq.is_file(), 'regras': len(info.get('regras', [])),
+                       'dependencia': _dependencia(s), 'executor': 'nenhum', 'motivo': r.get('motivo') or '', 'prioridade': s.get('prioridade', '')})
+    cont: dict = {}
+    for x in linhas:
+        cont[x['estado_lote']] = cont.get(x['estado_lote'], 0) + 1
+    rel = {'gerado': time.time(), 'total': len(linhas), 'por_estado': cont, 'definicoes_instaladas': sum(1 for x in linhas if x['arquivo']),
+           'usaveis_pelos_agentes': sum(1 for x in linhas if x['ativa'] and x['estado'] in USAVEIS and x['regras']),
+           'executores_funcionando': 0, 'pasta': str(PASTA), 'linhas': linhas}
+    if gravar:
+        PASTA.mkdir(parents=True, exist_ok=True)
+        (PASTA / 'relatorio.json').write_text(json.dumps(rel, ensure_ascii=False, indent=1), encoding='utf-8')
+        md = [f'# Skills: relatório ({time.strftime("%d/%m/%Y %H:%M")})', '',
+              f'Total {rel["total"]} | definições instaladas {rel["definicoes_instaladas"]} | usáveis pelos agentes {rel["usaveis_pelos_agentes"]} | '
+              'executores funcionando 0 (nenhuma skill roda programa aqui)', '', '| skill | estado | licença | regras | dependência | motivo |', '|---|---|---|---|---|---|']
+        md += [f'| {x["id"]} | {x["estado_lote"]} | {x["licenca"] or "não confirmada"} | {x["regras"]} | {x["dependencia"]} | {x["motivo"][:120]} |' for x in linhas]
+        (PASTA / 'relatorio.md').write_text('\n'.join(md) + '\n', encoding='utf-8')
+    return rel
+
+
+# ---------------------------------------------------------------- K5: versão nova só entra depois de testada
+def testar_atualizacao(sid: str) -> dict:
+    """Baixa a versão candidata (sem ativar), confere hash, texto, regras e o filtro de segurança, e guarda o resultado do teste."""
+    cand = db.kv('skills_candidatas') or {}
+    c = cand.get(sid)
+    if not c:
+        raise ErroSkill(409, 'Não há versão nova desta skill. Procure atualizações primeiro.')
+    s = _item(sid)
+    teste = {'t': time.time(), 'ok': False}
+    try:
+        b = _baixar(_raw(s, c['commit']))
+        if _sha(b) != c['sha256']:
+            raise ValueError('o arquivo mudou desde que a versão nova foi encontrada')
+        info = sg.extrair(sg.validar_texto(b))
+        if len(info['regras']) < 2:
+            raise ValueError('a versão nova não tem regras em lista aproveitáveis')
+        amostra = sg.compor([(sid, info.get('descricao', ''), [x['texto'] for x in info['regras']])])
+        if sg._PERIGO.search(amostra.split('\n', 2)[-1]):
+            raise ValueError('sobrou texto perigoso depois do filtro')
+        atual = json.loads((_linha(sid) or {}).get('regras_json') or '{}')
+        antes = {x['texto'] for x in atual.get('regras', [])}
+        depois = {x['texto'] for x in info['regras']}
+        teste.update(ok=True, regras=len(info['regras']), descartadas=info.get('descartadas', 0), novas=sorted(depois - antes)[:8],
+                     removidas=sorted(antes - depois)[:8])
+        destino = _arquivo(sid, c['sha256'])
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        tmp = destino.with_suffix('.tmp')
+        tmp.write_bytes(b)
+        os.replace(tmp, destino)
+    except ConnectionError as e:
+        teste['motivo'] = str(e)
+    except ValueError as e:
+        teste['motivo'] = str(e)
+    c['teste'] = teste
+    cand[sid] = c
+    db.kv_gravar('skills_candidatas', cand)
+    db.evento('skills', 'versao_testada', 'skill:' + sid, {'ok': teste['ok'], 'motivo': teste.get('motivo', '')})
+    return dict(obter(sid), teste=teste)

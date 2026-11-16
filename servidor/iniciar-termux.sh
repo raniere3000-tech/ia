@@ -35,6 +35,11 @@ if [ "$1" = "parear" ]; then
   else echo "  O endereço do servidor ainda não saiu. Espere o túnel ligar e rode de novo, ou gere o link no site em Ajustes > Aparelhos."; fi
   exit 0
 fi
+if [ "$1" = "skills" ]; then
+  command -v python >/dev/null || { echo "Falta o Python. Rode:  pkg install -y python"; exit 1; }
+  python -m skills.relatorio $2
+  exit $?
+fi
 if [ "$1" = "diagnostico" ]; then
   command -v python >/dev/null || { echo "Falta o Python. Rode:  pkg install -y python"; exit 1; }
   python diagnostico_aparelho.py $2

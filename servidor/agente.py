@@ -632,10 +632,10 @@ def escolher(frs: list, titulo: str, n: int, co: dict) -> list:
     blocos.append(atual)
     pedir = max(2, math.ceil(n * 2 / len(blocos)))
     achados = []
-    apoio = ''
+    apoio, usadas = '', []
     try:
         from skills import roteador
-        apoio, _ = roteador.orientacao('agente1.analisar', origem='agente1')
+        apoio, usadas = roteador.orientacao('agente1.analisar', origem='agente1')
     except ImportError:
         pass
     for i, bl in enumerate(blocos):
@@ -659,7 +659,19 @@ def escolher(frs: list, titulo: str, n: int, co: dict) -> list:
             + linhas)
         r = gemini([{'text': prompt}])
         achados += r if isinstance(r, list) else r.get('cortes', []) if isinstance(r, dict) else []
-    return validar(achados, frs, co)[:n]
+    cortes = validar(achados, frs, co)[:n]
+    if cortes and usadas:
+        # K4: cada corte leva as skills que entraram na escolha; o registro de uso só existe porque há trechos reais com tempo
+        for c in cortes:
+            c['skills'] = usadas
+        try:
+            from skills import roteador
+            art = 'cortes:' + hashlib.sha256((titulo + json.dumps([(c['ini'], c['fim']) for c in cortes])).encode()).hexdigest()[:12]
+            roteador.concluir(usadas, 'agente1.analisar', artefato=art, origem='agente1',
+                              saida=f'{len(cortes)} trechos: ' + ', '.join(f'{_mmss(c["ini"])}-{_mmss(c["fim"])}' for c in cortes[:4]))
+        except Exception as e:  # noqa: BLE001
+            print('agente: registro das skills dos cortes', e)
+    return cortes
 
 
 def _sem_link(s) -> str:

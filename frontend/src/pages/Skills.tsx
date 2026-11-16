@@ -3,6 +3,7 @@ import { BookOpen, Download, ShieldCheck, RefreshCw, RotateCcw, Loader2, Externa
 import { useApp } from '../state';
 import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
 import { listarSkills, lerPerfis, salvarPerfil, instalarSkills, conferirSkills, procurarAtualizacoes, acaoSkill, obterSkill, historicoSkills, NOME_AGENTE,
+  desfazerPerfil, pontaAPonta, desfazerLote,
   type Skill, type PerfilSkills } from '../lib/skills';
 
 const ESTADOS:[string,string][]=[['','Todas'],['usavel','Prontas para usar'],['nao_instalada','Não instaladas'],['dep_externa_pendente','Dependem de programa externo'],
@@ -15,17 +16,20 @@ function Detalhe({id,onMudou}:{id:string;onMudou:()=>void}){
   const d=useServidor(c=>obterSkill(c,id),0,[id]);
   const [busy,setBusy]=useState('');
   const x=d.dados; if(!x) return d.erro?<p className="hint bad">{d.erro}</p>:<p className="hint"><Loader2 size={13} className="spin"/> Abrindo…</p>;
-  const run=async(a:'ativar'|'desativar'|'rollback'|'atualizar',msg:string)=>{ setBusy(a); try{ d.setDados(await acaoSkill(cfg,id,a)); toast(msg,'ok'); onMudou(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } };
+  const run=async(a:'ativar'|'desativar'|'rollback'|'atualizar'|'testar-atualizacao',msg:string)=>{ setBusy(a); try{ d.setDados(await acaoSkill(cfg,id,a)); toast(msg,'ok'); onMudou(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } };
   return <div className="skill-det">
     {x.descricao&&<p className="hint">{x.descricao}</p>}
     <p className="hint">Origem: <a className="help-link" href={`${x.origem}/blob/${x.commit}/${x.arquivo}`} target="_blank" rel="noreferrer">{x.origem.replace('https://github.com/','')} <ExternalLink size={11}/></a> • versão {x.versao} • licença {x.licenca||'não confirmada'} • conferida {quando(x.ultimo_teste)}</p>
     {x.motivo&&<p className="hint warn">{x.motivo}</p>}
+    <p className="hint">Programa da skill: {x.servico_externo?'depende de serviço externo (não conectado): só o texto é lido':'nenhum roda aqui; só o texto é lido'}.</p>
+    {x.teste&&<p className={'hint '+(x.teste.ok?'':'bad')}>{x.teste.ok?`Versão nova testada: ${x.teste.regras} regra(s); ${x.teste.novas?.length||0} nova(s), ${x.teste.removidas?.length||0} saíram. Ainda não está valendo.`:`A versão nova não passou no teste: ${x.teste.motivo}`}</p>}
     {x.regras&&x.regras.length>0&&<details><summary>{x.n_regras} regra(s) que podem entrar nos pedidos à IA{x.descartadas?` (${x.descartadas} frase(s) descartadas por segurança)`:''}</summary>
       <ul className="skill-regras">{x.regras.map(r=><li key={r}>{r}</li>)}</ul></details>}
     <div className="row-gap left mt">
       {x.estado!=='nao_instalada'&&(x.ativa?<button className="subtle sm" disabled={!!busy} onClick={()=>run('desativar','Skill desligada.')}>Desligar</button>
         :<button className="subtle sm" disabled={!!busy} onClick={()=>run('ativar','Skill ligada.')}>Ligar</button>)}
-      {x.nova_versao&&<button className="subtle sm" disabled={!!busy} onClick={()=>run('atualizar','Versão nova conferida e ativada. Dá para voltar se não gostar.')}><Download size={13}/> Usar versão nova</button>}
+      {x.nova_versao&&<button className="subtle sm" disabled={!!busy} onClick={()=>run('testar-atualizacao','Teste da versão nova feito. Veja o resultado abaixo.')}><ShieldCheck size={13}/> Testar versão nova</button>}
+      {x.nova_versao&&x.versao_testada&&<button className="subtle sm" disabled={!!busy} onClick={()=>run('atualizar','Versão nova ativada. Dá para voltar se não gostar.')}><Download size={13}/> Ativar versão testada</button>}
       {x.tem_anterior&&<button className="subtle sm" disabled={!!busy} onClick={()=>run('rollback','Voltei para a versão anterior.')}><RotateCcw size={13}/> Voltar versão</button>}
     </div>
   </div>;
@@ -35,6 +39,7 @@ function Perfil({p,todas,onSalvo}:{p:PerfilSkills;todas:Skill[];onSalvo:()=>void
   const {toast}=useApp(); const cfg=useCfg();
   const [add,setAdd]=useState('');
   const salvar=async(d:Parameters<typeof salvarPerfil>[2])=>{ try{ await salvarPerfil(cfg,p.id,d); onSalvo(); }catch(e){ toast(erroTexto(e),'erro'); } };
+  const desfazer=async()=>{ try{ await desfazerPerfil(cfg,p.id); toast('Perfil voltou como estava.','ok'); onSalvo(); }catch(e){ toast(erroTexto(e),'erro'); } };
   const opc=todas.filter(s=>!p.skills.includes(s.id)&&(p.agente==='desenvolvimento'?true:s.tipo==='producao'));
   return <li className="perfil-linha">
     <div className="perfil-top"><label className="check"><input type="checkbox" checked={p.ligado} onChange={e=>salvar({ligado:e.target.checked})}/> <b>{p.rotulo}</b></label>
@@ -42,7 +47,9 @@ function Perfil({p,todas,onSalvo}:{p:PerfilSkills;todas:Skill[];onSalvo:()=>void
       <label className="perfil-lim">até<select value={p.limite} onChange={e=>salvar({limite:+e.target.value})}>{[1,2,3,4,5,6].map(n=><option key={n} value={n}>{n}</option>)}</select></label></div>
     <div className="chips">{p.skills.map(s=><button key={s} className={'chip '+(p.prontas.includes(s)?'on':'')} title={p.prontas.includes(s)?'Pronta. Toque para tirar do perfil.':'Ainda não está pronta. Toque para tirar do perfil.'} onClick={()=>salvar({skills:p.skills.filter(x=>x!==s)})}>{s} ×</button>)}
       <select className="chip-add" value={add} onChange={e=>{ const v=e.target.value; setAdd(''); if(v) salvar({skills:[...p.skills,v]}); }}><option value="">+ adicionar</option>{opc.map(s=><option key={s.id} value={s.id}>{s.id}</option>)}</select>
-      {p.skills.join()!==p.padrao.join()&&<button className="link-btn" onClick={()=>salvar({skills:p.padrao})}>voltar ao padrão</button>}</div>
+      {p.skills.join()!==p.padrao.join()&&<button className="link-btn" onClick={()=>salvar({skills:p.padrao})}>voltar ao padrão</button>}
+      {p.pode_desfazer&&<button className="link-btn" onClick={desfazer}><RotateCcw size={12}/> desfazer</button>}</div>
+    {p.fallback&&p.ligado&&p.prontas.length===0&&<p className="hint">Sem skill pronta: {p.fallback}</p>}
   </li>;
 }
 
@@ -58,7 +65,8 @@ export function SkillsCard(){
   const rodando=!!t&&['na_fila','rodando','agendado','aguardando_tentativa'].includes(t.status);
   useEffect(()=>{ setPoll(rodando?3:0); },[rodando]);
   const perfis=useServidor(c=>aberto?lerPerfis(c):Promise.resolve(null),0,[aberto]);
-  const hist=useServidor(c=>aberto?historicoSkills(c):Promise.resolve(null),0,[aberto]);
+  const hist=useServidor(c=>aberto?historicoSkills(c,{etapa:'utilizada'}):Promise.resolve(null),0,[aberto]);
+  const pap=useServidor(c=>aberto?pontaAPonta(c):Promise.resolve(null),0,[aberto]);
   const todas=useMemo(()=>lista.dados?.skills||[],[lista.dados]);
   if(!settings.servidor) return null;
   const r=lista.dados?.resumo; const job=t;
@@ -78,6 +86,7 @@ export function SkillsCard(){
        <button className="primary sm" disabled={!!busy||rodando} onClick={()=>run('inst',()=>instalarSkills(cfg),()=>'Instalação começou no servidor. Pode sair desta tela.')}>{busy==='inst'?<Loader2 size={14} className="spin"/>:<Download size={14}/>} {r.usaveis?'Instalar o que falta':'Instalar as skills'}</button>
        <button className="subtle sm" disabled={!!busy} onClick={()=>run('conf',()=>conferirSkills(cfg),(x)=>x.problemas.length?`${x.problemas.length} arquivo(s) com problema: ${x.problemas.slice(0,2).map((p:any)=>p.id).join(', ')}.`:`${x.conferidas} arquivo(s) conferidos, tudo certo.`)}><ShieldCheck size={14}/> Conferir arquivos</button>
        <button className="subtle sm" disabled={!!busy||rodando} onClick={()=>run('atu',()=>procurarAtualizacoes(cfg),()=>'Procurando versões novas. Nada muda sem você mandar.')}><RefreshCw size={14}/> Procurar versões novas{r.candidatas?` (${r.candidatas})`:''}</button>
+       {r.ultima_instalacao&&<button className="subtle sm" disabled={!!busy||rodando} onClick={()=>run('lote',()=>desfazerLote(cfg),(x)=>`Voltaram ${x.voltaram.length} skill(s) para como estavam antes da última instalação.`)}><RotateCcw size={14}/> Desfazer a última instalação</button>}
        <button className="subtle sm" onClick={()=>setAberto(!aberto)}><ChevronDown size={14}/> {aberto?'Fechar a biblioteca':'Abrir a biblioteca e os perfis'}</button>
       </div>
      </>}
@@ -97,8 +106,12 @@ export function SkillsCard(){
         {abrir===s.id&&<Detalhe id={s.id} onMudou={()=>lista.recarregar()}/>}
       </li>)}</ul>
       {todas.length===0&&!lista.carregando&&<p className="hint">Nenhuma skill com esse filtro.</p>}
-      {hist.dados&&hist.dados.historico.length>0&&<details className="mt"><summary>Últimas vezes que uma skill ajudou</summary>
-        <ul className="skill-regras">{hist.dados.historico.slice(0,20).map(h=><li key={h.id}>{quando(h.t)} • {h.skill_id} • {h.origem.replace('automatico:','').replace('manual:','manual, ')}{h.projeto_id?` • projeto ${h.projeto_id}`:''}</li>)}</ul></details>}
+      {pap.dados&&<><div className="field-label mt">O que cada agente fez com as skills</div>
+        <ul className="diag">{pap.dados.consumidores.map(c=><li key={c.id}><b>{c.nome}</b>{' '}
+          {c.ultimo?<>{quando(c.ultimo)}: {c.saida} <span className="muted">({c.skills.map(s=>`${s.id} → ${s.decisao}`).join('; ')})</span></>:<span className="muted">ainda não usou skill em nada produzido</span>}
+          {c.fallback&&(!c.ultimo||c.fallback.t>c.ultimo)&&<span className="muted"> • última vez sem skill: {c.fallback.motivo}</span>}</li>)}</ul></>}
+      {hist.dados&&hist.dados.historico.length>0&&<details className="mt"><summary>Registro de uso (só quando virou algo de verdade)</summary>
+        <ul className="skill-regras">{hist.dados.historico.slice(0,30).map(h=><li key={h.id}>{quando(h.t)} • {h.skill_id} (versão {h.versao||'?'}) • {h.decisao||h.origem} • {h.resultado}{h.artefato?` • ${h.artefato}`:''}</li>)}</ul></details>}
      </>}
     </div>
   </section>;

@@ -41,6 +41,15 @@ tamanho, codecs e se o vídeo toca do começo ao fim. Grava `~/estudioclip-diagn
 (Ajustes > Servidor do celular > "Testar este celular"), pela fila, um trabalho pesado por vez. Medida feita fora do Android fica marcada
 "aguardando teste no Android".
 
+### Skills dos agentes (só texto, nada é executado)
+`bash iniciar-termux.sh skills` confere o catálogo das 118 skills contra o manifesto fixado, baixa só o texto `SKILL.md` de cada uma
+(do commit fixado, conferindo o SHA-256), guarda em `~/.estudioclip/skills/` e grava `relatorio.json` e `relatorio.md` com o estado de
+cada uma (disponível, dependência pendente, desativada por licença não confirmada, falha). "Executores funcionando" é sempre 0: nenhuma
+skill roda programa aqui. Use `--sem-baixar` para só refazer o relatório. No site: Ajustes > Skills mostra os perfis de cada agente,
+"Testar versão nova" antes de "Ativar versão testada", "Desfazer a última instalação" e o que cada agente fez com as skills
+(o registro de "utilizada" só aparece quando virou ficha, corte, conferência, planos ou laudo de verdade).
+Testes: `PYTHONPATH=. python3 testes/teste_skills.py` e `testes/teste_skills_agentes.py`.
+
 ### Testes do motor no celular (não validados no Android ainda)
 - `python testes/piloto_rig2d.py [pasta] [--leve]`: piloto de 30 s do 2D articulado (poses, objetos, pegar coisas, boca pela fala),
   com folha de quadros e `relatorio.json` (tempo por segundo de vídeo).
