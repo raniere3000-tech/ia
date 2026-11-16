@@ -92,28 +92,36 @@ def _quando(d: dict) -> float | None:
 
 # ---------------------------------------------------------------- render de demonstração dos estilos
 def job_demo(ctx):
-    eid, fmt = ctx.dados['estilo'], ctx.dados.get('formato', '9:16')
-    chave = f'demo:{eid}:{fmt}:{ec.VERSAO_MOTOR}'
+    eid, fmt, var = ctx.dados['estilo'], ctx.dados.get('formato', '9:16'), ctx.dados.get('variante', '')
+    chave = f'demo:{eid}:{fmt}:{ec.VERSAO_MOTOR}' + (f':{var}' if var else '')
     if db.kv(chave):
         return {'resultado': db.kv(chave), 'etapa': 'Pronto'}
     if not ec.utilizavel(eid, False):
         raise produtor.ErroProdutor('Este estilo não roda neste servidor ainda.', True)
     W, H = ec.FORMATOS[fmt]
-    pasta = pg.DADOS / 'demos' / f'{eid}-{fmt.replace(":", "x")}'
+    pasta = pg.DADOS / 'demos' / (f'{eid}-{fmt.replace(":", "x")}' + (f'-{var}' if var else ''))
     shutil.rmtree(pasta, ignore_errors=True)
     pasta.mkdir(parents=True)
     saida = pasta / 'demo.mp4'
     ctx.progresso(10, 'Desenhando as peças' if eid not in ec.motor3d.ESTILOS_3D else 'Desenhando o fundo 3D (só na primeira vez, uns 30 s)')
-    ec.preparar(eid, W, H, 5.0, None, ctx.cancelado)
     t0 = time.time()
-    cmd = ec.montar(eid, ec.demo_cena(eid), W, H, 5.0, pasta, None, None, saida)
+    cena = ec.demo_cena(eid, var)
+    if eid in ec.ANIMADOS:
+        # fala de mentira (sílabas em volume e timbre variados), só para a boca mexer na demonstração; o vídeo sai sem som
+        fala = pasta / 'fala.wav'
+        rd.rodar(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-f', 'lavfi', '-i',
+                  "aevalsrc='0.6*sin(2*PI*(220+180*sin(2*PI*0.7*t))*t)*max(0,sin(2*PI*3.3*t))*lt(mod(t,1.6),1.2)':s=24000:d=5",
+                  '-ac', '1', '-c:a', 'pcm_s16le', str(fala)], tempo_max=60)
+        cena['_audio'] = str(fala)
+    ec.preparar(eid, W, H, 5.0, None, ctx.cancelado, (lambda x: ctx.progresso(10 + 60 * x, 'Desenhando em 3D')) if eid == 'animado3d' else None, cena=cena)
+    cmd = ec.montar(eid, cena, W, H, 5.0, pasta, None, None, saida)
     ctx.progresso(30, 'Renderizando 5 segundos')
     rd.rodar(cmd, ctx.cancelado, tempo_max=900)
     fila.medir('render_cena', (time.time() - t0) / 5.0)
     conf = rd.conferir(saida, pasta, {'largura': W, 'altura': H, 'duracao': 5.0}, ctx.cancelado)
     if not conf['ok']:
         raise produtor.ErroProdutor('A demonstração não passou na conferência: ' + '; '.join(conf['erros']))
-    a = pj.registrar_asset(saida, f'demo-{eid}-{fmt.replace(":", "x")}.mp4', 'video/mp4', '', 'demo')['asset']
+    a = pj.registrar_asset(saida, f'demo-{eid}-{fmt.replace(":", "x")}{"-" + var if var else ""}.mp4', 'video/mp4', '', 'demo')['asset']
     r = {'asset': a['id'], 'segundos': round(time.time() - t0, 1), 'avisos': conf['avisos'], 'formato': fmt}
     db.kv_gravar(chave, r)
     return {'resultado': r, 'etapa': 'Pronto'}
@@ -428,7 +436,9 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         return {'estilos': ec.catalogo(), 'vozes': produtor.VOZES, 'tipos': produtor.TIPOS, 'estados': produtor.ESTADOS,
                 'briefing': produtor.BRIEFING_PADRAO, 'formatos': list(ec.FORMATOS), 'ffmpeg': rd.tem_ffmpeg(), 'requisitos': produtor.requisitos(),
                 'demos': {f'{e["id"]}:{f}': db.kv(f'demo:{e["id"]}:{f}:{ec.VERSAO_MOTOR}') for e in ec.catalogo() for f in ec.FORMATOS
-                          if db.kv(f'demo:{e["id"]}:{f}:{ec.VERSAO_MOTOR}')}}
+                          if db.kv(f'demo:{e["id"]}:{f}:{ec.VERSAO_MOTOR}')},
+                'efeitos': [{'id': k, 'nome': v[0], 'demos': {f: db.kv(f'demo:animado2d:{f}:{ec.VERSAO_MOTOR}:{k}') for f in ec.FORMATOS
+                                                               if db.kv(f'demo:animado2d:{f}:{ec.VERSAO_MOTOR}:{k}')}} for k, v in ec.VARIANTES_DEMO.items()]}
     if rota == ('POST', '/api/v1/agente3/ideias'):
         return produtor.ideias(corpo())
     if rota == ('POST', '/api/v1/agente3/roteiro'):
@@ -466,13 +476,16 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     if m and metodo == 'POST':
         d = corpo()
         fmt = d.get('formato') if d.get('formato') in ec.FORMATOS else '9:16'
-        pronto = db.kv(f'demo:{m.group(1)}:{fmt}:{ec.VERSAO_MOTOR}')
+        var = d.get('variante') if d.get('variante') in ec.VARIANTES_DEMO and m.group(1) == 'animado2d' else ''
+        suf = f':{var}' if var else ''
+        pronto = db.kv(f'demo:{m.group(1)}:{fmt}:{ec.VERSAO_MOTOR}{suf}')
         if pronto:
             return {'pronto': pronto, 'url': au.assinar_url(f'/api/v1/assets/{pronto["asset"]}', 6 * 3600)}
         if not ec.utilizavel(m.group(1), False):
             raise pj.ErroProjeto(400, 'Este estilo ainda não roda no servidor.')
-        j = fila.enfileirar('estilo.demo', agente='galeria', dados={'estilo': m.group(1), 'formato': fmt}, recurso='pesado',
-                            titulo=f'Demonstração: {ec.estilo(m.group(1))["nome"]}', chave=f'demo:{m.group(1)}:{fmt}:{ec.VERSAO_MOTOR}:{int(time.time() // 600)}')
+        j = fila.enfileirar('estilo.demo', agente='galeria', dados={'estilo': m.group(1), 'formato': fmt, 'variante': var}, recurso='pesado',
+                            titulo=f'Demonstração: {ec.estilo(m.group(1))["nome"]}' + (f' ({ec.VARIANTES_DEMO[var][0]})' if var else ''),
+                            chave=f'demo:{m.group(1)}:{fmt}:{ec.VERSAO_MOTOR}{suf}:{int(time.time() // 600)}')
         return {'job': j}
 
     # ---- aprovações e e-mail

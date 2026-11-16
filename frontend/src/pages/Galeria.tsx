@@ -6,7 +6,7 @@ import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
 import { catalogo, pedirDemo, lerFila, urlServidor, assinarAsset, type EstiloInfo } from '../lib/api';
 
 const STATUS:Record<string,[string,string]>={operacional:['Operacional','ok'],beta:['Beta / em teste','warn'],indisponivel:['Indisponível','bad']};
-/** Os 16 estilos, também sem servidor (lista fixa igual à do servidor, para mostrar a situação honesta). */
+/** Os estilos, também sem servidor (lista fixa igual à do servidor, para mostrar a situação honesta). */
 const OFFLINE:Pick<EstiloInfo,'id'|'nome'|'status'|'descricao'>[]=[
   {id:'lousa_giz',nome:'Lousa de giz',status:'operacional',descricao:''},{id:'traco_neon',nome:'Traço neon',status:'operacional',descricao:''},
   {id:'quadrinhos',nome:'Quadrinhos',status:'operacional',descricao:''},{id:'vetor_chapado',nome:'Vetor chapado',status:'operacional',descricao:''},
@@ -14,10 +14,14 @@ const OFFLINE:Pick<EstiloInfo,'id'|'nome'|'status'|'descricao'>[]=[
   {id:'motion_graphics',nome:'Motion graphics',status:'operacional',descricao:''},{id:'quadro_branco',nome:'Quadro branco',status:'operacional',descricao:''},
   {id:'palitinho',nome:'Palitinho',status:'beta',descricao:''},{id:'cartoon2d',nome:'Desenho animado 2D',status:'beta',descricao:''},{id:'parallax_25d',nome:'2.5D / Parallax',status:'beta',descricao:''},
   {id:'cinema3d',nome:'3D de cinema',status:'indisponivel',descricao:''},{id:'brinquedo_blocos',nome:'Blocos de brinquedo',status:'indisponivel',descricao:''},
-  {id:'plastico3d',nome:'Bonequinho de plástico',status:'indisponivel',descricao:''},{id:'retro3d_2000',nome:'3D anos 2000',status:'indisponivel',descricao:''},{id:'mapas_animados',nome:'Mapas animados',status:'indisponivel',descricao:''},
+  {id:'plastico3d',nome:'Bonequinho de plástico',status:'indisponivel',descricao:''},{id:'retro3d_2000',nome:'3D anos 2000',status:'indisponivel',descricao:''},{id:'mapas_animados',nome:'Mapas animados',status:'indisponivel',descricao:''},{id:'documentario',nome:'Documentário (fotos reais)',status:'operacional',descricao:''},{id:'animado2d',nome:'Desenho animado com personagens',status:'beta',descricao:''},{id:'animado3d',nome:'Personagens em 3D',status:'beta',descricao:''},
 ];
 
-function Cartao({e,demo,formato,escolher}:{e:EstiloInfo;demo?:{asset:string;segundos:number};formato:string;escolher?:(id:string)=>void}){
+const DESC_EFEITO:Record<string,string>={chuva_noite:'Partículas de chuva por cima da cena e luz azulada de noite.',neve_fria:'Flocos caindo devagar e luz fria.',
+  poeira_quente:'Poeira subindo no ar com luz de fim de tarde.',neblina_dramatica:'Neblina passando e contraste forte com cantos escuros.',
+  angulos:'Câmera de cima, de baixo e inclinada, e um movimento livre do começo ao fim do plano.'};
+
+function Cartao({e,demo,formato,escolher,variante=''}:{e:EstiloInfo;demo?:{asset:string;segundos:number};formato:string;escolher?:(id:string)=>void;variante?:string}){
   const cfg=useCfg(); const {toast}=useApp();
   const [url,setUrl]=useState('');
   const [esperando,setEsperando]=useState('');
@@ -28,15 +32,15 @@ function Cartao({e,demo,formato,escolher}:{e:EstiloInfo;demo?:{asset:string;segu
     if(!esperando) return;
     const iv=setInterval(async()=>{
       try{ const f=await lerFila(cfg); const j=f.jobs.find(x=>x.id===esperando);
-        if(j?.status==='concluido'){ const r=await pedirDemo(cfg,e.id,formato); if(r.url){ setUrl(urlServidor(cfg,r.url)); setEsperando(''); } }
+        if(j?.status==='concluido'){ const r=await pedirDemo(cfg,e.id,formato,variante); if(r.url){ setUrl(urlServidor(cfg,r.url)); setEsperando(''); } }
         else if(j?.status==='falhou'){ setEsperando(''); toast(j.erro||'A demonstração falhou.','erro'); } }catch{ /* tenta de novo */ }
     },3000);
     return ()=>clearInterval(iv);
-  },[esperando,cfg,e.id,formato,toast]);
+  },[esperando,cfg,e.id,formato,toast,variante]);
   const ver=async()=>{
     try{
       if(demo){ setUrl(urlServidor(cfg,await assinarAsset(cfg,demo.asset))); return; }
-      const r=await pedirDemo(cfg,e.id,formato);
+      const r=await pedirDemo(cfg,e.id,formato,variante);
       if(r.url) setUrl(urlServidor(cfg,r.url)); else if(r.job){ setEsperando(r.job.id); toast('Demonstração na fila do servidor. Leva de alguns segundos a 1 minuto no celular.','info'); }
     }catch(x){ toast(erroTexto(x),'erro'); }
   };
@@ -65,19 +69,25 @@ export function GradeEstilos({escolher,selecionado}:{escolher?:(id:string)=>void
   const cat=useServidor(catalogo);
   // Primeiro o que funciona hoje, depois beta, por último o que ainda não está disponível.
   const ORDEM=(e:EstiloInfo)=>e.status==='operacional'?0:e.status==='beta'?1:2;
+  const anim=cat.dados?.estilos.find(x=>x.id==='animado2d');
   const lista:EstiloInfo[]=cat.dados?.estilos||OFFLINE.map(o=>({...o,tecnica:'',prioridade:'',paleta:['#1b2030','#2a3045','#fff'],precisa_imagem:o.id==='cartoon2d',servidor:false,formatos:[],custo:''}));
   return <>
     {!settings.servidor&&<p className="hint warn">Sem o servidor do celular ligado, só a lista aparece. As demonstrações e a produção rodam no servidor.</p>}
     {cat.dados&&!cat.dados.ffmpeg&&<p className="hint bad">O servidor está sem FFmpeg (Termux: pkg install ffmpeg). Nenhum estilo renderiza até instalar.</p>}
     <div className="row-gap left"><span className="field-label">Formato da demonstração</span>{['9:16','16:9','1:1'].map(f=><button key={f} className={'chip '+(formato===f?'on':'')} onClick={()=>setFormato(f)}>{f}</button>)}</div>
     <div className="estilos-grade">{[...lista].sort((a,b)=>ORDEM(a)-ORDEM(b)).map(e=><div key={e.id} className={selecionado===e.id?'estilo-sel':''}><Cartao e={e} formato={formato} demo={cat.dados?.demos[`${e.id}:${formato}`]} escolher={escolher}/></div>)}</div>
+    {!escolher&&anim&&anim.servidor&&cat.dados?.efeitos?.length?<>
+     <div className="section-head mt"><h2>Efeitos de cena</h2></div>
+     <p className="hint">Clima, luz e ângulos de câmera que você escolhe em cada cena (e em cada plano) do Agente 3. A demonstração usa o desenho animado com dois personagens e é renderizada de verdade no celular.</p>
+     <div className="estilos-grade">{cat.dados.efeitos.map(x=><Cartao key={x.id} variante={x.id} formato={formato} demo={x.demos[formato]}
+       e={{...anim,nome:x.nome,status:'beta',descricao:DESC_EFEITO[x.id]||'',tecnica:''}}/>)}</div></>:null}
   </>;
 }
 
 export default function Galeria(){
   return <section className="panel">
-    <div className="section-head"><h2>16 estilos de animação <HelpButton topic="estilos3"/></h2></div>
-    <p className="subtitle">A demonstração usa a mesma cena em todos os estilos para comparar. Ela é renderizada de verdade no seu celular (não é imagem ilustrativa). Os 3D foram testados no celular: são beta e lentos (o 3D é um fundo em loop, guardado depois da primeira vez). Os mapas seguem indisponíveis. Nenhum pedido vira outro estilo escondido.</p>
+    <div className="section-head"><h2>17 estilos de animação <HelpButton topic="estilos3"/></h2></div>
+    <p className="subtitle">A demonstração usa a mesma cena em todos os estilos para comparar. Ela é renderizada de verdade no seu celular (não é imagem ilustrativa). Os 3D foram testados no celular: são beta e lentos (o 3D é um fundo em loop, guardado depois da primeira vez). Os personagens em 3D são beta e ainda não tiveram o tempo medido no celular. Os mapas seguem indisponíveis. Nenhum pedido vira outro estilo escondido.</p>
     <GradeEstilos/>
   </section>;
 }

@@ -99,7 +99,7 @@ def limpar_briefing(d: dict) -> dict:
                      'data': float(de.get('data') or 0), 'titulo': str(de.get('titulo') or '')[:100], 'legenda': str(de.get('legenda') or '')[:2200]}
     b['ia_reserva'] = d.get('ia_reserva') is not False      # misto: a IA desenha só as cenas sem foto
     b['revisao_ia'] = d.get('revisao_ia') is not False      # leitura crítica do roteiro (só texto, não bloqueia)
-    if b['estilo'] == 'animado2d':
+    if b['estilo'] in ec.ANIMADOS:
         b['imagens'] = 'nenhuma'        # personagens e cenário são desenhados pelo próprio servidor
     if b['estilo'] == 'documentario' and b['imagens'] == 'nenhuma':
         b['imagens'] = 'busca'          # o estilo documentário é feito de fotos reais
@@ -226,7 +226,7 @@ def _regras_animado(serie: dict | None) -> str:
 
 def _prompt_roteiro(b: dict, ideia: str, extra: str = '', serie: dict | None = None) -> str:
     e = ec.estilo(b['estilo'])
-    if b.get('estilo') == 'animado2d':
+    if b.get('estilo') in ec.ANIMADOS:
         extra = _regras_animado(serie) + extra
     palavras = int(b['duracao_alvo'] * 2.4)
     return (f'Você é roteirista de vídeos curtos que prendem a atenção até o fim. Escreva o roteiro e o storyboard de um vídeo ORIGINAL em {b["idioma"]}. '
@@ -260,8 +260,8 @@ def _prompt_roteiro(b: dict, ideia: str, extra: str = '', serie: dict | None = N
             '"camera":"aproximar","personagem":"","emocao":"","cenario":"","visual":"","busca":"","movimento":"","enquadramento":"","duracao_alvo":6,"clima":"nenhum","luz":"neutra"'
             + (',"planos":[{"plano":"WS","busca":"","intencao":""}]' if b.get('estilo') == 'documentario' else '')
             + (',"cenario_id":"","elenco":[{"personagem_id":"","posicao":"esquerda","expressao":"neutro","acoes":[{"t":0.5,"tipo":"olhar","alvo":"direita"}]}],'
-               '"planos":[{"plano":"WS","personagem":""}]' if b.get('estilo') == 'animado2d' else '') + '}]'
-            + (',"mudancas":[{"alvo":"","texto":""}]' if b.get('estilo') == 'animado2d' else '') + '}')
+               '"planos":[{"plano":"WS","personagem":""}]' if b.get('estilo') in ec.ANIMADOS else '') + '}]'
+            + (',"mudancas":[{"alvo":"","texto":""}]' if b.get('estilo') in ec.ANIMADOS else '') + '}')
 
 
 _VAZIAS = set('a o e de da do das dos um uma uns umas que em no na nos nas por para com sem se mas ou como mais muito isso esse essa este esta ele ela eles elas seu sua foi ser tem não sim já quando onde porque você the and of'.split())
@@ -1031,7 +1031,7 @@ def preparar_cena(pid, i, c, cenas, b, dados=None):
     audio = Path(c['audio']['arquivo']) if (c.get('audio') or {}).get('arquivo') and Path(c['audio']['arquivo']).exists() else None
     imgs_pl = _imagens_planos(c) if eid == 'documentario' else []
     extra = ''
-    if eid == 'animado2d':
+    if eid in ec.ANIMADOS:
         serie = (dados if dados is not None else pj.obter(pid)['dados']).get('serie') or {}
         c = dict(c, _personagens=serie.get('personagens') or {}, _cenario=(serie.get('cenarios') or {}).get(c.get('cenario_id') or ''),
                  _audio=str(audio) if audio else None)
@@ -1044,7 +1044,7 @@ def _render_cena(ctx, pid, i, c, cenas, b, W, H, dur, pasta, feito, total):
     eid, c, img, audio, imgs_pl, extra = preparar_cena(pid, i, c, cenas, b)
     chave = ec.chave_cena(eid, {k: c.get(k) for k in ('texto', 'titulo', 'destaque', 'numero', 'unidade', 'elementos', 'camera', 'planos', 'clima', 'luz')
                                 + (('refazer',) if c.get('refazer') else ())
-                                + (('elenco', 'cenario_id', 'personagem') if eid == 'animado2d' else ())},
+                                + (('elenco', 'cenario_id', 'personagem') if eid in ec.ANIMADOS else ())},
                           W, H, dur, (c.get('audio') or {}).get('h', ''),
                           (c.get('imagem') or {}).get('h', '') + (str(img) if img else '') + ''.join(str(x) for x in imgs_pl) + extra, b['paleta'])
     saida = pasta / f'{chave}.mp4'
@@ -1057,7 +1057,8 @@ def _render_cena(ctx, pid, i, c, cenas, b, W, H, dur, pasta, feito, total):
     t0 = time.time()
     base_pct = 50 + 35 * feito / total
     try:
-        ec.preparar(eid, W, H, dur, b['paleta'] or None, _cancelado(ctx))
+        ec.preparar(eid, W, H, dur, b['paleta'] or None, _cancelado(ctx),
+                    (lambda x: ctx.progresso(base_pct + 30 * dur / total * x, f'Desenhando a cena {i + 1} em 3D')) if eid == 'animado3d' else None, cena=c)
         rd.rodar(ec.montar(eid, c, W, H, dur, trab, img, audio, tmp, b['paleta'] or None, imgs_pl), _cancelado(ctx),
                  progresso=lambda x: ctx.progresso(base_pct + 35 * dur / total * x, f'Renderizando cena {i + 1} de {len(cenas)}'), dur=dur)
     except InterruptedError:

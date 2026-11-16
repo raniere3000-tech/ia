@@ -118,7 +118,7 @@ export default function Revisar(){
         <label className="check"><input type="checkbox" checked={refazer.voz} onChange={e=>setRefazer({...refazer,voz:e.target.checked})}/> Gravar a narração de novo</label>
         <div className="row-gap left"><button className="primary sm" disabled={!!busy} onClick={()=>fazer('cena',async()=>{ await refazerCena(cfg,pid,i,refazer); setRefazer(null); },`Refazendo a cena ${i+1}.`)}>{busy==='cena'?<Loader2 size={14} className="spin"/>:<RotateCcw size={14}/>} Refazer a cena {i+1}</button>
          <button className="link-btn" onClick={()=>setRefazer(null)}>Cancelar</button></div>
-       </div>:<button className="link-btn" onClick={()=>setRefazer({i,imagem:false,voz:false})}><RotateCcw size={12}/> Refazer só esta cena</button>)}</li>)}</ol>
+       </div>:<div className="refazer-acao"><button className="link-btn" onClick={()=>setRefazer({i,imagem:false,voz:false})}><RotateCcw size={12}/> Refazer só esta cena</button></div>)}</li>)}</ol>
     {d.roteiro?.fontes?.length?<><div className="field-label">Fontes para conferir</div><ul>{d.roteiro.fontes.map(f=><li key={f.url}><a className="help-link" href={f.url} target="_blank" rel="noreferrer">{f.titulo||f.url}</a></li>)}</ul></>:null}
     <p className="hint">Estilo: {b?.estilo} • formato {b?.formato} • voz {b?.voz} • modo {b?.modo_aprovacao==='assistido'?'assistido':'supervisionado'}</p>
    </section>

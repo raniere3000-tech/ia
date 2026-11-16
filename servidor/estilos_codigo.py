@@ -23,6 +23,7 @@ from pathlib import Path
 import icones
 import motor3d
 import raster
+import personagens3d
 import rig2d
 
 VERSAO_MOTOR = 9
@@ -67,6 +68,9 @@ ESTILOS = [
     ('animado2d', 'Desenho animado com personagens', 'Personagens 2D articulados, boca pela voz e cenário em camadas', 'beta', 'prioritária',
      'Personagens próprios que andam, apontam, acenam e falam com a boca pela voz, em cenários simples. '
      'Use em Séries animadas para ter elenco fixo; sem série, aparece um apresentador. Só vista de frente.', ['#7ec8f2', '#ffffff', '#ff8c42']),
+    ('animado3d', 'Personagens em 3D', 'Os mesmos personagens das séries em 3D, com câmera de verdade', 'beta', 'intermediária',
+     'Bonecos 3D de blocos com juntas, mesmas ações e boca pela voz, desenhados por software (sem placa de vídeo). '
+     'Lento: guarda cada cena pronta e não refaz o que não mudou. Cenas de até 30 s. Tempo no celular ainda não medido.', ['#7ec8f2', '#ffffff', '#ff8c42']),
     ('mapas_animados', 'Mapas animados', 'Mapas vetoriais com rotas e marcadores', 'indisponivel', 'intermediária',
      'Precisa de uma base de mapas com licença de uso. Ainda não incluída.', ['#cfe8ef', '#2a6f97', '#e63946']),
 ]
@@ -97,6 +101,9 @@ def catalogo() -> list:
                                   'Lento: o primeiro uso de cada formato leva cerca de 30 s; depois fica guardado. Cenas de até 30 s.')
             else:
                 d['descricao'] = 'Precisa do numpy no Termux: pkg install python-numpy'
+        if d['id'] == 'animado3d' and not personagens3d.disponivel():
+            d['status'] = 'indisponivel'
+            d['descricao'] = 'Precisa do numpy no Termux: pkg install python-numpy'
         d['servidor'] = d['status'] != 'indisponivel'
         d['formatos'] = list(FORMATOS) if d['servidor'] else []
         d['custo'] = 'Só o processamento do celular' if d['id'] != 'cartoon2d' else 'Uma imagem de IA por cena (custo do Gemini)'
@@ -783,7 +790,7 @@ def montar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, imagem
         _ambiente(c, cena, W, H, dur)
     if cena.get('texto'):
         extra = {'tamanho': 0.064, 'y_rel': 0.80 if H > W else 0.88} if e['id'] == 'documentario' else \
-            {'tamanho': 0.06, 'y_rel': 0.885 if H > W else 0.95} if e['id'] == 'animado2d' else {}
+            {'tamanho': 0.06, 'y_rel': 0.885 if H > W else 0.95} if e['id'] in ('animado2d', 'animado3d') else {}
         c.legenda(legenda_ass(cena['texto'], dur, W, H, leg_cor, leg_borda, leg_caixa, pasta / 'legenda.ass', **extra))
     return c.comando(audio, saida)
 
@@ -1301,6 +1308,18 @@ def _e_animado2d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m,
     return '#ffffff', '#000000', True
 
 
+def _e_animado3d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    """Personagens 3D: a cena já foi desenhada por personagens3d.preparar_cena (câmera, ações e boca); aqui vira o fundo."""
+    arq = personagens3d.caminho(cena, W, H, dur)
+    if not arq.exists():
+        raise ValueError('A cena 3D ainda não foi desenhada (passo preparar).')
+    c.fundo_video(arq)
+    if titulo and not cena.get('elenco'):
+        ln = quebrar(titulo, W - 2 * m, tam * 0.8)
+        c.texto('\n'.join(ln), '(w-text_w)/2', f"{L['titulo_y']}", tam * 0.8, '#ffffff', ini=0.2, borda=max(4, W // 200), cor_borda='#111111')
+    return '#ffffff', '#000000', True
+
+
 def _e_cartoon2d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
     p0, p1, p2 = pal
     c.fundo(p0)
@@ -1337,8 +1356,16 @@ def _e_retro3d_2000(*a):
     return _e_3d('retro3d_2000', *a)
 
 
-def preparar(eid: str, W: int, H: int, dur: float, paleta: list | None, cancelado=None, progresso=None):
+ANIMADOS = ('animado2d', 'animado3d')       # estilos com elenco, cenário e falas por personagem
+
+
+def preparar(eid: str, W: int, H: int, dur: float, paleta: list | None, cancelado=None, progresso=None, cena: dict | None = None):
     """Passo prévio dos estilos que precisam de um arquivo pronto (3D). Os outros não fazem nada."""
+    if eid == 'animado3d' and utilizavel(eid):
+        if dur > 30.5:
+            raise ValueError('O 3D com personagens aceita cenas de até 30 s. Divida a cena em duas.')
+        personagens3d.preparar_cena(cena or {}, W, H, dur, cancelado, progresso)
+        return
     if eid in motor3d.ESTILOS_3D and utilizavel(eid):
         if dur > 30.5:
             raise ValueError('Os estilos 3D aceitam cenas de até 30 s. Divida a cena em duas.')
@@ -1351,8 +1378,32 @@ def chave_cena(eid: str, cena: dict, W: int, H: int, dur: float, audio_sha: str,
     return hashlib.sha256(base.encode()).hexdigest()[:24]
 
 
-def demo_cena(eid: str) -> dict:
-    """Cena de demonstração igual para todos os estilos (comparar lado a lado)."""
-    return validar_cena({'titulo': 'Por que o céu é azul?', 'destaque': 'Luz do sol', 'texto': 'A luz do sol se espalha no ar e o azul se espalha mais.',
-                         'numero': 71 if eid == 'motion_graphics' else None, 'unidade': '%',
-                         'elementos': [{'rotulo': 'Azul', 'valor': 90}, {'rotulo': 'Verde', 'valor': 55}, {'rotulo': 'Vermelho', 'valor': 25}] if eid == 'motion_graphics' else []})
+# efeitos de cena mostrados na Galeria (renderizados no desenho animado, que mostra bem chuva, luz e ângulo)
+VARIANTES_DEMO = {
+    'chuva_noite': ('Chuva à noite', {'clima': 'chuva', 'luz': 'noite'}),
+    'neve_fria': ('Neve com luz fria', {'clima': 'neve', 'luz': 'fria'}),
+    'poeira_quente': ('Poeira no fim de tarde', {'clima': 'poeira', 'luz': 'quente'}),
+    'neblina_dramatica': ('Neblina dramática', {'clima': 'neblina', 'luz': 'dramatica'}),
+    'angulos': ('Ângulos e movimento livre', {'planos': [{'plano': 'WS', 'angulo': 'alto', 'chaves': [{'t': 0, 'zoom': 1, 'x': 0.5, 'y': 0.5}, {'t': 1, 'zoom': 1.3, 'x': 0.4, 'y': 0.45}]},
+                                                        {'plano': 'MS', 'personagem': 'ana', 'angulo': 'baixo'},
+                                                        {'plano': 'CU', 'personagem': 'beto', 'angulo': 'inclinado'}]}),
+}
+
+
+def demo_cena(eid: str, variante: str = '') -> dict:
+    """Cena de demonstração igual para todos os estilos (comparar lado a lado). No desenho animado, dois personagens conversando."""
+    base = {'titulo': 'Por que o céu é azul?', 'destaque': 'Luz do sol', 'texto': 'A luz do sol se espalha no ar e o azul se espalha mais.',
+            'numero': 71 if eid == 'motion_graphics' else None, 'unidade': '%',
+            'elementos': [{'rotulo': 'Azul', 'valor': 90}, {'rotulo': 'Verde', 'valor': 55}, {'rotulo': 'Vermelho', 'valor': 25}] if eid == 'motion_graphics' else []}
+    if eid in ('animado2d', 'animado3d'):
+        base.update(titulo='', personagem='ana', cenario_id='demo',
+                    elenco=[{'personagem_id': 'ana', 'posicao': 'esquerda', 'expressao': 'feliz', 'acoes': [{'t': 0.3, 'tipo': 'acenar'}, {'t': 2.6, 'tipo': 'apontar', 'alvo': 'direita'}]},
+                            {'personagem_id': 'beto', 'posicao': 'direita', 'expressao': 'neutro', 'acoes': [{'t': 0.8, 'tipo': 'olhar', 'alvo': 'esquerda'}, {'t': 3.2, 'tipo': 'rir'}]}],
+                    planos=[{'plano': 'WS'}, {'plano': 'MS', 'personagem': 'ana'}, {'plano': 'CU', 'personagem': 'beto'}])
+    base.update((VARIANTES_DEMO.get(variante) or ('', {}))[1])
+    c = validar_cena(base)
+    if eid in ('animado2d', 'animado3d'):
+        c['_personagens'] = {'ana': rig2d.validar_personagem({'nome': 'Ana', 'cabelo_tipo': 'longo', 'roupa': '#e63946'}),
+                             'beto': rig2d.validar_personagem({'nome': 'Beto', 'cabelo_tipo': 'cacheado', 'corpo': 'forte', 'roupa': '#3a86ff'})}
+        c['_cenario'] = {'tipo': 'parque'}
+    return c

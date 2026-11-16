@@ -14,6 +14,7 @@ export default function ConferenciaPost({id}:{id:string}){
   return <div className="conf-post">
    <button className="link-btn" disabled={busy} onClick={conferir}>{busy?<Loader2 size={13} className="spin"/>:<ShieldCheck size={13}/>} Conferir antes de postar</button>
    {erro&&<p className="hint bad">{erro}</p>}
+   {res&&!Object.keys(res).length&&<p className="hint">Nada para o servidor conferir: as redes deste post são postadas por você no app.</p>}
    {res&&Object.entries(res).map(([rede,itens])=><div key={rede} className="conf-rede"><b>{rede.charAt(0).toUpperCase()+rede.slice(1)}</b>
     <ul>{itens.map(x=><li key={x.item} className={x.ok?'ok':x.bloqueia?'bad':'warn'}>{x.ok?<CheckCircle2 size={13}/>:x.bloqueia?<XCircle size={13}/>:<TriangleAlert size={13}/>} <span><b>{NOME[x.item]||x.item}:</b> {x.detalhe}</span></li>)}</ul>
     {itens.some(x=>x.bloqueia)?<p className="hint bad">Não vai postar nesta rede até resolver o que está em vermelho.</p>:<p className="hint">Pronto para postar nesta rede.</p>}

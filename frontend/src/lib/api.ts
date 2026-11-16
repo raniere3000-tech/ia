@@ -149,7 +149,7 @@ export type Cena={id:string;audio_manual?:{asset:string;nome:string}|null;clima?
 export type Briefing={tema:string;nicho:string;publico:string;objetivo:string;idioma:string;tipo:string;descricao:string;origem:string;referencias:string;duracao_alvo:number;formato:string;cenas_qtd:number;
   estilo:string;paleta:string[];voz:string;ritmo?:string;trilha:string;imagens:string;modo_aprovacao:'assistido'|'supervisionado';prioridade:number;orcamento_max:number;max_tentativas:number;
   destinos:{redes:string[];quando:'proximo'|'agora'|'data';data?:number;titulo?:string;legenda?:string};temas:string[]};
-export type Catalogo={estilos:EstiloInfo[];vozes:string[];tipos:string[];estados:Record<string,string>;briefing:Briefing;formatos:string[];ffmpeg:boolean;requisitos?:{ffmpeg:boolean;gemini:boolean;email:boolean;pexels:boolean;numpy:boolean};demos:Record<string,{asset:string;segundos:number}>};
+export type Catalogo={estilos:EstiloInfo[];vozes:string[];tipos:string[];estados:Record<string,string>;briefing:Briefing;formatos:string[];ffmpeg:boolean;requisitos?:{ffmpeg:boolean;gemini:boolean;email:boolean;pexels:boolean;numpy:boolean};demos:Record<string,{asset:string;segundos:number}>;efeitos?:{id:string;nome:string;demos:Record<string,{asset:string;segundos:number}>}[]};
 export type Ideia={titulo:string;gancho:string;porque:string;tipo:string;fato:boolean;fontes:{titulo:string;url:string}[];ficha?:import('../components/Ficha').FichaServidor};
 export type Roteiro={titulo:string;alternativas:string[];gancho:string;publico:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[];cenas:Cena[];avisos?:string[];skills_usadas?:string[]};
 export const catalogo=(cfg:CfgSrv)=>api<Catalogo>(cfg,'GET','/api/v1/agente3/catalogo');
@@ -159,7 +159,7 @@ export type Quando={quando:'agora'|'daqui'|'data';minutos?:number;data?:number};
 export const novoVideo=(cfg:CfgSrv,d:{briefing:Partial<Briefing>;roteiro?:Roteiro;produzir?:boolean;aprovar_roteiro?:boolean;modo?:string}&Partial<Quando>)=>api<ProjetoSrv>(cfg,'POST','/api/v1/agente3/projetos',d);
 export const produzirLote=(cfg:CfgSrv,d:{briefing:Partial<Briefing>;quantidade:number;temas:string[];intervalo_min:number}&Partial<Quando>)=>api<{criados:{projeto:string;job:string;run_at:number}[]}>(cfg,'POST','/api/v1/agente3/lote',d);
 export const produzir=(cfg:CfgSrv,id:string,q:Partial<Quando>={})=>api<{job:Job}>(cfg,'POST',`/api/v1/projetos/${id}/produzir`,q);
-export const pedirDemo=(cfg:CfgSrv,estilo:string,formato='9:16')=>api<{pronto?:{asset:string;segundos:number};url?:string;job?:Job}>(cfg,'POST',`/api/v1/estilos/${estilo}/demo`,{formato});
+export const pedirDemo=(cfg:CfgSrv,estilo:string,formato='9:16',variante='')=>api<{pronto?:{asset:string;segundos:number};url?:string;job?:Job}>(cfg,'POST',`/api/v1/estilos/${estilo}/demo`,{formato,variante});
 
 export type Rotina={id:string;nome:string;dias:number[];hora:string;quantidade:number;ativo:number;proxima:number|null;briefing:Partial<Briefing>};
 export const rotinas=(cfg:CfgSrv)=>api<{rotinas:Rotina[];fuso:string}>(cfg,'GET','/api/v1/rotinas');

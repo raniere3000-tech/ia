@@ -915,3 +915,10 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .ideia-item{display:flex;flex-direction:column}
 .conf-post{font-size:12px;margin-top:4px}.conf-rede{margin-top:6px}.conf-rede ul{list-style:none;margin:4px 0;padding:0;display:flex;flex-direction:column;gap:3px}
 .conf-rede li{display:flex;gap:6px;align-items:flex-start}.conf-rede li.ok svg{color:#2fc592}.conf-rede li.bad svg{color:#e56a6a}.conf-rede li.warn svg{color:#f5a524}
+.plano-mais{margin-left:0;min-width:0;max-width:100%}
+.plano-mais label.check{display:flex;flex-direction:row;align-items:center;gap:8px;font-size:12px}
+.plano-mais label.check input{width:auto;height:auto;flex:none}
+.refazer-acao{display:block;margin-top:2px}
+.sb-planos{grid-template-columns:minmax(0,1fr)}
+.plano-mais-campos label{min-width:0}.plano-mais-campos select{width:100%;min-width:0}
+.ab-planos .plano-linha:has(select+select+select){grid-template-columns:auto repeat(3,minmax(0,1fr)) auto}

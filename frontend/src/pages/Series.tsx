@@ -146,7 +146,7 @@ export default function Series(){
   const {settings,toast,rotaExtra:extra,go}=useApp(); const cfg=useCfg();
   const lista=useServidor(listarSeries,0,[settings.servidorSessao]);
   const aberta=useServidor(c=>extra?obterSerie(c,extra):Promise.resolve(null),0,[extra]);
-  const [nova,setNova]=useState({titulo:'',genero:'',tom:'',publico:'',formato:'9:16'});
+  const [nova,setNova]=useState({titulo:'',genero:'',tom:'',publico:'',formato:'9:16',estilo:'animado2d' as 'animado2d'|'animado3d'});
   const [busy,setBusy]=useState(false);
   if(!settings.servidor) return <PrecisaServidor oque="as séries animadas"/>;
   const s=aberta.dados;
@@ -155,7 +155,7 @@ export default function Series(){
     const rec=()=>aberta.recarregar();
     return <>
       <section className="panel"><button className="link-btn" onClick={()=>go('series','','criar')}><ArrowLeft size={13}/> Todas as séries</button>
-        <h2 className="mt">{s.titulo}</h2><p className="hint">{[s.genero,s.tom&&`tom ${s.tom}`,s.publico&&`para ${s.publico}`,s.formato].filter(Boolean).join(' • ')}</p></section>
+        <h2 className="mt">{s.titulo}</h2><p className="hint">{[s.genero,s.tom&&`tom ${s.tom}`,s.publico&&`para ${s.publico}`,s.formato,s.estilo==='animado3d'?'personagens em 3D (beta)':'desenho 2D'].filter(Boolean).join(' • ')}</p></section>
       <Personagens s={s} recarregar={rec}/>
       <Cenarios s={s} recarregar={rec}/>
       <Biblia s={s} recarregar={rec}/>
@@ -172,6 +172,7 @@ export default function Series(){
         <label>Tom<input value={nova.tom} onChange={e=>setNova({...nova,tom:e.target.value})} placeholder="Ex.: leve e engraçado"/></label>
         <label>Público<input value={nova.publico} onChange={e=>setNova({...nova,publico:e.target.value})} placeholder="Ex.: crianças de 8 a 12 anos"/></label>
         <label>Formato<select value={nova.formato} onChange={e=>setNova({...nova,formato:e.target.value})}><option value="9:16">Vertical (Shorts, Reels, TikTok)</option><option value="16:9">Deitado (YouTube)</option><option value="1:1">Quadrado</option></select></label>
+        <label>Visual dos personagens<select value={nova.estilo} onChange={e=>setNova({...nova,estilo:e.target.value as 'animado2d'|'animado3d'})}><option value="animado2d">Desenho 2D (mais rápido)</option><option value="animado3d">3D de blocos (beta, bem mais lento)</option></select></label>
       </div>
       <div className="row-gap left mt"><button className="primary" disabled={busy||!nova.titulo.trim()} onClick={async()=>{ setBusy(true); try{ const r=await criarSerie(cfg,nova); go('series',r.id,'criar'); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(false); } }}>{busy?<Loader2 size={15} className="spin"/>:<Plus size={15}/>} Criar série</button></div>
     </section>

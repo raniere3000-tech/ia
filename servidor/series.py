@@ -1,6 +1,6 @@
 """Séries animadas: série, temporadas, episódios, bíblia (o que já é verdade na história), personagens e cenários.
 
-Cada episódio é um projeto normal do Agente 3 (estilo "animado2d"), com uma FOTO da série no momento em que foi criado:
+Cada episódio é um projeto normal do Agente 3 (estilo "animado2d" ou "animado3d", escolhido na série), com uma FOTO da série no momento em que foi criado:
 personagens na versão aprovada, cenários e só os fatos APROVADOS da bíblia. Mudar um personagem depois cria uma versão
 nova e não altera episódios já feitos. Mudanças propostas pela IA entram na bíblia como "proposta" até a pessoa aprovar.
 """
@@ -37,7 +37,8 @@ def _txt(v, n: int) -> str:
 def _serie_dados(d: dict) -> dict:
     return {'genero': _txt(d.get('genero'), 60), 'formato': d.get('formato') if d.get('formato') in ('9:16', '16:9', '1:1') else '9:16',
             'publico': _txt(d.get('publico'), 120), 'tom': _txt(d.get('tom'), 120), 'regras': _txt(d.get('regras'), 1500),
-            'duracao_alvo': max(15, min(180, int(d.get('duracao_alvo') or 45))), 'cenas_qtd': max(3, min(20, int(d.get('cenas_qtd') or 6)))}
+            'duracao_alvo': max(15, min(180, int(d.get('duracao_alvo') or 45))), 'cenas_qtd': max(3, min(20, int(d.get('cenas_qtd') or 6))),
+            'estilo': 'animado3d' if d.get('estilo') == 'animado3d' else 'animado2d'}
 
 
 def _linha_serie(r: dict) -> dict:
@@ -303,7 +304,7 @@ def criar_episodio(sid: str, d: dict, dispositivo: str = '') -> dict:
         raise ErroSerie(400, 'Escreva do que trata o episódio.')
     foto = foto_da_serie(sid, ordem)
     foto['episodio'] = {'ordem': ordem, 'titulo': titulo}
-    briefing = {'tema': f'{titulo}: {resumo}', 'nicho': s['genero'] or 'Animação', 'tipo': 'animação com personagens', 'estilo': 'animado2d',
+    briefing = {'tema': f'{titulo}: {resumo}', 'nicho': s['genero'] or 'Animação', 'tipo': 'animação com personagens', 'estilo': s.get('estilo') or 'animado2d',
                 'formato': s['formato'], 'duracao_alvo': s['duracao_alvo'], 'cenas_qtd': s['cenas_qtd'], 'publico': s['publico'],
                 'descricao': f'Episódio {ordem} da série "{s["titulo"]}". {resumo}', 'imagens': 'nenhuma',
                 'modo_aprovacao': d.get('modo_aprovacao') if d.get('modo_aprovacao') in ('assistido', 'supervisionado') else 'assistido',

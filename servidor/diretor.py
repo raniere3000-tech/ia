@@ -153,7 +153,7 @@ def _render_pequeno(pid: str, d: dict, i: int, c: dict, pasta: Path, cancelado, 
     trab.mkdir(parents=True)
     tmp = pasta / f'{chave}.tmp.mp4'
     with _fps(fps):
-        ec.preparar(eid, W, H, dur, b['paleta'] or None, cancelado)
+        ec.preparar(eid, W, H, dur, b['paleta'] or None, cancelado, cena=c2)
         cmd = ec.montar(eid, c2, W, H, dur, trab, img, audio, tmp, b['paleta'] or None, imgs_pl)
     # o comando já está pronto (as contas de tempo usam o FPS de quando foi montado); roda fora da trava
     rd.rodar(cmd, cancelado, tempo_max=max(300, dur * 60))

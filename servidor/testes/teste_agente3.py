@@ -197,6 +197,7 @@ threading.Thread(target=socketserver.ThreadingTCPServer(('127.0.0.1', smtp_port)
 import servidor as S  # noqa: E402
 import agente as ag  # noqa: E402
 import postagem as pg  # noqa: E402
+import fila  # noqa: E402
 import emails  # noqa: E402
 import banco as db  # noqa: E402
 
@@ -659,6 +660,51 @@ confere(depois[ids[1]] != antes[ids[1]] and all(depois[k] == antes[k] for k in i
 confere(sum('tts' in x for x in PEDIDOS) == n_tts + 1, 'narração gravada de novo só nessa cena')
 st, _, _ = api('POST', f'/api/v1/projetos/{RPID}/cenas/40/refazer', {}, SES)
 confere(st == 404, 'cena que não existe é recusada')
+
+print('Galeria: prévias reais do desenho animado e dos efeitos')
+st, dm, _ = api('POST', '/api/v1/estilos/animado2d/demo', {'formato': '9:16', 'variante': 'chuva_noite'}, SES)
+confere(st == 200 and dm.get('job'), 'demonstração do efeito entra na fila')
+t = time.time()
+while time.time() - t < 400:
+    j = fila.obter(dm['job']['id'])
+    if j['status'] in ('concluido', 'falhou'):
+        break
+    time.sleep(0.5)
+confere(j['status'] == 'concluido', f'demonstração com chuva à noite renderizada ({j.get("erro")})')
+cat = api('GET', '/api/v1/agente3/catalogo', None, SES)[1]
+ef = {x['id']: x for x in cat['efeitos']}
+confere(set(ef) == {'chuva_noite', 'neve_fria', 'poeira_quente', 'neblina_dramatica', 'angulos'} and ef['chuva_noite']['demos'].get('9:16'), 'catálogo mostra os efeitos e a prévia pronta')
+st, dm2, _ = api('POST', '/api/v1/estilos/animado2d/demo', {'formato': '9:16', 'variante': 'chuva_noite'}, SES)
+confere(st == 200 and dm2.get('url'), 'segunda vez já vem pronta (guardada)')
+st, dm3, _ = api('POST', '/api/v1/estilos/vetor_chapado/demo', {'formato': '9:16', 'variante': 'xx'}, SES)
+confere(st == 200 and (dm3.get('job') or {}).get('dados', '{}') and 'chuva' not in json.dumps(dm3), 'variante desconhecida é ignorada')
+
+print('Personagens em 3D (beta)')
+import personagens3d as p3d  # noqa: E402
+if p3d.disponivel():
+    cat3d = {e['id']: e for e in api('GET', '/api/v1/agente3/catalogo', None, SES)[1]['estilos']}
+    confere(cat3d['animado3d']['status'] == 'beta' and cat3d['animado3d']['servidor'], '3D com personagens aparece como beta')
+    st, s3, _ = api('POST', '/api/v1/series', {'titulo': 'Blocos', 'formato': '9:16', 'cenas_qtd': 2, 'duracao_alvo': 8, 'estilo': 'animado3d'}, SES)
+    confere(s3['estilo'] == 'animado3d', 'série guarda o visual 3D')
+    api('POST', '/api/v1/personagens', {'serie_id': s3['id'], 'nome': 'Ana', 'cabelo_tipo': 'longo', 'roupa': '#e63946', 'voz': 'Kore'}, SES)
+    api('POST', '/api/v1/personagens', {'serie_id': s3['id'], 'nome': 'Beto', 'voz': 'Puck'}, SES)
+    st, e3, _ = api('POST', f'/api/v1/series/{s3["id"]}/episodios', {'titulo': 'Cubo', 'resumo': 'Um cubo aparece no parque.', 'produzir': True,
+                                                                  'modo_aprovacao': 'supervisionado'}, SES)
+    t = time.time()
+    while time.time() - t < 600:
+        r3 = api('GET', f'/api/v1/projetos/{e3["projeto_id"]}/revisao', None, SES)[1]
+        if r3['projeto']['status'] in ('ready_for_review', 'failed'):
+            break
+        time.sleep(0.5)
+    print(f'     (episódio 3D levou {time.time() - t:.0f}s)')
+    confere(r3['projeto']['status'] == 'ready_for_review', f'episódio 3D produzido ({(r3.get("job") or {}).get("erro")})')
+    confere(all((c.get('clipe') or {}).get('estilo') == 'animado3d' for c in r3['projeto']['dados']['cenas']), 'todas as cenas saíram no 3D (sem trocar de estilo escondido)')
+    cv3 = ec2.validar_cena({'texto': 'x', 'personagem': 'ana', 'elenco': [{'personagem_id': 'ana', 'posicao': 'centro'}],
+                            'planos': [{'plano': 'MS', 'personagem': 'ana', 'angulo': 'baixo'}]})
+    cv3['_personagens'] = {'ana': {'nome': 'Ana'}}
+    k1 = p3d.chave(cv3, 270, 480, 1)
+    cv3['planos'][0]['angulo'] = 'alto'
+    confere(k1 != p3d.chave(cv3, 270, 480, 1), 'ângulo do plano muda a câmera 3D (e a chave do cache)')
 
 print(f'\n{ok_n} ok, {falhas} falhas   (pasta {TMP})')
 if os.getenv('MANTER_SERVIDOR'):

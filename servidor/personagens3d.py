@@ -23,7 +23,7 @@ try:
 except ImportError:
     np = None
 
-VERSAO = 1
+VERSAO = 2
 FPS_3D = int(os.getenv('FPS_3D', '15'))
 ESCALA = float(os.getenv('ESCALA_3D', '0.5'))
 CACHE = Path(os.getenv('DADOS', str(Path.home() / '.estudioclip'))) / 'cache3d' / 'cenas'
@@ -68,7 +68,13 @@ def _esfera(n=7):
     return np.array(v, float), np.array(f)
 
 
+def _plano():
+    """Quadrado no chão (só a face de cima): o chão é feito de vários destes para nenhum ficar atrás da câmera."""
+    return np.array([(-.5, 0, -.5), (-.5, 0, .5), (.5, 0, -.5), (.5, 0, .5)], float), np.array([(0, 1, 3), (0, 3, 2)])
+
+
 if np is not None:
+    PLANO = _plano()
     CAIXA = _caixa()
     ESFERA = _esfera(8)
     ESFERA_P = _esfera(4)
@@ -276,7 +282,12 @@ def boneco(perfil: dict, ps: dict, expressao: str) -> list:
 def cenario(cn: dict) -> tuple:
     """(céu em cima, céu embaixo) e a lista de peças fixas do cenário."""
     chao = _rgb(cn['chao'])
-    out = [(CAIXA, _T(0, -0.05, 6) @ _S(40, 0.1, 30), chao, 0)]
+    # chão em ladrilhos: um triângulo com ponta atrás da câmera some inteiro, então o chão não pode ser uma peça só
+    # perto da câmera os ladrilhos são rasos (1,25 m), longe são fundos: pouco triângulo e sem buraco embaixo do quadro
+    linhas = [(-12 + 1.25 * k, 1.25) for k in range(12)] + [(3 + 3 * k, 3) for k in range(5)]
+    out = [(PLANO, _T(x, 0, z + d / 2) @ _S(8.02, 1, d + 0.02), tuple(int(c * (0.975 if (k + j) % 2 else 1.0)) for c in chao), 0)
+           for j, x in enumerate(range(-16, 17, 8)) for k, (z, d) in enumerate(linhas)]
+    out.append((PLANO, _T(0, 0, 43) @ _S(120, 1, 50), chao, 0))
     tipo = cn['tipo']
     if tipo == 'parque':
         for x, z, s in ((-4.2, 5, 1.2), (3.8, 6.5, 1.5), (-1.5, 9, 1.8), (6.5, 9, 1.4), (-7, 8, 1.6)):
@@ -310,10 +321,10 @@ def cenario(cn: dict) -> tuple:
 
 
 # ---------------------------------------------------------------- câmera
-def _olhar(olho, alvo):
+def _olhar(olho, alvo, giro: float = 0.0):
     f = np.array(alvo, float) - np.array(olho, float)
     f /= np.linalg.norm(f)
-    r = np.cross(np.array([0, 1.0, 0]), f)
+    r = np.cross(np.array([math.sin(giro), math.cos(giro), 0]), f)
     r /= np.linalg.norm(r)
     u = np.cross(f, r)
     m = np.eye(4)
@@ -322,7 +333,7 @@ def _olhar(olho, alvo):
     return m
 
 
-def camera(plano: str, alvo_x: float, cabeca_y: float, grupo: tuple, W: int, H: int, prog: float, k: int) -> tuple:
+def camera(plano: str, alvo_x: float, cabeca_y: float, grupo: tuple, W: int, H: int, prog: float, k: int, angulo: str = 'normal') -> tuple:
     """Posição e alvo da câmera de um plano. Sempre na frente (z negativo): o eixo de 180° nunca é cruzado."""
     vfov = math.radians(38)
     asp = W / H
@@ -342,16 +353,22 @@ def camera(plano: str, alvo_x: float, cabeca_y: float, grupo: tuple, W: int, H: 
     # movimento motivado: aproxima 6% ao longo do plano e gira de leve
     f = 1 - 0.06 * _suave(prog)
     olho = (alvo[0] + (olho[0] - alvo[0]) * f + 0.08 * math.sin(prog * 1.5), alvo[1] + (olho[1] - alvo[1]) * f, alvo[2] + (olho[2] - alvo[2]) * f)
-    return olho, alvo, vfov
+    # ângulo de verdade: a câmera desce (olha para cima) ou sobe (olha para baixo); 'inclinado' gira a câmera no próprio eixo
+    d = abs(olho[2] - alvo[2])
+    if angulo == 'baixo':
+        olho = (olho[0], max(0.25, alvo[1] - 0.45 * d), olho[2])
+    elif angulo == 'alto':
+        olho = (olho[0], alvo[1] + 0.6 * d, olho[2])
+    return olho, alvo, vfov, (0.16 if angulo == 'inclinado' else 0.0)
 
 
 # ---------------------------------------------------------------- desenho
-def desenhar(W, H, ceu, pecas, olho, alvo, vfov, luz) -> 'np.ndarray':
+def desenhar(W, H, ceu, pecas, olho, alvo, vfov, luz, giro: float = 0.0) -> 'np.ndarray':
     img = np.empty((H, W, 3), np.float32)
     g = np.linspace(0, 1, H, dtype=np.float32)[:, None]
     img[:] = (np.array(ceu[0], np.float32) * (1 - g) + np.array(ceu[1], np.float32) * g)[:, None, :]
     zb = np.full((H, W), np.inf, np.float32)
-    V = _olhar(olho, alvo)
+    V = _olhar(olho, alvo, giro)
     foc = (H / 2) / math.tan(vfov / 2)
     luz_v = (V[:3, :3] @ luz)
     for malha, M, cor, brilho in pecas:
@@ -398,9 +415,9 @@ def desenhar(W, H, ceu, pecas, olho, alvo, vfov, luz) -> 'np.ndarray':
     return img
 
 
-def _sombras(img, W, H, olho, alvo, vfov, xs):
+def _sombras(img, W, H, olho, alvo, vfov, xs, giro: float = 0.0):
     """Sombra de contato: mancha escura e suave no chão sob cada personagem (projeção do disco no chão)."""
-    V = _olhar(olho, alvo)
+    V = _olhar(olho, alvo, giro)
     foc = (H / 2) / math.tan(vfov / 2)
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
     for x in xs:
@@ -438,9 +455,10 @@ def _quadro(W, H, ceu, fixos, elenco, perfis, t, dur, niveis, falante, planos, t
     s = rig2d.validar_personagem(perfis[alvo_el[0]['personagem_id']])['altura']
     xs = [ps['x'] for _, ps in poses]
     prog = (t - tempos[k][0]) / max(0.1, tempos[k][1] - tempos[k][0])
-    olho, alvo, vfov = camera(pl.get('plano', 'WS'), alvo_el[1]['x'], (1.72 + alvo_el[1]['y']) * s, (min(xs), max(xs)), W, H, prog, k)
-    img = desenhar(W, H, ceu, pecas, olho, alvo, vfov, luz)
-    _sombras(img, W, H, olho, alvo, vfov, xs)
+    olho, alvo, vfov, giro = camera(pl.get('plano', 'WS'), alvo_el[1]['x'], (1.72 + alvo_el[1]['y']) * s, (min(xs), max(xs)), W, H, prog, k,
+                                    pl.get('angulo') or 'normal')
+    img = desenhar(W, H, ceu, pecas, olho, alvo, vfov, luz, giro)
+    _sombras(img, W, H, olho, alvo, vfov, xs, giro)
     return np.clip(img, 0, 255).astype(np.uint8)
 
 

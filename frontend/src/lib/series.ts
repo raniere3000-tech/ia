@@ -5,7 +5,7 @@ export type Personagem={id:string;serie_id:string;nome:string;versao:number;apro
 export type Cenario={id:string;serie_id:string;nome:string;versao:number;dados:{nome:string;descricao:string;tipo:string;horario:string;ceu:string;ceu2:string;chao:string}};
 export type EntradaBiblia={id:string;serie_id:string;tipo:string;alvo:string;texto:string;episodio_id:string;estado:'proposta'|'aprovada'|'rejeitada'|'substituida';substitui:string|null;criado:number};
 export type Episodio={id:string;serie_id:string;temporada_id:string;ordem:number;titulo:string;resumo:string;projeto_id:string;status:string;status_nome:string};
-export type SerieResumo={id:string;titulo:string;versao:number;genero:string;formato:string;publico:string;tom:string;regras:string;duracao_alvo:number;cenas_qtd:number;episodios:number;personagens:number};
+export type SerieResumo={id:string;titulo:string;versao:number;genero:string;formato:string;publico:string;tom:string;regras:string;duracao_alvo:number;cenas_qtd:number;estilo?:'animado2d'|'animado3d';episodios:number;personagens:number};
 export type Serie=Omit<SerieResumo,'episodios'|'personagens'>&{temporadas:{id:string;ordem:number;titulo:string}[];episodios:Episodio[];personagens:Personagem[];cenarios:Cenario[];biblia:EntradaBiblia[]};
 
 export const listarSeries=(cfg:CfgSrv)=>api<{series:SerieResumo[];acoes:Record<string,string>;expressoes:string[]}>(cfg,'GET','/api/v1/series');
