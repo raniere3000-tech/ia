@@ -47,6 +47,15 @@ function CanalLinha({c,fazer}:{c:Canal;fazer:(d:Parameters<typeof acaoCanal>[1])
       <a href={`https://www.youtube.com/channel/${c.id}`} target="_blank" rel="noreferrer"><strong>{c.nome||c.id}</strong> <ExternalLink size={12}/></a>
       <small>{c.media>0&&<>média de <b>{num(c.media)}</b> visualizações em {c.videos} vídeo(s) da semana · </>}{c.inscritos>0&&<>{num(c.inscritos)} inscritos · </>}{c.nicho}</small>
       {c.exemplo&&<small className="muted">Ex.: {c.exemplo}</small>}
+      {c.ficha&&<details className="ficha"><summary>Ficha da oportunidade</summary>
+       <p><b>Por quê:</b> {c.ficha.justificativa}</p>
+       <p><b>Medido (números públicos):</b> média {num(c.ficha.medido.media_views)} views • {c.ficha.medido.videos_na_semana} vídeo(s) na semana • maior {num(c.ficha.medido.maior_views)}</p>
+       {c.ficha.estimado.views_por_dia_do_melhor!=null&&<p><b>Estimativa:</b> o melhor vídeo ganha cerca de {num(c.ficha.estimado.views_por_dia_do_melhor)} views por dia (conta feita pela data de publicação; não é número do YouTube)</p>}
+       <ul>{c.ficha.videos.map(v=><li key={v.url}><a href={v.url} target="_blank" rel="noreferrer">{v.titulo}</a> • {num(v.views)} views • {v.publicado}</li>)}</ul>
+       <p className="muted"><b>Ainda não conferido:</b> {c.ficha.nao_verificado.join('; ')}.</p>
+       <p className="muted"><b>Risco:</b> {c.ficha.risco}</p>
+       <small className="muted">Fonte: {c.ficha.fonte} • filtros: {Object.entries(c.ficha.filtros).map(([k,v])=>`${k} ${v}`).join(', ')} • buscado em {new Date(c.ficha.buscado_em*1000).toLocaleString('pt-BR')}</small>
+      </details>}
       {c.status==='aprovado'&&<span className="label-row"><span className="tag ok"><CheckCircle2 size={12}/> {MOTIVOS[c.motivo]||'Aprovado'}</span>
         <span className={'tag '+(c.comercial===true?'ok':c.comercial===false?'bad':'warn')}>{c.comercial===true?'Uso comercial permitido':c.comercial===false?'Sem uso comercial: o agente não publica':'Uso comercial não informado'}</span></span>}
       {c.status==='aprovado'&&c.origem_aut&&<small className="muted">Autorização: {c.origem_aut}</small>}

@@ -822,3 +822,4 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .plano-linha{display:grid;grid-template-columns:auto 130px 1fr auto;gap:6px;align-items:center}
 @media (max-width:520px){.plano-linha{grid-template-columns:auto 1fr auto}.plano-linha input{grid-column:2/3}}
 .post-rel{margin-top:6px;font-size:13px}.post-rel ul{margin:6px 0 0;padding-left:16px;display:grid;gap:4px}
+.ficha{margin-top:6px;font-size:13px}.ficha p{margin:4px 0}.ficha ul{padding-left:16px;margin:4px 0}

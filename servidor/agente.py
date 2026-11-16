@@ -374,6 +374,32 @@ def _detalhes(ids: list) -> dict:
     return out
 
 
+def _ficha(vs: list, co: dict, media: float) -> dict:
+    """Ficha da oportunidade: de onde veio, com que filtros, o que foi MEDIDO (números públicos do YouTube) e o que é
+    só estimativa ou ainda não foi conferido. Nada de retenção ou números privados: a API pública não mostra."""
+    agora = datetime.utcnow()
+    melhores = sorted(vs, key=lambda v: -v['views'])[:3]
+    def por_dia(v):
+        try:
+            dias = max(0.5, (agora - datetime.strptime(v['publicado'][:19], '%Y-%m-%dT%H:%M:%S')).total_seconds() / 86400)
+        except ValueError:
+            return None
+        return round(v['views'] / dias)
+    vel = [x for x in (por_dia(v) for v in melhores) if x]
+    return {
+        'fonte': 'YouTube Data API v3 (busca pública + estatísticas públicas)', 'buscado_em': time.time(),
+        'filtros': {'nicho': vs[0]['nicho'], 'idioma': co['idioma'], 'regiao': co['regiao'] or 'todas', 'periodo': 'últimos 7 dias',
+                    'duracao': 'médios e longos', 'minimo_views': co['min_views']},
+        'videos': [{'titulo': v['titulo'][:120], 'url': f'https://www.youtube.com/watch?v={v["id"]}', 'views': v['views'], 'publicado': v['publicado'][:10]} for v in melhores],
+        'medido': {'media_views': round(media), 'videos_na_semana': len(vs), 'maior_views': melhores[0]['views'] if melhores else 0},
+        'estimado': {'views_por_dia_do_melhor': vel[0] if vel else None},
+        'nao_verificado': ['Retenção e tempo assistido (o YouTube não mostra para quem não é dono do canal)',
+                           'Se o dono permite cortes (aprovar o canal aqui não é autorização dele)'],
+        'justificativa': f'{len(vs)} vídeo(s) do nicho "{vs[0]["nicho"]}" nesta semana com média de {round(media):,} visualizações, acima do mínimo de {co["min_views"]:,}.'.replace(',', '.'),
+        'risco': 'Direitos: só corte com autorização do dono, conteúdo próprio ou regra de uso explícita do canal.',
+    }
+
+
 def buscar_canais() -> int:
     """Procura canais em alta nos nichos e guarda como sugestão (você aprova na tela)."""
     co = config()['cortes']
@@ -400,7 +426,7 @@ def buscar_canais() -> int:
         if cid and cid not in conhecidos and media >= co['min_views']:
             novos.append({'id': cid, 'nome': vs[0]['canal_nome'], 'status': 'sugerido', 'motivo': '', 'nicho': vs[0]['nicho'],
                           'media': round(media), 'videos': len(vs), 'inscritos': 0, 'achado': time.time(),
-                          'exemplo': max(vs, key=lambda v: v['views'])['titulo'][:120]})
+                          'exemplo': max(vs, key=lambda v: v['views'])['titulo'][:120], 'ficha': _ficha(vs, co, media)})
     novos.sort(key=lambda c: -c['media'])
     novos = novos[:25]
     if novos:
@@ -1111,11 +1137,12 @@ def processar_video(v: dict, quantos: int) -> list:
                 anotar(f'{v["titulo"][:50]}: {nota_cam}.')
             vid = uuid.uuid4().hex[:12]
             editar(arq, c, palavras, tpl, pg.VIDEOS / (vid + '.mp4'), pasta)
+            qa = inspecionar_corte(pg.VIDEOS / (vid + '.mp4'), c, palavras, pasta)
             c.update(id=uuid.uuid4().hex[:10], chave=secrets.token_urlsafe(18), video=vid, criado=time.time(), status='pronto', post='',
                      origem=v['id'], origem_titulo=v['titulo'][:150], canal=v.get('canal', ''), canal_nome=v.get('canal_nome', ''),
                      variacoes=usadas, fala=fonte, tamanho=(pg.VIDEOS / (vid + '.mp4')).stat().st_size, email=False,
                      tipo='agente', modelo=modelo['id'], modelo_nome=modelo['nome'], hash=_hash(pg.VIDEOS / (vid + '.mp4')),
-                     legendado=tpl['legenda'] != 'nenhuma')
+                     legendado=tpl['legenda'] != 'nenhuma', qa=qa)
             _mudar(lambda e, c=c: e['cortes'].append(c))
             criados.append(c)
         return criados
@@ -1176,6 +1203,29 @@ def _hash(arq: Path) -> str:
         return ''
 
 
+def inspecionar_corte(arq: Path, c: dict, palavras: list, pasta: Path) -> dict:
+    """Inspeção depois do corte (o mesmo verificador técnico do Agente 3) e um olhar editorial simples:
+    o corte começa falando? termina no meio de uma frase? Erro técnico bloqueia a postagem; o resto é aviso."""
+    import renderizador as rd
+    try:
+        info = rd.sonda(arq)
+        v = next((x for x in info.get('streams', []) if x.get('codec_type') == 'video'), {})
+        r = rd.conferir(arq, pasta, {'largura': int(v.get('width') or 0), 'altura': int(v.get('height') or 0), 'duracao': 0})
+        erros, avisos = list(r['erros']), list(r['avisos'])
+    except rd.ErroRender as e:
+        return {'ok': False, 'erros': [str(e)[:200]], 'avisos': []}
+    ini, fim = c.get('ini', 0), c.get('fim', 0)
+    dentro = [p for p in palavras if ini <= p[0] <= fim]      # palavras: (início, fim, palavra)
+    if dentro:
+        primeira = dentro[0][0] - ini
+        if primeira > 2.0:
+            avisos.append(f'O corte demora {primeira:.1f} s para alguém falar: o gancho pode se perder.')
+        ultima = str(dentro[-1][2]).strip()
+        if ultima and not ultima.endswith(('.', '!', '?')):
+            avisos.append('O corte termina no meio de uma frase.')
+    return {'ok': not erros, 'erros': erros, 'avisos': avisos[:6]}
+
+
 def conferir(c: dict, e: dict | None = None) -> dict:
     """Direitos, originalidade e chance de monetizar, conferidos antes de qualquer publicação.
 
@@ -1198,6 +1248,10 @@ def conferir(c: dict, e: dict | None = None) -> dict:
                 avisos.append(f'Você ainda não informou se {canal["nome"]} permite uso comercial (monetização).')
             if canal.get('restricoes'):
                 avisos.append(f'Restrições de {canal["nome"]}: {canal["restricoes"]}')
+    qa = c.get('qa') or {}
+    if qa.get('erros'):
+        bloq.append('A inspeção do corte achou problema técnico: ' + ' '.join(qa['erros']))
+    avisos += qa.get('avisos', [])
     outros = [x for x in e['cortes'] if x['id'] != c['id'] and x['status'] in ('agendado', 'postado')]
     if c.get('hash') and any(x.get('hash') == c['hash'] for x in outros):
         bloq.append('Este mesmo arquivo já foi agendado ou postado.')
