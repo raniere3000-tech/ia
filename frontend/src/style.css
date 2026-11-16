@@ -810,3 +810,7 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .seg{display:inline-flex;border:1px solid var(--line2);border-radius:999px;overflow:hidden}
 .seg button{background:transparent;border:0;color:#b9c0d2;padding:6px 12px;font-size:12px;font-weight:600}.seg button.on{background:var(--brand);color:#fff}
 .ag-grade label>.tag{align-self:flex-start}
+.post-editar{margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);display:grid;gap:8px;max-width:520px}
+.post-editar input[type=datetime-local]{max-width:260px}
+.contas-dobra>summary{display:flex;align-items:center;gap:8px}
+.post-acoes{flex-wrap:wrap}

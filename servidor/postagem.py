@@ -540,6 +540,45 @@ def postar_agora(pid: str):
     acordar()
 
 
+def editar_post(pid: str, d: dict) -> dict:
+    """Muda a hora, as redes, o título ou a legenda de um post que ainda não saiu.
+    Redes que já postaram ficam como estão; tirar uma rede só vale para as que ainda não foram."""
+    def f(p):
+        if any(r['status'] == 'postando' for r in p['redes'].values()):
+            raise ErroRede('Este post está sendo enviado agora. Espere terminar.')
+        if d.get('quando') is not None:
+            try:
+                q = float(d['quando'])
+            except (TypeError, ValueError):
+                raise ErroRede('Horário inválido.')
+            if q < agora() - 60:
+                raise ErroRede('Escolha um horário no futuro (ou use Postar agora).')
+            p['quando'] = q
+            for r in p['redes'].values():
+                if r['status'] in ('agendado', 'erro'):
+                    r.update(status='agendado', erro='', tentativas=0, proxima=0)
+        if isinstance(d.get('redes'), list):
+            novas = [r for r in d['redes'] if r in REDES]
+            feitas = [r for r, s in p['redes'].items() if s['status'] == 'postado']
+            if not novas and not feitas:
+                raise ErroRede('Deixe pelo menos uma rede (ou cancele o post).')
+            p['redes'] = {r: s for r, s in p['redes'].items() if r in novas or r in feitas}
+            for r in novas:
+                p['redes'].setdefault(r, {'status': 'manual' if r == 'kwai' else 'agendado', 'link': '', 'erro': ''})
+        if d.get('titulo') is not None:
+            p['titulo'] = str(d['titulo'])[:100]
+        if d.get('legenda') is not None:
+            p['legenda'] = str(d['legenda'])[:2200]
+    p = _mudar(pid, f)
+    acordar()
+    try:                                  # o corte do agente acompanha o novo horário
+        import agente
+        agente._mudar(lambda e: [x.update(quando=p['quando']) for x in e['cortes'] if x.get('post') == pid])
+    except Exception:
+        pass
+    return p
+
+
 def marcar_feito(pid: str, rede: str):
     _mudar(pid, lambda p: p['redes'].get(rede, {}).update(status='postado', erro=''))
 

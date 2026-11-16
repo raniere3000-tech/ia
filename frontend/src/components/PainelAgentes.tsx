@@ -58,7 +58,7 @@ export default function PainelAgentes({titulo=true}:{titulo?:boolean}){
     {n:'Agente 2',nome:'Postagem',Icon:Send,ligado:po?po.ligado:null,ocupado:false,
      agora:agendados[0]?`Próximo post ${new Date((agendados[0].quando||0)*1000).toLocaleString('pt-BR',{weekday:'short',hour:'2-digit',minute:'2-digit'})}`:po?.ligado?'Nada agendado agora':'Parado',
      numeros:[[agendados.length,'agendados'],[cortes.filter(c=>c.status==='postado').length,'publicados'],[cortes.filter(c=>c.erros&&Object.keys(c.erros).length).length,'com erro']],
-     ir:()=>go('agente','postagem','posts')},
+     ir:()=>go('agendar','','posts')},
     {n:'Agente 3',nome:'Vídeos com IA',Icon:Bot,ligado:null,ocupado:rodando3.length>0,
      agora:rodando3[0]?`${rodando3[0].titulo?.slice(0,40)||'Vídeo'}: ${rodando3[0].etapa||FAZENDO3.rendering}`:j3.length?'Vídeos esperando a vez na fila':'Parado',
      numeros:[[j3.length,'na fila'],[esperando3,'esperando você'],[prontos3,'prontos']],

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Youtube, Instagram, Music2, CalendarClock, LogIn, LogOut, Loader2, Server, Copy, ExternalLink, Download, Send, Trash2, RefreshCw, Upload, CheckCircle2, AlertTriangle, Clock, Hand } from 'lucide-react';
+import { Youtube, Instagram, Music2, CalendarClock, LogIn, LogOut, Loader2, Server, Copy, ExternalLink, Download, Send, Trash2, RefreshCw, Upload, CheckCircle2, AlertTriangle, Clock, Hand, Pencil, X, ChevronDown } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import AgendarPost from '../components/AgendarPost';
-import { REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, cancelarPost, marcarFeito, baixarVideoPost, enderecoRetorno, type Contas, type Prov, type Post, type Rede } from '../lib/agenda';
+import { REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, editarPost, cancelarPost, marcarFeito, baixarVideoPost, enderecoRetorno, type Contas, type Prov, type Post, type Rede, type StatusRede } from '../lib/agenda';
 
 const PROVS:{id:Prov;nome:string;redes:string;icone:typeof Youtube;help:'app_google'|'app_meta'|'app_tiktok';idLabel:string;segLabel:string}[] = [
   {id:'google',nome:'YouTube',redes:'Shorts no seu canal',icone:Youtube,help:'app_google',idLabel:'ID do cliente OAuth',segLabel:'Chave secreta do cliente'},
@@ -70,6 +70,43 @@ export function ContasPainel({aoMudar,onContas}:{aoMudar?:()=>void;onContas?:(c:
    </section>;
 }
 
+const paraInput=(ts:number)=>{ const d=new Date(ts*1000); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
+const pendente=(p:Post)=>Object.values(p.redes).some(s=>s&&(s.status==='agendado'||s.status==='erro'||s.status==='postando'||s.status==='manual'));
+
+/** Uma linha da agenda: hora, redes e o que dá para fazer com o post (postar agora, mudar hora e redes, baixar, cancelar). */
+function PostLinha({p,acao}:{p:Post;acao:(f:()=>Promise<unknown>,ok:string)=>void}){
+  const {settings}=useApp();
+  const [editar,setEditar]=useState(false);
+  const [hora,setHora]=useState(paraInput(p.quando));
+  const [redes,setRedes]=useState<Rede[]>(Object.keys(p.redes) as Rede[]);
+  const feitas=(Object.entries(p.redes) as [Rede,StatusRede][]).filter(([,s])=>s.status==='postado').map(([r])=>r);
+  const abrir=()=>{ setHora(paraInput(p.quando)); setRedes(Object.keys(p.redes) as Rede[]); setEditar(true); };
+  const salvar=()=>{ const q=new Date(hora).getTime()/1000; acao(async()=>{ await editarPost(settings,p.id,{quando:Math.abs(q-p.quando)>30?q:undefined,redes}); setEditar(false); },'Post atualizado.'); };
+  const atrasado=pendente(p)&&p.quando<Date.now()/1000-120&&Object.values(p.redes).some(s=>s?.status==='agendado');
+  return <div className="post-row">
+    <div className="post-hora"><Clock size={14}/> {fmtData(p.quando).split(', ').pop()}</div>
+    <div className="post-info"><strong>{p.titulo||p.legenda.slice(0,60)||'Sem título'}</strong>
+     {p.preparando&&<p className="hint"><Loader2 size={13} className="spin"/> Preparando o vídeo no servidor (convertendo para MP4). No celular isso pode levar alguns minutos.</p>}
+     {atrasado&&<p className="hint warn">Passou da hora e ainda não saiu. O servidor está ligado? Use Postar agora.</p>}
+     <div className="post-redes">{(Object.entries(p.redes) as [Rede,StatusRede][]).map(([r,s])=><span key={r} className={'tag '+ST[s.status][1]} title={s.erro||s.link}>{REDES.find(x=>x.id===r)?.nome.replace(' (manual)','')}: {ST[s.status][0]}{s.status==='postado'&&s.link.startsWith('http')&&<a href={s.link.split(' ')[0]} target="_blank" rel="noreferrer"> <ExternalLink size={11}/></a>}</span>)}</div>
+     {Object.entries(p.redes).filter(([,s])=>s&&(s.status==='erro'||(s.status==='agendado'&&!!s.erro)||(s.status==='postado'&&!s.link.startsWith('http'))||s.link.includes('('))).map(([r,s])=><p key={r} className={'hint '+(s!.status==='erro'?'bad':s!.status==='agendado'?'warn':'')}><b>{REDES.find(x=>x.id===r)?.nome}:</b> {s!.erro||s!.link}</p>)}
+     {editar&&<div className="post-editar">
+       <label>Novo dia e hora<input type="datetime-local" value={hora} onChange={e=>setHora(e.target.value)}/></label>
+       <div className="field-label">Redes</div>
+       <div className="chips">{REDES.map(r=>{ const on=redes.includes(r.id); const travada=feitas.includes(r.id); return <button key={r.id} type="button" disabled={travada} title={travada?'Já postado nesta rede':''} className={'chip '+(on?'on':'')} aria-pressed={on} onClick={()=>setRedes(x=>on?x.filter(y=>y!==r.id):[...x,r.id])}>{r.nome.replace(' (manual)','')}{travada?' ✓':''}</button>; })}</div>
+       <div className="row-gap left mt"><button className="primary sm" disabled={!redes.length||!hora} onClick={salvar}>Salvar</button><button className="subtle sm" onClick={()=>setEditar(false)}><X size={14}/> Fechar</button></div>
+     </div>}
+    </div>
+    <div className="post-acoes">
+     {Object.values(p.redes).some(s=>s?.status==='agendado'||s?.status==='erro')&&<button className="primary sm" onClick={()=>acao(()=>postarAgora(settings,p.id),'Postando agora...')}>{Object.values(p.redes).some(s=>s?.status==='erro')?<><RefreshCw size={14}/> Tentar de novo</>:<><Send size={14}/> Postar agora</>}</button>}
+     {pendente(p)&&!editar&&<button className="subtle sm" onClick={abrir}><Pencil size={14}/> Mudar hora ou redes</button>}
+     <button className="subtle sm" onClick={()=>acao(()=>baixarVideoPost(settings,p.id,p.titulo||'corte'),'Vídeo baixado.')}><Download size={14}/> Baixar</button>
+     {p.redes.kwai?.status==='manual'&&<button className="subtle sm" onClick={()=>acao(()=>marcarFeito(settings,p.id,'kwai'),'Kwai marcado como postado.')}><CheckCircle2 size={14}/> Já postei no Kwai</button>}
+     <button className="icon-btn" title="Cancelar e apagar" aria-label="Cancelar post" onClick={()=>{ if(window.confirm('Cancelar este post e apagar o vídeo do servidor?')) acao(()=>cancelarPost(settings,p.id),'Post cancelado.'); }}><Trash2 size={15}/></button>
+    </div>
+  </div>;
+}
+
 export default function Agendar(){
   const {settings,toast,go}=useApp();
   const [posts,setPosts]=useState<Post[]|null>(null);
@@ -87,32 +124,27 @@ export default function Agendar(){
    <button className="primary" onClick={()=>go('config')}>Ligar servidor em Chaves e ajustes</button> <HelpButton topic="servidor" label="Como ligar?"/>
   </section>;
 
-  const porDia=new Map<string,Post[]>(); for(const p of posts||[]){ const d=dia(p.quando); porDia.set(d,[...(porDia.get(d)||[]),p]); }
+  const [ver,setVer]=useState<'proximos'|'feitos'>('proximos');
+  const lista=(posts||[]).filter(p=>ver==='proximos'?pendente(p):!pendente(p));
+  if(ver==='feitos') lista.reverse();
+  const porDia=new Map<string,Post[]>(); for(const p of lista){ const d=dia(p.quando); porDia.set(d,[...(porDia.get(d)||[]),p]); }
+  const nProx=(posts||[]).filter(pendente).length;
   return <>
-   <ContasPainel aoMudar={recarregar}/>
-
    <section className="panel">
-    <div className="section-head"><h2><CalendarClock size={18}/> Agenda de posts</h2>
-     <button className="primary sm" onClick={()=>arq.current?.click()}><Upload size={14}/> Agendar vídeo pronto</button>
+    <div className="section-head"><h2><CalendarClock size={18}/> Posts agendados</h2>
+     <button className="subtle sm" onClick={()=>arq.current?.click()}><Upload size={14}/> Agendar vídeo pronto</button>
      <input ref={arq} type="file" accept="video/*" hidden onChange={e=>{ const f=e.target.files?.[0]; if(f) setNovo(f); e.target.value=''; }}/></div>
-    <p className="subtitle">O servidor posta sozinho na hora marcada. Se a internet ou a rede falhar, ele tenta de novo até 4 vezes antes de pedir sua ajuda. Para agendar um corte, use o botão <b>Agendar</b> em cada corte, na aba Gerar cortes. Aqui você confere tudo o que está marcado.</p>
+    <p className="subtitle">Tudo o que vai ao ar, dos agentes e o que você agendou. Toque em <b>Postar agora</b> para não esperar, ou em <b>Mudar hora ou redes</b> para trocar o horário e as redes. O servidor posta sozinho na hora marcada e tenta de novo se a internet falhar.</p>
+    <div className="seg mt" role="tablist"><button role="tab" aria-selected={ver==='proximos'} className={ver==='proximos'?'on':''} onClick={()=>setVer('proximos')}>Para postar{nProx?` (${nProx})`:''}</button><button role="tab" aria-selected={ver==='feitos'} className={ver==='feitos'?'on':''} onClick={()=>setVer('feitos')}>Já postados</button></div>
     {!posts?<p className="hint"><Loader2 size={14} className="spin"/> Carregando...</p>
-    :!posts.length?<p className="hint center">Nenhum post agendado ainda.</p>
-    :[...porDia].map(([d,lista])=><div key={d} className="agenda-dia"><h3>{d}</h3>{lista.map(p=><div key={p.id} className="post-row">
-       <div className="post-hora"><Clock size={14}/> {fmtData(p.quando).split(', ').pop()}</div>
-       <div className="post-info"><strong>{p.titulo||p.legenda.slice(0,60)||'Sem título'}</strong>
-        {p.preparando&&<p className="hint"><Loader2 size={13} className="spin"/> Preparando o vídeo no servidor (convertendo para MP4). No celular isso pode levar alguns minutos.</p>}
-        <div className="post-redes">{(Object.entries(p.redes) as [Rede,NonNullable<Post['redes'][Rede]>][]).map(([r,s])=><span key={r} className={'tag '+ST[s.status][1]} title={s.erro||s.link}>{REDES.find(x=>x.id===r)?.nome.replace(' (manual)','')}: {ST[s.status][0]}{s.status==='postado'&&s.link.startsWith('http')&&<a href={s.link.split(' ')[0]} target="_blank" rel="noreferrer"> <ExternalLink size={11}/></a>}</span>)}</div>
-        {Object.entries(p.redes).filter(([,s])=>s.status==='erro'||(s.status==='agendado'&&!!s.erro)||(s.status==='postado'&&!s.link.startsWith('http'))||s.link.includes('(')).map(([r,s])=><p key={r} className={'hint '+(s.status==='erro'?'bad':s.status==='agendado'?'warn':'')}><b>{REDES.find(x=>x.id===r)?.nome}:</b> {s.erro||s.link}</p>)}
-       </div>
-       <div className="post-acoes">
-        {Object.values(p.redes).some(s=>s.status==='agendado'||s.status==='erro')&&<button className="subtle sm" onClick={()=>acao(()=>postarAgora(settings,p.id),'Postando agora...')}>{Object.values(p.redes).some(s=>s.status==='erro')?<><RefreshCw size={14}/> Tentar de novo</>:<><Send size={14}/> Postar agora</>}</button>}
-        <button className="subtle sm" onClick={()=>acao(()=>baixarVideoPost(settings,p.id,p.titulo||'corte'),'Vídeo baixado.')}><Download size={14}/> Baixar vídeo</button>
-        {p.redes.kwai?.status==='manual'&&<button className="subtle sm" onClick={()=>acao(()=>marcarFeito(settings,p.id,'kwai'),'Kwai marcado como postado.')}><CheckCircle2 size={14}/> Já postei no Kwai</button>}
-        <button className="icon-btn" title="Cancelar e apagar" onClick={()=>{ if(window.confirm('Cancelar este post e apagar o vídeo do servidor?')) acao(()=>cancelarPost(settings,p.id),'Post cancelado.'); }}><Trash2 size={15}/></button>
-       </div>
-      </div>)}</div>)}
+    :!lista.length?<p className="hint center">{ver==='proximos'?'Nada agendado agora. Os cortes do Agente 1 entram aqui sozinhos quando o Agente 2 está ligado.':'Nenhum post publicado ainda.'}</p>
+    :[...porDia].map(([d,ls])=><div key={d} className="agenda-dia"><h3>{d}</h3>{ls.map(p=><PostLinha key={p.id+p.quando} p={p} acao={acao}/>)}</div>)}
    </section>
+
+   <details className="recolhido contas-dobra" open={!posts?.length}>
+    <summary><ChevronDown size={16}/> Contas das redes (YouTube, Facebook, Instagram, TikTok)</summary>
+    <ContasPainel aoMudar={recarregar}/>
+   </details>
    {novo&&<AgendarPost titulo={novo.name.replace(/\.\w+$/,'')} legenda="" gerar={async()=>({blob:novo,nome:novo.name})} onClose={()=>{ setNovo(null); recarregar(); }}/>}
   </>;
 }

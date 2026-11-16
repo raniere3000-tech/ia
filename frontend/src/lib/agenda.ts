@@ -68,6 +68,7 @@ export const criarPost=(c:Cfg,d:{video:string;redes:Rede[];titulo:string;legenda
 export const listarPosts=(c:Cfg)=>chamar<{posts:Post[];agora:number}>(c,'GET','/posts');
 export const postarAgora=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/agora`,{});
 export const cancelarPost=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/cancelar`,{});
+export const editarPost=(c:Cfg,id:string,d:{quando?:number;redes?:Rede[];titulo?:string;legenda?:string})=>chamar<Post>(c,'POST',`/posts/${id}/editar`,d);
 export const marcarFeito=(c:Cfg,id:string,rede:Rede)=>chamar(c,'POST',`/posts/${id}/feito`,{rede});
 /** Baixa o vídeo do post. A senha vai no cabeçalho, nunca no endereço (endereços ficam no histórico). */
 export async function baixarVideoPost(c:Cfg,id:string,nome:string){
