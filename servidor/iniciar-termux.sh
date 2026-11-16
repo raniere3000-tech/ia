@@ -93,8 +93,17 @@ if [ "$1" = "link" ]; then
   # Repete o aviso a cada 6 horas (o canal esquece mensagens depois de 12 horas).
   ( while sleep 21600; do [ -f .url_atual ] && curl -s -m 20 -d "$(assinar "$(cat .url_atual)")" "$TOPICO" >/dev/null; done ) &
   PUB=$!
-  trap 'kill $SRV $PUB 2>/dev/null; pkill -f "python servidor.py" 2>/dev/null' EXIT
+  # Vigia do túnel: se o endereço deixar de resolver (o túnel caiu), desliga o cloudflared; o laço abaixo liga de novo
+  # e publica o endereço novo no canal (e um link de pareamento novo).
+  ( falhas=0; while sleep 60; do
+      U=$(cat .url_atual 2>/dev/null); [ -z "$U" ] && continue
+      if curl -s -m 15 -o /dev/null "$U/api/v1/saude"; then falhas=0; else falhas=$((falhas+1)); fi
+      if [ "$falhas" -ge 2 ]; then echo "  (Túnel não responde: reiniciando o endereço...)"; pkill -x cloudflared 2>/dev/null || true; falhas=0; fi
+    done ) &
+  VIGIA_TUNEL=$!
+  trap 'kill $SRV $PUB $VIGIA_TUNEL 2>/dev/null; pkill -f "python servidor.py" 2>/dev/null; pkill -x cloudflared 2>/dev/null' EXIT
   sleep 2
+  while true; do
   cloudflared tunnel --no-autoupdate --url http://localhost:${PORTA:-8787} 2>&1 | while read -r linha; do
     URL=$(echo "$linha" | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' || true)
     if [ -n "$URL" ]; then
@@ -117,6 +126,9 @@ if [ "$1" = "link" ]; then
       echo "  ============================================================"
       [ -n "$LINK_PAR" ] && command -v termux-clipboard-set >/dev/null && echo "${LINK_PAR}" | termux-clipboard-set && echo "  (link copiado)"
     fi
+  done || true
+  echo "  O túnel parou. Ligando de novo em 5 segundos (vai sair um endereço novo)..."
+  sleep 5
   done
 else
   python servidor.py
