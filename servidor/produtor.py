@@ -96,6 +96,10 @@ def limpar_briefing(d: dict) -> dict:
     b['trilha'] = re.sub(r'[^a-f0-9]', '', str(d.get('trilha') or ''))[:16]
     b['paleta'] = [c for c in (d.get('paleta') or []) if re.fullmatch(r'#[0-9a-fA-F]{6}', str(c))][:3]
     b['temas'] = [str(t)[:200] for t in (d.get('temas') or []) if str(t).strip()][:30]
+    # personagens/cenários da biblioteca criativa fixados em id + versão (usados em lote e rotina sem virar episódio)
+    b['elenco_biblioteca'] = [{'id': re.sub(r'[^a-z0-9_-]', '', str(x.get('id') or '').lower())[:40], 'versao': max(1, int(x.get('versao') or 1))}
+                              for x in (d.get('elenco_biblioteca') or []) if isinstance(x, dict) and x.get('id')][:4]
+    b['cenarios_biblioteca'] = [re.sub(r'[^a-z0-9_-]', '', str(x).lower())[:40] for x in (d.get('cenarios_biblioteca') or []) if x][:4]
     de = d.get('destinos') if isinstance(d.get('destinos'), dict) else {}
     b['destinos'] = {'redes': [r for r in de.get('redes', []) if r in ag.REDES], 'quando': de.get('quando') if de.get('quando') in ('proximo', 'agora', 'data') else 'proximo',
                      'data': float(de.get('data') or 0), 'titulo': str(de.get('titulo') or '')[:100], 'legenda': str(de.get('legenda') or '')[:5000],
@@ -661,6 +665,11 @@ def novo(d: dict, dispositivo: str = '') -> dict:
         dados['roteiro'] = {k: v for k, v in r.items() if k != 'cenas'}
         dados['cenas'] = r['cenas']
         st = 'storyboard_ready'
+    if b['elenco_biblioteca']:
+        import criativo
+        dados['serie'] = criativo.foto_avulsa({x['id']: x['versao'] for x in b['elenco_biblioteca']}, b['cenarios_biblioteca'])
+        if b['estilo'] not in ('animado2d', 'animado3d'):
+            b['estilo'] = 'animado2d'
     titulo = (dados['roteiro'] or {}).get('titulo') or b['tema'] or 'Vídeo do Agente 3'
     return pj.criar({'tipo': 'agente3', 'modo': d.get('modo') or 'automatico', 'titulo': titulo, 'status': st, 'dados': dados}, dispositivo, d.get('origem') or 'site')
 

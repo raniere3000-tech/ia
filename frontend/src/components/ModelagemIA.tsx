@@ -91,8 +91,8 @@ function CartaoProposta({p,destinos,serieId,projetoId,onMudou,onAplicado,outra}:
 }
 
 /** "Modelagem com IA": Descrever para a IA ou Surpreenda-me. Igual em todas as telas; muda só o que dá para criar e onde aplicar. */
-export default function ModelagemIA({contexto,tipos,destinos,serieId,projetoId,compacto,titulo,assets,onAplicado,onUsarCampos}:{contexto:string;tipos:TipoModelo[];destinos:Destino[];
-  serieId?:string;projetoId?:string;compacto?:boolean;titulo?:string;assets?:{id:string;tipo:string;nome:string;descricao?:string}[];
+export default function ModelagemIA({contexto,tipos,destinos,serieId,projetoId,compacto,titulo,rotuloUsar,assets,onAplicado,onUsarCampos}:{contexto:string;tipos:TipoModelo[];destinos:Destino[];
+  serieId?:string;projetoId?:string;compacto?:boolean;titulo?:string;rotuloUsar?:string;assets?:{id:string;tipo:string;nome:string;descricao?:string}[];
   onAplicado?:(r:Aplicado,p:Proposta)=>void;onUsarCampos?:(c:Campos,p:Proposta)=>void}){
   const {toast}=useApp(); const cfg=useCfg();
   const [aberto,setAberto]=useState(!compacto); const [modo,setModo]=useState<'descricao'|'surpresa'>('descricao');
@@ -150,7 +150,7 @@ export default function ModelagemIA({contexto,tipos,destinos,serieId,projetoId,c
     {res?.tendencias&&!res.precisa_confirmar&&<Referencias t={res.tendencias}/>}
     {res&&res.propostas.length>0&&<div className="mod-props">{res.propostas.map(p=><CartaoProposta key={p.id} p={p} destinos={destinos} serieId={serieId} projetoId={projetoId}
       onMudou={mudar} outra={()=>ultimo&&pedir(ultimo)} onAplicado={onAplicado}/>)}
-      {onUsarCampos&&<div className="row-gap left">{res.propostas.map((p,i)=><button key={p.id} className="subtle sm" onClick={()=>onUsarCampos(p.campos,p)}>Usar a proposta {i+1} neste vídeo</button>)}</div>}
+      {onUsarCampos&&<div className="row-gap left">{res.propostas.map((p,i)=><button key={p.id} className="subtle sm" onClick={()=>onUsarCampos(p.campos,p)}>{rotuloUsar||'Usar neste vídeo'}: proposta {i+1}</button>)}</div>}
     </div>}
   </div>;
 }
@@ -175,5 +175,38 @@ export function EscolherDaBiblioteca({projetoId,garantirProjeto,onUsado}:{projet
         toast('Personagens no vídeo. Gere o roteiro de novo para a IA escrever com eles, ou escolha quem aparece em cada cena.','ok'); setItens(null); }
       catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(false); } }}>{busy?<Loader2 size={14} className="spin"/>:null} Usar no vídeo</button>
       <button className="link-btn" onClick={()=>setItens(null)}>Fechar</button></div>
+  </div>;
+}
+
+/** Personagens da biblioteca para vídeos em lote ou rotina: ficam fixados na versão escolhida (mudar o personagem depois não muda a rotina). */
+export function ElencoFixado({valor,mudar}:{valor:{id:string;versao:number}[];mudar:(v:{id:string;versao:number}[])=>void}){
+  const {toast}=useApp(); const cfg=useCfg();
+  const [itens,setItens]=useState<ItemBiblioteca[]|null>(null);
+  useEffect(()=>{ if(valor.length&&!itens) biblioteca(cfg,'character').then(r=>setItens(r.itens)).catch(()=>{}); },[valor.length,itens,cfg]);
+  const abrir=()=>biblioteca(cfg,'character').then(r=>setItens(r.itens)).catch(e=>toast(erroTexto(e),'erro'));
+  const nome=(id:string)=>itens?.find(x=>x.id===id)?.nome||id;
+  return <div className="mt">
+    <div className="field-label">Personagens da biblioteca nestes vídeos (opcional)</div>
+    {valor.length>0&&<ul className="mod-mini">{valor.map(v=>{ const atual=itens?.find(x=>x.id===v.id)?.versao;
+      return <li key={v.id}>{nome(v.id)} (versão {v.versao}){atual&&atual>v.versao&&<> • tem versão {atual} <button className="link-btn" onClick={()=>mudar(valor.map(x=>x.id===v.id?{...x,versao:atual}:x))}>usar a nova</button></>}
+        {' '}<button className="link-btn" onClick={()=>mudar(valor.filter(x=>x.id!==v.id))}>tirar</button></li>; })}</ul>}
+    {!itens?<button className="subtle sm" onClick={abrir}>Escolher personagens da biblioteca</button>
+      :<div className="bib-lista">{itens.filter(x=>!valor.some(v=>v.id===x.id)).map(x=><button key={x.id} className="chip" disabled={valor.length>=4} onClick={()=>mudar([...valor,{id:x.id,versao:x.versao}])}>+ {x.nome} (v{x.versao})</button>)}
+        {!itens.length&&<span className="hint">Nenhum personagem ainda. Crie em Séries ou com "Criar com a IA".</span>}</div>}
+    {valor.length>0&&<p className="hint">Com personagens, o visual passa a ser desenho 2D. Cada vídeo usa a versão marcada aqui, mesmo que o personagem mude depois.</p>}
+  </div>;
+}
+
+/** Modelos guardados na biblioteca (histórias e pacotes) para virar assunto. Só preenche: não produz nada. */
+export function ModelosBiblioteca({onUsar}:{onUsar:(titulo:string,item:ItemBiblioteca)=>void}){
+  const {toast}=useApp(); const cfg=useCfg();
+  const [itens,setItens]=useState<ItemBiblioteca[]|null>(null);
+  if(!itens) return <button className="subtle sm" onClick={()=>Promise.all(['story','scene_package','series_bible'].map(t=>biblioteca(cfg,t))).then(rs=>setItens(rs.flatMap(r=>r.itens))).catch(e=>toast(erroTexto(e),'erro'))}>Usar um modelo da biblioteca</button>;
+  return <div className="mod compacto">
+    <div className="field-label">Modelos guardados</div>
+    {!itens.length&&<p className="hint">Nenhum modelo ainda. Em "Criar com a IA", use "Salvar como modelo".</p>}
+    <ul className="mod-ref-lista">{itens.map(x=><li key={x.id}><b>{x.nome}</b><small className="muted">{x.descricao} • versão {x.versao} • {x.origem==='ia'?'gerado com IA':x.origem==='codigo'?'sorteio do código':x.origem}</small>
+      <button className="link-btn" onClick={()=>onUsar(x.nome,x)}>Usar como assunto</button></li>)}</ul>
+    <button className="link-btn" onClick={()=>setItens(null)}>Fechar</button>
   </div>;
 }

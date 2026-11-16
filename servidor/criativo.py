@@ -606,14 +606,22 @@ def biblioteca(tipo: str = '', q: str = '', pagina: int = 1) -> dict:
 
 
 # ---------------------------------------------------------------- aplicar (cria rascunhos; nunca produz nem posta)
-def foto_avulsa(personagens: list, cenarios: list | None = None) -> dict:
+def foto_avulsa(personagens, cenarios: list | None = None) -> dict:
     """Personagens e cenários da biblioteca fixados em ID + versão para um vídeo único (sem série, sem episódio).
+    `personagens` é uma lista de ids (versão de agora) ou {id: versão} (versão fixada antes, como numa rotina).
     Mudar o personagem depois cria versão nova e este vídeo continua com a fixada."""
     import series as srs
     pers, vers, cens = {}, {}, {}
-    for pid in (personagens or [])[:4]:
+    pedidos = personagens if isinstance(personagens, dict) else {str(x): None for x in (personagens or [])}
+    for pid, versao in list(pedidos.items())[:4]:
         p = srs.obter_personagem(str(pid))
-        pers[p['id']], vers[p['id']] = p['dados'], p['versao']
+        if versao and versao != p['versao']:
+            v = db.um('SELECT dados FROM personagens_versoes WHERE personagem_id=? AND versao=?', p['id'], int(versao))
+            if not v:
+                raise ErroCriativo(404, f'A versão {versao} de {p["nome"]} não existe mais.')
+            pers[p['id']], vers[p['id']] = json.loads(v['dados']), int(versao)
+        else:
+            pers[p['id']], vers[p['id']] = p['dados'], p['versao']
     todos_c = {c['id']: c for c in srs.listar_cenarios()}
     for cid in (cenarios or [])[:4]:
         if str(cid) in todos_c:

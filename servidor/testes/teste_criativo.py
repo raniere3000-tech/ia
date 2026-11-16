@@ -207,6 +207,20 @@ confere(pf['png'].startswith('data:image/png'), 'prévia de personagem da biblio
 est = cri.validar_campos({'titulo': 'Neon chuvoso'}, 'estilo')
 confere(not cri.compatibilidade(est[0], 'estilo', est[1])['aplicavel'], 'estilo visual novo fica como ficha (sem motor, não finge funcionar)')
 
+print('\nAutomático: lote e rotina com personagens fixados')
+import produtor  # noqa: E402
+produtor.iniciar()
+b = {'tema': 'Teste', 'estilo': 'documentario', 'elenco_biblioteca': [{'id': rolo, 'versao': 1}]}
+r = api('POST', '/api/v1/agente3/lote', {'briefing': b, 'quantidade': 2, 'temas': ['A', 'B'], 'quando': 'data', 'data': 4102444800})
+ps = [pj.obter(x['projeto']) for x in r['criados']]
+confere(all(x['dados']['serie']['versoes'][rolo] == 1 and x['dados']['serie']['personagens'][rolo]['roupa'] == '#22aa55' and x['dados']['briefing']['estilo'] == 'animado2d' for x in ps),
+        'lote usa a versão 1 fixada (o personagem já está na versão 2)')
+produtor.criar_da_rotina({'id': 'rt1', 'briefing': b}, 4102444800.0, 0)
+pr_ = pj.obter(db.um("SELECT projeto FROM jobs WHERE chave='rotina:rt1:4102444800:0'")['projeto'])
+confere(pr_['dados']['serie']['versoes'][rolo] == 1, 'rotina cria o vídeo com a versão fixada')
+st, _ = erro(lambda: produtor.novo({'briefing': {'tema': 'x', 'elenco_biblioteca': [{'id': rolo, 'versao': 9}]}}))
+confere(st == 404, 'versão que não existe: erro claro (não troca por outra)')
+
 print('\nFreio de gasto')
 api_v1._PEDIDOS_IA.clear()
 for _ in range(30):

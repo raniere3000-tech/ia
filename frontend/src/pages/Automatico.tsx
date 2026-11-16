@@ -5,6 +5,7 @@ import { HelpButton } from '../components/Help';
 import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/Servidor2';
 import { CamposBriefing, Destinos } from './CriarIA';
 import { Prontidao } from '../components/Prontidao';
+import ModelagemIA, { ElencoFixado, ModelosBiblioteca } from '../components/ModelagemIA';
 import { catalogo, produzirLote, rotinas as lerRotinas, criarRotina, mudarRotina, apagarRotina, listarProjetos, horaTexto, type Briefing } from '../lib/api';
 import { store } from '../lib/store';
 
@@ -25,6 +26,7 @@ export default function Automatico(){
   const [busy,setBusy]=useState('');
   if(!settings.servidor) return <PrecisaServidor oque="O Agente 3"/>;
   const listaTemas=temas.split('\n').map(x=>x.trim()).filter(Boolean);
+  const addTema=(t:string)=>{ const n=[...listaTemas.filter(x=>x!==t),t]; setTemas(n.join('\n')); set({temas:n}); };
   const briefing={...b,temas:listaTemas};
   const fazer=async(n:string,f:()=>Promise<void>)=>{ setBusy(n); try{ await f(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } };
   return <div className="automatico">
@@ -33,6 +35,10 @@ export default function Automatico(){
     <div className="section-head"><h2><Bot size={17}/> 1. Como devem ser os vídeos</h2></div>
     <p className="subtitle">Aqui o celular faz vários vídeos sozinho: escolhe o assunto (se você não der), escreve, narra, monta e avisa por e-mail. Nada é publicado sem a sua aprovação.</p>
     <label>Assuntos (um por linha; se deixar vazio, o agente escolhe dentro do nicho)<textarea rows={3} value={temas} onChange={e=>{ setTemas(e.target.value); set({temas:e.target.value.split('\n').map(x=>x.trim()).filter(Boolean)}); }} placeholder={'Por que o céu é azul\nO animal mais rápido do mundo'}/></label>
+    <ModelagemIA compacto titulo="Pedir ideias à IA" contexto="automatico" tipos={['ideia','pacote']} destinos={['biblioteca']} rotuloUsar="Pôr na lista de assuntos"
+      onUsarCampos={c=>{ addTema(c.titulo); toast('Assunto adicionado à lista. Nada foi produzido: os vídeos só são feitos quando você tocar em Produzir ou numa rotina.','ok'); }}/>
+    <div className="row-gap left"><ModelosBiblioteca onUsar={t=>{ addTema(t); toast('Modelo adicionado como assunto.','ok'); }}/></div>
+    <ElencoFixado valor={b.elenco_biblioteca||[]} mudar={v=>set({elenco_biblioteca:v,...(v.length&&!['animado2d','animado3d'].includes(b.estilo||'')?{estilo:'animado2d'}:{})})}/>
     <CamposBriefing b={b} set={set} cat={cat.dados}/>
     <label className="mt">Visual<select value={b.estilo} onChange={e=>set({estilo:e.target.value})}>{(cat.dados?.estilos||[]).filter(e=>e.servidor).map(e=><option key={e.id} value={e.id}>{e.nome}{e.status==='beta'?' (em teste)':''}</option>)}</select></label>
     <button className="link-btn" onClick={()=>go('galeria','','criar')}>Ver os estilos com demonstração</button>
