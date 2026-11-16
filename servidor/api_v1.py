@@ -297,6 +297,10 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     m = re.fullmatch(r'/api/v1/projetos/(\w+)/animatic', caminho)
     if m and metodo == 'POST':
         return diretor.pedir_animatic(m.group(1))
+    m = re.fullmatch(r'/api/v1/projetos/(\w+)/cenas/(\d{1,3})/refazer', caminho)
+    if m and metodo == 'POST':
+        d = corpo()
+        return {'job': produtor.refazer_cena(m.group(1), int(m.group(2)), bool(d.get('imagem')), bool(d.get('voz')), quem)}
     m = re.fullmatch(r'/api/v1/projetos/(\w+)/cenas/(\d{1,3})/previa-ab', caminho)
     if m and metodo == 'POST':
         d = corpo()

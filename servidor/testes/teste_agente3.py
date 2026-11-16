@@ -551,6 +551,45 @@ confere('colorbalance' not in cmd2[cmd2.index('-filter_complex') + 1] and not an
 rd.rodar(cmd)
 confere(abs(rd.duracao(pt / 'o.mp4') - 2) < 0.2, 'render com clima funciona')
 
+print('Diretor completo: ângulo, luz por plano, movimento livre e refazer uma cena')
+pv = ec2.validar_planos([{'plano': 'MS'}, {'plano': 'CU', 'angulo': 'inclinado', 'luz': 'noite', 'chaves': [{'t': 1, 'zoom': 9, 'x': 2}, {'t': 0, 'zoom': 1}]},
+                         {'angulo': 'voando', 'luz': 'roxa', 'chaves': [{'t': 0}]}])
+confere('angulo' not in pv[0] and 'chaves' not in pv[0] and 'luz' not in pv[0], 'plano antigo continua igual (mesma chave de cache)')
+confere(pv[1]['angulo'] == 'inclinado' and pv[1]['luz'] == 'noite' and pv[1]['chaves'][0]['t'] == 0 and pv[1]['chaves'][1]['zoom'] == 3 and pv[1]['chaves'][1]['x'] == 1,
+        'ângulo, luz e quadros-chave validados e ordenados')
+confere('angulo' not in pv[2] and 'luz' not in pv[2] and 'chaves' not in pv[2], 'valores fora da lista são descartados')
+cd = ec2.validar_cena({'texto': 'x', 'planos': [{'plano': 'MS', 'angulo': 'baixo'}, {'plano': 'WS', 'angulo': 'inclinado', 'luz': 'noite'},
+                                                 {'plano': 'CU', 'chaves': [{'t': 0, 'zoom': 1, 'x': 0.2}, {'t': 1, 'zoom': 2, 'x': 0.8}]}]})
+pt2 = TMP / 'dir2'
+pt2.mkdir()
+for eid in ('documentario', 'animado2d'):
+    cmd = ec2.montar(eid, cd, 540, 960, 3, pt2, FOTO if eid == 'documentario' else None, None, pt2 / f'{eid}.mp4')
+    g = cmd[cmd.index('-filter_complex') + 1]
+    confere('perspective=' in g and 'rotate=' in g and "enable='between(t" in g, f'{eid}: ângulos e luz do plano entram no desenho')
+    rd.rodar(cmd)
+    confere(abs(rd.duracao(pt2 / f'{eid}.mp4') - 3) < 0.2, f'{eid}: render com ângulos e movimento livre funciona')
+RPID = pp['id']
+antes = {c['id']: (c.get('clipe') or {}).get('chave') for c in api('GET', f'/api/v1/projetos/{RPID}/revisao', None, SES)[1]['projeto']['dados']['cenas']}
+v0 = api('GET', f'/api/v1/projetos/{RPID}/revisao', None, SES)[1]['projeto']['dados']['render']['versao']
+n_tts = sum('tts' in x for x in PEDIDOS)
+st, rf, _ = api('POST', f'/api/v1/projetos/{RPID}/cenas/1/refazer', {'voz': True}, SES)
+confere(st == 200 and rf['job']['id'], 'pedido de refazer só a cena 2 aceito')
+st, _, _ = api('POST', f'/api/v1/projetos/{RPID}/cenas/1/refazer', {}, SES)
+confere(st == 400, 'não deixa pedir de novo enquanto está na fila')
+t = time.time()
+while time.time() - t < 300:
+    rr = api('GET', f'/api/v1/projetos/{RPID}/revisao', None, SES)[1]
+    if (rr.get('job') or {}).get('id') == rf['job']['id'] and rr['job']['status'] in ('concluido', 'falhou') and rr['projeto']['status'] in ('ready_for_review', 'failed'):
+        break
+    time.sleep(0.5)
+depois = {c['id']: (c.get('clipe') or {}).get('chave') for c in rr['projeto']['dados']['cenas']}
+ids = list(antes)
+confere(rr['projeto']['status'] == 'ready_for_review' and rr['projeto']['dados']['render']['versao'] > v0, f"vídeo refeito voltou para a revisão com versão nova ({rr['projeto']['status']}, {rr['projeto']['dados'].get('producao')})")
+confere(depois[ids[1]] != antes[ids[1]] and all(depois[k] == antes[k] for k in ids if k != ids[1]), 'só a cena pedida foi desenhada de novo')
+confere(sum('tts' in x for x in PEDIDOS) == n_tts + 1, 'narração gravada de novo só nessa cena')
+st, _, _ = api('POST', f'/api/v1/projetos/{RPID}/cenas/40/refazer', {}, SES)
+confere(st == 404, 'cena que não existe é recusada')
+
 print(f'\n{ok_n} ok, {falhas} falhas   (pasta {TMP})')
 if os.getenv('MANTER_SERVIDOR'):
     # Para testar o site no navegador contra este servidor de teste.

@@ -76,6 +76,12 @@ PLANOS = ('WS', 'MS', 'CU', 'ECU')                       # aberto, médio, close
 ZOOM_PLANO = {'WS': 1.0, 'MS': 1.4, 'CU': 1.9, 'ECU': 2.6}
 CLIMAS = ('nenhum', 'chuva', 'neve', 'poeira', 'neblina')       # partículas por cima da cena (só quando a cena pede)
 LUZES = ('neutra', 'quente', 'fria', 'noite', 'dramatica')      # camada de cor
+ANGULOS = ('normal', 'baixo', 'alto', 'inclinado')              # altura/inclinação da câmera em cada plano
+LUZ_FILTROS = {'quente': ['colorbalance=rs=.07:gs=.02:bs=-.07:rm=.05:bm=-.05'], 'fria': ['colorbalance=rs=-.06:bs=.09:rm=-.04:bm=.06'],
+               'noite': ['eq=brightness=-0.10:saturation=0.75', 'colorbalance=rs=-.05:bs=.12:bm=.08'],
+               'dramatica': ['eq=contrast=1.22:saturation=1.1:brightness=-0.03', 'vignette=PI/4']}
+GIRO = 0.09            # inclinação do plano 'inclinado' (radianos)
+ZOOM_GIRO = 1.16       # zoom extra para o giro não mostrar bordas pretas
 NOME_PLANO = {'WS': 'aberto', 'MS': 'médio', 'CU': 'close', 'ECU': 'close extremo'}
 FORMATOS = {'9:16': (1080, 1920), '16:9': (1920, 1080), '1:1': (1080, 1080)}
 
@@ -138,7 +144,49 @@ def validar_planos(lista) -> list:
                     'peso': _num(p.get('peso'), 1.0, 0.3, 3.0),
                     'busca': _txt(p.get('busca'), 60), 'intencao': _txt(p.get('intencao'), 120),
                     'personagem': re.sub(r'[^a-z0-9_-]', '', str(p.get('personagem') or '').lower())[:40]})
+        # campos novos só entram quando usados: planos antigos continuam com a mesma chave de cache
+        if p.get('angulo') in ANGULOS and p['angulo'] != 'normal':
+            out[-1]['angulo'] = p['angulo']
+        if p.get('luz') in LUZES:
+            out[-1]['luz'] = p['luz']
+        ch = validar_chaves(p.get('chaves'))
+        if ch:
+            out[-1]['chaves'] = ch
     return out
+
+
+def validar_chaves(lista) -> list:
+    """Quadros-chave do movimento de câmera dentro do plano: 2 a 4 pontos {t (0 a 1 do plano), zoom, x, y (0 a 1 da imagem)}."""
+    out = []
+    for k in (lista[:4] if isinstance(lista, list) else []):
+        if isinstance(k, dict):
+            out.append({'t': round(_num(k.get('t'), 0, 0, 1), 3), 'zoom': round(_num(k.get('zoom'), 1, 1, 3), 3),
+                        'x': round(_num(k.get('x'), 0.5, 0, 1), 3), 'y': round(_num(k.get('y'), 0.45, 0, 1), 3)})
+    out.sort(key=lambda k: k['t'])
+    return out if len(out) >= 2 and out[-1]['t'] > out[0]['t'] else []
+
+
+def expr_chaves(ch: list, campo: str, prog: str, mult: float = 1.0) -> str:
+    """Expressão do FFmpeg que liga os quadros-chave em linha reta (prog vai de 0 a 1 ao longo do plano)."""
+    pts = [(k['t'], k[campo] * mult) for k in ch]
+    out = f'{pts[-1][1]:.4f}'
+    for (t0, v0), (t1, v1) in reversed(list(zip(pts, pts[1:]))):
+        out = f'if(lt({prog},{t1:.3f}),{v0:.4f}+({v1 - v0:.4f})*({prog}-{t0:.3f})/{max(t1 - t0, 0.001):.3f},{out})'
+    return f'if(lt({prog},{pts[0][0]:.3f}),{pts[0][1]:.4f},{out})'
+
+
+def filtro_angulo(angulo: str, W: int, H: int, en: str = '') -> str:
+    """Câmera de baixo (linhas fecham para cima), de cima (fecham para baixo) ou inclinada. Os cantos vão para fora
+    do quadro, então não aparece borda preta; o 'inclinado' depende do zoom extra ZOOM_GIRO aplicado antes."""
+    e = f":enable='{en}'" if en else ''
+    d = W * 0.09
+    if angulo == 'baixo':
+        return f'perspective=x0=0:y0=0:x1={W}:y1=0:x2={-d:.0f}:y2={H}:x3={W + d:.0f}:y3={H}:sense=destination{e}'
+    if angulo == 'alto':
+        return f'perspective=x0={-d:.0f}:y0=0:x1={W + d:.0f}:y1=0:x2=0:y2={H}:x3={W}:y3={H}:sense=destination{e}'
+    if angulo == 'inclinado':
+        return f'rotate={GIRO}:fillcolor=black{e}'
+    return ''
 
 
 def planos_auto(cena: dict, dur: float) -> list:
@@ -332,11 +380,23 @@ class Comp:
         soco = '' if primeiro else f'+0.06*max(0,1-on/7)'
         fx, fy = plano.get('foco_x', 0.5), plano.get('foco_y', 0.45)
         cx = f'({fx - 0.07:.3f}+0.14*on/{frames})*iw' if cam == 'panoramica' else f'{fx:.3f}*iw'
+        cy = f'{fy:.3f}*ih'
+        ang = plano.get('angulo') or 'normal'
+        zg = ZOOM_GIRO if ang == 'inclinado' else 1.0
+        if plano.get('chaves'):       # movimento livre: os quadros-chave mandam no zoom e no centro
+            prog = f'on/{max(1, frames - 1)}'
+            mov = f"min({plano.get('_zmax') or 3.0:.3f},{expr_chaves(plano['chaves'], 'zoom', prog)})"
+            cx, cy = f"({expr_chaves(plano['chaves'], 'x', prog)})*iw", f"({expr_chaves(plano['chaves'], 'y', prog)})*ih"
+        z = f'({mov}{soco})*{zg}' if zg != 1 else f'{mov}{soco}'
+        # inclinado: gira a foto antes do zoom e prende a janela no miolo, onde o giro não deixou canto preto
+        giro = f'rotate={GIRO}:fillcolor=black,' if zg != 1 else ''
+        mx, my = (f'iw*{(1 - 1 / zg) / 2:.4f}', f'ih*{(1 - 1 / zg) / 2:.4f}') if zg != 1 else ('0', '0')
+        extra = filtro_angulo(ang, W, H) if ang in ('baixo', 'alto') else ''
         i = self.entrada(['-i', str(arq)])
         r = self._rot()
-        self.f.append(f"[{i}:v]scale={W * 2}:{H * 2}:force_original_aspect_ratio=increase,crop={W * 2}:{H * 2},"
-                      f"zoompan=z='{mov}{soco}':x='max(0,min(iw-iw/zoom,{cx}-iw/zoom/2))':y='max(0,min(ih-ih/zoom,{fy:.3f}*ih-ih/zoom/2))':"
-                      f"d={frames}:s={W}x{H}:fps={FPS},setpts=PTS-STARTPTS+{ini:.3f}/TB,format=yuv420p[{r}]")
+        self.f.append(f"[{i}:v]scale={W * 2}:{H * 2}:force_original_aspect_ratio=increase,crop={W * 2}:{H * 2},{giro}"
+                      f"zoompan=z='{z}':x='max({mx},min(iw-iw/zoom-{mx},{cx}-iw/zoom/2))':y='max({my},min(ih-ih/zoom-{my},{cy}-ih/zoom/2))':"
+                      f"d={frames}:s={W}x{H}:fps={FPS},{extra + ',' if extra else ''}setpts=PTS-STARTPTS+{ini:.3f}/TB,format=yuv420p[{r}]")
         o = self._rot()
         self.f.append(f"{self.v}[{r}]overlay=0:0:eof_action=pass:enable='between(t,{ini:.3f},{fim + 0.04:.3f})'[{o}]")
         self.v = f'[{o}]'
@@ -759,14 +819,16 @@ def _camada_clima(tipo: str, w: int, h: int) -> Path:
 def _ambiente(c, cena, W, H, dur):
     """Luz (camada de cor) e clima (chuva, neve, poeira, neblina). Só entra o que a cena pediu."""
     luz = cena.get('luz') or 'neutra'
-    if luz == 'quente':
-        c.filtro('colorbalance=rs=.07:gs=.02:bs=-.07:rm=.05:bm=-.05')
-    elif luz == 'fria':
-        c.filtro('colorbalance=rs=-.06:bs=.09:rm=-.04:bm=.06')
-    elif luz == 'noite':
-        c.filtro('eq=brightness=-0.10:saturation=0.75,colorbalance=rs=-.05:bs=.12:bm=.08')
-    elif luz == 'dramatica':
-        c.filtro('eq=contrast=1.22:saturation=1.1:brightness=-0.03,vignette=PI/4')
+    planos = cena.get('planos') or []
+    if any(p.get('luz') for p in planos):
+        # luz por plano: cada trecho usa a luz do seu plano (ou a da cena, se o plano não escolheu)
+        for p, (t0, t1) in zip(planos, tempos_planos([dict(p, peso=p.get('peso', 1.0)) for p in planos], dur)):
+            fs = LUZ_FILTROS.get(p.get('luz') or luz) or []
+            if fs:
+                fim = dur + 1 if p is planos[-1] else t1
+                c.filtro(','.join(f"{f}:enable='between(t,{t0:.3f},{fim:.3f})'" for f in fs))
+    elif luz in LUZ_FILTROS:
+        c.filtro(','.join(LUZ_FILTROS[luz]))
     clima = cena.get('clima') or 'nenhum'
     if clima not in CLIMAS or clima == 'nenhum':
         return
@@ -1188,7 +1250,7 @@ def _e_animado2d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m,
             pos['_falante'] = pos[el['personagem_id']]
     # câmera: cortes entre planos, foco no personagem do plano (ou em quem fala)
     tempos = tempos_planos([dict(p, peso=p.get('peso', 1.0)) for p in planos], dur)
-    zs, xs, ys = [], [], []
+    zs, xs, ys, angs, giros, ms = [], [], [], [], [], []
     for p, (t0, t1) in zip(planos, tempos):
         z = ZOOM_2D.get(p.get('plano'), 1.0) / ss
         alvo = pos.get(p.get('personagem') or '') or pos.get('_falante') or next(iter(pos.values()))
@@ -1196,9 +1258,23 @@ def _e_animado2d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m,
         fx = alvo['x_px'] if p.get('plano') != 'WS' else Wc / 2
         f0, f1 = int(t0 * FPS), max(int(t0 * FPS) + 1, int(t1 * FPS))
         zz = f'{z * ss:.4f}*(1+0.035*(on-{f0})/{f1 - f0})' if z * ss > 1 else f'(1+0.02*on/{max(1, int(dur * FPS))})'
+        ex, ey = f'{fx:.1f}', f'{fy:.1f}'
+        if p.get('chaves'):
+            prog = f'(on-{f0})/{f1 - f0}'
+            zz = expr_chaves(p['chaves'], 'zoom', prog)
+            ex, ey = expr_chaves(p['chaves'], 'x', prog, Wc), expr_chaves(p['chaves'], 'y', prog, Hc)
+        fim = dur + 1 if p is planos[-1] else t1
+        if p.get('angulo') == 'inclinado':
+            zz = f'({zz})*{ZOOM_GIRO}'
+            giros.append((t0, fim))
+            ms.append((f1, f'{(1 - 1 / ZOOM_GIRO) / 2:.4f}'))
+        else:
+            ms.append((f1, '0'))
+            if p.get('angulo') in ('baixo', 'alto'):
+                angs.append((p['angulo'], t0, fim))
         zs.append((f1, zz))
-        xs.append((f1, f'{fx:.1f}'))
-        ys.append((f1, f'{fy:.1f}'))
+        xs.append((f1, ex))
+        ys.append((f1, ey))
         if t0 > 0.05:
             c.sons.append(t0)
 
@@ -1207,8 +1283,13 @@ def _e_animado2d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m,
         for f1, e in reversed(lst[:-1]):
             out = f'if(lt(on,{f1}),{e},{out})'
         return out
-    c.filtro(f"zoompan=z='{por_plano(zs)}':x='clip({por_plano(xs)}-iw/zoom/2,0,iw-iw/zoom)':y='clip({por_plano(ys)}-ih/zoom/2,0,ih-ih/zoom)'"
+    if giros:     # plano inclinado: gira o quadro antes do zoom; a janela fica no miolo (margem m), sem canto preto
+        c.filtro(f"rotate={GIRO}:fillcolor=black:enable='" + '+'.join(f'between(t,{a:.3f},{b:.3f})' for a, b in giros) + "'")
+    mm = por_plano(ms)
+    c.filtro(f"zoompan=z='{por_plano(zs)}':x='clip({por_plano(xs)}-iw/zoom/2,iw*{mm},iw-iw/zoom-iw*{mm})':y='clip({por_plano(ys)}-ih/zoom/2,ih*{mm},ih-ih/zoom-ih*{mm})'"
              f":d=1:s={W}x{H}:fps={FPS}")
+    for a, t0, t1 in angs:
+        c.filtro(filtro_angulo(a, W, H, f'between(t,{t0:.3f},{t1:.3f})'))
     c.W, c.H = W, H
     c.sons = c.sons[:0]   # diálogo: sem 'whoosh' nos cortes
     if titulo and not cena.get('elenco'):

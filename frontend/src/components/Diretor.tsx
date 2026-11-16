@@ -39,6 +39,7 @@ function ListaPlanos({ps,set,atores}:{ps:Partial<Plano>[];set:(n:Partial<Plano>[
    <b>{k+1}</b>
    <select value={p.plano||'WS'} onChange={e=>set(ps.map((x,j)=>j===k?{...x,plano:e.target.value as Plano['plano']}:x))} aria-label={`Enquadramento do plano ${k+1}`}>{Object.entries(NOME).map(([v,n])=><option key={v} value={v}>{n}</option>)}</select>
    {atores.length>0&&<select value={p.personagem||''} onChange={e=>set(ps.map((x,j)=>j===k?{...x,personagem:e.target.value}:x))} aria-label={`Em quem fica o plano ${k+1}`}><option value="">Quem fala</option>{atores.map(a=><option key={a.id} value={a.id}>{a.nome}</option>)}</select>}
+   <select value={p.angulo||'normal'} onChange={e=>set(ps.map((x,j)=>j===k?{...x,angulo:e.target.value as Plano['angulo']}:x))} aria-label={`Ângulo do plano ${k+1}`}><option value="normal">De frente</option><option value="baixo">De baixo</option><option value="alto">De cima</option><option value="inclinado">Inclinado</option></select>
    <button className="icon-btn" onClick={()=>set(ps.filter((_,j)=>j!==k))} disabled={ps.length<2} aria-label="Tirar plano"><Trash2 size={14}/></button>
   </div>)}
   {ps.length<6&&<button className="link-btn" onClick={()=>set([...ps,{plano:'MS'}])}><Plus size={13}/> Plano</button>}</div>;
@@ -55,7 +56,7 @@ export default function Diretor({pid,cenas,salvar,mudar}:{pid:string;cenas:Cena[
   const [ab,setAb]=useState<{a:QuadroAB[];b:QuadroAB[]}|null>(null);
   const vivo=useRef(true); useEffect(()=>()=>{ vivo.current=false; },[]);
   const cena=cenas[sel]; const cm=m.dados?.cenas[sel];
-  useEffect(()=>{ const ps:Partial<Plano>[]=(cena?.planos?.length?cena.planos:[{id:'p1',plano:'WS'} as Plano]).map(p=>({plano:p.plano,personagem:p.personagem||''}));
+  useEffect(()=>{ const ps:Partial<Plano>[]=(cena?.planos?.length?cena.planos:[{id:'p1',plano:'WS'} as Plano]).map(p=>({plano:p.plano,personagem:p.personagem||'',angulo:p.angulo,luz:p.luz,chaves:p.chaves}));
     setA(ps); setB(ps.length>1?ps.map((p,k)=>k===ps.length-1?{...p,plano:p.plano==='CU'?'MS':'CU'}:p):[...ps,{plano:'CU'}]); setAb(null); },[sel,pid]); // eslint-disable-line react-hooks/exhaustive-deps
   const an=m.dados?.animatic;
   useEffect(()=>{ if(!an||an.desatualizado||video?.info.asset===an.asset) return; assinarAsset(cfg,an.asset).then(u=>{ if(vivo.current) setVideo({url:urlServidor(cfg,u),info:an}); }).catch(()=>{}); },[an?.asset]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -95,7 +96,7 @@ export default function Diretor({pid,cenas,salvar,mudar}:{pid:string;cenas:Cena[
     <button className="subtle" disabled={!!trab} onClick={()=>rodar('ab')}>{trab?.oque==='ab'?<Loader2 size={15} className="spin"/>:<Columns2 size={15}/>} Desenhar A e B</button>
     {ab&&<div className="ab-res mt">{(['a','b'] as const).map(k=><div key={k} className="ab-col"><b>{k.toUpperCase()}</b>
       <div className="ab-quadros">{ab[k].map((q,j)=><figure key={j}><img src={q.img} alt={`${k.toUpperCase()}, plano ${j+1}: ${NOME[q.plano]}`}/><figcaption>{j+1}. {NOME[q.plano]} · {q.t.toFixed(1)} s</figcaption></figure>)}</div>
-      {k==='b'&&<button className="primary sm" onClick={()=>{ mudar(sel,{planos:b.map((p,j)=>({id:'p'+(j+1),plano:(p.plano||'WS') as Plano['plano'],personagem:p.personagem||''}))}); toast('A cena agora usa os planos de B. Salve o rascunho para guardar.','ok'); }}>Usar B nesta cena</button>}
+      {k==='b'&&<button className="primary sm" onClick={()=>{ mudar(sel,{planos:b.map((p,j)=>({...p,id:'p'+(j+1),plano:(p.plano||'WS') as Plano['plano'],personagem:p.personagem||''}))}); toast('A cena agora usa os planos de B. Salve o rascunho para guardar.','ok'); }}>Usar B nesta cena</button>}
      </div>)}</div>}
    </div>
   </section>;

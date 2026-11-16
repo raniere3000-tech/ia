@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { CheckCircle2, XCircle, Pencil, Loader2, AlertTriangle, Mail, ArrowLeft, Lock, Film, ShieldCheck, Clock } from 'lucide-react';
+import { CheckCircle2, XCircle, Pencil, Loader2, AlertTriangle, Mail, ArrowLeft, Lock, Film, ShieldCheck, Clock, RotateCcw } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/Servidor2';
 import { Etapas } from '../components/Prontidao';
-import { lerRevisao, aprovar, pedirCorrecao, rejeitar, aprovarRoteiro, reenviarEmail, urlServidor, duracaoTexto, horaTexto, type Render, type Cena, type Briefing, type Qualidade } from '../lib/api';
+import { lerRevisao, aprovar, pedirCorrecao, refazerCena, rejeitar, aprovarRoteiro, reenviarEmail, urlServidor, duracaoTexto, horaTexto, type Render, type Cena, type Briefing, type Qualidade } from '../lib/api';
 
 const REDES:[string,string][]=[['youtube','YouTube'],['instagram','Instagram'],['facebook','Facebook'],['tiktok','TikTok'],['kwai','Kwai (manual)']];
 const DECISAO:Record<string,string>={aprovado:'Aprovado',alterar:'Correção pedida',rejeitado:'Rejeitado'};
@@ -40,6 +40,7 @@ export default function Revisar(){
   const [redes,setRedes]=useState<string[]|null>(null);
   const [quando,setQuando]=useState<'proximo'|'agora'|'data'>('proximo');
   const [data,setData]=useState('');
+  const [refazer,setRefazer]=useState<{i:number;imagem:boolean;voz:boolean}|null>(null);
   if(!settings.servidor) return <PrecisaServidor oque="A revisão"/>;
   if(!pid) return <section className="panel empty-state"><h2>Nenhum vídeo escolhido</h2><button className="primary" onClick={()=>go('fila')}>Abrir Fila e aprovações</button></section>;
   const r=rev.dados;
@@ -110,7 +111,14 @@ export default function Revisar(){
    <section className="panel">
     <div className="section-head"><h2>Roteiro ({d.cenas?.length||0} cenas)</h2></div>
     {d.roteiro?.legenda&&<p><b>Legenda:</b> {d.roteiro.legenda} <span className="muted">{d.roteiro.hashtags?.join(' ')}</span></p>}
-    <ol className="cenas-lista">{(d.cenas||[]).map(c=><li key={c.id}><b>{c.titulo}</b>{c.bloqueada&&<Lock size={12}/>} {c.destaque&&<span className="tag">{c.destaque}</span>}<p>{c.texto}</p>{c.clipe?.dur?<small className="muted">{c.clipe.dur.toFixed(1)} s</small>:null}</li>)}</ol>
+    <ol className="cenas-lista">{(d.cenas||[]).map((c,i)=><li key={c.id}><b>{c.titulo}</b>{c.bloqueada&&<Lock size={12}/>} {c.destaque&&<span className="tag">{c.destaque}</span>}<p>{c.texto}</p>{c.clipe?.dur?<small className="muted">{c.clipe.dur.toFixed(1)} s</small>:null}
+      {esperandoVideo&&render&&(refazer?.i===i?<div className="refazer-box">
+        <p className="hint">O celular faz de novo só esta cena; as outras ficam iguais. Depois o vídeo volta para você aprovar.</p>
+        <label className="check"><input type="checkbox" checked={refazer.imagem} onChange={e=>setRefazer({...refazer,imagem:e.target.checked})}/> Trocar a foto ou imagem</label>
+        <label className="check"><input type="checkbox" checked={refazer.voz} onChange={e=>setRefazer({...refazer,voz:e.target.checked})}/> Gravar a narração de novo</label>
+        <div className="row-gap left"><button className="primary sm" disabled={!!busy} onClick={()=>fazer('cena',async()=>{ await refazerCena(cfg,pid,i,refazer); setRefazer(null); },`Refazendo a cena ${i+1}.`)}>{busy==='cena'?<Loader2 size={14} className="spin"/>:<RotateCcw size={14}/>} Refazer a cena {i+1}</button>
+         <button className="link-btn" onClick={()=>setRefazer(null)}>Cancelar</button></div>
+       </div>:<button className="link-btn" onClick={()=>setRefazer({i,imagem:false,voz:false})}><RotateCcw size={12}/> Refazer só esta cena</button>)}</li>)}</ol>
     {d.roteiro?.fontes?.length?<><div className="field-label">Fontes para conferir</div><ul>{d.roteiro.fontes.map(f=><li key={f.url}><a className="help-link" href={f.url} target="_blank" rel="noreferrer">{f.titulo||f.url}</a></li>)}</ul></>:null}
     <p className="hint">Estilo: {b?.estilo} • formato {b?.formato} • voz {b?.voz} • modo {b?.modo_aprovacao==='assistido'?'assistido':'supervisionado'}</p>
    </section>

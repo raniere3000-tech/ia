@@ -7,7 +7,7 @@ import { GradeEstilos } from './Galeria';
 import { Prontidao, CriarRapido } from '../components/Prontidao';
 import SkillPicker from '../components/SkillPicker';
 import Diretor from '../components/Diretor';
-import { catalogo, ideias as pedirIdeias, gerarRoteiro, novoVideo, obterProjeto, salvarStoryboard, aprovarRoteiro, type Briefing, type Cena, type Roteiro, type Ideia, type Plano } from '../lib/api';
+import { catalogo, ideias as pedirIdeias, gerarRoteiro, novoVideo, obterProjeto, salvarStoryboard, aprovarRoteiro, type Briefing, type Cena, type Roteiro, type Ideia, type Plano, type Chave } from '../lib/api';
 
 const REDES:[string,string][]=[['youtube','YouTube'],['instagram','Instagram'],['facebook','Facebook'],['tiktok','TikTok'],['kwai','Kwai']];
 let seq=0; const novaId=()=>'n'+Date.now().toString(36)+(seq++);
@@ -42,18 +42,39 @@ export function Destinos({b,set}:{b:Partial<Briefing>;set:(p:Partial<Briefing>)=
 
 const TIPOS_PLANO:[Plano['plano'],string][]=[['WS','Aberto'],['MS','Médio'],['CU','Close'],['ECU','Close extremo']];
 /** Planos da cena: a câmera corta entre eles enquanto o narrador fala (estilo documentário). Vazio = o servidor escolhe. */
+const PONTO_PADRAO:[Chave,Chave]=[{t:0,zoom:1,x:0.5,y:0.45},{t:1,zoom:1.6,x:0.5,y:0.4}];
+/** Ângulo da câmera, luz e movimento livre (do começo ao fim do plano) de um plano. */
+function PlanoMais({p,mudar}:{p:Plano;mudar:(n:Partial<Plano>)=>void}){
+  const ch=p.chaves&&p.chaves.length>=2?p.chaves:null;
+  const ponto=(k:number,campo:keyof Chave,v:number)=>{ const base=ch||PONTO_PADRAO; mudar({chaves:base.map((x,j)=>j===k?{...x,[campo]:v}:x)}); };
+  const resumo=[p.angulo&&p.angulo!=='normal'?ANGULO_NOME[p.angulo]:'',p.luz?'luz '+LUZ_NOME[p.luz]:'',ch?'movimento livre':''].filter(Boolean).join(', ');
+  return <details className="plano-mais"><summary>Ângulo, luz e movimento{resumo?`: ${resumo}`:''}</summary>
+   <div className="plano-mais-campos">
+    <label>Ângulo<select value={p.angulo||'normal'} onChange={e=>mudar({angulo:e.target.value as Plano['angulo']})}>{Object.entries(ANGULO_NOME).map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></label>
+    <label>Luz deste plano<select value={p.luz||''} onChange={e=>mudar({luz:e.target.value as Plano['luz']})}><option value="">Igual à cena</option>{Object.entries(LUZ_NOME).map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></label>
+    <label className="check"><input type="checkbox" checked={!!ch} onChange={e=>mudar({chaves:e.target.checked?PONTO_PADRAO:[]})}/> Movimento livre (escolho onde a câmera começa e termina)</label>
+    {ch&&(['Começo','Fim'] as const).map((nome,k)=><div key={nome} className="plano-ponto"><b>{nome}</b>
+     <label>Zoom {ch[k].zoom.toFixed(1)}x<input type="range" min={1} max={3} step={0.1} value={ch[k].zoom} onChange={e=>ponto(k,'zoom',+e.target.value)}/></label>
+     <label>Esquerda ↔ direita<input type="range" min={0} max={1} step={0.05} value={ch[k].x} onChange={e=>ponto(k,'x',+e.target.value)}/></label>
+     <label>Cima ↕ baixo<input type="range" min={0} max={1} step={0.05} value={ch[k].y} onChange={e=>ponto(k,'y',+e.target.value)}/></label>
+    </div>)}
+   </div></details>;
+}
+const ANGULO_NOME:Record<string,string>={normal:'De frente',baixo:'De baixo (deixa imponente)',alto:'De cima (deixa pequeno)',inclinado:'Inclinado (tensão)'};
+const LUZ_NOME:Record<string,string>={neutra:'Normal',quente:'Quente',fria:'Fria',noite:'Noite',dramatica:'Dramática'};
+
 function EditorPlanos({c,mudar}:{c:Cena;mudar:(p:Partial<Cena>)=>void}){
   const ps=c.planos||[];
   const set=(n:Plano[])=>mudar({planos:n});
   return <div className="sb-planos larga">
     <div className="field-label">Planos da câmera {ps.length?`(${ps.length})`:'(automático: aberto, médio e close)'}</div>
-    {ps.map((p,k)=><div key={p.id} className="plano-linha">
+    {ps.map((p,k)=><div key={p.id}><div className="plano-linha">
       <b>{k+1}</b>
       <select value={p.plano} onChange={e=>set(ps.map((x,j)=>j===k?{...x,plano:e.target.value as Plano['plano']}:x))} aria-label="Enquadramento">{TIPOS_PLANO.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select>
       {c.elenco?.length?<select value={p.personagem||''} onChange={e=>set(ps.map((x,j)=>j===k?{...x,personagem:e.target.value}:x))} aria-label="Em quem fica o plano"><option value="">Em quem fala</option>{c.elenco.map(e=><option key={e.personagem_id} value={e.personagem_id}>{e.personagem_id}</option>)}</select>
       :<input value={p.busca||''} onChange={e=>set(ps.map((x,j)=>j===k?{...x,busca:e.target.value}:x))} placeholder="Outra foto (em inglês, opcional)" maxLength={60}/>}
       <button className="icon-btn" onClick={()=>set(ps.filter((_,j)=>j!==k))} aria-label="Tirar plano"><Trash2 size={14}/></button>
-    </div>)}
+    </div><PlanoMais p={p} mudar={n=>set(ps.map((x,j)=>j===k?{...x,...n}:x))}/></div>)}
     {ps.length<6&&<button className="link-btn" onClick={()=>set([...ps,{id:'p'+Math.random().toString(36).slice(2,7),plano:(['WS','MS','CU'] as const)[ps.length%3],busca:''}])}><Plus size={13}/> Plano</button>}
   </div>;
 }

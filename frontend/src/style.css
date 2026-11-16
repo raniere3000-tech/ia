@@ -897,3 +897,8 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .ab-planos .plano-linha select{min-width:0}
 .palco-dica{margin:4px 0 0;font-size:12px}
 .ab-quadros{flex-wrap:wrap;overflow:visible}.ab-quadros figure{width:calc(50% - 3px)}
+.refazer-box{margin:6px 0 4px;padding:8px 10px;border:1px solid #2a3142;border-radius:8px;display:flex;flex-direction:column;gap:6px}
+.plano-mais{margin:2px 0 8px 22px;font-size:12px}.plano-mais summary{cursor:pointer;color:#9aa3b8}
+.plano-mais-campos{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.plano-ponto{display:grid;grid-template-columns:1fr;gap:4px;padding:6px 8px;border:1px solid #2a3142;border-radius:8px}
+.plano-ponto input[type=range]{width:100%}

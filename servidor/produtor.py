@@ -184,7 +184,7 @@ def _regras_animado(serie: dict | None) -> str:
             'personagem: id de quem fala. cenario_id: id do cenário. elenco: até 3 personagens em cena, cada um {"personagem_id":"","posicao":"esquerda|centro|direita",'
             '"expressao":"neutro|feliz|triste|bravo|surpreso|preocupado","acoes":[{"t":segundos desde o começo da cena,"tipo":"","alvo":""}]}. '
             f'Ações possíveis (só estas): {acoes}. Quem ouve também reage (olhar para quem fala, rir, assustar). '
-            'planos: 2 ou 3 por cena, {"plano":"WS|MS|CU","personagem":"id em foco"}: WS mostra todos, MS e CU fecham em quem fala ou reage. '
+            'planos: 2 ou 3 por cena, {"plano":"WS|MS|CU","personagem":"id em foco"}: WS mostra todos, MS e CU fecham em quem fala ou reage.Opcional e raro: "angulo":"baixo|alto|inclinado" quando a emoção pede (poder, fragilidade, tensão). '
             'busca fica vazia. Se algo mudar de forma permanente (roupa, objeto, ferimento, segredo revelado), descreva em "mudancas":[{"alvo":"id","texto":""}].\n')
 
 
@@ -214,7 +214,8 @@ def _prompt_roteiro(b: dict, ideia: str, extra: str = '', serie: dict | None = N
             'Não use marcas, personagens ou músicas de terceiros.\n'
             + ('11. planos: divida CADA cena em 2 ou 3 planos de câmera, como um editor de vídeo curto: {"plano":"WS|MS|CU","busca":"","intencao":""}. '
                'WS = aberto (mostra o lugar), MS = médio, CU = close (detalhe, rosto, objeto). Comece aberto e feche no detalhe, ou o contrário para revelar. '
-               'busca do plano: 2 a 4 palavras EM INGLÊS de OUTRA foto que combine com o plano (diferente da busca da cena e das outras). intencao: o que o plano mostra, em poucas palavras.\n'
+               'busca do plano: 2 a 4 palavras EM INGLÊS de OUTRA foto que combine com o plano (diferente da busca da cena e das outras). intencao: o que o plano mostra, em poucas palavras. '
+               'Opcional, com moderação: "angulo":"baixo" (imponência), "alto" (fragilidade) ou "inclinado" (tensão), no máximo 1 plano em cada 3.\n'
                if b.get('estilo') == 'documentario' else '') +
             '10. titulo do vídeo: até 60 caracteres, curioso e verdadeiro. legenda: 1 ou 2 frases com um convite para comentar. hashtags: 5 a 8, do tema.\n'
             'Antes de responder, releia: o gancho prende em 2 segundos? Alguma cena está longa ou repetida? O total cabe na duração? Corrija e só então responda.\n'
@@ -494,6 +495,36 @@ def produzir(pid: str, quando: float | None = None, chave: str = '', etapa: str 
     return job
 
 
+def refazer_cena(pid: str, i: int, imagem: bool = False, voz: bool = False, dispositivo: str = '') -> dict:
+    """Refaz só uma cena de um vídeo já produzido: desenha de novo (e, se pedido, troca a foto/imagem e a narração).
+    As outras cenas saem do cache; o vídeo final é montado de novo e volta para a revisão (novo hash, nova aprovação)."""
+    p = pj.obter(pid)
+    if p['tipo'] != 'agente3':
+        raise ErroProdutor('Este projeto não é do Agente 3.')
+    cenas = p['dados'].get('cenas') or []
+    if not 0 <= i < len(cenas):
+        raise pj.ErroProjeto(404, 'Essa cena não existe.')
+    if db.um("SELECT id FROM jobs WHERE projeto=? AND status IN ('agendado','na_fila','rodando','aguardando_tentativa')", pid):
+        raise ErroProdutor('Este projeto já está na fila. Espere terminar para refazer uma cena.')
+
+    def mudar(d, _p):
+        c = d['cenas'][i]
+        c['refazer'] = int(c.get('refazer') or 0) + 1
+        c.pop('clipe', None)
+        if imagem and not (c.get('imagem') or {}).get('manual'):
+            fora = [str(x) for x in [(c.get('imagem') or {}).get('id')] + [f.get('id') for f in (c.get('fotos_planos') or {}).values()] if x]
+            c['fotos_recusadas'] = (list(c.get('fotos_recusadas') or []) + fora)[-30:]
+            c['variante_imagem'] = int(c.get('variante_imagem') or 0) + 1
+            c.pop('imagem', None)
+            c.pop('fotos_planos', None)
+        if voz and c.get('texto'):
+            c['variante_voz'] = int(c.get('variante_voz') or 0) + 1
+            c.pop('audio', None)
+    pj.mudar_dados(pid, mudar)
+    db.evento(dispositivo or 'site', 'cena_refeita', 'projeto:' + pid, {'cena': cenas[i].get('id'), 'imagem': imagem, 'voz': voz})
+    return produzir(pid, None, '', 'narracao', dispositivo)
+
+
 # ---------------------------------------------------------------- áudio e imagem
 def _wav(pcm: bytes, arq: Path, taxa: int = 24000):
     with wave.open(str(arq), 'wb') as w:
@@ -688,7 +719,7 @@ def etapa_narracao(ctx, pid, p, b):
         tom = TONS.get(b.get('tipo'), TONS['outro']) if os.getenv('TTS_TOM', '1') != '0' else ''
         ritmo = RITMOS.get(b.get('ritmo') or 'agil', 1.0)
         voz = c.get('voz') if c.get('voz') in VOZES else b['voz']
-        h = _h(c['texto'], voz, MODELO_TTS, tom, ritmo, 2)
+        h = _h(c['texto'], voz, MODELO_TTS, tom, ritmo, 2, *([c['variante_voz']] if c.get('variante_voz') else []))
         if (c.get('audio') or {}).get('h') == h and Path((c['audio'] or {}).get('arquivo', '')).exists():
             continue
         _conferir_orcamento(ctx.id, b, 0.02)
@@ -716,6 +747,8 @@ def _foto_da_cena(pid, i, c, b, pasta, cenas):
     atuais = pj.obter(pid)['dados'].get('cenas') or cenas          # relê: as fotos das cenas anteriores acabaram de ser gravadas
     usadas = {str((x.get('imagem') or {}).get('id')) for j, x in enumerate(atuais) if j != i and (x.get('imagem') or {}).get('id')}
     usadas |= {str(f.get('id')) for x in atuais for f in (x.get('fotos_planos') or {}).values() if f.get('id')}
+    usadas |= set(c.get('fotos_recusadas') or [])
+    usadas |= set(c.get('fotos_recusadas') or [])          # "refazer esta cena" pediu outra foto
     t0 = time.time()
     tentativas = [consulta]
     if len(consulta.split()) > 2:
@@ -794,7 +827,7 @@ def _desenhar_reserva(ctx, pid, i, c, b, pasta, estilo):
                f'Ilustração original no estilo "{estilo["nome"]}" ({estilo["tecnica"]}). ') +
               f'Mostra: {c.get("visual") or c.get("busca") or c.get("titulo")}. Assunto do vídeo: {b.get("tema") or ""}. '
               f'Cenário: {c.get("cenario") or "-"}.')
-    h = _h('reserva', prompt, MODELO_IMAGEM, b['formato'])
+    h = _h('reserva', prompt, MODELO_IMAGEM, b['formato'], *([c['variante_imagem']] if c.get('variante_imagem') else []))
     arq = pasta / f'{h}.png'
     try:
         if not arq.exists():
@@ -827,7 +860,7 @@ def etapa_visual(ctx, pid, p, b):
         prompt = (f'Ilustração original no estilo "{estilo["nome"]}" ({estilo["tecnica"]}). Cena: {c.get("visual") or c.get("titulo")}. '
                   f'Cenário: {c.get("cenario") or "-"}. Personagem: {c.get("personagem") or "nenhum"}, {c.get("emocao") or ""}. '
                   f'Enquadramento: {c.get("enquadramento") or "plano médio"}.')
-        h = _h(prompt, MODELO_IMAGEM, b['formato'])
+        h = _h(prompt, MODELO_IMAGEM, b['formato'], *([c['variante_imagem']] if c.get('variante_imagem') else []))
         if (c.get('imagem') or {}).get('h') == h and Path((c['imagem'] or {}).get('arquivo', '')).exists():
             continue
         _conferir_orcamento(ctx.id, b, 0.25)
@@ -889,6 +922,7 @@ def _render_cena(ctx, pid, i, c, cenas, b, W, H, dur, pasta, feito, total):
     """Faz o clipe de uma cena (ou reaproveita o que já existe com a mesma chave). Devolve (estilo usado, arquivo)."""
     eid, c, img, audio, imgs_pl, extra = preparar_cena(pid, i, c, cenas, b)
     chave = ec.chave_cena(eid, {k: c.get(k) for k in ('texto', 'titulo', 'destaque', 'numero', 'unidade', 'elementos', 'camera', 'planos', 'clima', 'luz')
+                                + (('refazer',) if c.get('refazer') else ())
                                 + (('elenco', 'cenario_id', 'personagem') if eid == 'animado2d' else ())},
                           W, H, dur, (c.get('audio') or {}).get('h', ''),
                           (c.get('imagem') or {}).get('h', '') + (str(img) if img else '') + ''.join(str(x) for x in imgs_pl) + extra, b['paleta'])
