@@ -141,7 +141,10 @@ export const lerCapacidade=(cfg:CfgSrv)=>api<Capacidade>(cfg,'GET','/api/v1/capa
 
 // ---------------------------------------------------------------- Agente 3
 export type EstiloInfo={id:string;nome:string;descricao:string;tecnica:string;status:'operacional'|'beta'|'indisponivel';prioridade:string;paleta:string[];precisa_imagem:boolean;servidor:boolean;formatos:string[];custo:string};
-export type Cena={id:string;titulo:string;texto:string;destaque?:string;numero?:number|null;unidade?:string;personagem?:string;prompt_visual?:string;duracao_alvo?:number;bloqueada?:boolean;elementos?:{rotulo:string;valor:number}[];audio?:{dur:number}|null;clipe?:{dur:number}|null};
+export type Plano={id:string;plano:'WS'|'MS'|'CU'|'ECU';camera?:string;foco_x?:number;foco_y?:number;peso?:number;busca?:string;intencao?:string};
+export type Problema={tipo:string;severidade:'baixa'|'media'|'alta';descricao:string;correcao:string;cena_id:string;plano_id:string;timecode:string|null};
+export type Qualidade={status:'falha_tecnica'|'alerta_visual'|'analise_indisponivel'|'apto_para_revisao_humana';problemas:Problema[];gerado:number;tecnico:{erros:string[];avisos:string[]}};
+export type Cena={id:string;planos?:Plano[];busca?:string;titulo:string;texto:string;destaque?:string;numero?:number|null;unidade?:string;personagem?:string;prompt_visual?:string;duracao_alvo?:number;bloqueada?:boolean;elementos?:{rotulo:string;valor:number}[];audio?:{dur:number}|null;clipe?:{dur:number}|null};
 export type Briefing={tema:string;nicho:string;publico:string;objetivo:string;idioma:string;tipo:string;descricao:string;origem:string;referencias:string;duracao_alvo:number;formato:string;cenas_qtd:number;
   estilo:string;paleta:string[];voz:string;ritmo?:string;trilha:string;imagens:string;modo_aprovacao:'assistido'|'supervisionado';prioridade:number;orcamento_max:number;max_tentativas:number;
   destinos:{redes:string[];quando:'proximo'|'agora'|'data';data?:number;titulo?:string;legenda?:string};temas:string[]};

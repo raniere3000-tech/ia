@@ -27,6 +27,7 @@ import estilos_codigo as ec
 import fila
 import imagens as im
 import projetos as pj
+import qualidade as qd
 import renderizador as rd
 
 MODELO_TTS = os.getenv('MODELO_TTS', 'gemini-2.5-flash-preview-tts')
@@ -734,6 +735,42 @@ def _foto_emprestada(cenas: list, i: int):
     return None
 
 
+def _render_cena(ctx, pid, i, c, cenas, b, W, H, dur, pasta, feito, total):
+    """Faz o clipe de uma cena (ou reaproveita o que já existe com a mesma chave). Devolve (estilo usado, arquivo)."""
+    eid = c.get('estilo') or b['estilo']
+    img = _imagem_da_cena(c)
+    if not img and eid == 'documentario':
+        img = _foto_emprestada(cenas, i)
+    if not ec.utilizavel(eid, bool(img)):
+        eid = b['estilo'] if ec.utilizavel(b['estilo'], bool(img)) else 'vetor_chapado'
+    audio = Path(c['audio']['arquivo']) if (c.get('audio') or {}).get('arquivo') and Path(c['audio']['arquivo']).exists() else None
+    imgs_pl = _imagens_planos(c) if eid == 'documentario' else []
+    chave = ec.chave_cena(eid, {k: c.get(k) for k in ('texto', 'titulo', 'destaque', 'numero', 'unidade', 'elementos', 'camera', 'planos')}, W, H, dur,
+                          (c.get('audio') or {}).get('h', ''), (c.get('imagem') or {}).get('h', '') + (str(img) if img else '') + ''.join(str(x) for x in imgs_pl), b['paleta'])
+    saida = pasta / f'{chave}.mp4'
+    if saida.exists() and saida.stat().st_size > 1000 and (c.get('clipe') or {}).get('chave') == chave:
+        return eid, saida
+    trab = pasta / f'trab-{chave}'
+    shutil.rmtree(trab, ignore_errors=True)
+    trab.mkdir(parents=True)
+    tmp = pasta / f'{chave}.tmp.mp4'
+    t0 = time.time()
+    base_pct = 50 + 35 * feito / total
+    try:
+        ec.preparar(eid, W, H, dur, b['paleta'] or None, _cancelado(ctx))
+        rd.rodar(ec.montar(eid, c, W, H, dur, trab, img, audio, tmp, b['paleta'] or None, imgs_pl), _cancelado(ctx),
+                 progresso=lambda x: ctx.progresso(base_pct + 35 * dur / total * x, f'Renderizando cena {i + 1} de {len(cenas)}'), dur=dur)
+    except InterruptedError:
+        tmp.unlink(missing_ok=True)
+        raise fila.Cancelado()
+    tmp.replace(saida)
+    shutil.rmtree(trab, ignore_errors=True)
+    fila.medir('render_cena', time.time() - t0, dur)
+    fila.medir(f'render_cena_{eid}', time.time() - t0, dur)
+    pj.mudar_dados(pid, lambda d, _p: d['cenas'][i].update(clipe={'chave': chave, 'arquivo': str(saida), 'dur': dur, 'estilo': eid}, duracao_real=dur))
+    return eid, saida
+
+
 def etapa_render(ctx, pid, p, b):
     if not rd.tem_ffmpeg():
         raise ErroProdutor('Falta o FFmpeg no servidor (Termux: pkg install ffmpeg).', True)
@@ -745,40 +782,31 @@ def etapa_render(ctx, pid, p, b):
     pasta = _pasta(pid, 'scenes')
     total = sum(_dur_cena(c) for c in cenas) or 1
     feito = 0.0
+    problemas = qd.antes(cenas, b['estilo'])
+    inicio = 0.0
     for i, c in enumerate(cenas):
         dur = _dur_cena(c)
-        eid = c.get('estilo') or b['estilo']
-        img = _imagem_da_cena(c)
-        if not img and eid == 'documentario':
-            img = _foto_emprestada(cenas, i)
-        if not ec.utilizavel(eid, bool(img)):
-            eid = b['estilo'] if ec.utilizavel(b['estilo'], bool(img)) else 'vetor_chapado'
-        audio = Path(c['audio']['arquivo']) if (c.get('audio') or {}).get('arquivo') and Path(c['audio']['arquivo']).exists() else None
-        imgs_pl = _imagens_planos(c) if eid == 'documentario' else []
-        chave = ec.chave_cena(eid, {k: c.get(k) for k in ('texto', 'titulo', 'destaque', 'numero', 'unidade', 'elementos', 'camera', 'planos')}, W, H, dur,
-                              (c.get('audio') or {}).get('h', ''), (c.get('imagem') or {}).get('h', '') + (str(img) if img else '') + ''.join(str(x) for x in imgs_pl), b['paleta'])
-        saida = pasta / f'{chave}.mp4'
-        if not (saida.exists() and saida.stat().st_size > 1000 and (c.get('clipe') or {}).get('chave') == chave):
-            trab = pasta / f'trab-{chave}'
-            shutil.rmtree(trab, ignore_errors=True)
-            trab.mkdir(parents=True)
-            tmp = pasta / f'{chave}.tmp.mp4'
-            t0 = time.time()
-            base_pct = 50 + 35 * feito / total
-            try:
-                ec.preparar(eid, W, H, dur, b['paleta'] or None, _cancelado(ctx))
-                rd.rodar(ec.montar(eid, c, W, H, dur, trab, img, audio, tmp, b['paleta'] or None, imgs_pl), _cancelado(ctx),
-                         progresso=lambda x, i=i, base_pct=base_pct, dur=dur: ctx.progresso(base_pct + 35 * dur / total * x, f'Renderizando cena {i + 1} de {len(cenas)}'),
-                         dur=dur)
-            except InterruptedError:
-                tmp.unlink(missing_ok=True)
-                raise fila.Cancelado()
-            tmp.replace(saida)
-            shutil.rmtree(trab, ignore_errors=True)
-            fila.medir('render_cena', time.time() - t0, dur)
-            pj.mudar_dados(pid, lambda d, _p, i=i: d['cenas'][i].update(clipe={'chave': chave, 'arquivo': str(saida), 'dur': dur, 'estilo': eid}, duracao_real=dur))
+        for tentativa in range(2):
+            eid, saida = _render_cena(ctx, pid, i, c, cenas, b, W, H, dur, pasta, feito, total)
+            if eid != 'documentario':
+                break
+            achados, corrigir = qd.cena(saida, c, dur, inicio, pasta)
+            if corrigir and tentativa == 0:
+                # correção localizada: o plano com foto ruim volta a usar a foto da cena; só esta cena é refeita
+                fp = {k: v for k, v in (c.get('fotos_planos') or {}).items() if k not in corrigir}
+                pj.mudar_dados(pid, lambda d, _p, i=i, fp=fp: d['cenas'][i].update(fotos_planos=fp))
+                c = dict(c, fotos_planos=fp)
+                db.evento('agente3', 'qualidade_corrigiu', 'projeto:' + pid, {'cena': c.get('id'), 'planos': corrigir})
+                continue
+            if tentativa:
+                for a in achados:
+                    a['descricao'] += ' (já tentei corrigir uma vez)'
+            problemas += achados
+            break
         feito += dur
+        inicio += dur
         ctx.progresso(50 + 35 * feito / total, f'Cena {i + 1} de {len(cenas)} pronta')
+    pj.mudar_dados(pid, lambda d, _p: d.update(qualidade=qd.resumo(problemas, None)))
     return {'proxima': True, 'recurso': 'pesado', 'etapa': 'Vídeo final'}
 
 
@@ -850,6 +878,7 @@ def etapa_final(ctx, pid, p, b):
     db.executar('INSERT OR REPLACE INTO renders (id, projeto, versao, arquivo, sha256, duracao, codec, largura, altura, validado, alertas, criado) VALUES (?,?,?,?,?,?,?,?,?,1,?,?)',
                 rid, pid, versao, str(final), sha, conf['duracao'], conf['codec'], conf['largura'], conf['altura'], json.dumps(conf['avisos'], ensure_ascii=False), time.time())
     shutil.rmtree(trab, ignore_errors=True)
+    pj.mudar_dados(pid, lambda d, _p: d.update(qualidade=qd.resumo(((d.get('qualidade') or {}).get('problemas') or []), conf)))
     render = {'id': rid, 'sha': sha, 'versao': versao, 'duracao': conf['duracao'], 'validado': True, 'avisos': conf['avisos'], 'assets': ids,
               'tamanho': final.stat().st_size, 'criado': time.time(), 'codec': f'{conf["codec"]}/{conf["audio"]}', 'largura': W, 'altura': H}
 

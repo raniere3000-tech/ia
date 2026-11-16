@@ -814,3 +814,10 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .post-editar input[type=datetime-local]{max-width:260px}
 .contas-dobra>summary{display:flex;align-items:center;gap:8px}
 .post-acoes{flex-wrap:wrap}
+.qd-lista{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:8px}
+.qd-lista li{border:1px solid var(--line);border-left:4px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel2)}
+.qd-lista li.qd-media{border-left-color:#f2b544}.qd-lista li.qd-alta{border-left-color:#e5484d}
+.qd-lista li p{margin:4px 0}.qd-lista .link-btn{margin-left:8px}
+.sb-planos{display:grid;gap:6px;margin-top:4px}
+.plano-linha{display:grid;grid-template-columns:auto 130px 1fr auto;gap:6px;align-items:center}
+@media (max-width:520px){.plano-linha{grid-template-columns:auto 1fr auto}.plano-linha input{grid-column:2/3}}

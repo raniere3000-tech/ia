@@ -1,13 +1,35 @@
 import { useState } from 'react';
-import { CheckCircle2, XCircle, Pencil, Loader2, AlertTriangle, Mail, ArrowLeft, Lock, Film } from 'lucide-react';
+import { CheckCircle2, XCircle, Pencil, Loader2, AlertTriangle, Mail, ArrowLeft, Lock, Film, ShieldCheck, Clock } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/Servidor2';
 import { Etapas } from '../components/Prontidao';
-import { lerRevisao, aprovar, pedirCorrecao, rejeitar, aprovarRoteiro, reenviarEmail, urlServidor, duracaoTexto, horaTexto, type Render, type Cena, type Briefing } from '../lib/api';
+import { lerRevisao, aprovar, pedirCorrecao, rejeitar, aprovarRoteiro, reenviarEmail, urlServidor, duracaoTexto, horaTexto, type Render, type Cena, type Briefing, type Qualidade } from '../lib/api';
 
 const REDES:[string,string][]=[['youtube','YouTube'],['instagram','Instagram'],['facebook','Facebook'],['tiktok','TikTok'],['kwai','Kwai (manual)']];
 const DECISAO:Record<string,string>={aprovado:'Aprovado',alterar:'Correção pedida',rejeitado:'Rejeitado'};
+
+const ST_Q:Record<Qualidade['status'],[string,string,string]>={
+  apto_para_revisao_humana:['Tudo certo','ok','Nenhum problema encontrado. Falta só você assistir e decidir.'],
+  alerta_visual:['Vale olhar','warn','O vídeo está pronto, mas o diretor de qualidade achou pontos para você conferir. Nada disso bloqueia a aprovação.'],
+  analise_indisponivel:['Não conferido','','Não deu para analisar os quadros desta vez.'],
+  falha_tecnica:['Falha técnica','bad','O arquivo final tem um problema técnico.'],
+};
+const NOME_T:Record<string,string>={quadro_escuro:'Quadro escuro',sem_detalhe:'Imagem sem detalhe',plano_repetido:'Plano repetido',sem_imagem:'Cena sem foto',ritmo:'Ritmo',analise_indisponivel:'Sem análise'};
+/** Relatório do diretor de qualidade: cada ponto com a cena, o instante (toque para pular até ele) e a sugestão. */
+function QualidadePainel({q,cenas}:{q:Qualidade;cenas:Cena[]}){
+  const [s,cls,txt]=ST_Q[q.status]||ST_Q.analise_indisponivel;
+  const pular=(tc:string|null)=>{ if(!tc) return; const [m,ss]=tc.split(':'); const v=document.querySelector<HTMLVideoElement>('.rev-video video'); if(v){ v.currentTime=(+m)*60+(+ss); v.play().catch(()=>{}); v.scrollIntoView({behavior:'smooth',block:'center'}); } };
+  const nCena=(id:string)=>{ const i=cenas.findIndex(c=>c.id===id); return i>=0?`Cena ${i+1}`:''; };
+  return <section className="panel qualidade">
+    <div className="section-head"><h2><ShieldCheck size={18}/> Diretor de qualidade <span className={'tag '+cls}>{s}</span></h2></div>
+    <p className="subtitle">{txt}</p>
+    {q.problemas.length>0&&<ul className="qd-lista">{q.problemas.map((p,k)=><li key={k} className={'qd-'+p.severidade}>
+      <div><b>{NOME_T[p.tipo]||p.tipo}</b>{p.cena_id&&<span className="muted"> · {nCena(p.cena_id)}</span>}{p.timecode&&<button className="link-btn" onClick={()=>pular(p.timecode)}><Clock size={12}/> {p.timecode.replace(/^00:/,'').replace(/\.\d+$/,'')} s</button>}</div>
+      <p>{p.descricao}</p>{p.correcao&&<small className="muted">Sugestão: {p.correcao}</small>}</li>)}</ul>}
+    {q.tecnico.erros.length>0&&<p className="hint bad">{q.tecnico.erros.join(' ')}</p>}
+  </section>;
+}
 
 export default function Revisar(){
   const {settings,rotaExtra,toast,go}=useApp(); const cfg=useCfg();
@@ -22,7 +44,7 @@ export default function Revisar(){
   if(!pid) return <section className="panel empty-state"><h2>Nenhum vídeo escolhido</h2><button className="primary" onClick={()=>go('fila')}>Abrir Fila e aprovações</button></section>;
   const r=rev.dados;
   if(!r) return <section className="panel">{rev.erro?<p className="hint bad">{rev.erro}</p>:<p className="hint"><Loader2 size={14} className="spin"/> Abrindo...</p>}</section>;
-  const p=r.projeto; const d=p.dados as {briefing:Briefing;cenas:Cena[];render:Render|null;roteiro:{titulo:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[]}|null;producao?:{erro?:string}};
+  const p=r.projeto; const d=p.dados as {briefing:Briefing;cenas:Cena[];render:Render|null;roteiro:{titulo:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[]}|null;producao?:{erro?:string};qualidade?:Qualidade};
   const render=d.render; const b=d.briefing;
   const destinos=redes??(b?.destinos?.redes||[]);
   const fazer=async(nome:string,f:()=>Promise<unknown>,ok:string)=>{ setBusy(nome); try{ await f(); toast(ok,'ok'); setTexto(''); rev.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } };
@@ -47,6 +69,8 @@ export default function Revisar(){
      </div>
     </div>}
    </section>
+
+   {render&&d.qualidade&&<QualidadePainel q={d.qualidade} cenas={d.cenas||[]}/>}
 
    {esperandoVideo&&render&&<section className="panel decisao">
     <div className="section-head"><h2>Sua decisão</h2></div>

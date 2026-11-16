@@ -372,6 +372,9 @@ confere([p['plano'] for p in cp[2]['planos']] == ['MS', 'WS'] and cp[2]['planos'
 confere(len(cp[0].get('fotos_planos') or {}) == 2, 'cada plano com busca ganhou a sua foto')
 ids = [f['id'] for c in cp for f in (c.get('fotos_planos') or {}).values()] + [c['imagem']['id'] for c in cp if c.get('imagem')]
 confere(len(ids) == len(set(ids)), 'planos e cenas não repetem foto')
+qp = rp['projeto']['dados'].get('qualidade') or {}
+confere(qp.get('status') in ('apto_para_revisao_humana', 'alerta_visual') and 'tecnico' in qp, 'diretor de qualidade deixou o relatório no projeto')
+confere(all(set(x) >= {'tipo', 'severidade', 'cena_id', 'timecode', 'descricao'} for x in qp.get('problemas', [])), 'cada alerta tem cena, instante e descrição')
 for c in ROTEIRO['cenas']:
     c.pop('planos', None)
 st, _, _ = api('POST', '/agente/chaves', {'pexels': ''}, SES)

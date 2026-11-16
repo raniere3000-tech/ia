@@ -5,7 +5,7 @@ import { HelpButton } from '../components/Help';
 import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/Servidor2';
 import { GradeEstilos } from './Galeria';
 import { Prontidao, CriarRapido } from '../components/Prontidao';
-import { catalogo, ideias as pedirIdeias, gerarRoteiro, novoVideo, obterProjeto, salvarStoryboard, aprovarRoteiro, type Briefing, type Cena, type Roteiro, type Ideia } from '../lib/api';
+import { catalogo, ideias as pedirIdeias, gerarRoteiro, novoVideo, obterProjeto, salvarStoryboard, aprovarRoteiro, type Briefing, type Cena, type Roteiro, type Ideia, type Plano } from '../lib/api';
 
 const REDES:[string,string][]=[['youtube','YouTube'],['instagram','Instagram'],['facebook','Facebook'],['tiktok','TikTok'],['kwai','Kwai']];
 let seq=0; const novaId=()=>'n'+Date.now().toString(36)+(seq++);
@@ -38,6 +38,23 @@ export function Destinos({b,set}:{b:Partial<Briefing>;set:(p:Partial<Briefing>)=
   </>;
 }
 
+const TIPOS_PLANO:[Plano['plano'],string][]=[['WS','Aberto'],['MS','Médio'],['CU','Close'],['ECU','Close extremo']];
+/** Planos da cena: a câmera corta entre eles enquanto o narrador fala (estilo documentário). Vazio = o servidor escolhe. */
+function EditorPlanos({c,mudar}:{c:Cena;mudar:(p:Partial<Cena>)=>void}){
+  const ps=c.planos||[];
+  const set=(n:Plano[])=>mudar({planos:n});
+  return <div className="sb-planos larga">
+    <div className="field-label">Planos da câmera {ps.length?`(${ps.length})`:'(automático: aberto, médio e close)'}</div>
+    {ps.map((p,k)=><div key={p.id} className="plano-linha">
+      <b>{k+1}</b>
+      <select value={p.plano} onChange={e=>set(ps.map((x,j)=>j===k?{...x,plano:e.target.value as Plano['plano']}:x))} aria-label="Enquadramento">{TIPOS_PLANO.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select>
+      <input value={p.busca||''} onChange={e=>set(ps.map((x,j)=>j===k?{...x,busca:e.target.value}:x))} placeholder="Outra foto (em inglês, opcional)" maxLength={60}/>
+      <button className="icon-btn" onClick={()=>set(ps.filter((_,j)=>j!==k))} aria-label="Tirar plano"><Trash2 size={14}/></button>
+    </div>)}
+    {ps.length<6&&<button className="link-btn" onClick={()=>set([...ps,{id:'p'+Math.random().toString(36).slice(2,7),plano:(['WS','MS','CU'] as const)[ps.length%3],busca:''}])}><Plus size={13}/> Plano</button>}
+  </div>;
+}
+
 function EditorCenas({cenas,set}:{cenas:Cena[];set:(c:Cena[])=>void}){
   const mudar=(i:number,p:Partial<Cena>)=>set(cenas.map((c,k)=>k===i?{...c,...p}:c));
   const mover=(i:number,d:number)=>{ const j=i+d; if(j<0||j>=cenas.length) return; const n=[...cenas]; [n[i],n[j]]=[n[j],n[i]]; set(n); };
@@ -56,6 +73,8 @@ function EditorCenas({cenas,set}:{cenas:Cena[];set:(c:Cena[])=>void}){
      <label className="larga">O que o narrador fala<textarea rows={2} value={c.texto} onChange={e=>mudar(i,{texto:e.target.value})} maxLength={600}/></label>
      <label>Número (opcional)<input type="number" value={c.numero??''} onChange={e=>mudar(i,{numero:e.target.value===''?null:+e.target.value})}/></label>
      <label>Duração em segundos (0 = o tempo da fala)<input type="number" min={0} max={60} value={c.duracao_alvo||0} onChange={e=>mudar(i,{duracao_alvo:+e.target.value})}/></label>
+     <label>Foto da cena (busca em inglês)<input value={c.busca||''} onChange={e=>mudar(i,{busca:e.target.value})} maxLength={60} placeholder="Ex.: blue sky sunlight"/></label>
+     <EditorPlanos c={c} mudar={p=>mudar(i,p)}/>
     </div>
   </div>)}
   <button className="subtle" onClick={()=>set([...cenas,{id:novaId(),titulo:'Nova cena',texto:'',destaque:''}])}><Plus size={15}/> Cena</button>
