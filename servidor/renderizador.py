@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -25,9 +26,19 @@ def rodar(cmd: list, cancelado=None, tempo_max: float = 3600, progresso=None, du
     """Roda o FFmpeg; se `cancelado()` ficar verdadeiro, encerra com calma (sem deixar arquivo pela metade)."""
     if progresso and dur > 0 and cmd and cmd[0] == 'ffmpeg':
         cmd = cmd[:1] + ['-progress', 'pipe:1', '-nostats'] + cmd[1:]
-    p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE if progresso else subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE if progresso else subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+                         errors='replace')
     inicio = time.time()
-    erro = ''
+    # o stderr é lido numa linha separada: se ficar cheio (FFmpeg repetindo o mesmo erro), o FFmpeg travaria parado
+    cauda: list = []
+
+    def _ler_erros():
+        for ln in p.stderr:
+            cauda.append(ln)
+            if len(cauda) > 200:
+                del cauda[:100]
+    leitor = threading.Thread(target=_ler_erros, daemon=True)
+    leitor.start()
     try:
         if progresso and p.stdout:
             for linha in p.stdout:
@@ -47,12 +58,13 @@ def rodar(cmd: list, cancelado=None, tempo_max: float = 3600, progresso=None, du
                 p.kill()
                 raise ErroRender('O FFmpeg passou do tempo máximo.')
             time.sleep(0.3)
-        erro = p.stderr.read() if p.stderr else ''
     finally:
         try:
             p.wait(timeout=10)
         except subprocess.TimeoutExpired:
             p.kill()
+        leitor.join(timeout=5)
+    erro = ''.join(cauda)
     if p.returncode != 0:
         if cancelado and cancelado():
             raise InterruptedError('cancelado')

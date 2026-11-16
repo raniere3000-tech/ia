@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ocupar } from '../lib/gravador';
 import { comTelaAcesa } from '../lib/app';
-import { ArrowLeftRight, Maximize2, Copy, Download, Film, Headphones, Loader2, Minus, Pause, Play, Plus, Redo2, Scissors, Trash2, Type, Undo2, Upload, Volume2, VolumeX } from 'lucide-react';
+import { Smartphone, ArrowLeftRight, Maximize2, Copy, Download, Film, Headphones, Loader2, Minus, Pause, Play, Plus, Redo2, Scissors, Trash2, Type, Undo2, Upload, Volume2, VolumeX } from 'lucide-react';
 import { useApp, captionPresets } from '../state';
 import { drawCaption, type Preset } from '../lib/captions';
 import { baixar } from '../lib/exporter';
+import { baixarVideo, estadoExport, exportarNoServidor, type EstadoExport } from '../lib/exportServidor';
+import { useCfg, erroTexto } from './Servidor2';
 import { CATEGORIAS_SOM, gerarSom, receitaDe } from '../lib/sons';
 import { ANIMS, TAMANHO, audioDe, midias, type Anim, type Arquivo, type Formato, type TipoArq } from '../lib/montagem';
 import {
@@ -56,7 +58,8 @@ function Onda({fonte,arquivos,de,dur,loop,vol,larg}:{fonte:string;arquivos:Arqui
 }
 
 export default function EditorVideo({inicial,arquivos,onChange,onEnviar}:{inicial:Proj;arquivos:Arquivo[];onChange:(p:Proj,manual:boolean)=>void;onEnviar?:(tipo:TipoArq,fs:FileList|null)=>Promise<Arquivo[]>}){
-  const {toast}=useApp();
+  const {toast,settings}=useApp(); const cfg=useCfg();
+  const [srv,setSrv]=useState<{job:string;avisos:string[];e?:EstadoExport}|null>(null);
   const [p,setP]=useState<Proj>(inicial); const pRef=useRef(p); pRef.current=p;
   const desfazer=useRef<Proj[]>([]); const refazer=useRef<Proj[]>([]); const [,forca]=useState(0);
   const [sel,setSel]=useState<string>(''); const [tempo,setTempo]=useState(0); const [pps,setPps]=useState(50);
@@ -99,6 +102,20 @@ export default function EditorVideo({inicial,arquivos,onChange,onEnviar}:{inicia
       if(video) URL.revokeObjectURL(video.url); setVideo({url:URL.createObjectURL(r.blob),blob:r.blob,ext:r.ext}); toast('Vídeo da Montagem manual pronto. Baixe abaixo da prévia.','ok'); }
     catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } finally{ setOcupado(''); fim(); }
   }
+
+  // Exportar no servidor do celular: envia mídias + som misturado + manifesto e acompanha a fila.
+  async function exportarCelular(){
+    parar(); setSrv(null);
+    try{ const a=await audio(); const r=await exportarNoServidor(cfg,p,arquivos,a,'montagem-'+p.formato.replace(':','x'),setOcupado);
+      setSrv({job:r.job,avisos:r.avisos}); toast('Pedido enviado. O celular está fazendo o vídeo; pode continuar usando o site.','ok'); }
+    catch(e){ toast(erroTexto(e),'erro'); } finally{ setOcupado(''); }
+  }
+  useEffect(()=>{ if(!srv||['concluido','falhou','cancelado'].includes(srv.e?.status||'')) return; let vivo=true;
+    const t=setTimeout(async()=>{ try{ const e=await estadoExport(cfg,srv.job); if(!vivo) return;
+      if(e.status==='concluido'&&e.resultado){ setOcupado('Baixando o vídeo feito no celular'); try{ const b=await baixarVideo(cfg,e.resultado.asset); if(video) URL.revokeObjectURL(video.url); setVideo({url:URL.createObjectURL(b),blob:b,ext:'mp4'}); toast('Vídeo feito no celular pronto. Baixe abaixo da prévia.','ok'); } finally{ setOcupado(''); } }
+      setSrv(x=>x&&x.job===srv.job?{...x,e}:x); }catch(er){ if(vivo) setSrv(x=>x?{...x,e:{...(x.e||{id:srv.job,status:'',etapa:'',progresso:0,tentativas:0,erro:null}),etapa:'Sem resposta do celular, tentando de novo: '+erroTexto(er)}}:x); } },srv.e?2500:800);
+    return ()=>{ vivo=false; clearTimeout(t); }; },[srv]); // eslint-disable-line react-hooks/exhaustive-deps
+  const diagTexto=(e:EstadoExport)=>{ const d=e.diagnostico; return d?[`Etapa: ${d.etapa}`,d.quadro!=null?`Quadro ${d.quadro} (${d.timecode}, de ${d.inicio}s a ${d.fim}s)`:'',d.midia?`Mídia: ${d.midia}`:'',`Erro: ${d.erro}`,d.comando?`Comando: ${d.comando}`:''].filter(Boolean).join('\n'):(e.erro||''); };
 
   // Teclado: espaço toca/para, S divide, Delete apaga, Ctrl+Z / Ctrl+Y.
   useEffect(()=>{ const h=(e:KeyboardEvent)=>{ const alvo=e.target as HTMLElement; if(/INPUT|TEXTAREA|SELECT/.test(alvo.tagName)) return;
@@ -277,8 +294,26 @@ export default function EditorVideo({inicial,arquivos,onChange,onEnviar}:{inicia
     <button className="icon-btn" onClick={()=>setPps(x=>Math.max(1.5,x/1.5))} aria-label="Diminuir zoom"><Minus size={16}/></button>
     <button className="icon-btn" onClick={()=>setPps(x=>Math.min(300,x*1.5))} aria-label="Aumentar zoom"><Plus size={16}/></button>
     <button className="primary sm" onClick={exportar} disabled={!!ocupado}>{ocupado?<Loader2 size={14} className="spin"/>:<Download size={14}/>} Exportar vídeo</button>
+    {settings.servidor&&<button className="subtle sm" onClick={exportarCelular} disabled={!!ocupado||!p.clips.length||(!!srv&&!['concluido','falhou','cancelado'].includes(srv.e?.status||''))} title="O servidor do celular faz o vídeo com o FFmpeg. Bom para vídeos longos ou quando o navegador grava devagar."><Smartphone size={14}/> Fazer no celular</button>}
    </div>
    {ocupado&&<p className="hint"><Loader2 size={13} className="spin"/> {ocupado}</p>}
+   {srv&&<div className={'ed-srv'+(srv.e?.status==='falhou'?' erro':'')} data-export={srv.e?.status||'enviado'}>
+    {srv.e?.status==='falhou'?<>
+     <b>O vídeo não ficou pronto no celular.</b>
+     <p>{srv.e.diagnostico?.quadro!=null?<>O problema foi no <b>quadro {srv.e.diagnostico.quadro}</b> (aos {srv.e.diagnostico.timecode}), com a mídia <b>{srv.e.diagnostico.midia}</b>. Os outros quadros ficaram guardados: tentar de novo refaz só este.</>:srv.e.erro}</p>
+     <details><summary>Detalhes para conferir</summary><pre>{diagTexto(srv.e)}</pre></details>
+     <div className="row-gap left"><button className="primary sm" onClick={exportarCelular} disabled={!!ocupado}>Tentar de novo</button><button className="subtle sm" onClick={()=>{ navigator.clipboard?.writeText(diagTexto(srv.e!)).then(()=>toast('Detalhes copiados.','ok'),()=>{}); }}>Copiar detalhes</button><button className="link-btn" onClick={()=>setSrv(null)}>Fechar</button></div>
+    </>:srv.e?.status==='concluido'&&srv.e.resultado?<>
+     <b>Feito no celular: {fmt(srv.e.resultado.duracao)}, {srv.e.resultado.tamanho_mb} MB.</b>
+     {srv.e.resultado.reaproveitados>0&&<small className="hint"> {srv.e.resultado.reaproveitados} quadro(s) aproveitados da vez anterior.</small>}
+     {[...srv.avisos,...srv.e.resultado.avisos].map(a=><p key={a} className="hint">⚠ {a}</p>)}
+     <button className="link-btn" onClick={()=>setSrv(null)}>Fechar</button>
+    </>:<>
+     <span><Loader2 size={13} className="spin"/> No celular: {srv.e?.etapa||'pedido enviado'}{srv.e?` (${Math.round(srv.e.progresso)}%)`:''}</span>
+     <div className="ed-srv-barra"><i style={{width:`${srv.e?.progresso||2}%`}}/></div>
+     {srv.avisos.map(a=><p key={a} className="hint">⚠ {a}</p>)}
+    </>}
+   </div>}
 
    {p.clips.some(ehAudio)&&<Resumo p={p} arquivos={arquivos} total={total} tempo={tempo} janela={[vista[0]/pps,(vista[0]+vista[1])/pps]} onIr={irResumo}/>}
    <div className="ed-linha">

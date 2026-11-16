@@ -19,6 +19,7 @@ import backups
 import banco as db
 import emails
 import estilos_codigo as ec
+import exportacao
 import fila
 import postagem as pg
 import produtor
@@ -238,6 +239,7 @@ def _series(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
 def iniciar():
     fila.registrar('estilo.demo', job_demo, 'pesado')
     fila.registrar('skills.instalar', job_skills, 'leve')
+    exportacao.iniciar()
     try:
         skcat.sincronizar()
     except Exception as e:  # catálogo com problema não impede o servidor de subir
@@ -490,6 +492,12 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
             return backups.testar_midias(str(corpo().get('manifesto') or ''))
         except FileNotFoundError as e:
             raise pj.ErroProjeto(404, str(e))
+    # ---- exportação da Montagem manual feita no servidor
+    if rota == ('POST', '/api/v1/exportar'):
+        return exportacao.pedir(corpo(), quem)
+    m = re.fullmatch(r'/api/v1/exportar/(\w{6,40})', caminho)
+    if m and metodo == 'GET':
+        return exportacao.estado(m.group(1))
     # ---- séries animadas, personagens e cenários
     if caminho.startswith(('/api/v1/series', '/api/v1/personagens', '/api/v1/cenarios')):
         return _series(metodo, caminho, q, corpo, quem)
