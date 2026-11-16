@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { Smartphone, KeyRound, Loader2, Trash2, Link2, Copy, HardDrive, Stethoscope, Archive, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Smartphone, KeyRound, Loader2, Trash2, Link2, Copy, HardDrive, Stethoscope, Archive, CheckCircle2, AlertTriangle, Cpu, PlayCircle } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from './Help';
 import { useCfg, useServidor, erroTexto } from './Servidor2';
-import { entrarComSenha, gerarCodigo, listarAparelhos, desconectar, diagnostico, fazerBackup, testarBackup, lerMidiasBackup, salvarMidiasBackup, fazerMidiasBackup, testarMidiasBackup, horaTexto, duracaoTexto } from '../lib/api';
+import { entrarComSenha, gerarCodigo, listarAparelhos, desconectar, diagnostico, fazerBackup, testarBackup, lerMidiasBackup, salvarMidiasBackup, fazerMidiasBackup, testarMidiasBackup, horaTexto, duracaoTexto, lerAparelho, testarAparelho } from '../lib/api';
 
 export function AparelhosCard(){
   const {settings,setSettings,toast}=useApp(); const cfg=useCfg();
@@ -62,6 +62,47 @@ function BackupMidias(){
   </div>;
 }
 
+const mbTexto=(v?:number|null)=>v==null?'?':v>=1024?`${(v/1024).toFixed(1)} GB`:`${Math.round(v)} MB`;
+
+/** T1: o que este celular tem e quanto ele aguenta (render de 5 s e prévia leve medidos de verdade). Não instala nada. */
+function TesteAparelho(){
+  const {toast}=useApp(); const cfg=useCfg();
+  const [vigiar,setVigiar]=useState(false);
+  const a=useServidor(lerAparelho,vigiar?4:0,[vigiar]);
+  const j=a.dados?.job; const andando=!!j&&['na_fila','agendado','rodando','aguardando_tentativa'].includes(j.status);
+  useEffect(()=>{ if(andando!==vigiar&&a.dados) setVigiar(andando); },[andando,vigiar,a.dados]);
+  const copiar=(t:string)=>navigator.clipboard?.writeText(t).then(()=>toast('Comando copiado.','ok'),()=>{});
+  if(a.erro) return <p className="hint bad">Teste do aparelho: {a.erro}</p>;
+  const f=a.dados?.ficha; const l=a.dados?.laudo;
+  if(!f) return null;
+  const pk=f.pacotes; const faltaFF=[...(f.ffmpeg.faltam_codificadores||[]),...(f.ffmpeg.faltam_filtros||[])];
+  return <div className="teste-aparelho">
+    <div className="field-label"><Cpu size={14}/> Este aparelho</div>
+    <ul className="diag">
+     <li>{f.android?<>Android {f.android.versao||'?'}{f.android.aparelho?` • ${f.android.aparelho}`:''}{f.android.termux?` • Termux ${f.android.termux}`:''}</>:<span className="bad">O servidor não está num Android ({f.sistema}): as medidas daqui não valem para o celular.</span>}</li>
+     <li>Processador {f.processador.arquitetura}{f.processador.modelo?` (${f.processador.modelo})`:''} • {f.processador.nucleos||'?'} núcleos{f.processador.mhz_max?` • até ${(f.processador.mhz_max/1000).toFixed(1)} GHz`:''}</li>
+     <li>Memória {mbTexto(f.memoria?.total_mb)} ({mbTexto(f.memoria?.livre_mb)} livre agora) • espaço livre {mbTexto(f.espaco.livre_mb)}</li>
+     <li>{f.ffmpeg.instalado?<CheckCircle2 size={14} className="ok"/>:<AlertTriangle size={14} className="bad"/>} FFmpeg {f.ffmpeg.versao||'faltando'}{faltaFF.length>0&&<span className="bad"> • falta: {faltaFF.join(', ')}</span>} • Python {f.python}{f.node?` • Node ${f.node}`:''}</li>
+     <li>{pk.itens.map(i=><span key={i.pacote} className={`tag ${i.tem?'ok':i.importancia==='opcional'?'':'warn'}`} title={i.para}>{i.tem?'✓':'falta'} {i.pacote}</span>)}</li>
+    </ul>
+    {pk.comando&&<div className="key-row"><input readOnly value={pk.comando} onFocus={e=>e.target.select()}/><button className="subtle" onClick={()=>copiar(pk.comando)}><Copy size={15}/> Copiar</button></div>}
+    {pk.comando&&<p className="hint bad">Falta o necessário. Copie o comando acima e rode no Termux.</p>}
+    {pk.comando_opcional&&<p className="hint">Opcional, só se for usar: <span className="mono">{pk.comando_opcional}</span> ({pk.itens.filter(i=>!i.tem&&i.importancia==='opcional').map(i=>i.para).join('; ')}).</p>}
+    <div className="row-gap left">
+     <button className="subtle" disabled={andando||!f.ffmpeg.instalado} onClick={async()=>{ try{ await testarAparelho(cfg); setVigiar(true); a.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); } }}>{andando?<Loader2 size={15} className="spin"/>:<PlayCircle size={15}/>} {andando?`${j?.etapa||'Testando'} (${Math.round(j?.progresso||0)}%)`:'Testar este celular (uns minutos)'}</button>
+    </div>
+    {j?.status==='falhou'&&<p className="hint bad">O teste falhou: {j.erro}</p>}
+    {l&&<>
+     <p className="hint">{l.medido_no_celular?<span className="tag ok">medido no celular</span>:<span className="tag warn">aguardando teste no Android</span>} Último teste há {duracaoTexto(Date.now()/1000-l.quando)}{l.ok?'':' • com problema'}</p>
+     <ul className="diag">{l.testes.map(t=><li key={t.nome}>{t.ok?<CheckCircle2 size={14} className="ok"/>:<AlertTriangle size={14} className="bad"/>} <b>{t.titulo}</b>
+      {t.ok?<> {t.segundos.toFixed(1)} s ({t.seg_por_seg} s por segundo de vídeo) • {t.resolucao} • {t.tamanho_kb?.toFixed(0)} KB • FFmpeg usou até {mbTexto(t.memoria?.ffmpeg_pico_mb)}{t.memoria?.aparelho_livre_minimo_mb!=null?` • memória livre mínima ${mbTexto(t.memoria.aparelho_livre_minimo_mb)}`:''} • {t.video}{t.audio?` + ${t.audio}`:''} • {t.reproducao?.toca?'toca do começo ao fim':'NÃO toca inteiro'}</>
+       :<span className="bad"> {t.erro||[...(t.conferencia?.erros||[]),...(t.reproducao?.erros||[])].join('; ')}</span>}</li>)}</ul>
+     {l.log.length>0&&<details><summary className="hint">Registro do teste</summary><pre className="mono log-teste">{l.log.join('\n')}</pre></details>}
+    </>}
+    <p className="hint">Também dá para medir direto no Termux, sem o servidor ligado: <span className="mono">bash iniciar-termux.sh diagnostico</span>. Nada é instalado sozinho.</p>
+  </div>;
+}
+
 export function DiagnosticoCard(){
   const {settings,toast}=useApp(); const cfg=useCfg();
   const d=useServidor(diagnostico,0,[settings.servidorSessao]);
@@ -90,6 +131,7 @@ export function DiagnosticoCard(){
       <button className="subtle" disabled={!!busy} onClick={async()=>{ setBusy('bk'); try{ const r=await fazerBackup(cfg); toast(`Backup feito: ${r.arquivo}.`,'ok'); d.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } }}>{busy==='bk'?<Loader2 size={15} className="spin"/>:<Archive size={15}/>} Fazer backup agora</button>
       <p className="hint">Backup diário automático, os 7 últimos ficam em ~/.estudioclip/backups no celular. "Testar restauração" abre a cópia numa pasta de teste e confere; não mexe nos dados reais.</p>
      </>}
+     <TesteAparelho/>
      <BackupMidias/>
     </div>
   </section>;

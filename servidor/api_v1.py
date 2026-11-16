@@ -22,6 +22,7 @@ import diretor
 import estilos_codigo as ec
 import exportacao
 import fila
+import hardware
 import postagem as pg
 import produtor
 import projetos as pj
@@ -125,6 +126,17 @@ def job_demo(ctx):
     r = {'asset': a['id'], 'segundos': round(time.time() - t0, 1), 'avisos': conf['avisos'], 'formato': fmt}
     db.kv_gravar(chave, r)
     return {'resultado': r, 'etapa': 'Pronto'}
+
+
+_FICHA: dict = {}
+
+
+def _aparelho() -> dict:
+    """Ficha do aparelho (guardada 10 min: lê FFmpeg e o sistema), último laudo do teste e o teste em andamento."""
+    if not _FICHA or time.time() - _FICHA.get('t', 0) > 600:
+        _FICHA.update(t=time.time(), ficha=hardware.ficha())
+    j = db.um("SELECT id, status, etapa, progresso, erro FROM jobs WHERE tipo='aparelho.testar' ORDER BY criado DESC LIMIT 1")
+    return {'ficha': _FICHA['ficha'], 'laudo': hardware.ultimo_laudo(), 'job': j}
 
 
 def job_skills(ctx):
@@ -250,6 +262,7 @@ def iniciar():
     fila.registrar('skills.instalar', job_skills, 'leve')
     exportacao.iniciar()
     diretor.iniciar()
+    hardware.iniciar()
     try:
         skcat.sincronizar()
     except Exception as e:  # catálogo com problema não impede o servidor de subir
@@ -501,6 +514,10 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     # ---- backups, diagnóstico e registro
     if rota == ('GET', '/api/v1/diagnostico'):
         return backups.diagnostico()
+    if rota == ('GET', '/api/v1/aparelho'):
+        return _aparelho()
+    if rota == ('POST', '/api/v1/aparelho/testar'):
+        return hardware.pedir_teste()
     if rota == ('GET', '/api/v1/backups'):
         return {'backups': backups.listar()}
     if rota == ('POST', '/api/v1/backups'):

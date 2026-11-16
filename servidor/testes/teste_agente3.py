@@ -706,6 +706,32 @@ if p3d.disponivel():
     cv3['planos'][0]['angulo'] = 'alto'
     confere(k1 != p3d.chave(cv3, 270, 480, 1), 'ângulo do plano muda a câmera 3D (e a chave do cache)')
 
+print('Diagnóstico do aparelho (T1)')
+st, ap, _ = api('GET', '/api/v1/aparelho', None, SES)
+confere(st == 200 and ap['ficha']['ffmpeg']['instalado'] and ap['ficha']['processador']['arquitetura'], 'ficha do aparelho lida sem instalar nada')
+confere(ap['ficha']['ambiente'] != 'android' and ap['laudo'] is None, 'aqui não é Android: a ficha diz isso e ainda não há laudo')
+confere(all(i['pacote'] in ('python', 'ffmpeg', 'git', 'nodejs', 'python-numpy', 'python-pillow', 'librsvg', 'imagemagick') for i in ap['ficha']['pacotes']['itens']),
+        'só pacotes aprovados aparecem')
+confere(not ap['ficha']['pacotes']['comando'] or ap['ficha']['pacotes']['comando'].startswith('pkg install -y '), 'comando pronto só com o que falta')
+st, tj, _ = api('POST', '/api/v1/aparelho/testar', {}, SES)
+st2, tj2, _ = api('POST', '/api/v1/aparelho/testar', {}, SES)
+confere(st == 200 and tj2['job'] == tj['job'], 'pedir o teste duas vezes não cria dois trabalhos pesados')
+t = time.time()
+while time.time() - t < 300 and (api('GET', '/api/v1/aparelho', None, SES)[1].get('job') or {}).get('status') not in ('concluido', 'falhou'):
+    time.sleep(0.5)
+ap = api('GET', '/api/v1/aparelho', None, SES)[1]
+lau = ap['laudo'] or {}
+confere(ap['job']['status'] == 'concluido' and len(lau.get('testes', [])) == 2, f'teste do aparelho rodou ({ap["job"].get("erro")})')
+confere(all(t['ok'] and t['reproducao']['toca'] and t['segundos'] > 0 and t['tamanho_kb'] > 0 for t in lau.get('testes', [])),
+        'render de 5 s e prévia leve: conferidos e tocam do começo ao fim')
+confere(all('aac' in (t.get('audio') or '') and 'h264' in (t.get('video') or '') for t in lau.get('testes', [])), 'codecs registrados (h264 + aac)')
+confere(lau.get('testes') and lau['testes'][1]['resolucao'] == '360x640' and lau['testes'][1]['fps'] == 8, 'prévia leve em 360x640 a 8 quadros/s')
+confere(lau.get('testes') and lau['testes'][1]['segundos'] < lau['testes'][0]['segundos'], 'prévia leve custa menos que o render final')
+confere(lau.get('estado') == 'aguardando teste no Android' and not lau.get('medido_no_celular'), 'fora do celular o laudo NÃO diz que foi medido no celular')
+confere(not any('arquivo' in t for t in lau.get('testes', [])) and lau.get('log'), 'laudo sem caminhos internos e com registro')
+import hardware as hw  # noqa: E402
+confere(hw.Medidor().resultado()['aparelho_livre_inicio_mb'] is not None, 'memória livre do aparelho é lida de verdade (/proc/meminfo)')
+
 print(f'\n{ok_n} ok, {falhas} falhas   (pasta {TMP})')
 if os.getenv('MANTER_SERVIDOR'):
     # Para testar o site no navegador contra este servidor de teste.

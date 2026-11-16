@@ -190,6 +190,20 @@ export const lerRespostasAgora=(cfg:CfgSrv)=>api<{ok:boolean;lidos:number;aplica
 // ---------------------------------------------------------------- servidor
 export type Diagnostico={memoria_mb?:number|null;temperatura?:number|null;motores?:{estilo:string;seg_por_seg?:number;cenas?:number;correcoes_qualidade?:number;falhas_ffmpeg?:number}[];ffmpeg:boolean;livre_mb:number;minimo_mb:number;capacidade:Capacidade;jobs:Record<string,number>;falhas_recentes:{t:number;ator:string;acao:string;recurso:string}[];backups:{arquivo:string;tamanho:number;criado:number}[];banco:{arquivo:string;tamanho:number}};
 export const diagnostico=(cfg:CfgSrv)=>api<Diagnostico>(cfg,'GET','/api/v1/diagnostico');
+/** Etapa T1 do lote 3: ficha do aparelho e laudo do teste de render (medido de verdade, um trabalho pesado por vez). */
+export type PacoteAparelho={pacote:string;tem:boolean;versao?:string|null;importancia:'necessario'|'recomendado'|'opcional';para:string};
+export type FichaAparelho={ambiente:string;quando:number;android:{versao:string|null;sdk:string|null;aparelho:string|null;termux:string|null}|null;sistema:string;
+  processador:{arquitetura:string;modelo:string;nucleos:number|null;nucleos_liberados:number|null;mhz_max:number|null;carga_1min:number|null};
+  memoria:{total_mb:number;livre_mb:number;troca_mb:number}|null;espaco:{livre_mb:number|null;total_mb:number|null};limites:Record<string,number|null>;
+  ffmpeg:{instalado:boolean;versao?:string;faltam_codificadores?:string[];faltam_filtros?:string[];ffprobe?:boolean};python:string;node:string|null;git:string|null;
+  pacotes:{itens:PacoteAparelho[];comando:string;comando_opcional:string;so_com_motivo:Record<string,string>}};
+export type TesteAparelho={nome:string;titulo:string;ok:boolean;erro?:string;estilo?:string;resolucao?:string;fps?:number;segundos:number;seg_por_seg?:number;
+  tamanho_kb?:number;duracao?:number;video?:string|null;audio?:string|null;memoria?:{ffmpeg_pico_mb:number|null;programa_pico_mb:number|null;aparelho_livre_inicio_mb:number|null;aparelho_livre_minimo_mb:number|null};
+  conferencia?:{ok:boolean;erros:string[];avisos:string[]};reproducao?:{toca:boolean;erros:string[]}};
+export type LaudoAparelho={quando:number;ok:boolean;medido_no_celular:boolean;estado:string;ficha:FichaAparelho;testes:TesteAparelho[];log:string[]};
+export type EstadoAparelho={ficha:FichaAparelho;laudo:LaudoAparelho|null;job:{id:string;status:string;etapa:string;progresso:number;erro:string|null}|null};
+export const lerAparelho=(cfg:CfgSrv)=>api<EstadoAparelho>(cfg,'GET','/api/v1/aparelho');
+export const testarAparelho=(cfg:CfgSrv)=>api<{job:string;status:string}>(cfg,'POST','/api/v1/aparelho/testar');
 export const fazerBackup=(cfg:CfgSrv)=>api<{arquivo:string;tamanho:number}>(cfg,'POST','/api/v1/backups',{});
 export type MidiasBackup={config:{ligado:boolean;categorias:string[];destino:string};destino:string;categorias:Record<string,{nome:string;arquivos:number;mb:number}>;escolhidos:number;ja_copiados:number;falta_mb:number;livre_mb:number;mesmo_aparelho:boolean;ultimos:{arquivo:string;criado:number}[]};
 export const lerMidiasBackup=(cfg:CfgSrv)=>api<MidiasBackup>(cfg,'GET','/api/v1/midias-backup');

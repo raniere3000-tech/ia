@@ -4,6 +4,7 @@
 #          bash iniciar-termux.sh senha   -> escolhe uma senha nova para o servidor
 #          bash iniciar-termux.sh sempre  -> liga sozinho quando o celular reinicia (precisa do app Termux:Boot)
 #          bash iniciar-termux.sh parear  -> gera um código de uso único (10 min) para conectar mais um aparelho
+#          bash iniciar-termux.sh diagnostico -> mede o celular (ficha + render de 5 s + prévia leve); não instala nada
 set -e
 cd "$(dirname "$0")"
 if [ "$1" = "senha" ]; then
@@ -33,6 +34,11 @@ if [ "$1" = "parear" ]; then
   if [ -n "$URLA" ]; then echo "  Link para o aparelho novo: ${SITE}?servidor=${URLA}&canal=${CANAL}#par=${COD}"
   else echo "  O endereço do servidor ainda não saiu. Espere o túnel ligar e rode de novo, ou gere o link no site em Ajustes > Aparelhos."; fi
   exit 0
+fi
+if [ "$1" = "diagnostico" ]; then
+  command -v python >/dev/null || { echo "Falta o Python. Rode:  pkg install -y python"; exit 1; }
+  python diagnostico_aparelho.py $2
+  exit $?
 fi
 if [ ! -f .instalado ]; then
   echo "Primeira vez: instalando (uns 3 minutos)..."

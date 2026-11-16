@@ -33,6 +33,14 @@ Cole os dois no site, em **Chaves e ajustes**. O endereço muda cada vez que voc
 Se você usa Ubuntu dentro do Termux (proot-distro), use `./iniciar-mac-linux.sh`.
 Para atualizar depois: `cd ia && git pull`.
 
+### Medir o celular (diagnóstico)
+`bash iniciar-termux.sh diagnostico` mostra Android, Termux, processador, memória, espaço, FFmpeg (e se faltam filtros), Python, Node,
+numpy, Pillow e librsvg; depois renderiza 5 s no tamanho final e uma prévia leve (360x640, 8 quadros/s), medindo tempo, memória no pico,
+tamanho, codecs e se o vídeo toca do começo ao fim. Grava `~/estudioclip-diagnostico.json` e `~/estudioclip-diagnostico.log`.
+`--rapido` faz só a ficha. Não instala nada: no fim mostra `pkg install` só com o que falta. O mesmo teste roda pelo site
+(Ajustes > Servidor do celular > "Testar este celular"), pela fila, um trabalho pesado por vez. Medida feita fora do Android fica marcada
+"aguardando teste no Android".
+
 ## Agendar posts (YouTube, Instagram, Facebook, TikTok, Kwai)
 
 O mesmo servidor guarda os cortes e publica nas **suas** contas na hora marcada, mesmo com o site fechado
