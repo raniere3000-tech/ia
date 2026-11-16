@@ -26,7 +26,7 @@ import raster
 import personagens3d
 import rig2d
 
-VERSAO_MOTOR = 9
+VERSAO_MOTOR = 10      # 10: legenda dentro da área segura (9:16), nuvens em camada no desenho animado
 FONTE = Path(__file__).parent / 'fontes' / 'Inter-Bold.otf'
 FPS = 30
 
@@ -78,7 +78,7 @@ CAMPOS = ('id', 'nome', 'tecnica', 'status', 'prioridade', 'descricao', 'paleta'
 CAMERAS = ('parado', 'aproximar', 'afastar', 'panoramica')
 PLANOS = ('WS', 'MS', 'CU', 'ECU')                       # aberto, médio, close, close extremo
 ZOOM_PLANO = {'WS': 1.0, 'MS': 1.4, 'CU': 1.9, 'ECU': 2.6}
-CLIMAS = ('nenhum', 'chuva', 'neve', 'poeira', 'neblina')       # partículas por cima da cena (só quando a cena pede)
+CLIMAS = ('nenhum', 'chuva', 'neve', 'poeira', 'neblina', 'fumaca')       # partículas por cima da cena (só quando a cena pede)
 LUZES = ('neutra', 'quente', 'fria', 'noite', 'dramatica')      # camada de cor
 ANGULOS = ('normal', 'baixo', 'alto', 'inclinado')              # altura/inclinação da câmera em cada plano
 LUZ_FILTROS = {'quente': ['colorbalance=rs=.07:gs=.02:bs=-.07:rm=.05:bm=-.05'], 'fria': ['colorbalance=rs=-.06:bs=.09:rm=-.04:bm=.06'],
@@ -86,6 +86,34 @@ LUZ_FILTROS = {'quente': ['colorbalance=rs=.07:gs=.02:bs=-.07:rm=.05:bm=-.05'], 
                'dramatica': ['eq=contrast=1.22:saturation=1.1:brightness=-0.03', 'vignette=PI/4']}
 GIRO = 0.09            # inclinação do plano 'inclinado' (radianos)
 ZOOM_GIRO = 1.16       # zoom extra para o giro não mostrar bordas pretas
+SFX = ('impacto', 'pop', 'sino', 'passos', 'whoosh')       # efeitos sonoros sintetizados pelo FFmpeg (sem arquivo de terceiros)
+SFX_FONTES = {
+    'impacto': 'anoisesrc=d=0.4:c=brown:a=0.9:r=48000:seed=3,lowpass=f=180,afade=t=out:st=0.05:d=0.35,volume=1.4',
+    'pop': "aevalsrc='0.6*sin(2*PI*(900-5600*t)*t)*exp(-t*28)':s=48000:d=0.15",
+    'sino': "aevalsrc='0.3*(sin(2*PI*1320*t)+0.5*sin(2*PI*2640*t))*exp(-t*4)':s=48000:d=1.2",
+    'passos': "aevalsrc='0.6*sin(2*PI*85*t)*exp(-mod(t,0.33)*30)':s=48000:d=1.3,lowpass=f=400",
+    'whoosh': 'anoisesrc=d=0.5:c=pink:a=0.5:r=48000:seed=5,highpass=f=500,lowpass=f=5000,afade=t=in:d=0.2,afade=t=out:st=0.2:d=0.3,volume=0.4',
+}
+AREA_SEGURA = (0.10, 0.80)   # 9:16: faixa da altura livre dos botões e da legenda das redes (TikTok, Reels, Shorts)
+# como cada estilo é feito e o que ele NÃO faz (mostrado na Galeria junto da demonstração real)
+TECNOLOGIA = {
+    'documentario': ('Foto real + FFmpeg (zoompan, cortes por plano, legenda ASS)', 'Depende de achar foto boa; sem chave de fotos usa imagem de IA ou a foto vizinha.'),
+    'lousa_giz': ('Desenho em Python puro (PNG) + FFmpeg', 'Só texto e traços; não desenha objetos.'),
+    'traco_neon': ('Desenho em Python puro + brilho do FFmpeg', 'Só texto e molduras.'),
+    'quadrinhos': ('Desenho em Python puro + FFmpeg', 'Um quadro por cena; balão simples.'),
+    'vetor_chapado': ('Formas vetoriais rasterizadas em Python + FFmpeg', 'Formas genéricas; sem personagens.'),
+    'palitinho': ('Boneco de palitos em Python + FFmpeg', 'Poses simples; use "Desenho animado com personagens" para atuação.'),
+    'pixel_art': ('Pixels desenhados em Python, ampliados sem suavizar', 'Resolução baixa de propósito.'),
+    'papel_recortado': ('Camadas de papel em Python + sombra no FFmpeg', 'Movimento leve de balanço.'),
+    'cartoon2d': ('Imagem do Gemini + movimento de câmera no FFmpeg', 'Precisa de chave de imagem; custo por cena.'),
+    'motion_graphics': ('Números e barras em Python + FFmpeg', 'Só dados simples (até 5 barras).'),
+    'parallax_25d': ('Camadas em profundidade no FFmpeg', 'Profundidade simulada (2.5D), não é 3D.'),
+    'quadro_branco': ('Caneta e marca-texto em Python + FFmpeg', 'Só texto.'),
+    'animado2d': ('Rig 2D articulado (rig2d.py): peças PNG + juntas por expressões do FFmpeg; IK nos braços; boca por texto+volume',
+                  'Só vista de frente; IK só nos braços; boca não é fonética.'),
+    'animado3d': ('Personagens 3D por software (numpy), quadro a quadro', 'Lento; sem sombra projetada; tempo no celular não medido.'),
+    'cinema3d': ('Fundo 3D por software (numpy) em loop', 'Loop de 4 s; lento na primeira vez.'),
+}
 NOME_PLANO = {'WS': 'aberto', 'MS': 'médio', 'CU': 'close', 'ECU': 'close extremo'}
 FORMATOS = {'9:16': (1080, 1920), '16:9': (1920, 1080), '1:1': (1080, 1080)}
 
@@ -108,6 +136,7 @@ def catalogo() -> list:
         d['formatos'] = list(FORMATOS) if d['servidor'] else []
         d['custo'] = 'Só o processamento do celular' if d['id'] != 'cartoon2d' else 'Uma imagem de IA por cena (custo do Gemini)'
         d['precisa_imagem'] = d['id'] == 'cartoon2d'
+        d['tecnologia'], d['limites'] = TECNOLOGIA.get(d['id'], ('', ''))
         out.append(d)
     return out
 
@@ -159,7 +188,17 @@ def validar_planos(lista) -> list:
         ch = validar_chaves(p.get('chaves'))
         if ch:
             out[-1]['chaves'] = ch
+        if p.get('tremor') is True:      # câmera treme (motivado: susto, impacto, explosão)
+            out[-1]['tremor'] = True
     return out
+
+
+def validar_sfx(lista, dur_max: float = 60.0) -> list:
+    out = []
+    for x in (lista[:8] if isinstance(lista, list) else []):
+        if isinstance(x, dict) and x.get('tipo') in SFX:
+            out.append({'t': round(_num(x.get('t'), 0, 0, dur_max), 2), 'tipo': x['tipo']})
+    return sorted(out, key=lambda x: x['t'])
 
 
 def validar_chaves(lista) -> list:
@@ -257,6 +296,7 @@ def validar_cena(c: dict, i: int = 0) -> dict:
            if isinstance(c.get('audio_manual'), dict) and c['audio_manual'].get('asset') else {}),
         'clima': c.get('clima') if c.get('clima') in CLIMAS else 'nenhum',
         'luz': c.get('luz') if c.get('luz') in LUZES else 'neutra',
+        **({'sfx': validar_sfx(c['sfx'], max(1.0, min(60.0, dur or 60.0)))} if validar_sfx(c.get('sfx')) else {}),
     }
 
 
@@ -307,6 +347,7 @@ class Comp:
         self.nt = 0
         self.efeitos = True
         self.sons: list[float] = []      # instantes de 'whoosh' (corte de plano)
+        self.sfx: list[dict] = []        # efeitos sonoros pedidos pela cena ({t, tipo})
 
     def _rot(self) -> str:
         self.k += 1
@@ -464,7 +505,7 @@ class Comp:
     def legenda(self, ass: Path):
         self.filtro(f"subtitles=filename='{_esc(ass)}':fontsdir='{_esc(FONTE.parent)}'")
 
-    def comando(self, audio: Path | None, saida: Path) -> list[str]:
+    def comando(self, audio: Path | None, saida: Path, janela: tuple | None = None) -> list[str]:
         cmd = ['ffmpeg', '-nostdin', '-y', '-v', 'error', *self.args]
         if audio:
             ia = self.n
@@ -488,8 +529,26 @@ class Comp:
                 ramos.append(f'[d{j}]')
             parts.append(f'[voz]{"".join(ramos)}amix=inputs={len(ramos) + 1}:duration=first:normalize=0[a]')
             afiltro = ';'.join(parts)
+        if self.efeitos and self.sfx:
+            # efeitos sonoros sintetizados (determinísticos), cada um no seu instante, por baixo da voz
+            base = self.n + (2 if self.sons else 1)
+            parts = [afiltro.replace('[a]', '[pre]')]
+            ramos = []
+            for j, x in enumerate(self.sfx[:8]):
+                cmd += ['-f', 'lavfi', '-i', SFX_FONTES[x['tipo']]]
+                ms = max(0, int(x['t'] * 1000))
+                parts.append(f'[{base + j}:a]aresample=48000,aformat=channel_layouts=stereo,adelay={ms}|{ms}[x{j}]')
+                ramos.append(f'[x{j}]')
+            parts.append(f'[pre]{"".join(ramos)}amix=inputs={len(ramos) + 1}:duration=first:normalize=0[a]')
+            afiltro = ';'.join(parts)
         final = self.v
         grafo = ';'.join(self.f + [f'{final}format=yuv420p,setsar=1[vout]', afiltro])
+        if janela:
+            # só um pedaço (um plano): grava do quadro t0 ao t1, com som sem compressão (junta sem estalo depois)
+            t0, t1 = janela
+            return cmd + ['-filter_complex', grafo, '-map', '[vout]', '-map', '[a]', '-r', str(FPS), '-c:v', 'libx264', '-preset', 'veryfast',
+                          '-crf', '22', '-pix_fmt', 'yuv420p', '-g', str(FPS * 2), '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2',
+                          '-ss', f'{t0:.4f}', '-to', f'{t1:.4f}', str(saida)]
         return cmd + ['-filter_complex', grafo, '-map', '[vout]', '-map', '[a]', '-r', str(FPS), '-c:v', 'libx264', '-preset', 'veryfast',
                       '-crf', '22', '-pix_fmt', 'yuv420p', '-g', str(FPS * 2), '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2',
                       '-t', f'{self.dur:.3f}', '-movflags', '+faststart', str(saida)]
@@ -540,6 +599,8 @@ def legenda_ass(texto: str, dur: float, W: int, H: int, cor: str, borda: str, ca
         txt = '{\\fscx88\\fscy88\\t(0,140,\\fscx100\\fscy100)}' + ' '.join(partes)
         eventos.append(f'Dialogue: 0,{_ass_t(t)},{_ass_t(min(dur, t + d))},L,,0,0,0,,{txt}')
         t += d
+    if H > W:
+        y_rel = min(y_rel, AREA_SEGURA[1])      # nunca embaixo dos botões e da legenda das redes
     margem = int(H * (1 - y_rel))
     estilo_ln = (f'Style: L,Inter,{tam},{_ass_cor(_acento(cor))},{_ass_cor(cor)},{_ass_cor(borda)},{_ass_cor("#000000", 0x60)},-1,0,0,0,100,100,0,0,'
                  f'{3 if caixa else 1},{max(3, tam // 11)},0,2,{int(W * 0.06)},{int(W * 0.06)},{margem},1')
@@ -759,7 +820,7 @@ def _zoom_max(arq, W: int, H: int) -> float:
 
 
 def montar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, imagem: Path | None, audio: Path | None, saida: Path, paleta: list | None = None,
-           imagens_planos: list | None = None, efeitos: bool = True) -> list:
+           imagens_planos: list | None = None, efeitos: bool = True, janela: tuple | None = None) -> list:
     """Devolve o comando do FFmpeg que faz o clipe desta cena. `imagens_planos`: foto própria de cada plano (ou None),
     usada pelo estilo documentário; sem ela, cada plano reenquadra a foto da cena."""
     e = estilo(eid)
@@ -788,11 +849,13 @@ def montar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, imagem
     leg_cor, leg_borda, leg_caixa = fn(c, cena, L, W, H, dur, pasta, imagem, (p0, p1, p2), titulo, destaque, m, tam)
     if efeitos:
         _ambiente(c, cena, W, H, dur)
+        _tremor(c, cena, W, H, dur)
+        c.sfx = list(cena.get('sfx') or [])
     if cena.get('texto'):
         extra = {'tamanho': 0.064, 'y_rel': 0.80 if H > W else 0.88} if e['id'] == 'documentario' else \
-            {'tamanho': 0.06, 'y_rel': 0.885 if H > W else 0.95} if e['id'] in ('animado2d', 'animado3d') else {}
+            {'tamanho': 0.06, 'y_rel': AREA_SEGURA[1] if H > W else 0.95} if e['id'] in ('animado2d', 'animado3d') else {}
         c.legenda(legenda_ass(cena['texto'], dur, W, H, leg_cor, leg_borda, leg_caixa, pasta / 'legenda.ass', **extra))
-    return c.comando(audio, saida)
+    return c.comando(audio, saida, janela)
 
 
 def _camada_clima(tipo: str, w: int, h: int) -> Path:
@@ -806,7 +869,7 @@ def _camada_clima(tipo: str, w: int, h: int) -> Path:
         return arq
     rnd = random.Random(7)
     t = raster.Tela(tw, th)
-    n = {'chuva': 170, 'neve': 110, 'poeira': 80, 'neblina': 16}[tipo]
+    n = {'chuva': 170, 'neve': 110, 'poeira': 80, 'neblina': 16, 'fumaca': 26}[tipo]
     for _ in range(n):
         x, y = rnd.uniform(0, w if horizontal else tw), rnd.uniform(0, h if not horizontal else th)
         for dx, dy in ((0, 0), (w, 0)) if horizontal else ((0, 0), (0, h)):
@@ -819,6 +882,10 @@ def _camada_clima(tipo: str, w: int, h: int) -> Path:
             elif tipo == 'poeira':
                 r = rnd.uniform(0.5, 1.2) if dy == 0 else r
                 t.elipse(x + dx, y + dy, r, r, raster.cor('#ffe7ad', 130))
+            elif tipo == 'fumaca':          # bolhas cinza bem transparentes que sobem devagar
+                r = rnd.uniform(w * 0.06, w * 0.16) if dy == 0 else r
+                for k in range(3):
+                    t.elipse(x + dx + k * r * 0.35, y + dy - k * r * 0.2, r * (1 - k * 0.2), r * (0.8 - k * 0.15), raster.cor('#8c8c8c', 16))
             else:
                 rx, ry = (rnd.uniform(w * 0.18, w * 0.4), rnd.uniform(h * 0.03, h * 0.07)) if dx == 0 else (rx, ry)
                 t.elipse(x + dx, y + dy, rx, ry, raster.cor('#ffffff', 20))
@@ -847,10 +914,40 @@ def _ambiente(c, cena, W, H, dur):
     if clima == 'neblina':
         c.png(arq, f'-mod(t*{W * 0.04:.1f},{W})', '0', 0, 0.6, (W * 2, H))
         return
-    vel = {'chuva': H * 1.6, 'neve': H * 0.12, 'poeira': -H * 0.04}[clima]
+    vel = {'chuva': H * 1.6, 'neve': H * 0.12, 'poeira': -H * 0.04, 'fumaca': -H * 0.05}[clima]
     y = f'-{H}+mod(t*{vel:.1f},{H})' if vel > 0 else f'-mod(t*{-vel:.1f},{H})'
     x = f'{W * 0.02:.1f}*sin(t*0.7)' if clima != 'chuva' else '0'
     c.png(arq, x, y, 0, 0.3, (W, H * 2))
+
+
+def _nuvens(w: int, h: int) -> Path:
+    """Faixa de nuvens (duas larguras de tela, se repete ao rolar). Semente fixa."""
+    pasta = Path(os.getenv('DADOS', str(Path.home() / '.estudioclip'))) / 'efeitos'
+    pasta.mkdir(parents=True, exist_ok=True)
+    arq = pasta / f'nuvens-{w}x{h}-v1.png'
+    if arq.exists():
+        return arq
+    rnd = random.Random(11)
+    t = raster.Tela(w * 2, h * 4)
+    for _ in range(5):
+        x, y, r = rnd.uniform(0, w), rnd.uniform(h * 0.8, h * 3), rnd.uniform(h * 0.5, h * 0.9)
+        for dx in (0, w):
+            for k, (ox, oy, f) in enumerate(((0, 0, 1.0), (r * 0.8, r * 0.15, 0.75), (-r * 0.8, r * 0.2, 0.7), (r * 0.3, -r * 0.35, 0.8))):
+                t.elipse(x + dx + ox, y + oy, r * f * 1.3, r * f, raster.cor('#ffffff', 200))
+    t.salvar(arq)
+    return arq
+
+
+def _tremor(c, cena, W, H, dur):
+    """Câmera que treme só nos planos que pedem (motivo na cena: susto, impacto). Determinístico (senos fixos).
+    Corta 4% da borda o tempo todo para o tremor nunca mostrar fundo preto, e volta ao tamanho do vídeo."""
+    planos = cena.get('planos') or []
+    jan = [(t0, (dur + 1 if p is planos[-1] else t1)) for p, (t0, t1) in zip(planos, tempos_planos([dict(p, peso=p.get('peso', 1.0)) for p in planos], dur))
+           if p.get('tremor')]
+    if not jan:
+        return
+    on = '+'.join(f'between(t,{a:.3f},{b:.3f})' for a, b in jan)
+    c.filtro(f"crop=w=iw*0.96:h=ih*0.96:x='iw*0.02+iw*0.016*sin(t*47)*({on})':y='ih*0.02+ih*0.012*sin(t*61+1.3)*({on})',scale={W}:{H}")
 
 
 def _y_dest(L, H):
@@ -1246,6 +1343,10 @@ def _e_animado2d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m,
     fundo = _fundo_cenario(cn, max(64, Wc // 4), max(64, Hc // 4), chao_rel, pasta / 'cenario.png')
     c.fundo(cn['ceu'])
     c.png(_escalada_para(fundo, int(Wc * 1.025), Hc), f'-{Wc * 0.025:.0f}*t/{dur:.2f}', '0', 0, 0)
+    if cn['tipo'] in ('rua', 'parque') and cn['horario'] != 'noite':
+        # paralaxe: nuvens numa camada própria andando mais rápido que o cenário (profundidade)
+        nuv = _nuvens(max(64, Wc // 4), max(32, Hc // 12))
+        c.png(nuv, f'-mod(t*{Wc * 0.02:.1f},{Wc})', f'{Hc * 0.05:.0f}', 0, 0, (Wc * 2, Hc // 3))
     falante = (cena.get('personagem') or '').strip().lower()
     nomes = {k: rig2d.validar_personagem(p)['nome'].lower() for k, p in perfis.items()}
     pos = {}
@@ -1255,7 +1356,8 @@ def _e_animado2d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m,
         fala = falante in (el['personagem_id'], nomes.get(el['personagem_id'])) or (len(elenco) == 1 and bool(cena.get('texto')))
         if fala and not any(a['tipo'] == 'falar' for a in el['acoes']):
             el = dict(el, acoes=[{'t': 0.0, 'tipo': 'falar', 'alvo': '', 'intensidade': 1.0, 'dur': 0}] + el['acoes'])
-        pos[el['personagem_id']] = rig2d.colocar(c, el, p, rig2d.pecas(p, pasta_pecas), chao_y, altura, Wc, dur, fala, cena.get('_audio'))
+        pos[el['personagem_id']] = rig2d.colocar(c, el, p, rig2d.pecas(p, pasta_pecas), chao_y, altura, Wc, dur, fala, cena.get('_audio'),
+                                                 cena.get('texto') or '')
         if fala:
             pos['_falante'] = pos[el['personagem_id']]
     # câmera: cortes entre planos, foco no personagem do plano (ou em quem fala)
@@ -1382,6 +1484,8 @@ def chave_cena(eid: str, cena: dict, W: int, H: int, dur: float, audio_sha: str,
 VARIANTES_DEMO = {
     'chuva_noite': ('Chuva à noite', {'clima': 'chuva', 'luz': 'noite'}),
     'neve_fria': ('Neve com luz fria', {'clima': 'neve', 'luz': 'fria'}),
+    'fumaca_susto': ('Fumaça, susto com câmera tremendo e som', {'clima': 'fumaca', 'luz': 'dramatica', 'sfx': [{'t': 2.4, 'tipo': 'impacto'}, {'t': 0.3, 'tipo': 'pop'}],
+                                                                 'planos': [{'plano': 'WS'}, {'plano': 'MS', 'personagem': 'beto', 'tremor': True}, {'plano': 'CU', 'personagem': 'ana'}]}),
     'poeira_quente': ('Poeira no fim de tarde', {'clima': 'poeira', 'luz': 'quente'}),
     'neblina_dramatica': ('Neblina dramática', {'clima': 'neblina', 'luz': 'dramatica'}),
     'angulos': ('Ângulos e movimento livre', {'planos': [{'plano': 'WS', 'angulo': 'alto', 'chaves': [{'t': 0, 'zoom': 1, 'x': 0.5, 'y': 0.5}, {'t': 1, 'zoom': 1.3, 'x': 0.4, 'y': 0.45}]},

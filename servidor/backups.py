@@ -159,8 +159,11 @@ def iniciar():
 
 
 # ---------------------------------------------------------------- backup das mídias importantes (opcional, incremental)
-CATEGORIAS = {'finais': 'Vídeos finais aprovados ou prontos', 'audios': 'Narrações e áudios', 'imagens': 'Fotos e imagens das cenas'}
-PADRAO_MIDIAS = {'ligado': False, 'categorias': ['finais', 'audios'], 'destino': ''}
+CATEGORIAS = {'finais': 'Vídeos finais aprovados ou prontos', 'audios': 'Narrações e áudios', 'imagens': 'Fotos e imagens das cenas',
+              'originais': 'Arquivos que você enviou (originais)', 'rigs': 'Peças desenhadas dos personagens (rigs 2D)'}
+PADRAO_MIDIAS = {'ligado': False, 'categorias': ['finais', 'audios'], 'destino': '', 'projetos': []}
+AVISO_MESMO_APARELHO = ('O backup está no mesmo celular: protege contra arquivo apagado ou estragado, mas NÃO contra perder, '
+                        'quebrar ou ter o celular roubado. Para isso, aponte o destino para o cartão de memória ou copie a pasta para outro lugar.')
 
 
 def _destino(cfg: dict) -> Path:
@@ -180,6 +183,9 @@ def salvar_config_midias(d: dict) -> dict:
         c['ligado'] = bool(d['ligado'])
     if isinstance(d.get('categorias'), list):
         c['categorias'] = [x for x in d['categorias'] if x in CATEGORIAS]
+    if isinstance(d.get('projetos'), list):      # seletivo: só estes projetos (vazio = todos)
+        import re as _re
+        c['projetos'] = [_re.sub(r'[^\w-]', '', str(x))[:40] for x in d['projetos'][:200] if str(x).strip()]
     if 'destino' in d:
         dest = str(d.get('destino') or '').strip()
         if dest:
@@ -193,8 +199,25 @@ def salvar_config_midias(d: dict) -> dict:
     return estado_midias()
 
 
-def _midias(categorias: list) -> list:
-    """Lista o que entra no backup: cada item com sha256, tamanho, caminho, projeto e categoria."""
+def _midias(categorias: list, projetos: list | None = None) -> list:
+    """Lista o que entra no backup: cada item com sha256, tamanho, caminho, projeto e categoria.
+    `projetos`: só esses (os rigs, que são da série e não de um projeto, entram sempre que a categoria estiver ligada)."""
+    out = _midias_todas(categorias)
+    if projetos:
+        out = [m for m in out if m['categoria'] == 'rigs' or m['projeto'] in projetos]
+    return out
+
+
+def _rigs() -> list:
+    base = pg.DADOS / 'rig2d'
+    out = []
+    for a in sorted(base.glob('*/*.png')) if base.exists() else []:
+        out.append({'sha256': _sha(a), 'tamanho': a.stat().st_size, 'caminho': str(a), 'projeto': '', 'nome': f'rig2d/{a.parent.name}/{a.name}',
+                    'categoria': 'rigs'})
+    return out
+
+
+def _midias_todas(categorias: list) -> list:
     out, vistos = [], set()
     if 'finais' in categorias:
         for r in db.todos('SELECT projeto, arquivo, sha256, versao FROM renders WHERE validado=1'):
@@ -202,11 +225,18 @@ def _midias(categorias: list) -> list:
             if r['sha256'] and r['sha256'] not in vistos and a.exists():
                 vistos.add(r['sha256'])
                 out.append({'sha256': r['sha256'], 'tamanho': a.stat().st_size, 'caminho': str(a), 'projeto': r['projeto'], 'nome': f'final-v{r["versao"]}{a.suffix}', 'categoria': 'finais'})
-    for r in db.todos('SELECT projeto, nome, mime, sha256, caminho, tamanho FROM assets'):
+    for r in db.todos('SELECT projeto, nome, mime, sha256, caminho, tamanho, origem FROM assets'):
         cat = 'audios' if (r['mime'] or '').startswith('audio/') else 'imagens' if (r['mime'] or '').startswith('image/') else ''
+        if r['origem'] == 'site' and 'originais' in categorias:
+            cat = 'originais'
         if cat in categorias and r['sha256'] and r['sha256'] not in vistos:
             vistos.add(r['sha256'])
             out.append({'sha256': r['sha256'], 'tamanho': r['tamanho'] or 0, 'caminho': r['caminho'], 'projeto': r['projeto'], 'nome': r['nome'], 'categoria': cat})
+    if 'rigs' in categorias:
+        for m in _rigs():
+            if m['sha256'] not in vistos:
+                vistos.add(m['sha256'])
+                out.append(m)
     return out
 
 
@@ -218,13 +248,15 @@ def estado_midias() -> dict:
     for m in tudo:
         por[m['categoria']]['arquivos'] += 1
         por[m['categoria']]['mb'] += m['tamanho'] / 1048576
-    escolhidas = [m for m in tudo if m['categoria'] in c['categorias']]
+    escolhidas = [m for m in tudo if m['categoria'] in c['categorias'] and (not c['projetos'] or m['categoria'] == 'rigs' or m['projeto'] in c['projetos'])]
     ja = sum(1 for m in escolhidas if (dest / 'objetos' / m['sha256'][:2] / m['sha256']).exists())
     falta_mb = sum(m['tamanho'] for m in escolhidas if not (dest / 'objetos' / m['sha256'][:2] / m['sha256']).exists()) / 1048576
     mesmo = not str(dest).startswith(('/sdcard', '/storage'))
     manis = sorted(dest.glob('manifesto-*.json'), reverse=True) if dest.exists() else []
     return {'config': c, 'destino': str(dest), 'categorias': por, 'escolhidos': len(escolhidas), 'ja_copiados': ja, 'falta_mb': round(falta_mb, 1),
             'livre_mb': __import__('renderizador').livre_mb(dest if dest.exists() else PASTA), 'mesmo_aparelho': mesmo,
+            'aviso': AVISO_MESMO_APARELHO if mesmo else '',
+            'ocupado_mb': round(sum(f.stat().st_size for f in (dest / 'objetos').rglob('*') if f.is_file()) / 1048576, 1) if (dest / 'objetos').exists() else 0.0,
             'ultimos': [{'arquivo': m.name, 'criado': m.stat().st_mtime} for m in manis[:3]]}
 
 
@@ -234,7 +266,7 @@ def fazer_midias(motivo: str = 'manual') -> dict:
     c = config_midias()
     dest = _destino(c)
     (dest / 'objetos').mkdir(parents=True, exist_ok=True)
-    itens = _midias(c['categorias'])
+    itens = _midias(c['categorias'], c['projetos'])
     precisa = sum(m['tamanho'] for m in itens if not (dest / 'objetos' / m['sha256'][:2] / m['sha256']).exists()) / 1048576
     import renderizador as rd
     livre = rd.livre_mb(dest)
@@ -298,3 +330,111 @@ def testar_midias(nome: str = '') -> dict:
     sem_arquivo = [a['nome'] for a in db.todos('SELECT nome, caminho FROM assets') if not Path(a['caminho'] or '').exists()][:20]
     shutil.rmtree(teste, ignore_errors=True)
     return {'ok': not ruins, 'conferidos': ok_n, 'problemas': ruins[:30], 'manifesto': manis[0].name, 'referencias_sem_arquivo': sem_arquivo}
+
+
+def restaurar_projeto(pid: str, categorias: list | None = None, manifesto: str = '') -> dict:
+    """Restaura UM projeto (dados + mídias escolhidas) numa pasta de TESTE separada, a partir do backup de mídias,
+    e confere o sha256 de cada arquivo. Não mexe nos dados reais. A pasta fica para você olhar (apague quando quiser)."""
+    import re as _re
+    pid = _re.sub(r'[^\w-]', '', pid)[:40]
+    dest = _destino(config_midias())
+    manis = sorted(dest.glob('manifesto-*.json'), reverse=True)
+    if manifesto:
+        manis = [m for m in manis if m.name == Path(manifesto).name]
+    if not manis:
+        raise FileNotFoundError('Nenhum backup de mídias ainda.')
+    man = json.loads(manis[0].read_text(encoding='utf-8'))
+    cats = [x for x in (categorias or list(CATEGORIAS)) if x in CATEGORIAS]
+    teste = PASTA / 'restauracao-teste' / f'{pid}-{datetime.now().strftime("%Y%m%d-%H%M%S")}'
+    teste.mkdir(parents=True)
+    linha = db.um('SELECT * FROM projetos WHERE id=?', pid)
+    if linha:
+        (teste / 'projeto.json').write_text(json.dumps(dict(linha), ensure_ascii=False, indent=1, default=str), encoding='utf-8')
+    conferidos, ruins, bytes_ = [], [], 0
+    for it in man['itens'] if linha else []:          # projeto que não existe: nada é restaurado
+        if it['categoria'] not in cats or (it['categoria'] != 'rigs' and it['projeto'] != pid):
+            continue
+        obj = dest / 'objetos' / it['sha256'][:2] / it['sha256']
+        if not obj.exists():
+            ruins.append(f'{it["nome"]}: não está no backup')
+            continue
+        saida = teste / it['categoria'] / Path(it['nome']).name if it['categoria'] != 'rigs' else teste / it['nome']
+        saida.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(obj, saida)
+        sha = _sha(saida)
+        if sha != it['sha256']:
+            ruins.append(f'{it["nome"]}: hash não bate')
+        else:
+            conferidos.append({'nome': it['nome'], 'categoria': it['categoria'], 'sha256': sha[:16]})
+            bytes_ += saida.stat().st_size
+    (teste / 'conferencia.json').write_text(json.dumps({'manifesto': manis[0].name, 'conferidos': conferidos, 'problemas': ruins},
+                                                       ensure_ascii=False, indent=1), encoding='utf-8')
+    db.evento('servidor', 'restauracao_teste', 'projeto:' + pid, {'arquivos': len(conferidos), 'problemas': len(ruins)})
+    return {'ok': bool(linha) and not ruins, 'pasta': str(teste), 'projeto_encontrado': bool(linha), 'arquivos': len(conferidos),
+            'mb': round(bytes_ / 1048576, 2), 'conferidos': conferidos[:50], 'problemas': ruins[:30], 'manifesto': manis[0].name}
+
+
+_TAM_CACHE: dict = {}
+
+
+def _tamanhos() -> dict:
+    """Espaço usado por pasta dos dados do servidor (guardado 10 min: percorrer muitos vídeos é lento no celular)."""
+    if _TAM_CACHE.get('t', 0) > time.time() - 600:
+        return _TAM_CACHE['v']
+    out = {}
+    base = pg.DADOS
+    for d in sorted(base.iterdir()) if base.exists() else []:
+        if d.is_dir():
+            tot = 0
+            for raiz, _ds, fs in os.walk(d):
+                for f in fs:
+                    try:
+                        tot += os.path.getsize(os.path.join(raiz, f))
+                    except OSError:
+                        pass
+            out[d.name] = round(tot / 1048576, 1)
+    _TAM_CACHE.update(t=time.time(), v=out)
+    return out
+
+
+def metricas() -> dict:
+    """Números reais do servidor (T6): tempo por plano e por estilo, cache dos planos, memória, espaço, erros, tentativas,
+    previsão da fila e estado honesto dos motores (medido no celular ou não). Nada de chave ou segredo aqui."""
+    import fila
+    import hardware
+    semana = time.time() - 7 * 86400
+    planos = []
+    for r in db.todos("SELECT etapa, SUM(segundos) AS s, SUM(unidades) AS u, COUNT(*) AS n FROM (SELECT * FROM medidas WHERE etapa LIKE 'render_plano_%' "
+                      "ORDER BY id DESC LIMIT 400) GROUP BY etapa"):
+        if r['u']:
+            planos.append({'estilo': r['etapa'].replace('render_plano_', ''), 'seg_por_seg': round(r['s'] / r['u'], 2), 'planos': r['n']})
+    cache = db.um("SELECT SUM(CASE WHEN etapa='plano_cache' THEN unidades ELSE 0 END) AS reaproveitados, "
+                  "SUM(CASE WHEN etapa='plano_refeito' THEN unidades ELSE 0 END) AS refeitos FROM medidas WHERE t>?", semana) or {}
+    falhas = db.todos("SELECT tipo, COUNT(*) AS n FROM jobs WHERE status='falhou' AND COALESCE(terminado, criado)>? GROUP BY tipo", semana)
+    tent = db.um("SELECT AVG(tentativas) AS m, MAX(tentativas) AS x, COUNT(*) AS n FROM jobs WHERE status='concluido' AND COALESCE(terminado, criado)>?", semana) or {}
+    fl = fila.lista()
+    ativos = [j for j in fl['jobs'] if j['status'] not in fila.FINAIS] if isinstance(fl, dict) and 'jobs' in fl else []
+    laudo = db.kv('diagnostico_aparelho') or {}
+    no_celular = bool(laudo.get('medido_no_celular'))
+    motores = []
+    for m in motores_medidos():
+        motores.append(dict(m, onde='celular' if hardware.e_android() else 'fora do celular'))
+    return {
+        'quando': time.time(),
+        'planos': planos,
+        'cache_planos': {'reaproveitados': int(cache.get('reaproveitados') or 0), 'refeitos': int(cache.get('refeitos') or 0)},
+        'memoria': {'aparelho': hardware.memoria(), 'servidor_mb': _memoria_mb()},
+        'espaco': {'livre_mb': __import__('renderizador').livre_mb(pg.DADOS), 'por_pasta_mb': _tamanhos()},
+        'erros_semana': {r['tipo']: r['n'] for r in falhas},
+        'tentativas': {'media': round(tent.get('m') or 0, 2), 'maximo': tent.get('x') or 0, 'trabalhos': tent.get('n') or 0},
+        'fila': {'ativos': len(ativos), 'termina_em_s': round(max([j.get('fim_previsto') or 0 for j in ativos] + [time.time()]) - time.time()),
+                 'estimativa_medida': all(j.get('estimativa_medida') for j in ativos) if ativos else None},
+        'motores': motores,
+        'aparelho_medido': no_celular,
+        'estado': 'medido no celular' if no_celular else 'aguardando teste no Android',
+        'temperatura': _temperatura(),
+    }
+
+
+def motores_medidos() -> list:
+    return [m for m in motores() if m.get('estilo') != '_resumo']

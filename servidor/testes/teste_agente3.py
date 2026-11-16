@@ -56,6 +56,7 @@ ROTEIRO = {'titulo': 'Por que o céu é azul', 'legenda': 'A luz do sol explica.
                      {'titulo': 'O ar', 'texto': 'O ar espalha mais o azul.', 'destaque': 'Espalha o azul'}]}
 PEDIDOS = []
 PROMPTS = []
+VISAO = []
 SEM_FOTOS = False
 ROTEIRO_SERIE = {'titulo': 'O barulho', 'legenda': 'O que foi aquilo?', 'hashtags': ['#serie'],
                  'mudancas': [{'alvo': 'ana', 'texto': 'Ana agora guarda a chave do sótão.'}],
@@ -106,6 +107,19 @@ class Gemini(BaseHTTPRequestHandler):
                 rot = {'ideias': [{'titulo': 'Por que o mar é salgado', 'gancho': 'g', 'porque': 'p', 'tipo': 'curiosidade', 'fato': True, 'risco': 'baixo', 'fontes': []},
                                   {'titulo': 'Remédio caseiro cura gripe?', 'gancho': 'g', 'porque': 'p', 'tipo': 'saúde', 'fato': True, 'risco': 'alto',
                                    'motivo_risco': 'saúde', 'fontes': [{'titulo': 'OMS', 'url': 'https://www.who.int'}]}]}
+                r = {'candidates': [{'content': {'parts': [{'text': json.dumps(rot, ensure_ascii=False)}]}}], 'usageMetadata': {}}
+                b = json.dumps(r).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+                return
+            if 'AVALIADOR VISUAL' in txt:
+                m = re.search(r'\[([\w-]+)/([\w-]+)\]', txt)
+                rot = {'pontos': [{'cena': m.group(1) if m else '', 'plano': m.group(2) if m else '', 'problema': 'Rosto cortado na borda', 'sugestao': 'Abrir o plano', 'confianca': 0.8},
+                                  {'cena': '', 'plano': '', 'problema': 'Talvez a cor esteja fria', 'sugestao': '', 'confianca': 0.3}]}
+                VISAO.append(txt.count('inline_data'))
                 r = {'candidates': [{'content': {'parts': [{'text': json.dumps(rot, ensure_ascii=False)}]}}], 'usageMetadata': {}}
                 b = json.dumps(r).encode()
                 self.send_response(200)
@@ -416,7 +430,7 @@ SEM_FOTOS = False
 print('Planos por cena (documentário)')
 ROTEIRO['cenas'][0]['planos'] = [{'plano': 'WS', 'busca': 'blue sky'}, {'plano': 'CU', 'busca': 'sun close'}]
 ROTEIRO['cenas'][2]['planos'] = [{'plano': 'MS', 'busca': 'air molecules'}, {'plano': 'XX', 'busca': 'clouds', 'foco_x': 9}]
-b4 = dict(briefing, tema='Planos', imagens='busca', estilo='documentario', modo_aprovacao='supervisionado', cenas_qtd=3, duracao_alvo=9)
+b4 = dict(briefing, tema='Planos', imagens='busca', estilo='documentario', modo_aprovacao='supervisionado', cenas_qtd=3, duracao_alvo=9, qa_visao=True)
 st, pp, _ = api('POST', '/api/v1/agente3/projetos', {'briefing': b4, 'produzir': True}, SES)
 t = time.time()
 while time.time() - t < 400:
@@ -436,6 +450,12 @@ confere(all(set(x) >= {'tipo', 'severidade', 'cena_id', 'timecode', 'descricao'}
 nar = [x for x in qp.get('problemas', []) if x['tipo'] == 'narrativa']
 confere(len(nar) == 1 and nar[0]['cena_id'] == cp[0]['id'] and 'Gancho' in nar[0]['descricao'], 'leitura crítica do roteiro vira alerta na cena certa')
 confere(rp['projeto']['dados'].get('revisao_narrativa', {}).get('h'), 'leitura crítica guardada para não pagar de novo')
+vis = [x for x in qp.get('problemas', []) if x['tipo'] == 'visual_ia']
+confere(len(VISAO) == 1 and 0 < VISAO[0] <= 6, f'olhar da IA: uma chamada, no máximo 6 quadros ({VISAO})')
+confere(len(vis) == 1 and vis[0]['natureza'] == 'julgamento' and 'confiança 0.80' in vis[0]['evidencia'], 'só o apontamento com confiança alta entra, marcado como opinião')
+confere(qp.get('status') != 'falha_tecnica' and qp.get('contagem', {}).get('julgamento') == 1, 'opinião da IA não reprova o vídeo')
+cl0 = cp[0].get('clipe') or {}
+confere(len(cl0.get('planos') or []) == 2 and all(x['refeito'] for x in cl0['planos']), 'cena com 2 planos foi feita por pedaços (render por plano)')
 for c in ROTEIRO['cenas']:
     c.pop('planos', None)
 st, _, _ = api('POST', '/agente/chaves', {'pexels': ''}, SES)
@@ -673,7 +693,7 @@ while time.time() - t < 400:
 confere(j['status'] == 'concluido', f'demonstração com chuva à noite renderizada ({j.get("erro")})')
 cat = api('GET', '/api/v1/agente3/catalogo', None, SES)[1]
 ef = {x['id']: x for x in cat['efeitos']}
-confere(set(ef) == {'chuva_noite', 'neve_fria', 'poeira_quente', 'neblina_dramatica', 'angulos'} and ef['chuva_noite']['demos'].get('9:16'), 'catálogo mostra os efeitos e a prévia pronta')
+confere(set(ef) == {'chuva_noite', 'neve_fria', 'poeira_quente', 'neblina_dramatica', 'angulos', 'fumaca_susto'} and ef['chuva_noite']['demos'].get('9:16'), 'catálogo mostra os efeitos e a prévia pronta')
 st, dm2, _ = api('POST', '/api/v1/estilos/animado2d/demo', {'formato': '9:16', 'variante': 'chuva_noite'}, SES)
 confere(st == 200 and dm2.get('url'), 'segunda vez já vem pronta (guardada)')
 st, dm3, _ = api('POST', '/api/v1/estilos/vetor_chapado/demo', {'formato': '9:16', 'variante': 'xx'}, SES)
@@ -705,6 +725,28 @@ if p3d.disponivel():
     k1 = p3d.chave(cv3, 270, 480, 1)
     cv3['planos'][0]['angulo'] = 'alto'
     confere(k1 != p3d.chave(cv3, 270, 480, 1), 'ângulo do plano muda a câmera 3D (e a chave do cache)')
+
+print('Backup seletivo e métricas (T6)')
+obj.unlink()       # o teste anterior estragou um arquivo de propósito; o backup seguinte copia de novo
+st, em6, _ = api('PUT', '/api/v1/midias-backup', {'categorias': ['finais', 'audios', 'imagens', 'originais', 'rigs'], 'projetos': [pp['id']]}, SES)
+confere(st == 200 and em6['config']['projetos'] == [pp['id']] and 'rigs' in em6['categorias'] and em6['aviso'], 'backup seletivo: só um projeto + rigs; avisa que no mesmo celular não protege contra perda')
+st, f6, _ = api('POST', '/api/v1/midias-backup/fazer', {}, SES)
+confere(st == 200 and f6['novos'] + f6['ja_existiam'] > 0, f'backup das mídias do projeto feito ({f6})')
+st, r6, _ = api('POST', f'/api/v1/midias-backup/restaurar/{pp["id"]}', {}, SES)
+confere(st == 200 and r6['ok'] and r6['projeto_encontrado'] and r6['arquivos'] > 0 and Path(r6['pasta']).exists(), f'projeto restaurado em pasta de teste ({r6.get("arquivos")} arquivos)')
+import hashlib as _hl  # noqa: E402
+conf6 = json.loads((Path(r6['pasta']) / 'conferencia.json').read_text(encoding='utf-8'))
+reconf = all(_hl.sha256(p_.read_bytes()).hexdigest()[:16] in {c['sha256'] for c in conf6['conferidos']}
+             for p_ in Path(r6['pasta']).rglob('*') if p_.is_file() and p_.name not in ('conferencia.json', 'projeto.json'))
+confere(reconf and (Path(r6['pasta']) / 'projeto.json').exists(), 'hash de cada arquivo restaurado conferido de novo, fora do servidor')
+st, r6b, _ = api('POST', '/api/v1/midias-backup/restaurar/naoexiste', {}, SES)
+confere(st == 200 and not r6b['ok'] and r6b['arquivos'] == 0, 'projeto que não existe: restauração diz que não deu')
+api('PUT', '/api/v1/midias-backup', {'projetos': []}, SES)
+st, mt, _ = api('GET', '/api/v1/metricas', None, SES)
+confere(st == 200 and any(p_['estilo'] == 'documentario' for p_ in mt['planos']), 'métricas: tempo por plano medido de verdade nos jobs')
+confere(mt['cache_planos']['refeitos'] > 0 and mt['memoria']['aparelho'] and mt['espaco']['por_pasta_mb'], 'métricas: cache dos planos, memória e espaço por pasta')
+confere(mt['estado'] == 'aguardando teste no Android' and 'tentativas' in mt and 'fila' in mt, 'métricas: estado honesto (fora do celular) e tentativas/fila')
+confere(not any(k in json.dumps(mt).lower() for k in ('gemini_pago', 'token', 'senha', 'chave_')), 'métricas sem segredo')
 
 print('Diagnóstico do aparelho (T1)')
 st, ap, _ = api('GET', '/api/v1/aparelho', None, SES)

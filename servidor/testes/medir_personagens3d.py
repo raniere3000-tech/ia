@@ -28,5 +28,8 @@ arq = p3.preparar_cena(cena, 1080, 1920, 5.0, progresso=lambda x: print(f'\r  {x
 seg = time.time() - t
 print(f'\n\nLevou {seg:.0f} s para 5 s de vídeo: cerca de {seg / 5:.1f} s por segundo de vídeo.')
 print(f'Um episódio de 45 s levaria cerca de {seg / 5 * 45 / 60:.1f} minutos só no 3D (a cena pronta fica guardada).')
-print(f'Vídeo de teste: {arq}')
+import shutil  # noqa: E402
+guardado = Path.home() / 'estudioclip-3d-teste.mp4'
+shutil.copy(arq, guardado)       # fica guardado: o servidor acha e mostra na Galeria para revisar
+print(f'Vídeo de teste: {guardado}')
 print('\nMande para o Claude as linhas acima (de "Levou" até "Vídeo de teste").')

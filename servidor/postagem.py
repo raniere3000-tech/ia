@@ -838,7 +838,9 @@ def _portao_agente3(p: dict, item):
                        (ap or {}).get('criado') or 0)
         item('aprovacao', bool(ap) and not depois, 'Versão aprovada por você.' if ap and not depois else 'Esta versão do vídeo não está aprovada (ou foi rejeitada depois).')
         q = (pj.obter(p['projeto'])['dados'].get('qualidade') or {}).get('status', '')
-        item('qualidade', q != 'falha_tecnica', 'Conferência de qualidade sem falha técnica.' if q != 'falha_tecnica' else 'A conferência de qualidade achou falha técnica neste vídeo.')
+        ok_q = q not in ('', 'falha_tecnica')      # sem conferência técnica registrada também não sai
+        item('qualidade', ok_q, 'Conferência de qualidade sem falha técnica.' if ok_q else
+             ('A conferência de qualidade achou falha técnica neste vídeo.' if q else 'Este vídeo ainda não passou pela conferência técnica.'))
     except Exception as e:  # noqa: BLE001  (projeto apagado etc.)
         item('aprovacao', False, f'Não achei a aprovação deste vídeo: {str(e)[:120]}')
 

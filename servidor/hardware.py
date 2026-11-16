@@ -407,3 +407,132 @@ def pedir_teste() -> dict:
 def iniciar():
     import fila
     fila.registrar('aparelho.testar', job_testar, 'pesado')
+    fila.registrar('aparelho.testar3d', job_testar_3d, 'pesado')
+
+
+# ---------------------------------------------------------------- T7: 3D só depois do 2D, com medida real
+def videos_3d() -> list:
+    """Acha os vídeos 3D que já foram feitos neste aparelho (cache das cenas 3D, fundos 3D, demonstração, teste do
+    comando de medida) para revisar. Não apaga nem move nada: só lista e registra para tocar no site."""
+    import postagem as pg
+    base = pg.DADOS
+    achados = []
+    fontes = [('personagens 3D (cena)', base / 'cache3d' / 'cenas', '*.mp4'), ('fundo 3D em loop', base / 'cache3d', '*.mp4'),
+              ('demonstração 3D', base / 'demos', 'animado3d*/demo.mp4'), ('teste de medida', Path.home(), 'estudioclip-3d-teste*.mp4')]
+    for tipo, pasta, padrao in fontes:
+        if not pasta.exists():
+            continue
+        for a in pasta.glob(padrao):
+            try:
+                st = a.stat()
+            except OSError:
+                continue
+            if st.st_size > 1000:
+                achados.append({'tipo': tipo, 'arquivo': a, 'tamanho_kb': round(st.st_size / 1024), 'criado': st.st_mtime})
+    achados.sort(key=lambda x: x['criado'])
+    return achados
+
+
+def registrar_videos_3d() -> list:
+    """Registra os vídeos 3D achados como mídia do servidor (o site pode tocar), o mais antigo primeiro."""
+    import projetos as pj
+    import renderizador as rd
+    out = []
+    for k, v in enumerate(videos_3d()[:30]):
+        a = pj.registrar_asset(v['arquivo'], f'3d-{k + 1}-{v["arquivo"].stem[:24]}.mp4', 'video/mp4', '', 'revisao3d')['asset']
+        try:
+            dur = round(rd.duracao(v['arquivo']), 2)
+        except Exception:  # noqa: BLE001
+            dur = None
+        out.append({'asset': a['id'], 'tipo': v['tipo'], 'tamanho_kb': v['tamanho_kb'], 'criado': v['criado'], 'duracao': dur, 'primeiro': k == 0})
+    return out
+
+
+def testar_3d(pasta: Path, cancelado=None, progresso=None) -> dict:
+    """Mede o 3D de personagens contra o loop 3D atual (fundo) e o 2D articulado, na MESMA cena de 5 s:
+    tempo, memória no pico, tamanho e conferência. Só vale como medida do Android se rodar no celular."""
+    import estilos_codigo as ec
+    import personagens3d as p3
+    import renderizador as rd
+    pasta.mkdir(parents=True, exist_ok=True)
+    W, H = ec.FORMATOS['9:16']
+    res = {'ambiente': 'android' if e_android() else 'outro', 'quando': time.time(), 'testes': []}
+    if not p3.disponivel():
+        res['erro'] = 'Falta o numpy (pkg install -y python-numpy).'
+        res['estado'] = 'indisponivel'
+        return res
+    fala = pasta / 'fala.wav'
+    rd.rodar(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-f', 'lavfi', '-i',
+              "aevalsrc='0.6*sin(2*PI*(220+180*sin(2*PI*0.7*t))*t)*max(0,sin(2*PI*3.3*t))*lt(mod(t,1.6),1.2)':s=24000:d=5",
+              '-ac', '1', '-c:a', 'pcm_s16le', str(fala)], tempo_max=60)
+    for k, (eid, nome) in enumerate((('animado2d', '2D articulado (referência)'), ('animado3d', 'Personagens 3D'), ('cinema3d', 'Loop 3D atual (fundo)'))):
+        if cancelado and cancelado():
+            break
+        if not ec.utilizavel(eid, False):
+            res['testes'].append({'estilo': eid, 'nome': nome, 'ok': False, 'erro': 'não disponível neste aparelho'})
+            continue
+        if progresso:
+            progresso(5 + 30 * k, nome)
+        cena = ec.demo_cena(eid)
+        cena['_audio'] = str(fala)
+        saida = pasta / f'{eid}.mp4'
+        t0 = time.time()
+        try:
+            with Medidor() as med:
+                ec.preparar(eid, W, H, 5.0, None, cancelado, cena=cena)
+                rd.rodar(ec.montar(eid, cena, W, H, 5.0, pasta, None, fala, saida), cancelado, tempo_max=3600)
+            seg = time.time() - t0
+            conf = rd.conferir(saida, pasta, {'largura': W, 'altura': H, 'duracao': 5.0}, cancelado)
+            res['testes'].append({'estilo': eid, 'nome': nome, 'ok': conf['ok'], 'segundos': round(seg, 1), 'seg_por_seg': round(seg / 5, 2),
+                                  'memoria': med.resultado(), 'tamanho_kb': round(saida.stat().st_size / 1024), 'erros': conf['erros'], 'avisos': conf['avisos'],
+                                  'arquivo': str(saida)})
+        except Exception as e:  # noqa: BLE001
+            res['testes'].append({'estilo': eid, 'nome': nome, 'ok': False, 'erro': str(e)[:300], 'segundos': round(time.time() - t0, 1)})
+    t3 = next((t for t in res['testes'] if t['estilo'] == 'animado3d'), {})
+    t2 = next((t for t in res['testes'] if t['estilo'] == 'animado2d'), {})
+    if not t3.get('ok'):
+        res['estado'] = 'indisponivel'
+        res['conclusao'] = 'O 3D com personagens não terminou neste aparelho: fica indisponível.'
+    elif res['ambiente'] != 'android':
+        res['estado'] = 'beta'
+        res['conclusao'] = 'Medido fora do celular: não serve para decidir. Rode no Termux.'
+    else:
+        lento = t3['seg_por_seg']
+        res['estado'] = 'beta' if lento <= LIMITE_3D_VIAVEL else 'beta_lento'
+        res['conclusao'] = (f'No celular o 3D levou {lento} s por segundo de vídeo'
+                            + (f' ({lento / max(0.01, t2.get("seg_por_seg") or 0.01):.1f}x o 2D)' if t2.get('ok') else '')
+                            + ('. Dá para usar em vídeos curtos.' if lento <= LIMITE_3D_VIAVEL else
+                               f'. Acima de {LIMITE_3D_VIAVEL} s por segundo: um vídeo de 45 s levaria mais de '
+                               f'{LIMITE_3D_VIAVEL * 45 / 60:.0f} min. Fica em beta, só para cenas curtas.'))
+    (pasta / 'laudo-3d.json').write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding='utf-8')
+    return res
+
+
+LIMITE_3D_VIAVEL = float(os.getenv('LIMITE_3D_VIAVEL', '20'))   # s de render por s de vídeo acima disso: lento demais para o dia a dia
+
+
+def job_testar_3d(ctx):
+    import banco as db
+    import fila
+    import postagem as pg
+    r = testar_3d(pg.DADOS / 'diagnostico' / '3d', ctx.cancelado, ctx.progresso)
+    if ctx.cancelado():
+        raise fila.Cancelado()
+    import projetos as pj
+    for t in r['testes']:
+        arq = t.pop('arquivo', None)
+        if arq and t.get('ok'):
+            t['asset'] = pj.registrar_asset(Path(arq), f'teste3d-{t["estilo"]}.mp4', 'video/mp4', '', 'revisao3d')['asset']['id']
+    db.kv_gravar('diagnostico_3d', r)
+    return {'resultado': {'estado': r['estado']}, 'etapa': 'Teste do 3D pronto'}
+
+
+def pedir_teste_3d() -> dict:
+    import banco as db
+    import fila
+    ja = db.um("SELECT id, status FROM jobs WHERE tipo='aparelho.testar3d' AND status IN ('na_fila','agendado','rodando') LIMIT 1")
+    if ja:
+        return {'job': ja['id'], 'status': ja['status']}
+    j = fila.enfileirar('aparelho.testar3d', agente='sistema', titulo='Teste do 3D (2D x 3D x loop 3D)', chave=f'a3d-{int(time.time() // 60)}',
+                        prioridade=2, max_tentativas=1)
+    return {'job': j['id'], 'status': j['status']}

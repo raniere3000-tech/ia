@@ -3,7 +3,7 @@ import { Smartphone, KeyRound, Loader2, Trash2, Link2, Copy, HardDrive, Stethosc
 import { useApp } from '../state';
 import { HelpButton } from './Help';
 import { useCfg, useServidor, erroTexto } from './Servidor2';
-import { entrarComSenha, gerarCodigo, listarAparelhos, desconectar, diagnostico, fazerBackup, testarBackup, lerMidiasBackup, salvarMidiasBackup, fazerMidiasBackup, testarMidiasBackup, horaTexto, duracaoTexto, lerAparelho, testarAparelho } from '../lib/api';
+import { entrarComSenha, gerarCodigo, listarAparelhos, desconectar, diagnostico, fazerBackup, testarBackup, lerMidiasBackup, salvarMidiasBackup, fazerMidiasBackup, testarMidiasBackup, horaTexto, duracaoTexto, lerAparelho, testarAparelho, restaurarProjetoTeste, listarProjetos, lerMetricas } from '../lib/api';
 
 export function AparelhosCard(){
   const {settings,setSettings,toast}=useApp(); const cfg=useCfg();
@@ -40,6 +40,40 @@ export function AparelhosCard(){
   </section>;
 }
 
+/** Restaura UM projeto e as mídias dele numa pasta de teste e confere o hash de cada arquivo (não mexe nos dados reais). */
+function RestaurarTeste(){
+  const {toast}=useApp(); const cfg=useCfg();
+  const ps=useServidor(c=>listarProjetos(c),0);
+  const [pid,setPid]=useState(''); const [busy,setBusy]=useState(false);
+  const [res,setRes]=useState<{ok:boolean;pasta:string;arquivos:number;mb:number;problemas:string[]}|null>(null);
+  const lista=ps.dados?.projetos||[];
+  if(!lista.length) return null;
+  return <div className="restaurar-teste">
+    <div className="key-row"><select value={pid} onChange={e=>{ setPid(e.target.value); setRes(null); }}><option value="">Escolha um projeto para testar a restauração</option>{lista.slice(0,80).map(p=><option key={p.id} value={p.id}>{p.titulo||p.id}</option>)}</select>
+     <button className="subtle sm" disabled={!pid||busy} onClick={async()=>{ setBusy(true); try{ const r=await restaurarProjetoTeste(cfg,pid); setRes(r); toast(r.ok?`Projeto restaurado na pasta de teste: ${r.arquivos} arquivo(s) com hash conferido.`:'A restauração achou problema.',r.ok?'ok':'erro'); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(false); } }}>{busy?<Loader2 size={14} className="spin"/>:<Archive size={14}/>} Restaurar em pasta de teste</button></div>
+    {res&&<p className={'hint'+(res.ok?'':' bad')}>{res.arquivos} arquivo(s), {res.mb} MB, hash {res.ok?'conferido':'com problema'} • pasta: <span className="mono">{res.pasta}</span>{res.problemas.length>0&&<> • {res.problemas.slice(0,3).join('; ')}</>}</p>}
+  </div>;
+}
+
+/** Números reais do servidor: tempo por plano, cache, memória, espaço, erros, tentativas e fila. */
+function Metricas(){
+  const m=useServidor(lerMetricas,0);
+  const x=m.dados; if(!x) return null;
+  const pastas=Object.entries(x.espaco.por_pasta_mb).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const erros=Object.entries(x.erros_semana);
+  return <div className="metricas mt">
+    <div className="field-label">Números do servidor <span className={'tag '+(x.aparelho_medido?'ok':'warn')}>{x.estado}</span></div>
+    <ul className="diag">
+     {x.planos.length>0&&<li>Tempo por plano: {x.planos.map(p=>`${p.estilo.replace('_',' ')} ${p.seg_por_seg} s por segundo (${p.planos} planos)`).join(' • ')}</li>}
+     <li>Planos reaproveitados do cache na semana: {x.cache_planos.reaproveitados} • refeitos: {x.cache_planos.refeitos}</li>
+     <li>Memória: servidor {x.memoria.servidor_mb!=null?`${x.memoria.servidor_mb.toFixed(0)} MB`:'não disponível'}{x.memoria.aparelho?` • aparelho ${mbTexto(x.memoria.aparelho.livre_mb)} livres de ${mbTexto(x.memoria.aparelho.total_mb)}`:''}</li>
+     <li>Espaço: {mbTexto(x.espaco.livre_mb)} livres{pastas.length>0&&<> • maiores pastas: {pastas.map(([k,v])=>`${k} ${mbTexto(v)}`).join(', ')}</>}</li>
+     <li>Erros na semana: {erros.length?erros.map(([k,v])=>`${k} ${v}`).join(' • '):'nenhum'} • tentativas por trabalho: média {x.tentativas.media} (máx. {x.tentativas.maximo})</li>
+     <li>Fila: {x.fila.ativos} trabalho(s){x.fila.ativos>0?` • termina em ~${Math.max(1,Math.round(x.fila.termina_em_s/60))} min${x.fila.estimativa_medida?'':' (chute: ainda sem medida)'}`:''}{x.temperatura!=null?` • ${x.temperatura.toFixed(0)} °C`:''}</li>
+    </ul>
+  </div>;
+}
+
 /** Backup opcional das mídias (vídeos finais, narrações, fotos): incremental, cada arquivo guardado uma vez pelo sha256. */
 function BackupMidias(){
   const {toast}=useApp(); const cfg=useCfg();
@@ -49,14 +83,16 @@ function BackupMidias(){
   const run=async(k:string,f:()=>Promise<unknown>,ok:(r:any)=>[string,'ok'|'erro'])=>{ setBusy(k); try{ const r=await f(); const [t,tp]=ok(r); toast(t,tp); m.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } };
   const cats=x.config.categorias;
   return <div className="midias-bk mt">
+    <RestaurarTeste/>
     <div className="field-label">Backup das mídias (opcional)</div>
     <label className="check"><input type="checkbox" checked={x.config.ligado} onChange={e=>run('cfg',()=>salvarMidiasBackup(cfg,{ligado:e.target.checked}),()=>[e.target.checked?'Backup diário das mídias ligado.':'Backup das mídias desligado.','ok'])}/> Fazer todo dia, junto com o backup do banco</label>
     <div className="chips">{Object.entries(x.categorias).map(([k,c])=>{ const on=cats.includes(k); return <button key={k} className={'chip '+(on?'on':'')} aria-pressed={on} onClick={()=>run('cfg',()=>salvarMidiasBackup(cfg,{categorias:on?cats.filter(y=>y!==k):[...cats,k]}),()=>['Salvo.','ok'])}>{c.nome} · {c.arquivos} ({c.mb.toFixed(0)} MB)</button>; })}</div>
     <p className="hint">{x.ja_copiados} de {x.escolhidos} arquivos já estão no backup. Falta copiar {x.falta_mb.toFixed(0)} MB; o destino tem {(x.livre_mb/1024).toFixed(1)} GB livres.</p>
-    {x.mesmo_aparelho&&<p className="hint warn">O backup está no mesmo celular. Ele protege contra arquivo apagado ou estragado, mas não contra perder o aparelho. Para mais segurança, use uma pasta do cartão ou do armazenamento (ex.: /sdcard/EstudioClip), depois de rodar termux-setup-storage.</p>}
+    {x.mesmo_aparelho&&<p className="hint warn">{x.aviso||'O backup está no mesmo celular. Ele protege contra arquivo apagado ou estragado, mas não contra perder o aparelho.'} Ex.: /sdcard/EstudioClip, depois de rodar termux-setup-storage.</p>}
     <div className="ag-add"><input value={dest??x.config.destino} onChange={e=>setDest(e.target.value)} placeholder={x.destino}/><button className="subtle sm" disabled={!!busy||dest===null} onClick={()=>run('cfg',()=>salvarMidiasBackup(cfg,{destino:dest||''}),()=>{ setDest(null); return ['Pasta do backup salva.','ok']; })}>Usar esta pasta</button></div>
     <div className="row-gap left mt">
      <button className="subtle sm" disabled={!!busy||!cats.length} onClick={()=>run('fz',()=>fazerMidiasBackup(cfg),(r)=>[`Backup das mídias: ${r.novos} novo(s), ${r.ja_existiam} já estavam lá${r.faltando.length?`, ${r.faltando.length} sem arquivo`:''}.`,r.faltando.length?'erro':'ok'])}>{busy==='fz'?<Loader2 size={14} className="spin"/>:<Archive size={14}/>} Fazer agora</button>
+     {x.ocupado_mb!=null&&<span className="hint">Backup ocupa {x.ocupado_mb.toFixed(0)} MB (cada arquivo guardado uma vez só).</span>}
      <button className="subtle sm" disabled={!!busy||!x.ultimos.length} onClick={()=>run('ts',()=>testarMidiasBackup(cfg),(r)=>[r.ok?`Restauração de teste: ${r.conferidos} arquivo(s) conferidos, tudo certo.`:`Problemas: ${r.problemas.slice(0,3).join('; ')}`,r.ok?'ok':'erro'])}>Testar restauração</button>
     </div>
   </div>;
@@ -132,6 +168,7 @@ export function DiagnosticoCard(){
       <p className="hint">Backup diário automático, os 7 últimos ficam em ~/.estudioclip/backups no celular. "Testar restauração" abre a cópia numa pasta de teste e confere; não mexe nos dados reais.</p>
      </>}
      <TesteAparelho/>
+     <Metricas/>
      <BackupMidias/>
     </div>
   </section>;

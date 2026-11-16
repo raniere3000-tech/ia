@@ -123,12 +123,32 @@ def job_demo(ctx):
     if not conf['ok']:
         raise produtor.ErroProdutor('A demonstração não passou na conferência: ' + '; '.join(conf['erros']))
     a = pj.registrar_asset(saida, f'demo-{eid}-{fmt.replace(":", "x")}{"-" + var if var else ""}.mp4', 'video/mp4', '', 'demo')['asset']
-    r = {'asset': a['id'], 'segundos': round(time.time() - t0, 1), 'avisos': conf['avisos'], 'formato': fmt}
+    tec, lim = ec.TECNOLOGIA.get(eid, ('', ''))
+    r = {'asset': a['id'], 'segundos': round(time.time() - t0, 1), 'avisos': conf['avisos'], 'formato': fmt, 'motor': ec.VERSAO_MOTOR,
+         'tecnologia': tec, 'limites': lim, 'onde': 'celular' if hardware.e_android() else 'fora do celular (tempo não vale para o Android)',
+         'seg_por_seg': round((time.time() - t0) / 5.0, 2)}
     db.kv_gravar(chave, r)
     return {'resultado': r, 'etapa': 'Pronto'}
 
 
 _FICHA: dict = {}
+
+
+def _estilos_com_3d() -> list:
+    """Catálogo com o estado HONESTO do 3D de personagens: se o teste do 3D rodou no celular, o número medido entra
+    no texto; 'beta_lento' avisa que serve só para cenas curtas; sem medida no Android, diz que não foi medido."""
+    est = ec.catalogo()
+    l3 = db.kv('diagnostico_3d') or {}
+    for e in est:
+        if e['id'] != 'animado3d' or e['status'] == 'indisponivel':
+            continue
+        t3 = next((t for t in l3.get('testes', []) if t.get('estilo') == 'animado3d'), None)
+        if l3.get('ambiente') == 'android' and t3:
+            if l3.get('estado') == 'indisponivel':
+                e.update(status='indisponivel', servidor=False, formatos=[])
+            e['descricao'] += f' Medido neste celular: {t3.get("seg_por_seg", "?")} s por segundo de vídeo. {l3.get("conclusao", "")}'
+        e['estado_3d'] = l3.get('estado') or 'não medido no celular'
+    return est
 
 
 def _aparelho() -> dict:
@@ -239,7 +259,9 @@ def _series(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
             return srs.obter_personagem(pid)
         if sub == 'rig' and metodo == 'GET':
             p = srs.obter_personagem(pid)
-            return {'rig_id': p['rig_id'], 'versao': p['versao'], 'dados': p['dados'], 'aprovado': p['aprovado']}
+            import rig2d
+            bib = rig2d.biblioteca(p['dados'], pg.DADOS / 'rig2d')
+            return {'rig_id': p['rig_id'], 'versao': p['versao'], 'dados': p['dados'], 'aprovado': p['aprovado'], 'biblioteca': bib}
         if sub == 'rig' and metodo == 'PUT':
             return srs.salvar_rig(pid, corpo())
         if sub == 'folha' and metodo == 'GET':
@@ -321,7 +343,8 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     m = re.fullmatch(r'/api/v1/projetos/(\w+)/cenas/(\d{1,3})/refazer', caminho)
     if m and metodo == 'POST':
         d = corpo()
-        return {'job': produtor.refazer_cena(m.group(1), int(m.group(2)), bool(d.get('imagem')), bool(d.get('voz')), quem)}
+        return {'job': produtor.refazer_cena(m.group(1), int(m.group(2)), bool(d.get('imagem')), bool(d.get('voz')), quem,
+                                             re.sub(r'[^\w-]', '', str(d.get('plano') or ''))[:20])}
     m = re.fullmatch(r'/api/v1/projetos/(\w+)/cenas/(\d{1,3})/previa-ab', caminho)
     if m and metodo == 'POST':
         d = corpo()
@@ -446,7 +469,7 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
 
     # ---- Agente 3
     if rota == ('GET', '/api/v1/agente3/catalogo'):
-        return {'estilos': ec.catalogo(), 'vozes': produtor.VOZES, 'tipos': produtor.TIPOS, 'estados': produtor.ESTADOS,
+        return {'estilos': _estilos_com_3d(), 'vozes': produtor.VOZES, 'tipos': produtor.TIPOS, 'estados': produtor.ESTADOS,
                 'briefing': produtor.BRIEFING_PADRAO, 'formatos': list(ec.FORMATOS), 'ffmpeg': rd.tem_ffmpeg(), 'requisitos': produtor.requisitos(),
                 'demos': {f'{e["id"]}:{f}': db.kv(f'demo:{e["id"]}:{f}:{ec.VERSAO_MOTOR}') for e in ec.catalogo() for f in ec.FORMATOS
                           if db.kv(f'demo:{e["id"]}:{f}:{ec.VERSAO_MOTOR}')},
@@ -514,6 +537,19 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     # ---- backups, diagnóstico e registro
     if rota == ('GET', '/api/v1/diagnostico'):
         return backups.diagnostico()
+    if rota == ('GET', '/api/v1/3d'):
+        j = db.um("SELECT id, status, etapa, progresso, erro FROM jobs WHERE tipo='aparelho.testar3d' ORDER BY criado DESC LIMIT 1")
+        return {'videos': hardware.registrar_videos_3d(), 'laudo': db.kv('diagnostico_3d'), 'job': j}
+    if rota == ('POST', '/api/v1/3d/testar'):
+        return hardware.pedir_teste_3d()
+    if rota == ('GET', '/api/v1/metricas'):
+        return backups.metricas()
+    m = re.fullmatch(r'/api/v1/midias-backup/restaurar/([\w-]{1,40})', caminho)
+    if m and metodo == 'POST':
+        try:
+            return backups.restaurar_projeto(m.group(1), corpo().get('categorias') or None, str(corpo().get('manifesto') or ''))
+        except FileNotFoundError as e:
+            raise pj.ErroProjeto(404, str(e))
     if rota == ('GET', '/api/v1/aparelho'):
         return _aparelho()
     if rota == ('POST', '/api/v1/aparelho/testar'):

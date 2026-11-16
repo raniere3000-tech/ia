@@ -15,7 +15,7 @@ const ST_Q:Record<Qualidade['status'],[string,string,string]>={
   analise_indisponivel:['Não conferido','','Não deu para analisar os quadros desta vez.'],
   falha_tecnica:['Falha técnica','bad','O arquivo final tem um problema técnico.'],
 };
-const NOME_T:Record<string,string>={quadro_escuro:'Quadro escuro',sem_detalhe:'Imagem sem detalhe',plano_repetido:'Plano repetido',sem_imagem:'Cena sem foto',ritmo:'Ritmo',analise_indisponivel:'Sem análise',narrativa:'Roteiro',continuidade:'Continuidade da série'};
+const NOME_T:Record<string,string>={quadro_escuro:'Quadro escuro',sem_detalhe:'Imagem sem detalhe',plano_repetido:'Plano repetido',sem_imagem:'Cena sem foto',ritmo:'Ritmo',analise_indisponivel:'Sem análise',narrativa:'Roteiro',continuidade:'Continuidade da série',sai_do_quadro:'Sai do quadro',cabeca_cortada:'Cabeça cortada',sobreposicao:'Um esconde o outro',boca_parada:'Boca parada',visual_ia:'Opinião da IA'};
 /** Relatório do diretor de qualidade: cada ponto com a cena, o instante (toque para pular até ele) e a sugestão. */
 function QualidadePainel({q,cenas}:{q:Qualidade;cenas:Cena[]}){
   const [s,cls,txt]=ST_Q[q.status]||ST_Q.analise_indisponivel;
@@ -26,7 +26,8 @@ function QualidadePainel({q,cenas}:{q:Qualidade;cenas:Cena[]}){
     <p className="subtitle">{txt}</p>
     {q.problemas.length>0&&<ul className="qd-lista">{q.problemas.map((p,k)=><li key={k} className={'qd-'+p.severidade}>
       <div><b>{NOME_T[p.tipo]||p.tipo}</b>{p.cena_id&&<span className="muted"> · {nCena(p.cena_id)}</span>}{p.timecode&&<button className="link-btn" onClick={()=>pular(p.timecode)}><Clock size={12}/> {p.timecode.replace(/^00:/,'').replace(/\.\d+$/,'')} s</button>}</div>
-      <p>{p.descricao}</p>{p.correcao&&<small className="muted">Sugestão: {p.correcao}</small>}</li>)}</ul>}
+      <p>{p.descricao}</p>{p.correcao&&<small className="muted">Sugestão: {p.correcao}</small>}
+      {(p.natureza==='julgamento'||p.status==='revisao_humana'||p.evidencia)&&<small className="muted qd-extra">{p.natureza==='julgamento'?'Opinião, não medida. ':'Medido. '}{p.status==='revisao_humana'?`Tentei corrigir ${p.tentativas||0} vez(es); a decisão é sua. `:''}{p.evidencia?`(${p.evidencia})`:''}</small>}</li>)}</ul>}
     {q.tecnico.erros.length>0&&<p className="hint bad">{q.tecnico.erros.join(' ')}</p>}
   </section>;
 }
@@ -40,7 +41,7 @@ export default function Revisar(){
   const [redes,setRedes]=useState<string[]|null>(null);
   const [quando,setQuando]=useState<'proximo'|'agora'|'data'>('proximo');
   const [data,setData]=useState('');
-  const [refazer,setRefazer]=useState<{i:number;imagem:boolean;voz:boolean}|null>(null);
+  const [refazer,setRefazer]=useState<{i:number;imagem:boolean;voz:boolean;plano?:string}|null>(null);
   if(!settings.servidor) return <PrecisaServidor oque="A revisão"/>;
   if(!pid) return <section className="panel empty-state"><h2>Nenhum vídeo escolhido</h2><button className="primary" onClick={()=>go('fila')}>Abrir Fila e aprovações</button></section>;
   const r=rev.dados;
@@ -114,6 +115,8 @@ export default function Revisar(){
     <ol className="cenas-lista">{(d.cenas||[]).map((c,i)=><li key={c.id}><b>{c.titulo}</b>{c.bloqueada&&<Lock size={12}/>} {c.destaque&&<span className="tag">{c.destaque}</span>}<p>{c.texto}</p>{c.clipe?.dur?<small className="muted">{c.clipe.dur.toFixed(1)} s</small>:null}
       {esperandoVideo&&render&&(refazer?.i===i?<div className="refazer-box">
         <p className="hint">O celular faz de novo só esta cena; as outras ficam iguais. Depois o vídeo volta para você aprovar.</p>
+        {(c.planos||[]).length>1&&<label className="field-label">O que refazer
+         <select value={refazer.plano||''} onChange={e=>setRefazer({...refazer,plano:e.target.value})}><option value="">A cena toda</option>{(c.planos||[]).map((p,k)=><option key={k} value={p.id||`p${k+1}`}>Só o plano {k+1} ({p.plano}{p.personagem?` em ${p.personagem}`:''}): o resto vem pronto</option>)}</select></label>}
         <label className="check"><input type="checkbox" checked={refazer.imagem} onChange={e=>setRefazer({...refazer,imagem:e.target.checked})}/> Trocar a foto ou imagem</label>
         <label className="check"><input type="checkbox" checked={refazer.voz} onChange={e=>setRefazer({...refazer,voz:e.target.checked})}/> Gravar a narração de novo</label>
         <div className="row-gap left"><button className="primary sm" disabled={!!busy} onClick={()=>fazer('cena',async()=>{ await refazerCena(cfg,pid,i,refazer); setRefazer(null); },`Refazendo a cena ${i+1}.`)}>{busy==='cena'?<Loader2 size={14} className="spin"/>:<RotateCcw size={14}/>} Refazer a cena {i+1}</button>

@@ -23,6 +23,7 @@ export function CamposBriefing({b,set,cat}:{b:Partial<Briefing>;set:(p:Partial<B
     <label>Ritmo da fala<select value={b.ritmo||'agil'} onChange={e=>set({ritmo:e.target.value})}><option value="calmo">Calmo</option><option value="normal">Normal</option><option value="agil">Ágil (bom para vídeo curto)</option><option value="rapido">Rápido</option></select></label>
     <label>Imagens de cada cena<select value={b.imagens||'nenhuma'} onChange={e=>set({imagens:e.target.value})}><option value="busca">Fotos reais remodeladas no estilo (grátis)</option><option value="nenhuma">Sem fotos (só desenhos do estilo)</option><option value="gemini">Imagem criada por IA em cada cena (tem custo)</option></select></label>
     <label>Quem confere<select value={b.modo_aprovacao||'assistido'} onChange={e=>set({modo_aprovacao:e.target.value as Briefing['modo_aprovacao']})}><option value="assistido">Aprovo o roteiro e depois o vídeo</option><option value="supervisionado">Aprovo só o vídeo pronto</option></select></label>
+    <label className="check"><input type="checkbox" checked={!!b.qa_visao} onChange={e=>set({qa_visao:e.target.checked})}/> A IA também olha os quadros do vídeo pronto (opcional, gasta a chave paga; é só opinião, não bloqueia)</label>
    </div>
    <details className="mt"><summary>Mais opções (nicho, público, número de cenas, limite de gasto)</summary><div className="small-grid">
     <label>Nicho<input value={b.nicho||''} onChange={e=>set({nicho:e.target.value})} placeholder="Curiosidades, Games, História..."/></label>

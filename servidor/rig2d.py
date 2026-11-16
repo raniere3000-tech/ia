@@ -8,7 +8,12 @@ Como funciona:
 - A boca segue o volume da fala do personagem que está falando (aproximação por volume, sem fonemas).
 - A IA só escolhe ações de uma lista fechada, com números dentro de faixas. Nada é executado a partir do texto.
 
-Limites conhecidos (ditos na tela): só vista de frente (sem ¾ e perfil), sem IK, caminhada estilizada.
+- Poses prontas (biblioteca versionada), objetos na mão (bola, caixa, livro...) e alcançar um ponto com IK de dois ossos
+  (ombro > cotovelo > mão, resolvido uma vez por ação; o braço chega exatamente no alvo).
+- Boca: com o texto da fala, as vogais do texto escolhem a forma da boca em cada sílaba que o volume acha
+  ("texto + volume"); sem texto, só o volume. As duas são aproximações (não há alinhamento fonético) e o modo usado é registrado.
+
+Limites conhecidos (ditos na tela): só vista de frente (sem ¾ e perfil), caminhada estilizada, IK só nos braços.
 """
 from __future__ import annotations
 
@@ -48,7 +53,23 @@ ACOES = {
     'rir': ('rir', 1.5, 'feliz'),
     'assustar': ('levar um susto', 1.0, 'surpreso'),
     'falar': ('gesticular enquanto fala', 0, ''),
+    'alcancar': ('esticar o braço até um ponto (alvo: chao = agacha e pega embaixo, mesa, alto, frente; lado: esquerda ou direita)', 1.4, ''),
+    'pose': ('fazer uma pose pronta e segurar (pose: um nome da lista de poses)', 2.0, ''),
 }
+# poses prontas: ângulo somado em cada junta (radianos, mesmo sentido das ações). Versão junto com o rig.
+POSES = {
+    'maos_na_cintura': {'braco_e': 0.55, 'antebraco_e': -1.9, 'braco_d': -0.55, 'antebraco_d': 1.9},
+    'bracos_cruzados': {'braco_e': -0.35, 'antebraco_e': -1.95, 'braco_d': 0.35, 'antebraco_d': 1.95, 'cabeca': 0.05},
+    'pensativo': {'braco_d': -0.2, 'antebraco_d': 2.35, 'braco_e': -0.3, 'antebraco_e': -1.5, 'cabeca': 0.14},
+    'comemorar': {'braco_e': 2.6, 'antebraco_e': 0.25, 'braco_d': -2.6, 'antebraco_d': -0.25},
+    'timido': {'braco_e': -0.12, 'antebraco_e': -0.55, 'braco_d': 0.12, 'antebraco_d': 0.55, 'cabeca': -0.12, 'tronco': -0.03},
+    'explicando': {'braco_d': -0.55, 'antebraco_d': 0.95, 'braco_e': 0.25, 'antebraco_e': -0.4},
+}
+OBJETOS = ('bola', 'caixa', 'livro', 'copo', 'celular', 'flor')
+ALVOS_ALCANCE = {   # ponto que a mão busca, em unidades, a partir do ombro (x para fora do corpo; y para baixo)
+    'chao': (8.0, 27.0), 'mesa': (13.0, 18.0), 'alto': (6.0, -24.0), 'frente': (22.0, 4.0),
+}
+L_BRACO, L_ANTEBRACO = 14.5, 14.1      # ombro > cotovelo; cotovelo > centro da mão
 JUNTAS = ('tronco', 'cabeca', 'braco_e', 'antebraco_e', 'braco_d', 'antebraco_d', 'coxa_e', 'canela_e', 'coxa_d', 'canela_d')
 BASE = {'braco_e': 0.12, 'braco_d': -0.12, 'antebraco_e': 0.05, 'antebraco_d': -0.05, 'coxa_e': 0.04, 'coxa_d': -0.04,
         'canela_e': -0.04, 'canela_d': 0.04}
@@ -102,8 +123,18 @@ def validar_elenco(lista, ids_validos: set | None = None, dur_max: float = 60.0)
         for a in (e.get('acoes') if isinstance(e.get('acoes'), list) else [])[:12]:
             if not isinstance(a, dict) or a.get('tipo') not in ACOES:
                 continue
-            acoes.append({'t': round(_num(a.get('t'), 0.0, 0.0, dur_max), 2), 'tipo': a['tipo'],
-                          'alvo': a.get('alvo') if a.get('alvo') in ('esquerda', 'direita', 'centro', 'cima', 'baixo') else '',
+            alvos_ok = ('esquerda', 'direita', 'centro', 'cima', 'baixo') + (tuple(ALVOS_ALCANCE) if a['tipo'] == 'alcancar' else ())
+            extra = {}
+            if a.get('objeto') in OBJETOS and a['tipo'] in ('pegar', 'segurar', 'entregar', 'alcancar', 'apontar', 'acenar'):
+                extra['objeto'] = a['objeto']
+            if a['tipo'] == 'pose':
+                if a.get('pose') not in POSES:
+                    continue
+                extra['pose'] = a['pose']
+            if a['tipo'] == 'alcancar':
+                extra['lado'] = a.get('lado') if a.get('lado') in ('esquerda', 'direita') else 'direita'
+            acoes.append({**extra, 't': round(_num(a.get('t'), 0.0, 0.0, dur_max), 2), 'tipo': a['tipo'],
+                          'alvo': a.get('alvo') if a.get('alvo') in alvos_ok else '',
                           'intensidade': round(_num(a.get('intensidade'), 1.0, 0.2, 1.5), 2),
                           'dur': round(_num(a.get('dur'), ACOES[a['tipo']][1], 0.0, dur_max), 2)})
         acoes.sort(key=lambda a: a['t'])
@@ -286,6 +317,61 @@ def _palpebras(p) -> _Peca:
     return t
 
 
+def _objeto(nome: str) -> _Peca:
+    """Objetos que a mão segura (pivô = centro da mão). Desenho fixo: o mesmo objeto sai igual em todo plano."""
+    t = _Peca(9)
+    if nome == 'bola':
+        t.eli(0, 2.5, 4.6, 4.6, '#e63946')
+        t.lin(-4.4, 2.5, 4.4, 2.5, '#ffffff', 0.7)
+        t.eli(-1.4, 0.6, 1.1, 1.1, '#ffffff', alfa=150)
+    elif nome == 'caixa':
+        t.ret(-6, -1, 6, 8, '#c8955c', 0.4)
+        t.lin(-6, 2.2, 6, 2.2, '#8a6239', 0.6)
+        t.lin(0, -1, 0, 8, '#8a6239', 0.6)
+    elif nome == 'livro':
+        t.ret(-4.6, -1, 4.6, 7.5, '#2a6f97', 0.5)
+        t.ret(-4.0, 6.3, 4.0, 7.1, '#f1f1f1')
+        t.lin(-4.6, -1, -4.6, 7.5, '#1b4965', 0.8)
+    elif nome == 'copo':
+        t.pol([(-2.6, -2), (2.6, -2), (2.0, 5.5), (-2.0, 5.5)], '#dfe7ef')
+        t.ret(-2.3, -0.4, 2.3, 1.2, '#8b5a2b')
+    elif nome == 'celular':
+        t.ret(-2.2, -3.5, 2.2, 4.5, '#1d1d1d', 0.6)
+        t.ret(-1.7, -2.9, 1.7, 3.6, '#5fa8d3', 0.3)
+    elif nome == 'flor':
+        t.lin(0, 0, 0, -8, '#2d6a4f', 0.7)
+        for k in range(5):
+            a = 2 * math.pi * k / 5
+            t.eli(1.8 * math.cos(a), -9.5 + 1.8 * math.sin(a), 1.4, 1.4, '#ff8fab')
+        t.eli(0, -9.5, 1.0, 1.0, '#ffd166')
+    return t
+
+
+def objetos(pasta_base: Path) -> dict:
+    pasta = pasta_base / f'objetos-v{VERSAO_RIG}'
+    pasta.mkdir(parents=True, exist_ok=True)
+    out = {}
+    for n in OBJETOS:
+        a = pasta / f'{n}.png'
+        if not a.exists():
+            _objeto(n).t.salvar(a)
+        out[n] = a
+    return out
+
+
+def biblioteca(p: dict, pasta_base: Path) -> dict:
+    """Ficha do rig deste personagem: versão, assinatura das peças (sha256 de cada PNG), poses, ações e objetos.
+    Duas cenas com a mesma assinatura usam exatamente as mesmas peças (proporção e roupa não mudam escondido)."""
+    import hashlib as _h
+    p = validar_personagem(p)
+    arqs = pecas(p, pasta_base)
+    return {'rig_id': RIG_ID, 'versao_rig': VERSAO_RIG, 'assinatura': assinatura(p),
+            'pecas': {n: _h.sha256(a.read_bytes()).hexdigest()[:12] for n, a in sorted(arqs.items())},
+            'poses': sorted(POSES), 'acoes': sorted(ACOES), 'objetos': list(OBJETOS), 'alcance': sorted(ALVOS_ALCANCE),
+            'proporcoes': {'altura': p['altura'], 'corpo': p['corpo'], 'braco': L_BRACO, 'antebraco': L_ANTEBRACO},
+            'limites': 'Só vista de frente; IK só nos braços; boca por aproximação (texto + volume), sem fonemas.'}
+
+
 def pecas(p: dict, pasta_base: Path) -> dict:
     """Desenha (ou reaproveita) as peças deste personagem. Devolve {nome: arquivo PNG}."""
     p = validar_personagem(p)
@@ -362,6 +448,26 @@ def _rot(a: E, ox: float, oy: float) -> tuple[E, E]:
         return E(ox * c - oy * s), E(ox * s + oy * c)
     c, s = _cos(a), _sin(a)
     return c * ox + s * (-oy), s * ox + c * oy
+
+
+def ik2(tx: float, ty: float, l1: float = L_BRACO, l2: float = L_ANTEBRACO, dobra: int = 1) -> tuple[float, float]:
+    """IK de dois ossos (ombro > cotovelo > mão). Alvo (tx, ty) a partir do ombro, na tela (y para baixo).
+    Devolve (ângulo do braço, ângulo do antebraço em relação ao braço), na convenção das peças (0 = apontando para baixo).
+    Alvo longe demais: o braço estica na direção dele; perto demais: dobra o máximo."""
+    d = math.hypot(tx, ty)
+    d = max(abs(l1 - l2) + 0.5, min(l1 + l2 - 0.01, d)) if d > 1e-6 else abs(l1 - l2) + 0.5
+    phi = math.atan2(-tx, ty)                         # direção do alvo (osso em ângulo a aponta para (-sin a, cos a))
+    alfa = math.acos(max(-1.0, min(1.0, (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d))))
+    a1 = phi + dobra * alfa
+    ex, ey = -l1 * math.sin(a1), l1 * math.cos(a1)    # cotovelo
+    a2g = math.atan2(-(tx - ex), ty - ey)             # direção cotovelo > alvo
+    return a1, (a2g - a1 + math.pi) % (2 * math.pi) - math.pi
+
+
+def mao(a1: float, a2: float, l1: float = L_BRACO, l2: float = L_ANTEBRACO) -> tuple[float, float]:
+    """Onde a mão fica (cinemática direta), para conferir o IK."""
+    ex, ey = -l1 * math.sin(a1), l1 * math.cos(a1)
+    return ex - l2 * math.sin(a1 + a2), ey + l2 * math.cos(a1 + a2)
 
 
 def _env(t0: float, t1: float, sub: float = 0.3, desce: float | None = None) -> str:
@@ -489,6 +595,24 @@ def canais(el: dict, dur: float, x0: float, u: float, W: int) -> tuple[dict, E, 
             ang['tronco'] = ang['tronco'] + E(0, [f'{0.04 * k:.3f}*{env}*sin(2*PI*4.5*(t-{t0:.3f}))'])
             soma('braco_e', -0.3)
             soma('antebraco_e', -1.0)
+        elif tp == 'pose':
+            for j, v in POSES.get(a.get('pose'), {}).items():
+                soma(j, v)
+        elif tp == 'alcancar':
+            ld = -1 if a.get('lado') == 'esquerda' else 1
+            ax, ay = ALVOS_ALCANCE.get(a.get('alvo') or 'frente', ALVOS_ALCANCE['frente'])
+            # braço esquerdo da tela: "para fora" é x negativo; o cotovelo dobra para fora do corpo
+            a1, a2 = ik2(ax * ld, ay, dobra=-ld)
+            sb, sa = ('braco_d', 'antebraco_d') if ld > 0 else ('braco_e', 'antebraco_e')
+            ang[sb] = ang[sb] + E(0, [f'{(a1 - BASE[sb]):.4f}*{env}'])
+            ang[sa] = ang[sa] + E(0, [f'{(a2 - BASE[sa]):.4f}*{env}'])
+            if a.get('alvo') == 'chao':     # agacha (joelhos para fora) para a mão chegar perto do chão
+                dy = dy + E(0, [f'{12.9 * u:.2f}*{env}'])   # 48,5 - (24 cos 0,85 + 21,5 cos 0,4): pés ficam no chão
+                soma('coxa_e', 0.85)
+                soma('coxa_d', -0.85)
+                soma('canela_e', -1.25)
+                soma('canela_d', 1.25)
+                soma('tronco', 0.06 * ld)
         elif tp == 'falar':
             for j, v, f in (('braco_e', 0.22, 0.7), ('antebraco_e', -0.35, 0.7), ('braco_d', -0.18, 0.55), ('antebraco_d', 0.3, 0.55)):
                 ang[j] = ang[j] + E(0, [f'{v * k:.3f}*{env}*(0.5+0.5*sin(2*PI*{f}*(t-{t0:.3f})+{fase:.2f}))'])
@@ -543,6 +667,37 @@ def niveis_fala(wav: Path | None, dur: float, passo: float = 1 / 12) -> list[int
     return out
 
 
+_VOGAL = {**{v: 2 for v in 'aáâãà'}, **{v: 3 for v in 'oóôõuúü'}, **{v: 4 for v in 'eéêiíy'}}
+
+
+def nucleos(texto: str) -> list[int]:
+    """Forma da boca de cada sílaba do texto (pela primeira vogal de cada grupo de vogais): 2 = 'a', 3 = 'o/u', 4 = 'e/i'."""
+    return [_VOGAL[g[0]] for g in re.findall(r'[aáâãàoóôõuúüeéêiíy]+', (texto or '').lower())]
+
+
+def visemas(wav: Path | None, dur: float, texto: str = '', passo: float = 1 / 12) -> tuple[list[int], str]:
+    """Níveis de boca + o modo usado. Com texto: cada trecho falado (o volume acha) recebe a vogal da sílaba
+    correspondente do texto, na ordem ('texto + volume'). Sem texto: só o volume ('volume'). Nunca é fonético."""
+    nv = niveis_fala(wav, dur, passo)
+    if not any(nv):
+        return nv, 'sem fala'
+    nuc = nucleos(texto)
+    if not nuc:
+        return nv, 'volume (aproximação)'
+    trechos, ini = [], None
+    for i, v in enumerate(nv + [0]):
+        if v >= 2 and ini is None:
+            ini = i
+        elif v < 2 and ini is not None:
+            trechos.append((ini, i))
+            ini = None
+    for k, (a, b) in enumerate(trechos):
+        forma = nuc[min(len(nuc) - 1, int(k * len(nuc) / max(1, len(trechos))))]
+        for i in range(a, b):
+            nv[i] = forma
+    return nv, 'texto + volume (aproximação)'
+
+
 def _segmentos(niveis: list, valor: int, passo: float) -> list[tuple[float, float]]:
     seg, ini = [], None
     for i, v in enumerate(niveis + [-1]):
@@ -559,7 +714,7 @@ def _soma_janelas(seg: list) -> str:
 
 
 # ---------------------------------------------------------------- montagem no filtro do FFmpeg
-def colocar(c, el: dict, p: dict, arqs: dict, chao_y: float, altura_px: float, W: int, dur: float, falando: bool, wav: Path | None):
+def colocar(c, el: dict, p: dict, arqs: dict, chao_y: float, altura_px: float, W: int, dur: float, falando: bool, wav: Path | None, texto: str = ''):
     """Coloca um personagem na composição `c` (estilos_codigo.Comp). Tudo em expressões de tempo; nenhuma imagem por quadro em Python."""
     u = altura_px / 100 * p['altura']
     esc = u / K
@@ -598,8 +753,9 @@ def colocar(c, el: dict, p: dict, arqs: dict, chao_y: float, altura_px: float, W
         peca('cabeca', arqs[f'cabeca_{ex}'], _soma_janelas(seg))
     # boca: quem fala segue o volume; quem não fala fica com a boca da expressão
     passo = 1 / 12
+    modo_boca = 'calado'
     if falando:
-        nv = niveis_fala(wav, dur, passo)
+        nv, modo_boca = visemas(wav, dur, texto, passo)
         fechada = 'sorriso' if base == 'feliz' else 'triste' if base in ('triste', 'preocupado') else 'fechada'
         for valor, nome in ((0, fechada), (1, 'pequena'), (2, 'aberta'), (3, 'o'), (4, 'larga')):
             seg = _segmentos(nv, valor, passo)
@@ -621,7 +777,23 @@ def colocar(c, el: dict, p: dict, arqs: dict, chao_y: float, altura_px: float, W
         peca('cabeca', arqs['palpebras'], _soma_janelas(piscadas), (0, OLHOS_Y))
     for nome in ('braco_e', 'antebraco_e', 'braco_d', 'antebraco_d'):
         peca(nome, arqs[nome])
-    return {'x_px': x0, 'cabeca_y': chao_y - (ALTURA_QUADRIL + 31 + 11) * u, 'tronco_y': chao_y - (ALTURA_QUADRIL + 14) * u}
+    # objetos na mão: seguem a ponta do antebraço (a mão) quadro a quadro, só durante a ação
+    obj_arqs = None
+    for tp, t0, t1, a in _janelas(el['acoes'], dur):
+        if not a.get('objeto'):
+            continue
+        obj_arqs = obj_arqs or objetos(Path(arqs['tronco']).parent.parent)
+        lados = ('e', 'd') if tp in ('pegar', 'segurar') else (('e',) if (a.get('lado') or a.get('alvo')) == 'esquerda' else ('d',))
+        xs, ys = [], []
+        for ld in lados:
+            px, py, ag = mundo['antebraco_' + ld]
+            rx, ry = _rot(ag, 0, L_ANTEBRACO * u)
+            xs.append(px + rx)
+            ys.append(py + ry)
+        hx = xs[0] if len(xs) == 1 else (xs[0] + xs[1]) * 0.5
+        hy = ys[0] if len(ys) == 1 else (ys[0] + ys[1]) * 0.5
+        c.peca_girando(obj_arqs[a['objeto']], esc, '0', f'{hx}-w/2', f'{hy}-h/2', f'between(t,{t0 + 0.15:.3f},{min(t1, dur + 1):.3f})')
+    return {'modo_boca': modo_boca, 'x_px': x0, 'cabeca_y': chao_y - (ALTURA_QUADRIL + 31 + 11) * u, 'tronco_y': chao_y - (ALTURA_QUADRIL + 14) * u}
 
 
 def elenco_padrao(cena: dict, pal: tuple) -> tuple[list, dict]:

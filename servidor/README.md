@@ -41,6 +41,16 @@ tamanho, codecs e se o vídeo toca do começo ao fim. Grava `~/estudioclip-diagn
 (Ajustes > Servidor do celular > "Testar este celular"), pela fila, um trabalho pesado por vez. Medida feita fora do Android fica marcada
 "aguardando teste no Android".
 
+### Testes do motor no celular (não validados no Android ainda)
+- `python testes/piloto_rig2d.py [pasta] [--leve]`: piloto de 30 s do 2D articulado (poses, objetos, pegar coisas, boca pela fala),
+  com folha de quadros e `relatorio.json` (tempo por segundo de vídeo).
+- `python testes/gerar_demos.py [pasta] [--leve]`: 5 s de cada estilo e efeito, conferência técnica e `folha-estilos.jpg`.
+- `python testes/medir_personagens3d.py`: mede o 3D; o mesmo teste roda no site em Estilos de animação > "Testar o 3D neste celular".
+- Render por plano: cenas com 2+ planos são feitas plano a plano e guardadas; "Refazer" no Revisar pode refazer só um plano.
+  `RENDER_POR_PLANO=0` volta ao jeito antigo. Correções automáticas da conferência: `QA_MAX_CORRECOES` (padrão 2).
+- Ajustes > Servidor do celular mostra os números do servidor (`GET /api/v1/metricas`) e "Testar restauração" de um projeto
+  (restaura numa pasta separada, sem mexer no original). Backup no mesmo celular não protege contra perda do aparelho.
+
 ## Agendar posts (YouTube, Instagram, Facebook, TikTok, Kwai)
 
 O mesmo servidor guarda os cortes e publica nas **suas** contas na hora marcada, mesmo com o site fechado

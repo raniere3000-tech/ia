@@ -161,6 +161,31 @@ def conferir(video: Path, pasta: Path, esperado: dict, cancelado=None) -> dict:
                          '-af', 'silencedetect=n=-50dB:d=3', '-f', 'null', '-'], cancelado, tempo_max=1800)
     except ErroRender as e:
         avisos.append('Não deu para analisar tela preta/congelada: ' + str(e)[:120])
+    # falha de decodificação (o player travaria): o decodificador reclama durante a mesma leitura da análise
+    ruins = [ln.strip() for ln in analise.splitlines()
+             if re.search(r'error while decoding|corrupt|invalid nal|concealing|missing picture', ln, re.I)]
+    if ruins:
+        erros.append(f'O vídeo tem {len(ruins)} erro(s) de decodificação (ex.: {ruins[0][:120]}).')
+    dts = [ln for ln in analise.splitlines() if re.search(r'non[- ]monoton', ln, re.I)]
+    if dts:      # carimbo de tempo repetido na junção das cenas: os players toleram, mas fica registrado
+        avisos.append(f'{len(dts)} carimbo(s) de tempo repetido(s) na junção das cenas.')
+    # carimbos de tempo: som e imagem com durações bem diferentes = dessincronia ou trecho faltando
+    dv, da = float((v or {}).get('duration') or 0), float((a or {}).get('duration') or 0)
+    if dv and da and abs(dv - da) > 0.5:
+        avisos.append(f'Som ({da:.2f}s) e imagem ({dv:.2f}s) com durações diferentes.')
+    if v and float(v.get('start_time') or 0) > 0.2:
+        avisos.append(f'A imagem começa atrasada ({float(v["start_time"]):.2f}s).')
+    # exportação completa: quadros gravados x esperados pela duração
+    try:
+        nq = int(v.get('nb_frames') or 0) if v else 0
+        num, den = (v.get('avg_frame_rate') or '0/1').split('/') if v else ('0', '1')
+        fps = float(num) / float(den or 1) if float(den or 1) else 0
+    except (ValueError, ZeroDivisionError):
+        nq, fps = 0, 0
+    if nq and fps and dv and nq < dv * fps * 0.9:
+        erros.append(f'Faltam quadros: {nq} gravados para {dv * fps:.0f} esperados.')
+    if esperado.get('srt'):
+        erros += conferir_srt(Path(esperado['srt']), dur)
     pretos = re.findall(r'black_start:([\d.]+) black_end:([\d.]+)', analise)
     congel = re.findall(r'freeze_duration: ([\d.]+)', analise)
     silencio = re.findall(r'silence_duration: ([\d.]+)', analise)
@@ -176,6 +201,23 @@ def conferir(video: Path, pasta: Path, esperado: dict, cancelado=None) -> dict:
     return {'ok': not erros, 'erros': erros, 'avisos': avisos, 'duracao': dur, 'largura': int(v.get('width', 0)) if v else 0,
             'altura': int(v.get('height', 0)) if v else 0, 'codec': v.get('codec_name') if v else '', 'audio': a.get('codec_name') if a else '',
             'tamanho': video.stat().st_size, 'quadros': [str(f) for f in fotos]}
+
+
+def conferir_srt(arq: Path, dur: float) -> list:
+    """Legenda: arquivo legível, tempos em ordem, cada fala com começo antes do fim e dentro do vídeo."""
+    if not arq.exists():
+        return ['A legenda (SRT) não foi gerada.']
+    def seg(x):
+        h, m, r = x.replace(',', '.').split(':')
+        return int(h) * 3600 + int(m) * 60 + float(r)
+    ant, erros = -1.0, []
+    for k, (a, b) in enumerate(re.findall(r'(\d\d:\d\d:\d\d,\d{3}) --> (\d\d:\d\d:\d\d,\d{3})', arq.read_text(encoding='utf-8', errors='replace'))):
+        ta, tb = seg(a), seg(b)
+        if tb <= ta or ta < ant - 0.01 or tb > dur + 0.5:
+            erros.append(f'Legenda {k + 1} com tempo errado ({a} --> {b}).')
+            break
+        ant = ta
+    return erros
 
 
 def preview_leve(video: Path, saida: Path, cancelado=None):

@@ -140,16 +140,17 @@ export type Capacidade={limites:Record<string,number>;rodando:{id:string;tipo:st
 export const lerCapacidade=(cfg:CfgSrv)=>api<Capacidade>(cfg,'GET','/api/v1/capacidade');
 
 // ---------------------------------------------------------------- Agente 3
-export type EstiloInfo={id:string;nome:string;descricao:string;tecnica:string;status:'operacional'|'beta'|'indisponivel';prioridade:string;paleta:string[];precisa_imagem:boolean;servidor:boolean;formatos:string[];custo:string};
+export type DemoInfo={asset:string;segundos:number;onde?:string;seg_por_seg?:number;motor?:number};
+export type EstiloInfo={id:string;nome:string;descricao:string;tecnica:string;status:'operacional'|'beta'|'indisponivel';prioridade:string;paleta:string[];precisa_imagem:boolean;servidor:boolean;formatos:string[];custo:string;tecnologia?:string;limites?:string};
 export type Chave={t:number;zoom:number;x:number;y:number};
 export type Plano={id:string;plano:'WS'|'MS'|'CU'|'ECU';personagem?:string;angulo?:'normal'|'baixo'|'alto'|'inclinado';luz?:''|'neutra'|'quente'|'fria'|'noite'|'dramatica';chaves?:Chave[];camera?:string;foco_x?:number;foco_y?:number;peso?:number;busca?:string;intencao?:string};
-export type Problema={tipo:string;severidade:'baixa'|'media'|'alta';descricao:string;correcao:string;cena_id:string;plano_id:string;timecode:string|null};
-export type Qualidade={status:'falha_tecnica'|'alerta_visual'|'analise_indisponivel'|'apto_para_revisao_humana';problemas:Problema[];gerado:number;tecnico:{erros:string[];avisos:string[]}};
+export type Problema={tipo:string;severidade:'baixa'|'media'|'alta';descricao:string;correcao:string;cena_id:string;plano_id:string;timecode:string|null;evidencia?:string;status?:'aberto'|'revisao_humana';tentativas?:number;natureza?:'objetivo'|'julgamento'};
+export type Qualidade={status:'falha_tecnica'|'alerta_visual'|'analise_indisponivel'|'apto_para_revisao_humana';problemas:Problema[];gerado:number;revisao_humana?:number;tecnico:{erros:string[];avisos:string[]}};
 export type Cena={id:string;audio_manual?:{asset:string;nome:string}|null;clima?:'nenhum'|'chuva'|'neve'|'poeira'|'neblina';luz?:'neutra'|'quente'|'fria'|'noite'|'dramatica';planos?:Plano[];elenco?:{personagem_id:string;posicao:string;expressao?:string;acoes?:{t:number;tipo:string;alvo?:string}[]}[];cenario_id?:string;busca?:string;titulo:string;texto:string;destaque?:string;numero?:number|null;unidade?:string;personagem?:string;prompt_visual?:string;duracao_alvo?:number;bloqueada?:boolean;elementos?:{rotulo:string;valor:number}[];audio?:{dur:number}|null;clipe?:{dur:number}|null};
 export type Briefing={tema:string;nicho:string;publico:string;objetivo:string;idioma:string;tipo:string;descricao:string;origem:string;referencias:string;duracao_alvo:number;formato:string;cenas_qtd:number;
-  estilo:string;paleta:string[];voz:string;ritmo?:string;trilha:string;imagens:string;modo_aprovacao:'assistido'|'supervisionado';prioridade:number;orcamento_max:number;max_tentativas:number;
+  estilo:string;paleta:string[];voz:string;ritmo?:string;trilha:string;imagens:string;modo_aprovacao:'assistido'|'supervisionado';qa_visao?:boolean;prioridade:number;orcamento_max:number;max_tentativas:number;
   destinos:{redes:string[];quando:'proximo'|'agora'|'data';data?:number;titulo?:string;legenda?:string};temas:string[]};
-export type Catalogo={estilos:EstiloInfo[];vozes:string[];tipos:string[];estados:Record<string,string>;briefing:Briefing;formatos:string[];ffmpeg:boolean;requisitos?:{ffmpeg:boolean;gemini:boolean;email:boolean;pexels:boolean;numpy:boolean};demos:Record<string,{asset:string;segundos:number}>;efeitos?:{id:string;nome:string;demos:Record<string,{asset:string;segundos:number}>}[]};
+export type Catalogo={estilos:EstiloInfo[];vozes:string[];tipos:string[];estados:Record<string,string>;briefing:Briefing;formatos:string[];ffmpeg:boolean;requisitos?:{ffmpeg:boolean;gemini:boolean;email:boolean;pexels:boolean;numpy:boolean};demos:Record<string,DemoInfo>;efeitos?:{id:string;nome:string;demos:Record<string,{asset:string;segundos:number}>}[]};
 export type Ideia={titulo:string;gancho:string;porque:string;tipo:string;fato:boolean;fontes:{titulo:string;url:string}[];ficha?:import('../components/Ficha').FichaServidor};
 export type Roteiro={titulo:string;alternativas:string[];gancho:string;publico:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[];cenas:Cena[];avisos?:string[];skills_usadas?:string[]};
 export const catalogo=(cfg:CfgSrv)=>api<Catalogo>(cfg,'GET','/api/v1/agente3/catalogo');
@@ -176,7 +177,7 @@ export const pendentes=(cfg:CfgSrv)=>api<{pendentes:Pendente[]}>(cfg,'GET','/api
 export const lerRevisao=(cfg:CfgSrv,id:string)=>api<Revisao>(cfg,'GET',`/api/v1/projetos/${id}/revisao`);
 export const aprovar=(cfg:CfgSrv,id:string,render_sha:string,destinos?:Partial<Briefing['destinos']>)=>
   api<{ok:boolean;quando?:number;posts:{id:string}[];repetido?:boolean}>(cfg,'POST',`/api/v1/projetos/${id}/aprovar`,{render_sha,destinos},{'Idempotency-Key':`site:${id}:${render_sha}`});
-export const refazerCena=(cfg:CfgSrv,id:string,i:number,o:{imagem:boolean;voz:boolean})=>api<{job:{id:string}}>(cfg,'POST',`/api/v1/projetos/${id}/cenas/${i}/refazer`,o);
+export const refazerCena=(cfg:CfgSrv,id:string,i:number,o:{imagem:boolean;voz:boolean;plano?:string})=>api<{job:{id:string}}>(cfg,'POST',`/api/v1/projetos/${id}/cenas/${i}/refazer`,o);
 export const pedirCorrecao=(cfg:CfgSrv,id:string,render_sha:string,texto:string)=>api(cfg,'POST',`/api/v1/projetos/${id}/alterar`,{render_sha,texto});
 export const rejeitar=(cfg:CfgSrv,id:string,render_sha:string,motivo:string)=>api(cfg,'POST',`/api/v1/projetos/${id}/rejeitar`,{render_sha,motivo});
 export const aprovarRoteiro=(cfg:CfgSrv,id:string,revisao?:number)=>api(cfg,'POST',`/api/v1/projetos/${id}/aprovar-roteiro`,{revisao});
@@ -205,7 +206,16 @@ export type EstadoAparelho={ficha:FichaAparelho;laudo:LaudoAparelho|null;job:{id
 export const lerAparelho=(cfg:CfgSrv)=>api<EstadoAparelho>(cfg,'GET','/api/v1/aparelho');
 export const testarAparelho=(cfg:CfgSrv)=>api<{job:string;status:string}>(cfg,'POST','/api/v1/aparelho/testar');
 export const fazerBackup=(cfg:CfgSrv)=>api<{arquivo:string;tamanho:number}>(cfg,'POST','/api/v1/backups',{});
-export type MidiasBackup={config:{ligado:boolean;categorias:string[];destino:string};destino:string;categorias:Record<string,{nome:string;arquivos:number;mb:number}>;escolhidos:number;ja_copiados:number;falta_mb:number;livre_mb:number;mesmo_aparelho:boolean;ultimos:{arquivo:string;criado:number}[]};
+export type MidiasBackup={config:{ligado:boolean;categorias:string[];destino:string;projetos?:string[]};aviso?:string;ocupado_mb?:number;destino:string;categorias:Record<string,{nome:string;arquivos:number;mb:number}>;escolhidos:number;ja_copiados:number;falta_mb:number;livre_mb:number;mesmo_aparelho:boolean;ultimos:{arquivo:string;criado:number}[]};
+export const restaurarProjetoTeste=(cfg:CfgSrv,pid:string)=>api<{ok:boolean;pasta:string;projeto_encontrado:boolean;arquivos:number;mb:number;problemas:string[]}>(cfg,'POST',`/api/v1/midias-backup/restaurar/${pid}`,{});
+export type Metricas={planos:{estilo:string;seg_por_seg:number;planos:number}[];cache_planos:{reaproveitados:number;refeitos:number};memoria:{aparelho:{total_mb:number;livre_mb:number}|null;servidor_mb:number|null};
+  espaco:{livre_mb:number;por_pasta_mb:Record<string,number>};erros_semana:Record<string,number>;tentativas:{media:number;maximo:number;trabalhos:number};
+  fila:{ativos:number;termina_em_s:number;estimativa_medida:boolean|null};motores:{estilo:string;seg_por_seg:number;cenas:number;onde:string}[];aparelho_medido:boolean;estado:string;temperatura:number|null};
+export type Video3D={asset:string;tipo:string;tamanho_kb:number;criado:number;duracao:number|null;primeiro:boolean};
+export type Laudo3D={ambiente:string;quando:number;estado:string;conclusao?:string;erro?:string;testes:{estilo:string;nome:string;ok:boolean;segundos?:number;seg_por_seg?:number;tamanho_kb?:number;erro?:string;asset?:string;memoria?:{ffmpeg_pico_mb:number|null;programa_pico_mb:number|null}}[]};
+export const lerVideos3d=(cfg:CfgSrv)=>api<{videos:Video3D[];laudo:Laudo3D|null;job:{id:string;status:string;etapa:string;progresso:number;erro:string|null}|null}>(cfg,'GET','/api/v1/3d');
+export const testar3d=(cfg:CfgSrv)=>api<{job:string;status:string}>(cfg,'POST','/api/v1/3d/testar',{});
+export const lerMetricas=(cfg:CfgSrv)=>api<Metricas>(cfg,'GET','/api/v1/metricas');
 export const lerMidiasBackup=(cfg:CfgSrv)=>api<MidiasBackup>(cfg,'GET','/api/v1/midias-backup');
 export const salvarMidiasBackup=(cfg:CfgSrv,d:Partial<MidiasBackup['config']>)=>api<MidiasBackup>(cfg,'PUT','/api/v1/midias-backup',d);
 export const fazerMidiasBackup=(cfg:CfgSrv)=>api<{novos:number;ja_existiam:number;faltando:string[];destino:string}>(cfg,'POST','/api/v1/midias-backup/fazer',{});
