@@ -5,6 +5,7 @@ import { HelpButton } from '../components/Help';
 import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/Servidor2';
 import { GradeEstilos } from './Galeria';
 import { Prontidao, CriarRapido } from '../components/Prontidao';
+import SkillPicker from '../components/SkillPicker';
 import { catalogo, ideias as pedirIdeias, gerarRoteiro, novoVideo, obterProjeto, salvarStoryboard, aprovarRoteiro, type Briefing, type Cena, type Roteiro, type Ideia, type Plano } from '../lib/api';
 
 const REDES:[string,string][]=[['youtube','YouTube'],['instagram','Instagram'],['facebook','Facebook'],['tiktok','TikTok'],['kwai','Kwai']];
@@ -88,7 +89,7 @@ export default function CriarIA(){
   const set=(p:Partial<Briefing>)=>setB(x=>({...x,...p}));
   const [ideias,setIdeias]=useState<Ideia[]>([]);
   const [roteiro,setRoteiro]=useState<Roteiro|null>(null);
-  const [colar,setColar]=useState(false); const [texto,setTexto]=useState('');
+  const [colar,setColar]=useState(false); const [texto,setTexto]=useState(''); const [extrasSk,setExtrasSk]=useState<string[]>([]);
   const [busy,setBusy]=useState('');
   const [quando,setQuando]=useState('');
   const [pid,setPid]=useState(''); const [rev,setRev]=useState(0);
@@ -128,15 +129,17 @@ export default function CriarIA(){
    <section className="panel">
     <div className="section-head"><h2><Wand2 size={17}/> 2. Roteiro, cena por cena <HelpButton topic="storyboard"/></h2></div>
     <div className="row-gap left">
-     <button className="primary" disabled={!!busy||!b.tema?.trim()} onClick={()=>fazer('rot',async()=>{ const r=await gerarRoteiro(cfg,b); setRoteiro(r); setPid(''); })}>{busy==='rot'?<Loader2 size={15} className="spin"/>:<Wand2 size={15}/>} {roteiro?'Gerar outro roteiro':'Gerar roteiro com IA'}</button>
+     <button className="primary" disabled={!!busy||!b.tema?.trim()} onClick={()=>fazer('rot',async()=>{ const r=await gerarRoteiro(cfg,b,'',extrasSk); setRoteiro(r); setPid(''); })}>{busy==='rot'?<Loader2 size={15} className="spin"/>:<Wand2 size={15}/>} {roteiro?'Gerar outro roteiro':'Gerar roteiro com IA'}</button>
      <button className="subtle" onClick={()=>setColar(!colar)}><ClipboardPaste size={15}/> Colar meu roteiro</button>
     </div>
+    <SkillPicker perfil="agente3.roteiro" valor={extrasSk} onChange={setExtrasSk}/>
     {colar&&<div className="mt"><textarea rows={6} value={texto} onChange={e=>setTexto(e.target.value)} placeholder={'Um parágrafo por cena, ou linhas "NOME: fala".\n\nNARRADOR: Você sabia que...'}/>
      <button className="subtle mt" disabled={!texto.trim()||!!busy} onClick={()=>fazer('colar',async()=>{ setRoteiro(await gerarRoteiro(cfg,b,texto)); setPid(''); setColar(false); })}>Montar cenas do meu texto (sem IA)</button></div>}
     {roteiro&&<>
      <div className="small-grid mt"><label>Título<input value={roteiro.titulo} onChange={e=>setRoteiro({...roteiro,titulo:e.target.value})}/></label>
       <label>Legenda do post<input value={roteiro.legenda} onChange={e=>setRoteiro({...roteiro,legenda:e.target.value})}/></label></div>
      {roteiro.fontes?.length>0&&<p className="hint">Fontes para conferir: {roteiro.fontes.map(f=><a key={f.url} className="help-link" href={f.url} target="_blank" rel="noreferrer">{f.titulo||'fonte'} <ExternalLink size={11}/></a>)}</p>}
+     {roteiro.skills_usadas&&roteiro.skills_usadas.length>0&&<p className="hint">Boas práticas consultadas: {roteiro.skills_usadas.join(', ')}.</p>}
      {roteiro.avisos&&roteiro.avisos.length>0&&<ul className="avisos-roteiro">{roteiro.avisos.map(a=><li key={a}>{a}</li>)}</ul>}
      <EditorCenas cenas={roteiro.cenas} set={c=>setRoteiro({...roteiro,cenas:c})}/>
     </>}

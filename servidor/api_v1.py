@@ -24,6 +24,8 @@ import postagem as pg
 import produtor
 import projetos as pj
 import renderizador as rd
+from skills import catalogo as skcat
+from skills import roteador as skrot
 
 ABERTAS = {('POST', '/api/v1/sessao/login'), ('POST', '/api/v1/pareamento/completar'), ('GET', '/api/v1/saude')}
 LIMITE_PEDACO = 8 * 1024 * 1024
@@ -114,8 +116,68 @@ def job_demo(ctx):
     return {'resultado': r, 'etapa': 'Pronto'}
 
 
+def job_skills(ctx):
+    if ctx.dados.get('oque') == 'atualizacoes':
+        r = skcat.atualizacoes(ctx)
+        return {'resultado': {'candidatas': len(r['candidatas']), 'erros': r['erros'][:10]}, 'etapa': 'Pronto'}
+    r = skcat.instalar(ctx.dados.get('ids') or None, ctx)
+    return {'resultado': {'instaladas': len(r['instaladas']), 'ja_estavam': len(r['ja_estavam']), 'falhas': r['falhas'][:20]},
+            'etapa': f'{len(r["instaladas"]) + len(r["ja_estavam"])} prontas, {len(r["falhas"])} com problema'}
+
+
+def _skills(metodo: str, caminho: str, q: dict, corpo) -> dict:
+    rota = (metodo, caminho)
+    if rota == ('GET', '/api/v1/skills'):
+        p = lambda k: q.get(k, [''])[0]
+        return {'skills': skcat.listar(p('agente'), p('estado'), p('busca')), 'resumo': skcat.resumo()}
+    if rota == ('POST', '/api/v1/skills/instalar'):
+        ids = [str(x) for x in (corpo().get('ids') or []) if isinstance(x, str)][:200]
+        j = fila.enfileirar('skills.instalar', agente='skills', dados={'ids': ids}, titulo='Instalar skills (só texto)',
+                            chave='skills-instalar-' + str(int(time.time() // 30)), max_tentativas=2)
+        return {'job': j['id']}
+    if rota == ('POST', '/api/v1/skills/validar'):
+        return skcat.verificar()
+    if rota == ('POST', '/api/v1/skills/atualizacoes'):
+        j = fila.enfileirar('skills.instalar', agente='skills', dados={'oque': 'atualizacoes'}, titulo='Procurar versões novas das skills',
+                            chave='skills-atualizacoes-' + str(int(time.time() // 30)), max_tentativas=1)
+        return {'job': j['id']}
+    if rota == ('GET', '/api/v1/skills/perfis'):
+        return {'perfis': skrot.perfis(), 'limite_max': skrot.LIMITE_MAX}
+    m = re.fullmatch(r'/api/v1/skills/perfis/([\w.]+)', caminho)
+    if m and metodo == 'PUT':
+        return skrot.salvar_perfil(m.group(1), corpo())
+    if rota == ('POST', '/api/v1/skills/selecionar'):
+        d = corpo()
+        return skrot.selecionar(str(d.get('perfil') or ''), [str(x) for x in (d.get('skills') or []) if isinstance(x, str)][:6])
+    if rota == ('POST', '/api/v1/skills/usar'):
+        # prévia do texto de apoio que entraria no pedido à IA; não roda nada e não muda conteúdo
+        d = corpo()
+        texto, usadas = skrot.orientacao(str(d.get('perfil') or ''), projeto_id=str(d.get('projeto') or '')[:40], origem='manual',
+                                         extras=[str(x) for x in (d.get('skills') or []) if isinstance(x, str)][:6])
+        return {'texto': texto, 'usadas': usadas}
+    if rota == ('GET', '/api/v1/skills/historico'):
+        return {'historico': skrot.historico(q.get('job_id', [''])[0], q.get('projeto_id', [''])[0])}
+    m = re.fullmatch(r'/api/v1/skills/([a-z0-9._-]+)(?:/(ativar|desativar|rollback|atualizar))?', caminho)
+    if m:
+        sid, acao = m.groups()
+        if metodo == 'GET' and not acao:
+            return skcat.obter(sid)
+        if metodo == 'POST' and acao in ('ativar', 'desativar'):
+            return skcat.ativar(sid, acao == 'ativar')
+        if metodo == 'POST' and acao == 'rollback':
+            return skcat.rollback(sid)
+        if metodo == 'POST' and acao == 'atualizar':
+            return skcat.aplicar_atualizacao(sid)
+    raise pj.ErroProjeto(404, 'Rota não encontrada.')
+
+
 def iniciar():
     fila.registrar('estilo.demo', job_demo, 'pesado')
+    fila.registrar('skills.instalar', job_skills, 'leve')
+    try:
+        skcat.sincronizar()
+    except Exception as e:  # catálogo com problema não impede o servidor de subir
+        db.evento('skills', 'skill_erro', 'catalogo', {'erro': str(e)[:200]})
 
 
 # ---------------------------------------------------------------- roteamento
@@ -288,7 +350,8 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         b = produtor.limpar_briefing(d.get('briefing') or d)
         if str(d.get('roteiro_texto') or '').strip():
             return produtor.ler_roteiro_colado(str(d['roteiro_texto'])[:20000], b)
-        return produtor.gerar_roteiro(b, str(d.get('ideia') or b['tema']))
+        extras = [str(x) for x in (d.get('skills') or [])[:6] if isinstance(x, str)]
+        return produtor.gerar_roteiro(b, str(d.get('ideia') or b['tema']), extras=extras)
     if rota == ('POST', '/api/v1/agente3/projetos'):
         d = corpo()
         p = produtor.novo(d, quem)
@@ -363,6 +426,12 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
             return backups.testar_midias(str(corpo().get('manifesto') or ''))
         except FileNotFoundError as e:
             raise pj.ErroProjeto(404, str(e))
+    # ---- biblioteca de skills (só texto de orientação; nada é executado)
+    if caminho.startswith('/api/v1/skills'):
+        try:
+            return _skills(metodo, caminho, q, corpo)
+        except skcat.ErroSkill as e:
+            raise pj.ErroProjeto(e.status, str(e))
     if rota == ('GET', '/api/v1/eventos'):
         n = max(1, min(_int(q.get('limite', ['50'])[0], 50), 300))
         return {'eventos': db.todos('SELECT * FROM eventos ORDER BY n DESC LIMIT ?', n)}

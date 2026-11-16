@@ -632,6 +632,12 @@ def escolher(frs: list, titulo: str, n: int, co: dict) -> list:
     blocos.append(atual)
     pedir = max(2, math.ceil(n * 2 / len(blocos)))
     achados = []
+    apoio = ''
+    try:
+        from skills import roteador
+        apoio, _ = roteador.orientacao('agente1.analisar', origem='agente1')
+    except ImportError:
+        pass
     for i, bl in enumerate(blocos):
         etapa(f'Escolhendo os melhores trechos ({i + 1} de {len(blocos)})', 50 + 10 * i / len(blocos))
         linhas = '\n'.join(f'[{f["ini"]:.1f}] {f["texto"]}' for f in bl)
@@ -647,6 +653,7 @@ def escolher(frs: list, titulo: str, n: int, co: dict) -> list:
             'valor ou emoção (25) e tendência do assunto (15).\n'
             f'Assuntos proibidos: {", ".join(co["proibidos"]) or "nenhum"}. Se o trecho tocar em um assunto proibido, marque "proibido": true.\n'
             f'Escreva título, gancho, hashtags e motivo em {IDIOMAS.get(co["idioma"], "português").lower()}, sem links e sem citar perfis.\n'
+            + (apoio + '\n' if apoio else '') +
             'Responda só com uma lista JSON de objetos: {"inicio": segundo, "fim": segundo, "nota": 0-99, "titulo": "até 70 letras, sem clickbait falso", '
             '"gancho": "frase curta de até 6 palavras para aparecer na tela", "hashtags": ["#tag", ...] (4 a 6), "motivo": "uma frase", "proibido": false}.\n\n'
             + linhas)

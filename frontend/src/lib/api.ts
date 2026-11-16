@@ -150,10 +150,10 @@ export type Briefing={tema:string;nicho:string;publico:string;objetivo:string;id
   destinos:{redes:string[];quando:'proximo'|'agora'|'data';data?:number;titulo?:string;legenda?:string};temas:string[]};
 export type Catalogo={estilos:EstiloInfo[];vozes:string[];tipos:string[];estados:Record<string,string>;briefing:Briefing;formatos:string[];ffmpeg:boolean;requisitos?:{ffmpeg:boolean;gemini:boolean;email:boolean;pexels:boolean;numpy:boolean};demos:Record<string,{asset:string;segundos:number}>};
 export type Ideia={titulo:string;gancho:string;porque:string;tipo:string;fato:boolean;fontes:{titulo:string;url:string}[]};
-export type Roteiro={titulo:string;alternativas:string[];gancho:string;publico:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[];cenas:Cena[];avisos?:string[]};
+export type Roteiro={titulo:string;alternativas:string[];gancho:string;publico:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[];cenas:Cena[];avisos?:string[];skills_usadas?:string[]};
 export const catalogo=(cfg:CfgSrv)=>api<Catalogo>(cfg,'GET','/api/v1/agente3/catalogo');
 export const ideias=(cfg:CfgSrv,b:Partial<Briefing>&{quantidade?:number})=>api<{ideias:Ideia[];radar:{titulo:string;canal:string}[]}>(cfg,'POST','/api/v1/agente3/ideias',b);
-export const gerarRoteiro=(cfg:CfgSrv,briefing:Partial<Briefing>,roteiro_texto='')=>api<Roteiro>(cfg,'POST','/api/v1/agente3/roteiro',{briefing,roteiro_texto});
+export const gerarRoteiro=(cfg:CfgSrv,briefing:Partial<Briefing>,roteiro_texto='',skills:string[]=[])=>api<Roteiro>(cfg,'POST','/api/v1/agente3/roteiro',{briefing,roteiro_texto,skills});
 export type Quando={quando:'agora'|'daqui'|'data';minutos?:number;data?:number};
 export const novoVideo=(cfg:CfgSrv,d:{briefing:Partial<Briefing>;roteiro?:Roteiro;produzir?:boolean;aprovar_roteiro?:boolean;modo?:string}&Partial<Quando>)=>api<ProjetoSrv>(cfg,'POST','/api/v1/agente3/projetos',d);
 export const produzirLote=(cfg:CfgSrv,d:{briefing:Partial<Briefing>;quantidade:number;temas:string[];intervalo_min:number}&Partial<Quando>)=>api<{criados:{projeto:string;job:string;run_at:number}[]}>(cfg,'POST','/api/v1/agente3/lote',d);

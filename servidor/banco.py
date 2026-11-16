@@ -62,6 +62,19 @@ ESQUEMA = [
     CREATE TABLE IF NOT EXISTS kv (chave TEXT PRIMARY KEY, valor TEXT);
     CREATE TABLE IF NOT EXISTS emails_lidos (message_id TEXT PRIMARY KEY, t REAL, resultado TEXT);
     """,
+    # 2: biblioteca de skills (só acrescenta)
+    """
+    CREATE TABLE IF NOT EXISTS skills_catalogo (id TEXT PRIMARY KEY, nome TEXT NOT NULL, origem_url TEXT NOT NULL, arquivo_origem TEXT NOT NULL,
+        commit_sha TEXT NOT NULL, sha256 TEXT NOT NULL, categoria TEXT NOT NULL, tipo TEXT NOT NULL, estado TEXT NOT NULL, licenca TEXT,
+        versao TEXT, deps_json TEXT NOT NULL DEFAULT '[]', capacidades_json TEXT NOT NULL DEFAULT '[]', atualizado REAL,
+        ativa INTEGER NOT NULL DEFAULT 1, motivo TEXT, ultimo_teste REAL, versao_anterior TEXT, regras_json TEXT NOT NULL DEFAULT '{}');
+    CREATE TABLE IF NOT EXISTS skills_perfis (id TEXT PRIMARY KEY, agente TEXT NOT NULL, tipo_tarefa TEXT NOT NULL,
+        skills_json TEXT NOT NULL DEFAULT '[]', limite INTEGER NOT NULL DEFAULT 4, versao INTEGER NOT NULL DEFAULT 1, ligado INTEGER NOT NULL DEFAULT 1);
+    CREATE TABLE IF NOT EXISTS skills_ativacoes (id TEXT PRIMARY KEY, skill_id TEXT NOT NULL, job_id TEXT, projeto_id TEXT, origem TEXT NOT NULL,
+        resultado TEXT, custo REAL, t REAL NOT NULL);
+    CREATE INDEX IF NOT EXISTS skills_ativacoes_job ON skills_ativacoes (job_id);
+    CREATE INDEX IF NOT EXISTS skills_ativacoes_projeto ON skills_ativacoes (projeto_id);
+    """,
 ]
 
 

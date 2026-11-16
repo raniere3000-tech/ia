@@ -252,8 +252,25 @@ def validar_roteiro(j: dict, b: dict) -> dict:
     }
 
 
-def gerar_roteiro(b: dict, ideia: str = '') -> dict:
-    return validar_roteiro(ag.gemini([{'text': _prompt_roteiro(b, ideia)}], uso='roteiro'), b)
+def apoio_skills(b: dict, pid: str = '', jid: str = '', extras: list | None = None) -> tuple[str, list]:
+    """Regras de texto das skills ligadas para o roteiro (e para os planos, no documentário). Sem skill instalada, volta vazio."""
+    try:
+        from skills import roteador
+    except ImportError:
+        return '', []
+    origem = 'manual' if extras else 'agente3'
+    texto, usadas = roteador.orientacao('agente3.roteiro', job_id=jid, projeto_id=pid, origem=origem, extras=extras)
+    if b.get('estilo') == 'documentario':
+        t2, u2 = roteador.orientacao('agente3.storyboard', job_id=jid, projeto_id=pid, origem=origem)
+        texto, usadas = (texto + '\n' + t2).strip(), usadas + u2
+    return (texto + '\n' if texto else ''), usadas
+
+
+def gerar_roteiro(b: dict, ideia: str = '', pid: str = '', jid: str = '', extras: list | None = None) -> dict:
+    apoio, usadas = apoio_skills(b, pid, jid, extras)
+    r = validar_roteiro(ag.gemini([{'text': _prompt_roteiro(b, ideia, apoio)}], uso='roteiro'), b)
+    r['skills_usadas'] = usadas
+    return r
 
 
 def ler_roteiro_colado(texto: str, b: dict) -> dict:
@@ -493,13 +510,14 @@ def etapa_roteiro(ctx, pid, p, b):
     if not p['dados'].get('cenas'):
         t0 = time.time()
         _conferir_orcamento(ctx.id, b, 0.05)
-        r = gerar_roteiro(b, b['tema'])
+        r = gerar_roteiro(b, b['tema'], pid, ctx.id)
         _custo(ctx.id, 'gemini', ag.MODELO, 'roteiro', 0.03)
         fila.medir('roteiro', time.time() - t0)
 
         def f(d, _p):
-            d['roteiro'] = {k: v for k, v in r.items() if k != 'cenas'}
+            d['roteiro'] = {k: v for k, v in r.items() if k not in ('cenas', 'skills_usadas')}
             d['cenas'] = r['cenas']
+            d['skills_usadas'] = r.get('skills_usadas', [])
             return {'titulo': r['titulo'], 'status': 'storyboard_ready'}
         pj.mudar_dados(pid, f)
         p = pj.obter(pid)

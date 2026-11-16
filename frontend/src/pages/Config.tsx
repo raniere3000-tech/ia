@@ -7,6 +7,7 @@ import { WHISPER_MODELS, IDIOMAS } from '../lib/transcribe';
 import { testarServidor, enviarCookies } from '../lib/servidor';
 import { iaAtiva } from '../lib/ia';
 import { AparelhosCard, DiagnosticoCard } from '../components/Aparelhos';
+import { SkillsCard } from './Skills';
 import { temCofre, cofreAberto, podeCofre, criarCofre, removerCofre, trancarCofre } from '../lib/cofre';
 
 function KeyField({label,value,placeholder,onSave,onTest,help,link,linkLabel}:{label:string;value:string;placeholder:string;onSave:(v:string)=>void;onTest:(v:string)=>Promise<void>;help:'youtube'|'claude'|'gemini'|'muapi';link:string;linkLabel:string}){
@@ -121,6 +122,7 @@ export default function Config(){
    <ServidorCard/>
    <AparelhosCard/>
    <DiagnosticoCard/>
+   <SkillsCard/>
 
    <section className="panel config-card">
     <div className="config-icon cap"><Captions size={22}/></div>

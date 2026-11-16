@@ -1,0 +1,2185 @@
+{
+ "versao": 1,
+ "gerado": "2026-11-16",
+ "fonte": "Anexo A do documento de melhorias (V12 diferencial)",
+ "hosts": [
+  "raw.githubusercontent.com"
+ ],
+ "skills": [
+  {
+   "id": "director-visual-language",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/director-visual-language/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "1df2fa7005e674483c48246445806554800f93571b745b128fc4ba1acd1af82d",
+   "tamanho": 2364,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "planejar linguagem de câmera"
+  },
+  {
+   "id": "shot-size-and-angle-language",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/shot-size-and-angle-language/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "2b7e77ace9f6025520b4804fa474b3e612a49f568f878cf77e5102a04bc9b1b8",
+   "tamanho": 1561,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "definir planos e ângulos"
+  },
+  {
+   "id": "storyboard-shot-design",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/storyboard-shot-design/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "c66daa297770fe752046723934ccfc3ba0d9961fddbcbd6199aedcf0126caa83",
+   "tamanho": 1967,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "planejar vários planos por cena"
+  },
+  {
+   "id": "scene-blocking-and-staging",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/scene-blocking-and-staging/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "5e1637e10e25595d9d4a8e468df250f269a0d38d833f1235c903af21a76f7b6f",
+   "tamanho": 1365,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "posicionar e movimentar elenco"
+  },
+  {
+   "id": "continuity-editing-axis-match",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/continuity-editing-axis-match/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "bfb0a92496c6053e712e883fe4be2b1b424ef4bb5e398a3d946d4067d0f56e31",
+   "tamanho": 1539,
+   "licenca": "MIT",
+   "uso": "A3/Diretor/QC",
+   "agentes": [
+    "agente3",
+    "qualidade"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "checar eixos e cortes"
+  },
+  {
+   "id": "dialogue-performance-blocking",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/dialogue-performance-blocking/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "506885385d9e16c8726838c043dfa02d736ffe623aa73c8ceab06de524cc3cf2",
+   "tamanho": 1993,
+   "licenca": "MIT",
+   "uso": "A3/Vozes",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Vozes",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "dirigir falas e atuações"
+  },
+  {
+   "id": "lighting-continuity-design",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/lighting-continuity-design/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "82d2c5476ed60f3488951e8854bc0357e377f1c2e7a77f6e539c36e3c504a708",
+   "tamanho": 1440,
+   "licenca": "MIT",
+   "uso": "A3/Diretor/QC",
+   "agentes": [
+    "agente3",
+    "qualidade"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "manter luz entre tomadas"
+  },
+  {
+   "id": "long-form-continuity-bible",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/long-form-continuity-bible/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "dd090dfc988dc8cb7bf44031d6d5c3ba6562985b87aa06e512d9bb45dc677a1b",
+   "tamanho": 2186,
+   "licenca": "MIT",
+   "uso": "A3/Séries",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Séries",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "continuar episódio/temporada"
+  },
+  {
+   "id": "world-asset-identity-lock",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/world-asset-identity-lock/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "d85cf1e5cfae56673a3fe7f02416429ccc4a21d5dddf824452634ef47f53de1c",
+   "tamanho": 1376,
+   "licenca": "MIT",
+   "uso": "A3/Séries/QC",
+   "agentes": [
+    "agente3",
+    "qualidade"
+   ],
+   "categoria": "Séries",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "preservar personagens e cenários"
+  },
+  {
+   "id": "cinematic-story-architecture",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/cinematic-story-architecture/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "a7f98c5e37781891848fb08fb7bf803a3dccb5e431b30a6d8b6ac34dd52bb4e7",
+   "tamanho": 2478,
+   "licenca": "MIT",
+   "uso": "A3/Roteiro",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Roteiro",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "escrever narrativa episódica"
+  },
+  {
+   "id": "short-drama-hook-engineering",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/short-drama-hook-engineering/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "ea81b7d4ab7d3c31d0b2295c2e59907b3aca703f0df600ba9196403105bdd3d3",
+   "tamanho": 1311,
+   "licenca": "MIT",
+   "uso": "A1/A3/Roteiro",
+   "agentes": [
+    "agente1",
+    "agente3"
+   ],
+   "categoria": "Roteiro",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "melhorar ganchos e retenção"
+  },
+  {
+   "id": "action-choreography-camera-logic",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/action-choreography-camera-logic/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "551d3a53d9c1a4931c1df28188fa657b857cb975c1aad146e647b667791b8242",
+   "tamanho": 1385,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "dirigir ação/perseguição"
+  },
+  {
+   "id": "cinema-studio-lens-look",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/cinema-studio-lens-look/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "5969da1f23fb29e84831994ff3bdf1660f2e82e654d48ca6a55866ba679c6ad6",
+   "tamanho": 1264,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "look cinematográfico"
+  },
+  {
+   "id": "cinematic-hit-marking-action-director",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/cinematic-hit-marking-action-director/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "5efb24afa379b6fd96bcb22c87aff9f1813be4a608213fa7b97351d4b7ee1687",
+   "tamanho": 2049,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "marcação temporal de impactos"
+  },
+  {
+   "id": "reference-driven-video-prompting",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/reference-driven-video-prompting/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "2fc96c50e8115bf622d5f14e2aded3ec2412dd2705079a7b6d0b93d45f786521",
+   "tamanho": 2198,
+   "licenca": "MIT",
+   "uso": "A3/Referências",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Referências",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "usar imagens/vídeos de referência"
+  },
+  {
+   "id": "environment-scene-extraction-bible",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/environment-scene-extraction-bible/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "da3c17360390b77543b79e48ef7820118c7cc1267a897d25e665b2e200f66d5d",
+   "tamanho": 1282,
+   "licenca": "MIT",
+   "uso": "A3/Séries",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Séries",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "travar geografia de cenários"
+  },
+  {
+   "id": "modular-film-prompt-bible",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/modular-film-prompt-bible/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "2460ede10ab1a0db52f76e829b8ffd1de47c5dc8589f6369df4dd3822eb240c1",
+   "tamanho": 6792,
+   "licenca": "MIT",
+   "uso": "A3/Roteiro",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Roteiro",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "compilar prompts por plano"
+  },
+  {
+   "id": "screenplay-fountain-format",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/screenplay-fountain-format/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "aa2ccbd193e786b577100aa474fea8e0a1459d1f699b0e4862430d97dee33793",
+   "tamanho": 1381,
+   "licenca": "MIT",
+   "uso": "A3/Roteiro",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Roteiro",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "roteiro estruturado"
+  },
+  {
+   "id": "commercial-ad-psychology",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/commercial-ad-psychology/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "0a6e178a255d0a339bbb22bedbdbc931aea82f2220bbead64aa04cbaaf24587d",
+   "tamanho": 1176,
+   "licenca": "MIT",
+   "uso": "A1/A3",
+   "agentes": [
+    "agente1",
+    "agente3"
+   ],
+   "categoria": "A1",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "produções comerciais e chamadas"
+  },
+  {
+   "id": "sd2-pe",
+   "repo": "nolanx-ai/nolanx.ai",
+   "caminho": "skills/sd2-pe/SKILL.md",
+   "commit": "595d86364377f654e24ddf2c9e875496d85e8246",
+   "sha256": "ffbf6117fc2044a3ab7fa48b0a1e6ebaee29aa5b178e5e57720242886b4e47fc",
+   "tamanho": 1921,
+   "licenca": "MIT",
+   "uso": "A3/Vídeo externo",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Vídeo externo",
+   "tipo": "producao",
+   "modalidade": "externo-condicional",
+   "prioridade": "P2",
+   "gatilho": "somente se Seedance estiver conectado"
+  },
+  {
+   "id": "animation-basics",
+   "repo": "VideoZero/skills",
+   "caminho": "animation-basics/SKILL.md",
+   "commit": "4836b74bfb745d8ea73cbf55ae2378d1f62b910f",
+   "sha256": "30ae2cbacb8b753e42aca04e8cdd2738dbe81fb08fe69110d3549940f6181677",
+   "tamanho": 3497,
+   "licenca": "Apache-2.0",
+   "uso": "A3/Animação",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Animação",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "cenas animadas por código"
+  },
+  {
+   "id": "motion-canvas",
+   "repo": "VideoZero/skills",
+   "caminho": "motion-canvas/SKILL.md",
+   "commit": "4836b74bfb745d8ea73cbf55ae2378d1f62b910f",
+   "sha256": "8d40c781de8eb5b74b08b6a52cb1dbe5669acb157cbe4958f1c1fa0d594e28e9",
+   "tamanho": 10104,
+   "licenca": "Apache-2.0",
+   "uso": "A3/Motion",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Motion",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "cenas animadas por código"
+  },
+  {
+   "id": "motion-canvas-agent",
+   "repo": "VideoZero/skills",
+   "caminho": "motion-canvas-agent/SKILL.md",
+   "commit": "4836b74bfb745d8ea73cbf55ae2378d1f62b910f",
+   "sha256": "a00ca5995dfcdce0e31ecf6a653e65be6c69240800f111f5f061689ba2e8f9e3",
+   "tamanho": 7056,
+   "licenca": "Apache-2.0",
+   "uso": "A3/Motion",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Motion",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "cenas animadas por código"
+  },
+  {
+   "id": "2d-character-rig-animation",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/creative-direction/2d-character-rig-animation/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "35c5f853b688cd7abd46f8737784bc3fdb790e854bd61875c78d5af6fdb61a22",
+   "tamanho": 20134,
+   "licenca": "MIT",
+   "uso": "A3/Animação",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Animação",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "personagem articulado"
+  },
+  {
+   "id": "anime-animation-production",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/content-formats/anime-animation-production/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "b8e6f2807e5c949336548eb1ef450d1a37e75020d14d14343ce447f9098a7b11",
+   "tamanho": 36653,
+   "licenca": "MIT",
+   "uso": "A3/Animação",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Animação",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "anime/desenho 2D"
+  },
+  {
+   "id": "educational-animation-production",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/content-formats/educational-animation-production/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "27a537d5f0802f344e0a60521abd2d0cee44cbd71b1fdbee42c92bd80afc66ad",
+   "tamanho": 25881,
+   "licenca": "MIT",
+   "uso": "A3/Formatos",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Formatos",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "vídeos didáticos"
+  },
+  {
+   "id": "explainer-video-production",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/content-formats/explainer-video-production/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "6f13233a77b89d3aab9622acaccf337c7b48c9478b75d24c3ffbaaa210342a07",
+   "tamanho": 31600,
+   "licenca": "MIT",
+   "uso": "A3/Formatos",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Formatos",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "explicativos"
+  },
+  {
+   "id": "social-short-production",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/content-formats/social-short-production/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "ab74fa1593456bbf69ff60530cfab13bddbd87976dce5b3a7332a9b15ef2ae3c",
+   "tamanho": 33675,
+   "licenca": "MIT",
+   "uso": "A1/A2/A3",
+   "agentes": [
+    "agente1",
+    "agente2",
+    "agente3"
+   ],
+   "categoria": "A1",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "shorts/reels"
+  },
+  {
+   "id": "documentary-montage-production",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/content-formats/documentary-montage-production/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "afd36a061781589ee6e1e6e5284c44aa9d912eb4fa675ee7522fd0510e0d41e4",
+   "tamanho": 27616,
+   "licenca": "MIT",
+   "uso": "A1/A3/Radar",
+   "agentes": [
+    "agente1",
+    "agente3",
+    "radar"
+   ],
+   "categoria": "A1",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "documentários"
+  },
+  {
+   "id": "character-design-continuity",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/creative-direction/character-design-continuity/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "ab9b8a9c6d13f656bdc5ad45004ab60868464fd8f400da0a7edfae89dd8e7889",
+   "tamanho": 25885,
+   "licenca": "MIT",
+   "uso": "A3/Séries",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Séries",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "identidade do personagem"
+  },
+  {
+   "id": "cinematic-shot-direction",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/creative-direction/cinematic-shot-direction/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "4f04d4a1c4a160be5b60082927b7a4d084edbc31105533d3794f66c136912dfd",
+   "tamanho": 31233,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "ângulos e lentes"
+  },
+  {
+   "id": "performance-direction",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/creative-direction/performance-direction/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "7a81000d406667c497ee377762e6a70a4556deecc1c049d23a9ed0979572ed18",
+   "tamanho": 22685,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "atuação e expressões"
+  },
+  {
+   "id": "storyboard-previsualization",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/creative-direction/storyboard-previsualization/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "9625d8f7e77ee68003a9496c7567eb53a397b0f705c47c251b2aeb72ecce5fd9",
+   "tamanho": 24009,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "animatic/storyboard"
+  },
+  {
+   "id": "visual-style-direction",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/creative-direction/visual-style-direction/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "bbf6f9ec4577b62669b080b51dcb5feabfc06fde619f09fa1794e6c4038dca92",
+   "tamanho": 41569,
+   "licenca": "MIT",
+   "uso": "A3/Estilos",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Estilos",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "paleta e linguagem visual"
+  },
+  {
+   "id": "lighting-direction",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/creative-direction/lighting-direction/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "22730df9e87e439601e126f0fe706b8766c53a280c6bdb34de8ae3c632105a8e",
+   "tamanho": 24875,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "iluminação"
+  },
+  {
+   "id": "motion-graphics-direction",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/post-production/motion-graphics-direction/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "b6cd8987a19f7b2c5c9a74031381bfbbf253fdc4eb4f2b020bfb2561eabc5045",
+   "tamanho": 27747,
+   "licenca": "MIT",
+   "uso": "Editor/A3",
+   "agentes": [
+    "editor",
+    "agente3"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "motion graphics"
+  },
+  {
+   "id": "title-kinetic-typography",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/post-production/title-kinetic-typography/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "e2eca84944e7b21b1de970ac5c7a91ac3a57acf27b25c1363110a2248f367d29",
+   "tamanho": 24987,
+   "licenca": "MIT",
+   "uso": "Editor/A3",
+   "agentes": [
+    "editor",
+    "agente3"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "títulos animados"
+  },
+  {
+   "id": "editing-montage",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/post-production/editing-montage/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "c1cc77a249f5607d11ab4b562a3982dfc61583a5f79dfbcc3755550fcc5cfe1a",
+   "tamanho": 30783,
+   "licenca": "MIT",
+   "uso": "A1/Editor/A3",
+   "agentes": [
+    "agente1",
+    "editor",
+    "agente3"
+   ],
+   "categoria": "A1",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "montagem e ritmo"
+  },
+  {
+   "id": "vfx-compositing",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/post-production/vfx-compositing/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "55c13fd051cde636bbe45eb3d55ae1cde39bf5ef47664c93b39ffaaa56d1485d",
+   "tamanho": 30452,
+   "licenca": "MIT",
+   "uso": "Editor/A3",
+   "agentes": [
+    "editor",
+    "agente3"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "sombras/máscaras/efeitos"
+  },
+  {
+   "id": "color-grading-finishing",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/post-production/color-grading-finishing/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "3e45c144aab84459a22fd3485717b8d3814c68edc60727e02b39b1bfa06e900c",
+   "tamanho": 24440,
+   "licenca": "MIT",
+   "uso": "Editor/A3/QC",
+   "agentes": [
+    "editor",
+    "agente3",
+    "qualidade"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "cor e acabamento"
+  },
+  {
+   "id": "sound-design-foley",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/audio-craft/sound-design-foley/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "d7b11a82bfcf1ae9a36dbc89fa9ed760be95b27210077d19a9e4f340331a66bd",
+   "tamanho": 24644,
+   "licenca": "MIT",
+   "uso": "A3/Vozes",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Vozes",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "foley e efeitos sonoros"
+  },
+  {
+   "id": "audio-mixing-mastering",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/audio-craft/audio-mixing-mastering/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "19e8d97bef7c2f0035022e6f2d4f1aee6d2ab6656c2510d3845d043e1120102b",
+   "tamanho": 28117,
+   "licenca": "MIT",
+   "uso": "A1/A3/QC",
+   "agentes": [
+    "agente1",
+    "agente3",
+    "qualidade"
+   ],
+   "categoria": "A1",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "mixagem final"
+  },
+  {
+   "id": "dialogue-editing-adr",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/audio-craft/dialogue-editing-adr/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "65cc4b4e182116bc5dbb7fd7d0184f49ff7085d01bcde02a877b56d5f3f8a905",
+   "tamanho": 23638,
+   "licenca": "MIT",
+   "uso": "A3/Vozes",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Vozes",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "diálogos e retrabalho"
+  },
+  {
+   "id": "captions-media-accessibility",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/audio-craft/captions-media-accessibility/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "9196bf1b45474535db3762358329490f6db5d1af9cb06fba7cfef1c85ae9047a",
+   "tamanho": 27629,
+   "licenca": "MIT",
+   "uso": "A1/A3/Editor",
+   "agentes": [
+    "agente1",
+    "agente3",
+    "editor"
+   ],
+   "categoria": "A1",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "legendas e acessibilidade"
+  },
+  {
+   "id": "generated-media-qa",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/governance-delivery/generated-media-qa/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "cd4d3437122320e93f65a9a5ab84f94e0680c35898b66c8029233e42d1febf0e",
+   "tamanho": 31852,
+   "licenca": "MIT",
+   "uso": "QC",
+   "agentes": [
+    "qualidade"
+   ],
+   "categoria": "QC",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "qualquer vídeo gerado"
+  },
+  {
+   "id": "asset-continuity-management",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/governance-delivery/asset-continuity-management/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "aed11fd9b600c9d76e8f21eaf07484423f4b2bd38363f78a79f9b49345db390c",
+   "tamanho": 26398,
+   "licenca": "MIT",
+   "uso": "A3/Séries/QC",
+   "agentes": [
+    "agente3",
+    "qualidade"
+   ],
+   "categoria": "Séries",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "continuidade de ativos"
+  },
+  {
+   "id": "media-qc-delivery",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/governance-delivery/media-qc-delivery/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "f8969a80361b64a2f47a616621351d0e2ccf7eab6849160d39a7ae4f1ac49fe4",
+   "tamanho": 30815,
+   "licenca": "MIT",
+   "uso": "QC/A2",
+   "agentes": [
+    "qualidade",
+    "agente2"
+   ],
+   "categoria": "QC",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "liberação de pacote"
+  },
+  {
+   "id": "media-provenance-rights",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/governance-delivery/media-provenance-rights/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "c26794e8b4c6453cc700ca311305ee2d7c8e8e9d7ef999661f2425f0fe21e1cb",
+   "tamanho": 28140,
+   "licenca": "MIT",
+   "uso": "A1/A2/A3",
+   "agentes": [
+    "agente1",
+    "agente2",
+    "agente3"
+   ],
+   "categoria": "A1",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "origem e permissões"
+  },
+  {
+   "id": "reference-media-analysis",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/governance-delivery/reference-media-analysis/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "958de1fb10f1e14843f712727b519ca363361e8512ec92852086b638aec0b9a3",
+   "tamanho": 29090,
+   "licenca": "MIT",
+   "uso": "A3/Radar",
+   "agentes": [
+    "agente3",
+    "radar"
+   ],
+   "categoria": "A3",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "analisar referências"
+  },
+  {
+   "id": "video-description-oversight",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/governance-delivery/video-description-oversight/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "87bed5ade470adebb75c8868788f1ebcc911721f83a152b886c53e9e5ec67f40",
+   "tamanho": 13870,
+   "licenca": "MIT",
+   "uso": "QC",
+   "agentes": [
+    "qualidade"
+   ],
+   "categoria": "QC",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "revisão de descrições"
+  },
+  {
+   "id": "gsap-animation-composition",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/runtime-assembly/gsap-animation-composition/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "77b1974e58cf50e8f92483ea790f5d1d71d06a3b94271bac0d9de020fba5063a",
+   "tamanho": 21135,
+   "licenca": "MIT",
+   "uso": "Editor/A3",
+   "agentes": [
+    "editor",
+    "agente3"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "animação de SVG/timeline"
+  },
+  {
+   "id": "procedural-canvas-animation",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/runtime-assembly/procedural-canvas-animation/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "cd90a4823a729085d3420fbdce772dda0fda3d3ddfab6d113f9013e8ace44f22",
+   "tamanho": 12446,
+   "licenca": "MIT",
+   "uso": "Editor/A3",
+   "agentes": [
+    "editor",
+    "agente3"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "partículas/vento/neve"
+  },
+  {
+   "id": "lottie-animation-delivery",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/runtime-assembly/lottie-animation-delivery/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "c69ac9d8ffc37f72dc9254374951745c66c7de6f62af7c9b1b61bde922ca8987",
+   "tamanho": 22155,
+   "licenca": "MIT",
+   "uso": "Editor/A3",
+   "agentes": [
+    "editor",
+    "agente3"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "assets Lottie"
+  },
+  {
+   "id": "ffmpeg-media-finishing",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/runtime-assembly/ffmpeg-media-finishing/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "65891126d9a8a392224848c2a20ce3fcc74361d99ba2aaf330c00df955a2789c",
+   "tamanho": 32724,
+   "licenca": "MIT",
+   "uso": "A1/Editor/A2/A3",
+   "agentes": [
+    "agente1",
+    "editor",
+    "agente2",
+    "agente3"
+   ],
+   "categoria": "A1",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "exportação e entrega"
+  },
+  {
+   "id": "hyperframes-video-composition",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/runtime-assembly/hyperframes-video-composition/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "b4eaf8a2829bf58b475e98b4c7aa4dd813247ac6d53870304aecc30506c65517",
+   "tamanho": 28238,
+   "licenca": "MIT",
+   "uso": "A3/Animação",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Animação",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "animação 2D HTML"
+  },
+  {
+   "id": "remotion-video-composition",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/runtime-assembly/remotion-video-composition/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "d0b1f6d73b4222fabeb0e5d9a331db7b21cabd81501f84d97e116900d4e8a7f2",
+   "tamanho": 27646,
+   "licenca": "MIT",
+   "uso": "A3/Editor",
+   "agentes": [
+    "agente3",
+    "editor"
+   ],
+   "categoria": "A3",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "Remotion somente se validado"
+  },
+  {
+   "id": "threejs-scene-composition",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/runtime-assembly/threejs-scene-composition/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "07e5044adfd34f696424b9f09a55e75cecb689d99e13633dec66522b055987ba",
+   "tamanho": 20341,
+   "licenca": "MIT",
+   "uso": "A3/3D",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "3D",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "previs 3D"
+  },
+  {
+   "id": "d3-animated-data-visualization",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/runtime-assembly/d3-animated-data-visualization/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "83909abbfb380712d27cffeb7a1f909b3d46f9f30e74ba25cf4208a67de21e0f",
+   "tamanho": 18711,
+   "licenca": "MIT",
+   "uso": "A3/Dados",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Dados",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "gráficos animados"
+  },
+  {
+   "id": "manim-explainer-animation",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/runtime-assembly/manim-explainer-animation/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "298102abe8e85fa361cdeca79777dc46a85f4c21d66d00c90f59aad6931116ba",
+   "tamanho": 26917,
+   "licenca": "MIT",
+   "uso": "A3/Didático",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Didático",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "Manim se compatível"
+  },
+  {
+   "id": "audio-reactive-video-composition",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/runtime-assembly/audio-reactive-video-composition/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "3f1a6aaf4e66ed9d5027a9a01aa5934ab278cebcde64bc8fffd4dee5506d9078",
+   "tamanho": 11443,
+   "licenca": "MIT",
+   "uso": "Editor/A3",
+   "agentes": [
+    "editor",
+    "agente3"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "visuais no ritmo do áudio"
+  },
+  {
+   "id": "comfyui-media-workflows",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/runtime-assembly/comfyui-media-workflows/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "21c2c6784d44580ed8d79300edcccf57db64ed9c2c12cb2462f5dd4b3e6fdd42",
+   "tamanho": 34110,
+   "licenca": "MIT",
+   "uso": "A3/Provedor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Provedor",
+   "tipo": "producao",
+   "modalidade": "externo-condicional",
+   "prioridade": "P3",
+   "gatilho": "somente se provedor externo disponível"
+  },
+  {
+   "id": "video-to-audio-foley",
+   "repo": "calesthio/generative-media-skills",
+   "caminho": "skills/production/audio-craft/video-to-audio-foley/SKILL.md",
+   "commit": "8c85352d5d75d4dcbe58480bd138e37b9742bab1",
+   "sha256": "f7ec7df6ce3fac8089bf0cd3c093041f929d5e25a3a96c1dfce6fb45185bf17c",
+   "tamanho": 23254,
+   "licenca": "MIT",
+   "uso": "A3/Áudio",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Áudio",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "foley por referência visual"
+  },
+  {
+   "id": "character-skill-build",
+   "repo": "tinhthanh/character-skill-build",
+   "caminho": "SKILL.md",
+   "commit": "2a79f4fbc3c64ecbc391092bd18dc75ac8cc5a1f",
+   "sha256": "975d482cffbcbe6b3748eb7838d432bece2e2269ed3b0d0c2408408be4afa71b",
+   "tamanho": 13523,
+   "licenca": "MIT",
+   "uso": "A3/Animação",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Animação",
+   "tipo": "producao",
+   "modalidade": "runtime-auditar",
+   "prioridade": "P0",
+   "gatilho": "elenco SVG/diálogos"
+  },
+  {
+   "id": "cartoon-motion",
+   "repo": "Griff2325/cartoon-motion",
+   "caminho": "skills/cartoon-motion/SKILL.md",
+   "commit": "96ea1b04f2512698ae9faf0a1e110a5a426a4570",
+   "sha256": "58bef40768fe52d097061f8d546cd39445fe15c1bdb22b9eb42a20fda411b526",
+   "tamanho": 10001,
+   "licenca": "MIT",
+   "uso": "A3/Animação",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Animação",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "rig e poses"
+  },
+  {
+   "id": "animation-skill",
+   "repo": "4mJ0k3r/animation-skill",
+   "caminho": "SKILL.md",
+   "commit": "9d408edff4839f6139ae240edf602388e7405eea",
+   "sha256": "85edef48e11d9d92aaeff85a8d36444dc1b27a94e079f8a8ca4206b1ed74d170",
+   "tamanho": 7568,
+   "licenca": "MIT",
+   "uso": "A3/Palitinho",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Palitinho",
+   "tipo": "producao",
+   "modalidade": "runtime-auditar",
+   "prioridade": "P1",
+   "gatilho": "stickman 2D"
+  },
+  {
+   "id": "papermotion",
+   "repo": "francozanardi/papermotion",
+   "caminho": ".agents/skills/papermotion/SKILL.md",
+   "commit": "9ce84906940251b561e22ed8e68d2656eee052c6",
+   "sha256": "aa3d8c3d15fee7c796e4a076848c4ac2cc3f5fef5a80eb3ece0e6fb1f502ff3c",
+   "tamanho": 7708,
+   "licenca": "MIT",
+   "uso": "A3/Papel",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Papel",
+   "tipo": "producao",
+   "modalidade": "runtime-auditar",
+   "prioridade": "P2",
+   "gatilho": "papel recortado"
+  },
+  {
+   "id": "animated-video",
+   "repo": "goodnight000/cstack",
+   "caminho": "skills/animated-video/SKILL.md",
+   "commit": "72c4a9be18c1a7d455ecc3f5a4d4547725970a10",
+   "sha256": "11eab0fc344d3f4c652a7b133d240b5bd9d878d579aecebd7eb2528f77b4f463",
+   "tamanho": 8470,
+   "licenca": "MIT",
+   "uso": "A3/Animação",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Animação",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "uso por contexto"
+  },
+  {
+   "id": "video-edit",
+   "repo": "goodnight000/cstack",
+   "caminho": "skills/video-edit/SKILL.md",
+   "commit": "72c4a9be18c1a7d455ecc3f5a4d4547725970a10",
+   "sha256": "619fbb6fe1831aeb783e2346ae989d2a9ff5423c3608e45f81cd874ba57fe3ae",
+   "tamanho": 11102,
+   "licenca": "MIT",
+   "uso": "Editor/A1/A3",
+   "agentes": [
+    "editor",
+    "agente1",
+    "agente3"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "uso por contexto"
+  },
+  {
+   "id": "video-script",
+   "repo": "goodnight000/cstack",
+   "caminho": "skills/video-script/SKILL.md",
+   "commit": "72c4a9be18c1a7d455ecc3f5a4d4547725970a10",
+   "sha256": "4076a751004a8759b962f567fee826c597519244f6a50cd82e130747664f8346",
+   "tamanho": 7466,
+   "licenca": "MIT",
+   "uso": "A3/Roteiro",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Roteiro",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "uso por contexto"
+  },
+  {
+   "id": "asset-library",
+   "repo": "goodnight000/cstack",
+   "caminho": "skills/asset-library/SKILL.md",
+   "commit": "72c4a9be18c1a7d455ecc3f5a4d4547725970a10",
+   "sha256": "f9800b64439be74250562169903ff74cdabc3d5c5ad943e0e866f88432edde2b",
+   "tamanho": 6697,
+   "licenca": "MIT",
+   "uso": "A3/Séries",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Séries",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "uso por contexto"
+  },
+  {
+   "id": "extreme-motion-design",
+   "repo": "dev-isaacmello/extreme-motion-design",
+   "caminho": "skills/extreme-motion-design/SKILL.md",
+   "commit": "5ae58839564de9df71b116026f5631b2c0b364e5",
+   "sha256": "58d5dfda5d78c692da34e5e042a70aeb6d3f4cba996631bc40a2fbf812e79c0c",
+   "tamanho": 15831,
+   "licenca": "MIT",
+   "uso": "Editor/A3",
+   "agentes": [
+    "editor",
+    "agente3"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "motion graphics premium"
+  },
+  {
+   "id": "video-director",
+   "repo": "win4r/video-director",
+   "caminho": "video-director/SKILL.md",
+   "commit": "02d1912ab251bf5235b45e8e7aad81b4bc786b15",
+   "sha256": "8f13fca6d5b7dc356c8d8d964c31ebfde5f97a976d017331ee50ae8683fdb924",
+   "tamanho": 30918,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "revisão de direção"
+  },
+  {
+   "id": "analyze-video-editing",
+   "repo": "gitethanwoo/video-editing",
+   "caminho": "skills/analyze-video-editing/SKILL.md",
+   "commit": "8b633c2d698410e523f95335aa6433766264cc7f",
+   "sha256": "70b9cd6f7a5ad5dc9c823a55cfd2794684ff104b58838515fc1b96d7aa753192",
+   "tamanho": 7189,
+   "licenca": "MIT",
+   "uso": "A1/A3/QC",
+   "agentes": [
+    "agente1",
+    "agente3",
+    "qualidade"
+   ],
+   "categoria": "A1",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "referência/corte/montagem"
+  },
+  {
+   "id": "video-editing",
+   "repo": "gitethanwoo/video-editing",
+   "caminho": "skills/video-editing/SKILL.md",
+   "commit": "8b633c2d698410e523f95335aa6433766264cc7f",
+   "sha256": "0ec528c3657e0ddad7c3b632b831d22bc5461e48716e783f7773785884ac4ba4",
+   "tamanho": 7875,
+   "licenca": "MIT",
+   "uso": "A1/Editor/A3",
+   "agentes": [
+    "agente1",
+    "editor",
+    "agente3"
+   ],
+   "categoria": "A1",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "referência/corte/montagem"
+  },
+  {
+   "id": "find-broll",
+   "repo": "gitethanwoo/video-editing",
+   "caminho": "skills/find-broll/SKILL.md",
+   "commit": "8b633c2d698410e523f95335aa6433766264cc7f",
+   "sha256": "7bef21c2812224e02a1118408ab69ec65cf0859b76311e4b41cd25ee3bad4cd5",
+   "tamanho": 6018,
+   "licenca": "MIT",
+   "uso": "A1/A3/Radar",
+   "agentes": [
+    "agente1",
+    "agente3",
+    "radar"
+   ],
+   "categoria": "A1",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "referência/corte/montagem"
+  },
+  {
+   "id": "qc-skill",
+   "repo": "kajisho5/qc-skill",
+   "caminho": "SKILL.md",
+   "commit": "9c61ed7d239b60061b164782e93c5a1008a8be91",
+   "sha256": "4fee53940e1ce872fdafa3aca8fa870cc79437bd83676c8fb1c9e8ca974d2e2c",
+   "tamanho": 11401,
+   "licenca": "MIT",
+   "uso": "QC/A2",
+   "agentes": [
+    "qualidade",
+    "agente2"
+   ],
+   "categoria": "QC",
+   "tipo": "producao",
+   "modalidade": "runtime-auditar",
+   "prioridade": "P0",
+   "gatilho": "verificação técnica"
+  },
+  {
+   "id": "layer-sprite-animation",
+   "repo": "layerai/skills",
+   "caminho": "plugins/layer/skills/layer-sprite-animation/SKILL.md",
+   "commit": "f80eb5d4c5dc69e1878dd1986e77a983a139b2c3",
+   "sha256": "9dbee3ee2f907763ea1bbe3a2ab581ae6b7146d1ac14b6f5a04cb03ced97189a",
+   "tamanho": 7376,
+   "licenca": "MIT",
+   "uso": "A3/Pixel",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Pixel",
+   "tipo": "producao",
+   "modalidade": "externo-condicional",
+   "prioridade": "P2",
+   "gatilho": "somente guia; API externa se configurada"
+  },
+  {
+   "id": "layer-talking-characters",
+   "repo": "layerai/skills",
+   "caminho": "plugins/layer/skills/layer-talking-characters/SKILL.md",
+   "commit": "f80eb5d4c5dc69e1878dd1986e77a983a139b2c3",
+   "sha256": "10fbee1de56f6f5bfe2a89905ac9739623aa5667562f69374fe9ab81deb5c64a",
+   "tamanho": 7287,
+   "licenca": "MIT",
+   "uso": "A3/Vozes",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Vozes",
+   "tipo": "producao",
+   "modalidade": "externo-condicional",
+   "prioridade": "P2",
+   "gatilho": "somente guia; API externa se configurada"
+  },
+  {
+   "id": "layer-video-continuity",
+   "repo": "layerai/skills",
+   "caminho": "plugins/layer/skills/layer-video-continuity/SKILL.md",
+   "commit": "f80eb5d4c5dc69e1878dd1986e77a983a139b2c3",
+   "sha256": "ef4441f147be16a91a29c9d1941910c0a576f2fa3996e9bebcda2fb79b4efbcc",
+   "tamanho": 8211,
+   "licenca": "MIT",
+   "uso": "QC/Séries",
+   "agentes": [
+    "qualidade"
+   ],
+   "categoria": "Séries",
+   "tipo": "producao",
+   "modalidade": "externo-condicional",
+   "prioridade": "P2",
+   "gatilho": "somente guia; API externa se configurada"
+  },
+  {
+   "id": "layer-video-direction",
+   "repo": "layerai/skills",
+   "caminho": "plugins/layer/skills/layer-video-direction/SKILL.md",
+   "commit": "f80eb5d4c5dc69e1878dd1986e77a983a139b2c3",
+   "sha256": "c39f44dff9f032cfcaa1bdcbe547ecc9fba10c35653d5bd887dd42dcc973598f",
+   "tamanho": 7834,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "externo-condicional",
+   "prioridade": "P2",
+   "gatilho": "somente guia; API externa se configurada"
+  },
+  {
+   "id": "layer-video-fixes",
+   "repo": "layerai/skills",
+   "caminho": "plugins/layer/skills/layer-video-fixes/SKILL.md",
+   "commit": "f80eb5d4c5dc69e1878dd1986e77a983a139b2c3",
+   "sha256": "902236625bde36760ba64004e56fac17662e8e45ed229b8b9d9594eb84ab63c7",
+   "tamanho": 7374,
+   "licenca": "MIT",
+   "uso": "QC",
+   "agentes": [
+    "qualidade"
+   ],
+   "categoria": "QC",
+   "tipo": "producao",
+   "modalidade": "externo-condicional",
+   "prioridade": "P2",
+   "gatilho": "somente guia; API externa se configurada"
+  },
+  {
+   "id": "layer-vfx",
+   "repo": "layerai/skills",
+   "caminho": "plugins/layer/skills/layer-vfx/SKILL.md",
+   "commit": "f80eb5d4c5dc69e1878dd1986e77a983a139b2c3",
+   "sha256": "2fb18ad51a7f0ccc4e8c7fd75cb1ac30370d9a4226dfc05089c32aec065381a6",
+   "tamanho": 7541,
+   "licenca": "MIT",
+   "uso": "A3/FX",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "FX",
+   "tipo": "producao",
+   "modalidade": "externo-condicional",
+   "prioridade": "P2",
+   "gatilho": "somente guia; API externa se configurada"
+  },
+  {
+   "id": "scenario-blender-previs-storyboard",
+   "repo": "scenario-labs/skills",
+   "caminho": "skills/dcc/blender/scenario-blender-previs-storyboard/SKILL.md",
+   "commit": "94cab3f1da47841f52d4c7b3ea8583aa13dd0eb9",
+   "sha256": "6cd8d335f2c98d05d2a03f1440224531c8ac082ad1b21ac5ab513d926b261d22",
+   "tamanho": 20154,
+   "licenca": "MIT",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "pré-visualização câmera"
+  },
+  {
+   "id": "remotion-best-practices",
+   "repo": "remotion-dev/skills",
+   "caminho": "skills/remotion-best-practices/SKILL.md",
+   "commit": "7e541aa4d7361dfaca0780a565a47307eb7bdfbb",
+   "sha256": "c491302acdc7b659c11f23c7898f519c4cf6c2bb8b186ade2aeab1bcaca25be0",
+   "tamanho": 4426,
+   "licenca": "",
+   "uso": "Editor/A3",
+   "agentes": [
+    "editor",
+    "agente3"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "Remotion condicional"
+  },
+  {
+   "id": "remotion-markup",
+   "repo": "remotion-dev/skills",
+   "caminho": "skills/remotion-markup/SKILL.md",
+   "commit": "7e541aa4d7361dfaca0780a565a47307eb7bdfbb",
+   "sha256": "8650285547e38233ec7c7b95faf88fb7941b170579f87159b42a5bdc40672d94",
+   "tamanho": 13826,
+   "licenca": "",
+   "uso": "Editor/A3",
+   "agentes": [
+    "editor",
+    "agente3"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "Remotion condicional"
+  },
+  {
+   "id": "remotion-captions",
+   "repo": "remotion-dev/skills",
+   "caminho": "skills/remotion-captions/SKILL.md",
+   "commit": "7e541aa4d7361dfaca0780a565a47307eb7bdfbb",
+   "sha256": "c08b52bfa3813f39a8ff95256607bebaccd2cee19f5b88d5e2b19bd206ecc7e8",
+   "tamanho": 1172,
+   "licenca": "",
+   "uso": "Editor/A3",
+   "agentes": [
+    "editor",
+    "agente3"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "Remotion condicional"
+  },
+  {
+   "id": "remotion-render",
+   "repo": "remotion-dev/skills",
+   "caminho": "skills/remotion-render/SKILL.md",
+   "commit": "7e541aa4d7361dfaca0780a565a47307eb7bdfbb",
+   "sha256": "b59b979e360bb0ba615373cc7c2542115f7feee6be36f3f6bb9c5b63491325bb",
+   "tamanho": 2313,
+   "licenca": "",
+   "uso": "Editor/A3",
+   "agentes": [
+    "editor",
+    "agente3"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "Remotion condicional"
+  },
+  {
+   "id": "remotion-maps",
+   "repo": "remotion-dev/skills",
+   "caminho": "skills/remotion-maps/SKILL.md",
+   "commit": "7e541aa4d7361dfaca0780a565a47307eb7bdfbb",
+   "sha256": "f623f9ae66d44400846dc35124d32d4501ae0349d041d64ad0daa70a5f8dc920",
+   "tamanho": 1030,
+   "licenca": "",
+   "uso": "A3/Mapas",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Mapas",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "Remotion condicional"
+  },
+  {
+   "id": "react-best-practices",
+   "repo": "vercel-labs/agent-skills",
+   "caminho": "skills/react-best-practices/SKILL.md",
+   "commit": "1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62",
+   "sha256": "71ed7794962fa6e803ee83030517b5b93a9f70fbfeb431ec4535c5480a8d8355",
+   "tamanho": 7251,
+   "licenca": "MIT",
+   "uso": "Fable/Site",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Site",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "frontend React"
+  },
+  {
+   "id": "web-design-guidelines",
+   "repo": "vercel-labs/agent-skills",
+   "caminho": "skills/web-design-guidelines/SKILL.md",
+   "commit": "1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62",
+   "sha256": "f4647ca866a3accf763777f83e7682954f0187cd6bea7eea0399796652414e8f",
+   "tamanho": 1231,
+   "licenca": "",
+   "uso": "Fable/Site",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Site",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "frontend React"
+  },
+  {
+   "id": "frontend-design",
+   "repo": "anthropics/skills",
+   "caminho": "skills/frontend-design/SKILL.md",
+   "commit": "1780c5e5a552fd4d1c9d6a7b0cab26b0c2bef064",
+   "sha256": "d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3",
+   "tamanho": 9390,
+   "licenca": "Apache-2.0",
+   "uso": "Fable/Site",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Site",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "site/prototipagem/teste"
+  },
+  {
+   "id": "webapp-testing",
+   "repo": "anthropics/skills",
+   "caminho": "skills/webapp-testing/SKILL.md",
+   "commit": "1780c5e5a552fd4d1c9d6a7b0cab26b0c2bef064",
+   "sha256": "51b7349e77ec63b7744a6f63647e7566a0b4d2e301121cc10e8c2113af6556a2",
+   "tamanho": 3913,
+   "licenca": "Apache-2.0",
+   "uso": "Fable/Testes",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Testes",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "site/prototipagem/teste"
+  },
+  {
+   "id": "responsive-design",
+   "repo": "wshobson/agents",
+   "caminho": "plugins/ui-design/skills/responsive-design/SKILL.md",
+   "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+   "sha256": "c8bd56f8fc0f122c4ff392b02617f0e6bb4a353b2d0189235c6ee77cdcfe8690",
+   "tamanho": 1989,
+   "licenca": "MIT",
+   "uso": "Fable/Site",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Site",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "mobile/UX"
+  },
+  {
+   "id": "design-system-patterns",
+   "repo": "wshobson/agents",
+   "caminho": "plugins/ui-design/skills/design-system-patterns/SKILL.md",
+   "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+   "sha256": "618355f0e6c6ba8ca5d231035c9da18302fe6894aedce565743e9181b6c928ee",
+   "tamanho": 4003,
+   "licenca": "MIT",
+   "uso": "Fable/Site",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Site",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "mobile/UX"
+  },
+  {
+   "id": "accessibility-compliance",
+   "repo": "wshobson/agents",
+   "caminho": "plugins/ui-design/skills/accessibility-compliance/SKILL.md",
+   "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+   "sha256": "3ad0fbcb0a69b69e70652641a8eeb59f168cceb4bc9d9b9c8b47154072b9e1a2",
+   "tamanho": 2402,
+   "licenca": "MIT",
+   "uso": "Fable/Site",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Site",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "mobile/UX"
+  },
+  {
+   "id": "social-evidence-research",
+   "repo": "wshobson/agents",
+   "caminho": "plugins/content-marketing/skills/social-evidence-research/SKILL.md",
+   "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+   "sha256": "344fa1b35ff1c480768635337526fb3bee23ef0c52821ae71ad82c4b40a4fe1d",
+   "tamanho": 5760,
+   "licenca": "MIT",
+   "uso": "A1/Radar",
+   "agentes": [
+    "agente1",
+    "radar"
+   ],
+   "categoria": "A1",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "tendências reais"
+  },
+  {
+   "id": "workflow-orchestration-patterns",
+   "repo": "wshobson/agents",
+   "caminho": "plugins/backend-development/skills/workflow-orchestration-patterns/SKILL.md",
+   "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+   "sha256": "f4418f98189bd89d7b801ec65df48b53caa1c555a23f1d9684799415818f1024",
+   "tamanho": 3478,
+   "licenca": "MIT",
+   "uso": "Infra/Agentes",
+   "agentes": [
+    "infra"
+   ],
+   "categoria": "Agentes",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "fila e checkpoints"
+  },
+  {
+   "id": "api-design-principles",
+   "repo": "wshobson/agents",
+   "caminho": "plugins/backend-development/skills/api-design-principles/SKILL.md",
+   "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+   "sha256": "1f6166c23c0a0f32d703c19d84b3c30c2873daefb9e8732339a009934fa17013",
+   "tamanho": 3603,
+   "licenca": "MIT",
+   "uso": "Infra/API",
+   "agentes": [
+    "infra"
+   ],
+   "categoria": "API",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "rotas v1"
+  },
+  {
+   "id": "auth-implementation-patterns",
+   "repo": "wshobson/agents",
+   "caminho": "plugins/developer-essentials/skills/auth-implementation-patterns/SKILL.md",
+   "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+   "sha256": "1fc61d6074ace3d3db9d527ef92a7188118ff305b6ea98e0f9356545c6e15996",
+   "tamanho": 2677,
+   "licenca": "MIT",
+   "uso": "Infra/Security",
+   "agentes": [
+    "infra"
+   ],
+   "categoria": "Security",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "auth/sessões"
+  },
+  {
+   "id": "python-performance-optimization",
+   "repo": "wshobson/agents",
+   "caminho": "plugins/python-development/skills/python-performance-optimization/SKILL.md",
+   "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+   "sha256": "807aa725cc2b46b4d68a11a52e5b345be0449e80b7f4b60c32bfd2c35345afb5",
+   "tamanho": 3253,
+   "licenca": "MIT",
+   "uso": "Infra/Termux",
+   "agentes": [
+    "infra"
+   ],
+   "categoria": "Termux",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "limite CPU/RAM"
+  },
+  {
+   "id": "python-testing-patterns",
+   "repo": "wshobson/agents",
+   "caminho": "plugins/python-development/skills/python-testing-patterns/SKILL.md",
+   "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+   "sha256": "a1020718f31629c2a5b20731cad1804dbb81b18800495c5cebdf16e6cac9c175",
+   "tamanho": 7282,
+   "licenca": "MIT",
+   "uso": "Fable/Testes",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Testes",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "testes Python"
+  },
+  {
+   "id": "e2e-testing-patterns",
+   "repo": "wshobson/agents",
+   "caminho": "plugins/developer-essentials/skills/e2e-testing-patterns/SKILL.md",
+   "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+   "sha256": "b59a3d80c852f41bb73d6941410cd0fc98bbdb63a61d2ed0da2415f8dde0e1c7",
+   "tamanho": 4231,
+   "licenca": "MIT",
+   "uso": "Fable/Testes",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Testes",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "fluxos fim a fim"
+  },
+  {
+   "id": "slo-implementation",
+   "repo": "wshobson/agents",
+   "caminho": "plugins/observability-monitoring/skills/slo-implementation/SKILL.md",
+   "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+   "sha256": "538e560a1c10be5f643d0a048e4e828605420e9b1867a9d4449f8a3471c14049",
+   "tamanho": 7163,
+   "licenca": "MIT",
+   "uso": "Infra/Monitor",
+   "agentes": [
+    "infra"
+   ],
+   "categoria": "Monitor",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "saúde e alertas"
+  },
+  {
+   "id": "mobile-android-design",
+   "repo": "wshobson/agents",
+   "caminho": "plugins/ui-design/skills/mobile-android-design/SKILL.md",
+   "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+   "sha256": "0a209a1c45585ce0056548cc2f0fd352b7fde5980a3b5dd397a9daf5dff19fe7",
+   "tamanho": 3797,
+   "licenca": "MIT",
+   "uso": "Fable/Site",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Site",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "padrões mobile adaptados à web"
+  },
+  {
+   "id": "agentic-eval",
+   "repo": "github/awesome-copilot",
+   "caminho": "skills/agentic-eval/SKILL.md",
+   "commit": "dc0083dbe22133bfa7ce3500dee85e187e0cd47a",
+   "sha256": "fb198a5c9b12e746d01a43c9ff3368598fdc1134bb458766f580186f31001573",
+   "tamanho": 5940,
+   "licenca": "MIT",
+   "uso": "QC/A3",
+   "agentes": [
+    "qualidade",
+    "agente3"
+   ],
+   "categoria": "QC",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "avaliação e implementação"
+  },
+  {
+   "id": "agent-owasp-compliance",
+   "repo": "github/awesome-copilot",
+   "caminho": "skills/agent-owasp-compliance/SKILL.md",
+   "commit": "dc0083dbe22133bfa7ce3500dee85e187e0cd47a",
+   "sha256": "5c1f92c48888beb811d2435e58aa02b2619422a921d6f70e3cc15e5c5be8e7da",
+   "tamanho": 11894,
+   "licenca": "MIT",
+   "uso": "Infra/Security",
+   "agentes": [
+    "infra"
+   ],
+   "categoria": "Security",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "avaliação e implementação"
+  },
+  {
+   "id": "test-gap-audit",
+   "repo": "github/awesome-copilot",
+   "caminho": "skills/test-gap-audit/SKILL.md",
+   "commit": "dc0083dbe22133bfa7ce3500dee85e187e0cd47a",
+   "sha256": "a7747ac0b60d33ec6a44b9703ae11e8f6bf7aede251f117cc46599d182bfef21",
+   "tamanho": 13585,
+   "licenca": "MIT",
+   "uso": "Fable/Testes",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Testes",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "avaliação e implementação"
+  },
+  {
+   "id": "premium-frontend-ui",
+   "repo": "github/awesome-copilot",
+   "caminho": "skills/premium-frontend-ui/SKILL.md",
+   "commit": "dc0083dbe22133bfa7ce3500dee85e187e0cd47a",
+   "sha256": "b7edf35b33931d15ea0c1d271f3c05d469e2b6923ed4df1c955d4da86287d9fb",
+   "tamanho": 7188,
+   "licenca": "MIT",
+   "uso": "Fable/Site",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Site",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "avaliação e implementação"
+  },
+  {
+   "id": "playwright-generate-test",
+   "repo": "github/awesome-copilot",
+   "caminho": "skills/playwright-generate-test/SKILL.md",
+   "commit": "dc0083dbe22133bfa7ce3500dee85e187e0cd47a",
+   "sha256": "79dbb1a49fc5a6502788ccba1a4bd30769a017a1cc31d9db329d1326ea3d898f",
+   "tamanho": 877,
+   "licenca": "MIT",
+   "uso": "Fable/Testes",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Testes",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "avaliação e implementação"
+  },
+  {
+   "id": "security-review",
+   "repo": "github/awesome-copilot",
+   "caminho": "skills/security-review/SKILL.md",
+   "commit": "dc0083dbe22133bfa7ce3500dee85e187e0cd47a",
+   "sha256": "002392d88637b89e4cbc409a0531834970937f3b57c0b448a17e04b5ca6d356c",
+   "tamanho": 9094,
+   "licenca": "MIT",
+   "uso": "Infra/Security",
+   "agentes": [
+    "infra"
+   ],
+   "categoria": "Security",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "avaliação e implementação"
+  },
+  {
+   "id": "test-driven-development",
+   "repo": "obra/superpowers",
+   "caminho": "skills/test-driven-development/SKILL.md",
+   "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+   "sha256": "64b03fce4aee5a97a93160cea8111f3ba13a17b7c001db4bd5836d67fd10705d",
+   "tamanho": 9578,
+   "licenca": "MIT",
+   "uso": "Fable/Testes",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Testes",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "modificação de código"
+  },
+  {
+   "id": "systematic-debugging",
+   "repo": "obra/superpowers",
+   "caminho": "skills/systematic-debugging/SKILL.md",
+   "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+   "sha256": "51c6435d98c83c42c96ba7c35725a0b2c376cd487fb1a4e6bd0ddbe7e33ef202",
+   "tamanho": 9530,
+   "licenca": "MIT",
+   "uso": "Fable/Infra",
+   "agentes": [
+    "desenvolvimento",
+    "infra"
+   ],
+   "categoria": "Fable",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "modificação de código"
+  },
+  {
+   "id": "verification-before-completion",
+   "repo": "obra/superpowers",
+   "caminho": "skills/verification-before-completion/SKILL.md",
+   "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+   "sha256": "2befe7fc55bcadaa3d97dd9e8efeb633d2561c0ebe74c5a8b17c4d9e7e4520b3",
+   "tamanho": 3646,
+   "licenca": "MIT",
+   "uso": "Fable/Testes",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Testes",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "modificação de código"
+  },
+  {
+   "id": "writing-plans",
+   "repo": "obra/superpowers",
+   "caminho": "skills/writing-plans/SKILL.md",
+   "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+   "sha256": "a6c67c1900064347c2a329990dd3c555657c51c3ec53b259a08aa01a2c26139a",
+   "tamanho": 10335,
+   "licenca": "MIT",
+   "uso": "Fable/Projeto",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Projeto",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "modificação de código"
+  },
+  {
+   "id": "requesting-code-review",
+   "repo": "obra/superpowers",
+   "caminho": "skills/requesting-code-review/SKILL.md",
+   "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+   "sha256": "2180e14a448e9410bec88e6646a2d1f0ce7fdd58de27388c1e052e929679d2bc",
+   "tamanho": 2974,
+   "licenca": "MIT",
+   "uso": "Fable/Projeto",
+   "agentes": [
+    "desenvolvimento"
+   ],
+   "categoria": "Projeto",
+   "tipo": "desenvolvimento",
+   "modalidade": "guia",
+   "prioridade": "P0",
+   "gatilho": "modificação de código"
+  },
+  {
+   "id": "character-design-sheet",
+   "repo": "gitdekado/inference-skills",
+   "caminho": "guides/design/character-design-sheet/SKILL.md",
+   "commit": "2c19448d43ef280a4b29d5238afaf7e1c6f00c01",
+   "sha256": "d9895e2d334e0143e2737497ef7bdd0150b4ee6ca9c2a29798b75013ce0685e3",
+   "tamanho": 10915,
+   "licenca": "",
+   "uso": "A3/Elenco",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Elenco",
+   "tipo": "producao",
+   "modalidade": "externo-condicional",
+   "prioridade": "P2",
+   "gatilho": "só texto sem conta externa"
+  },
+  {
+   "id": "storyboard-creation",
+   "repo": "gitdekado/inference-skills",
+   "caminho": "guides/video/storyboard-creation/SKILL.md",
+   "commit": "2c19448d43ef280a4b29d5238afaf7e1c6f00c01",
+   "sha256": "749938fdd50497d00e68ac52d9603de5bd0a5345eb188b56c7020a65607bd12b",
+   "tamanho": 10419,
+   "licenca": "",
+   "uso": "A3/Diretor",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "externo-condicional",
+   "prioridade": "P2",
+   "gatilho": "só texto sem conta externa"
+  },
+  {
+   "id": "video-analysis-skill",
+   "repo": "bydfi-official/video-analysis-skill",
+   "caminho": "SKILL.md",
+   "commit": "b2702695f6fdb50457c30e6483af4f4d6240afa7",
+   "sha256": "c2cf1888d8f31184ab7fed216e0abc8d3a886a98eb8a1abe45ce966e91a5621e",
+   "tamanho": 2462,
+   "licenca": "MIT",
+   "uso": "QC/Radar",
+   "agentes": [
+    "qualidade",
+    "radar"
+   ],
+   "categoria": "QC",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "análise de referências"
+  }
+ ]
+}
