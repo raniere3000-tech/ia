@@ -6,6 +6,7 @@ Só usa a biblioteca padrão do Python (roda no Termux).
 """
 from __future__ import annotations
 
+import descricao as ds
 import hashlib
 import json
 import os
@@ -595,7 +596,9 @@ def _texto(p: dict, limite: int) -> str:
 def postar_youtube(p: dict, arq: Path) -> str:
     tok = _token_google()
     titulo = (p['titulo'] or p['legenda'] or 'Corte').strip()[:100]
-    if '#shorts' not in (titulo + p['legenda']).lower():
+    # descrição no formato do Agente 3 termina no "Link original do vídeo [...]": não se acrescenta nada depois
+    # (o YouTube reconhece o Short pelo vídeo vertical e curto)
+    if '#shorts' not in (titulo + p['legenda']).lower() and not ds.aplicado(p['legenda']):
         desc = (p['legenda'] + '\n\n#shorts').strip()
     else:
         desc = p['legenda']

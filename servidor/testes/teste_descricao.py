@@ -146,5 +146,22 @@ except apv.ErroAprovacao as e:
     confere(e.status == 422 and 'não cabe' in str(e), 'aprovação acima do limite é recusada com aviso (nada cortado)')
 confere(not [x for x in pg.posts() if x.get('projeto') == pid5], 'nenhum post criado com texto cortado')
 
+# 6) YouTube: nada é acrescentado depois do rodapé; posts antigos (sem o modelo) continuam ganhando #shorts
+enviados = []
+pg._token_google = lambda: 'x'
+def _http(metodo, url, js=None, **k):
+    enviados.append(js['snippet']['description'])
+    raise RuntimeError('parou aqui (teste)')
+pg.http, _http_antes = _http, pg.http
+(TMP / 'x.mp4').write_bytes(b'x')
+for leg in (SEM_LINK, 'Corte antigo'):
+    try:
+        pg.postar_youtube({'titulo': 'T', 'legenda': leg, 'opcoes': {}}, TMP / 'x.mp4')
+    except RuntimeError:
+        pass
+pg.http = _http_antes
+confere(enviados[:1] == [SEM_LINK], 'YouTube recebe a descrição terminando no "Link original do vídeo []"')
+confere(len(enviados) > 1 and enviados[1].endswith('#shorts'), 'post sem o modelo continua como antes (#shorts)')
+
 print('\n' + ('TUDO OK' if not falhas else f'{falhas} FALHA(S)'))
 sys.exit(1 if falhas else 0)
