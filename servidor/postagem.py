@@ -740,27 +740,90 @@ def acordar():
     _acordar.set()
 
 
+PROV = {'youtube': 'google', 'facebook': 'meta', 'instagram': 'meta', 'tiktok': 'tiktok'}
+# duração máxima que cada rede aceita para o formato curto (segundos), conferida antes de enviar
+MAX_SEG = {'youtube': 180, 'facebook': 90, 'instagram': 900, 'tiktok': 600}
+
+
+def _anotar(p: dict, rede: str, evento: str, detalhe: str = ''):
+    """Relatório da publicação: o que aconteceu em cada rede, em ordem (fica no próprio post)."""
+    p.setdefault('relatorio', []).append({'t': agora(), 'rede': rede, 'evento': evento, 'detalhe': detalhe[:300]})
+    p['relatorio'] = p['relatorio'][-40:]
+
+
+def preflight(p: dict, rede: str) -> list:
+    """Conferência antes de postar. Devolve os bloqueios (vazio = pode postar). Não gasta tentativa."""
+    out = []
+    try:
+        arq = video_path(p['video'])
+    except ErroRede as e:
+        return [str(e)]
+    if arq.stat().st_size < 1000:
+        out.append('O arquivo do vídeo está vazio.')
+    if p.get('hash') and assinatura(p['video']) not in ('', p['hash']):
+        out.append('O arquivo mudou depois de agendado (não é a versão que você aprovou). Agende de novo.')
+    prov = PROV.get(rede)
+    if prov:
+        c = status_contas()[prov]
+        if not c['conectado']:
+            out.append(f'A conta do {rede.capitalize()} não está conectada. Entre em Publicações > Contas.')
+        elif c['erro']:
+            out.append(f'A conta do {rede.capitalize()} precisa de login de novo: {c["erro"][:160]}')
+        if rede == 'instagram' and c['conectado'] and not any(x.get('instagram') for x in c['paginas'] if x['id'] == c['pagina']):
+            out.append('A Página escolhida não tem um Instagram profissional ligado.')
+    try:
+        import renderizador as rd
+        dur = rd.duracao(arq)
+    except Exception:  # noqa: BLE001
+        dur = 0
+    if dur and rede in MAX_SEG and dur > MAX_SEG[rede] + 0.5:
+        out.append(f'O vídeo tem {dur:.0f} s e o {rede.capitalize()} aceita até {MAX_SEG[rede]} s neste formato.')
+    return out
+
+
 def _publicar_um(pid: str, rede: str):
+    atual = next((x for x in posts() if x['id'] == pid), None)
+    if atual is None:
+        return
+    bloqueios = preflight(atual, rede)
+    if bloqueios:
+        msg = 'Conferência antes de postar: ' + ' '.join(bloqueios)
+        def barrar(q):
+            q['redes'][rede].update(status='erro', erro=msg[:500])
+            _anotar(q, rede, 'bloqueado', msg)
+        _mudar(pid, barrar)
+        return
+
     def iniciar(p):
         p['redes'][rede].update(status='postando', erro='', inicio=agora())
+        _anotar(p, rede, 'enviando', 'Conferência ok: conta, arquivo, versão e duração.')
     p = _mudar(pid, iniciar)
     try:
         REF.pop(rede, None)
         link = PUBLICAR[rede](p, video_path(p['video']))
         ref = REF.pop(rede, '')
-        _mudar(pid, lambda q: q['redes'][rede].update(status='postado', link=link, erro='', feito=agora(), ref=ref))
+        def ok(q):
+            q['redes'][rede].update(status='postado', link=link, erro='', feito=agora(), ref=ref)
+            _anotar(q, rede, 'postado', link)
+        _mudar(pid, ok)
     except ErroTemporario as e:
         n = int(p['redes'][rede].get('tentativas', 0))
         if n < len(ESPERAS):
             prox = agora() + ESPERAS[n] * 60
             hora = datetime.fromtimestamp(prox).strftime('%H:%M')
-            _mudar(pid, lambda q: q['redes'][rede].update(status='agendado', tentativas=n + 1, proxima=prox,
-                                                         erro=f'{str(e)[:380]} O servidor tenta de novo sozinho às {hora} (tentativa {n + 2} de {len(ESPERAS) + 1}).'))
+            def de_novo(q):
+                q['redes'][rede].update(status='agendado', tentativas=n + 1, proxima=prox,
+                                        erro=f'{str(e)[:380]} O servidor tenta de novo sozinho às {hora} (tentativa {n + 2} de {len(ESPERAS) + 1}).')
+                _anotar(q, rede, 'tentar_de_novo', str(e))
+            _mudar(pid, de_novo)
         else:
             _mudar(pid, lambda q: q['redes'][rede].update(status='erro', erro=(str(e)[:400] + f' Tentei {n + 1} vezes. Clique em Tentar de novo.')))
     except Exception as e:  # noqa: BLE001
         msg = str(e) if isinstance(e, ErroRede) else f'Erro inesperado: {e}'
-        _mudar(pid, lambda q: q['redes'][rede].update(status='erro', erro=msg[:500]))
+        def falhou(q):
+            q['redes'][rede].update(status='erro', erro=msg[:500])
+            _anotar(q, rede, 'erro', msg)
+        _mudar(pid, falhou)
 
 
 def ciclo():

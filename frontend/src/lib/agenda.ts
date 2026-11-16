@@ -5,7 +5,7 @@ export type Rede = 'youtube'|'facebook'|'instagram'|'tiktok'|'kwai';
 export type Conta = {app:boolean;conectado:boolean;nome:string;client_id:string;paginas:{id:string;nome:string;instagram:string}[];pagina:string;erro:string;verificado?:number};
 export type Contas = Record<Prov,Conta>;
 export type StatusRede = {status:'agendado'|'postando'|'postado'|'erro'|'manual';link:string;erro:string};
-export type Post = {id:string;video:string;criado:number;quando:number;titulo:string;legenda:string;opcoes:{youtube_privacidade:string;tiktok_modo:string};redes:Partial<Record<Rede,StatusRede>>;preparando?:boolean};
+export type Post = {id:string;video:string;criado:number;quando:number;titulo:string;legenda:string;opcoes:{youtube_privacidade:string;tiktok_modo:string};redes:Partial<Record<Rede,StatusRede>>;preparando?:boolean;relatorio?:{t:number;rede:string;evento:string;detalhe:string}[]};
 
 export const REDES:{id:Rede;nome:string;prov:Prov|null}[] = [
   {id:'youtube',nome:'YouTube Shorts',prov:'google'},

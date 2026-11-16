@@ -70,6 +70,7 @@ export function ContasPainel({aoMudar,onContas}:{aoMudar?:()=>void;onContas?:(c:
    </section>;
 }
 
+const EV:Record<string,string>={enviando:'conferido e enviando',postado:'publicado',tentar_de_novo:'falhou, vai tentar de novo',erro:'falhou',bloqueado:'barrado na conferência'};
 const paraInput=(ts:number)=>{ const d=new Date(ts*1000); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
 const pendente=(p:Post)=>Object.values(p.redes).some(s=>s&&(s.status==='agendado'||s.status==='erro'||s.status==='postando'||s.status==='manual'));
 
@@ -90,6 +91,7 @@ function PostLinha({p,acao}:{p:Post;acao:(f:()=>Promise<unknown>,ok:string)=>voi
      {atrasado&&<p className="hint warn">Passou da hora e ainda não saiu. O servidor está ligado? Use Postar agora.</p>}
      <div className="post-redes">{(Object.entries(p.redes) as [Rede,StatusRede][]).map(([r,s])=><span key={r} className={'tag '+ST[s.status][1]} title={s.erro||s.link}>{REDES.find(x=>x.id===r)?.nome.replace(' (manual)','')}: {ST[s.status][0]}{s.status==='postado'&&s.link.startsWith('http')&&<a href={s.link.split(' ')[0]} target="_blank" rel="noreferrer"> <ExternalLink size={11}/></a>}</span>)}</div>
      {Object.entries(p.redes).filter(([,s])=>s&&(s.status==='erro'||(s.status==='agendado'&&!!s.erro)||(s.status==='postado'&&!s.link.startsWith('http'))||s.link.includes('('))).map(([r,s])=><p key={r} className={'hint '+(s!.status==='erro'?'bad':s!.status==='agendado'?'warn':'')}><b>{REDES.find(x=>x.id===r)?.nome}:</b> {s!.erro||s!.link}</p>)}
+     {!!p.relatorio?.length&&<details className="post-rel"><summary>Relatório da publicação</summary><ul>{p.relatorio.slice().reverse().map((e,k)=><li key={k}><small className="muted">{fmtData(e.t)}</small> <b>{REDES.find(x=>x.id===e.rede)?.nome.replace(' (manual)','')||e.rede}</b>: {EV[e.evento]||e.evento}{e.detalhe&&e.evento!=='postado'?` — ${e.detalhe}`:''}{e.evento==='postado'&&e.detalhe.startsWith('http')&&<a href={e.detalhe} target="_blank" rel="noreferrer"> abrir</a>}</li>)}</ul></details>}
      {editar&&<div className="post-editar">
        <label>Novo dia e hora<input type="datetime-local" value={hora} onChange={e=>setHora(e.target.value)}/></label>
        <div className="field-label">Redes</div>
