@@ -50,6 +50,16 @@ skill roda programa aqui. Use `--sem-baixar` para só refazer o relatório. No s
 (o registro de "utilizada" só aparece quando virou ficha, corte, conferência, planos ou laudo de verdade).
 Testes: `PYTHONPATH=. python3 testes/teste_skills.py` e `testes/teste_skills_agentes.py`.
 
+### Lote 1 do site (S1–S6), o que o servidor ganhou
+- `GET /api/v1/fila/{id}`: um trabalho da fila (o site retoma o progresso da exportação depois de recarregar).
+- `POST /api/v1/personagens/{id}/pose` (`{pose, objeto, expressao}`): prévia de pose desenhada pelo motor 2D (fila pesada, cache).
+- `POST /api/v1/personagens/visemas` (`{asset, texto}`): abertura da boca quadro a quadro de uma fala gravada.
+- `POST /api/v1/projetos/{id}/quadros` (`{t, renders}`): quadro real de até 3 versões do vídeo no mesmo instante (comparar antes/depois).
+- Refazer cena aceita `problema` (do relatório de qualidade): guarda a correção com a versão de antes; nunca aprova sozinho.
+- Demonstração de estilo aceita `refazer`: a antiga continua valendo até a nova passar na conferência.
+- Planos aceitam `acao` e `bloqueado` (plano travado não é refeito: 409).
+Teste: `PYTHONPATH=. python3 testes/teste_site_lote1.py` (FFmpeg de verdade; não vale como teste no Android).
+
 ### Testes do motor no celular (não validados no Android ainda)
 - `python testes/piloto_rig2d.py [pasta] [--leve]`: piloto de 30 s do 2D articulado (poses, objetos, pegar coisas, boca pela fala),
   com folha de quadros e `relatorio.json` (tempo por segundo de vídeo).

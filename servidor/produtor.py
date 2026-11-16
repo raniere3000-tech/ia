@@ -735,7 +735,7 @@ def produzir(pid: str, quando: float | None = None, chave: str = '', etapa: str 
     return job
 
 
-def refazer_cena(pid: str, i: int, imagem: bool = False, voz: bool = False, dispositivo: str = '', plano: str = '') -> dict:
+def refazer_cena(pid: str, i: int, imagem: bool = False, voz: bool = False, dispositivo: str = '', plano: str = '', motivo: dict | None = None) -> dict:
     """Refaz só uma cena de um vídeo já produzido: desenha de novo (e, se pedido, troca a foto/imagem e a narração).
     As outras cenas saem do cache; o vídeo final é montado de novo e volta para a revisão (novo hash, nova aprovação)."""
     p = pj.obter(pid)
@@ -750,9 +750,19 @@ def refazer_cena(pid: str, i: int, imagem: bool = False, voz: bool = False, disp
     planos_ids = [p_.get('id') or f'p{k + 1}' for k, p_ in enumerate(cenas[i].get('planos') or [])]
     if plano and plano not in planos_ids:
         raise pj.ErroProjeto(404, 'Esse plano não existe nesta cena.')
+    if plano and any((p_.get('id') == plano and p_.get('bloqueado')) for p_ in cenas[i].get('planos') or []):
+        raise pj.ErroProjeto(409, 'Esse plano está travado (aprovado). Destrave no storyboard para refazer.')
 
     def mudar(d, _p):
         c = d['cenas'][i]
+        if isinstance(motivo, dict) and motivo.get('tipo'):     # S4: guarda de qual apontamento do QA veio a correção (para comparar versões)
+            r0 = d.get('render') or {}
+            d['correcoes'] = (list(d.get('correcoes') or []) + [{
+                'tipo': str(motivo.get('tipo'))[:40], 'cena_id': c.get('id'), 'plano_id': plano, 'timecode': str(motivo.get('timecode') or '')[:12],
+                'render_antes': r0.get('id'), 'versao_antes': r0.get('versao'), 'criado': time.time()}])[-50:]
+            for pr in (d.get('qualidade') or {}).get('problemas') or []:
+                if pr.get('tipo') == motivo.get('tipo') and pr.get('cena_id') == c.get('id') and (pr.get('plano_id') or '') == (motivo.get('plano_id') or ''):
+                    pr['tentativas'] = int(pr.get('tentativas') or 0) + 1
         if plano:       # só este plano: os outros pedaços da cena saem do cache (render por plano)
             rp = dict(c.get('refazer_planos') or {})
             rp[plano] = int(rp.get(plano) or 0) + 1

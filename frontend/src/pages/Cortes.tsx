@@ -561,6 +561,7 @@ export default function Cortes(){
       </div>
      </article>)}</div>}
     {descartados.length>0&&<details className="discarded"><summary>{descartados.length} descartado(s)</summary>{descartados.map(c=><div key={c.id} className="discard-row"><span>{c.titulo} ({tm(c.inicio)}–{tm(c.fim)})</span><button className="link-btn" onClick={()=>atualizar({...c,descartado:false})}><Undo2 size={13}/> Restaurar</button></div>)}</details>}
+    <p className="hint center">Os cortes são gravados no navegador, com o modelo e a legenda que você vê na prévia. Render no servidor do celular ainda não existe para cortes (só para a Montagem manual).</p>
     {!recSupport&&<p className="hint center"><AlertTriangle size={13}/> Este navegador não grava vídeo. Use Chrome, Edge ou Safari atualizados para exportar.</p>}
 
     </Passo>

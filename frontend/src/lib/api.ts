@@ -141,12 +141,12 @@ export const lerCapacidade=(cfg:CfgSrv)=>api<Capacidade>(cfg,'GET','/api/v1/capa
 
 // ---------------------------------------------------------------- Agente 3
 export type DemoInfo={asset:string;segundos:number;onde?:string;seg_por_seg?:number;motor?:number};
-export type EstiloInfo={id:string;nome:string;descricao:string;tecnica:string;status:'operacional'|'beta'|'indisponivel';prioridade:string;paleta:string[];precisa_imagem:boolean;servidor:boolean;formatos:string[];custo:string;tecnologia?:string;limites?:string};
+export type EstiloInfo={id:string;nome:string;descricao:string;tecnica:string;status:'operacional'|'beta'|'indisponivel'|'nao_conferido';prioridade:string;paleta:string[];precisa_imagem:boolean;servidor:boolean;formatos:string[];custo:string;tecnologia?:string;limites?:string};
 export type Chave={t:number;zoom:number;x:number;y:number};
-export type Plano={id:string;plano:'WS'|'MS'|'CU'|'ECU';personagem?:string;angulo?:'normal'|'baixo'|'alto'|'inclinado';luz?:''|'neutra'|'quente'|'fria'|'noite'|'dramatica';chaves?:Chave[];camera?:string;foco_x?:number;foco_y?:number;peso?:number;busca?:string;intencao?:string};
+export type Plano={id:string;plano:'WS'|'MS'|'CU'|'ECU';personagem?:string;angulo?:'normal'|'baixo'|'alto'|'inclinado';luz?:''|'neutra'|'quente'|'fria'|'noite'|'dramatica';chaves?:Chave[];camera?:string;foco_x?:number;foco_y?:number;peso?:number;busca?:string;intencao?:string;acao?:string;bloqueado?:boolean;tremor?:boolean};
 export type Problema={tipo:string;severidade:'baixa'|'media'|'alta';descricao:string;correcao:string;cena_id:string;plano_id:string;timecode:string|null;evidencia?:string;status?:'aberto'|'revisao_humana';tentativas?:number;natureza?:'objetivo'|'julgamento'};
 export type Qualidade={status:'falha_tecnica'|'alerta_visual'|'analise_indisponivel'|'apto_para_revisao_humana';problemas:Problema[];gerado:number;revisao_humana?:number;tecnico:{erros:string[];avisos:string[]}};
-export type Cena={id:string;audio_manual?:{asset:string;nome:string}|null;clima?:'nenhum'|'chuva'|'neve'|'poeira'|'neblina';luz?:'neutra'|'quente'|'fria'|'noite'|'dramatica';planos?:Plano[];elenco?:{personagem_id:string;posicao:string;expressao?:string;acoes?:{t:number;tipo:string;alvo?:string}[]}[];cenario_id?:string;busca?:string;titulo:string;texto:string;destaque?:string;numero?:number|null;unidade?:string;personagem?:string;prompt_visual?:string;duracao_alvo?:number;bloqueada?:boolean;elementos?:{rotulo:string;valor:number}[];audio?:{dur:number}|null;clipe?:{dur:number}|null};
+export type Cena={id:string;audio_manual?:{asset:string;nome:string}|null;clima?:'nenhum'|'chuva'|'neve'|'poeira'|'neblina';luz?:'neutra'|'quente'|'fria'|'noite'|'dramatica';planos?:Plano[];elenco?:{personagem_id:string;posicao:string;expressao?:string;acoes?:{t:number;tipo:string;alvo?:string;pose?:string;objeto?:string}[]}[];cenario_id?:string;busca?:string;titulo:string;texto:string;destaque?:string;numero?:number|null;unidade?:string;personagem?:string;prompt_visual?:string;duracao_alvo?:number;bloqueada?:boolean;elementos?:{rotulo:string;valor:number}[];audio?:{dur:number}|null;clipe?:{dur:number}|null};
 export type Briefing={tema:string;nicho:string;publico:string;objetivo:string;idioma:string;tipo:string;descricao:string;origem:string;referencias:string;duracao_alvo:number;formato:string;cenas_qtd:number;
   estilo:string;paleta:string[];voz:string;ritmo?:string;trilha:string;imagens:string;modo_aprovacao:'assistido'|'supervisionado';qa_visao?:boolean;prioridade:number;orcamento_max:number;max_tentativas:number;
   destinos:{redes:string[];quando:'proximo'|'agora'|'data';data?:number;titulo?:string;legenda?:string};temas:string[]};
@@ -160,7 +160,7 @@ export type Quando={quando:'agora'|'daqui'|'data';minutos?:number;data?:number};
 export const novoVideo=(cfg:CfgSrv,d:{briefing:Partial<Briefing>;roteiro?:Roteiro;produzir?:boolean;aprovar_roteiro?:boolean;modo?:string}&Partial<Quando>)=>api<ProjetoSrv>(cfg,'POST','/api/v1/agente3/projetos',d);
 export const produzirLote=(cfg:CfgSrv,d:{briefing:Partial<Briefing>;quantidade:number;temas:string[];intervalo_min:number}&Partial<Quando>)=>api<{criados:{projeto:string;job:string;run_at:number}[]}>(cfg,'POST','/api/v1/agente3/lote',d);
 export const produzir=(cfg:CfgSrv,id:string,q:Partial<Quando>={})=>api<{job:Job}>(cfg,'POST',`/api/v1/projetos/${id}/produzir`,q);
-export const pedirDemo=(cfg:CfgSrv,estilo:string,formato='9:16',variante='')=>api<{pronto?:{asset:string;segundos:number};url?:string;job?:Job}>(cfg,'POST',`/api/v1/estilos/${estilo}/demo`,{formato,variante});
+export const pedirDemo=(cfg:CfgSrv,estilo:string,formato='9:16',variante='',refazer=false)=>api<{pronto?:{asset:string;segundos:number};url?:string;job?:Job}>(cfg,'POST',`/api/v1/estilos/${estilo}/demo`,{formato,variante,refazer});
 
 export type Rotina={id:string;nome:string;dias:number[];hora:string;quantidade:number;ativo:number;proxima:number|null;briefing:Partial<Briefing>};
 export const rotinas=(cfg:CfgSrv)=>api<{rotinas:Rotina[];fuso:string}>(cfg,'GET','/api/v1/rotinas');
@@ -177,7 +177,10 @@ export const pendentes=(cfg:CfgSrv)=>api<{pendentes:Pendente[]}>(cfg,'GET','/api
 export const lerRevisao=(cfg:CfgSrv,id:string)=>api<Revisao>(cfg,'GET',`/api/v1/projetos/${id}/revisao`);
 export const aprovar=(cfg:CfgSrv,id:string,render_sha:string,destinos?:Partial<Briefing['destinos']>)=>
   api<{ok:boolean;quando?:number;posts:{id:string}[];repetido?:boolean}>(cfg,'POST',`/api/v1/projetos/${id}/aprovar`,{render_sha,destinos},{'Idempotency-Key':`site:${id}:${render_sha}`});
-export const refazerCena=(cfg:CfgSrv,id:string,i:number,o:{imagem:boolean;voz:boolean;plano?:string})=>api<{job:{id:string}}>(cfg,'POST',`/api/v1/projetos/${id}/cenas/${i}/refazer`,o);
+export const refazerCena=(cfg:CfgSrv,id:string,i:number,o:{imagem:boolean;voz:boolean;plano?:string;problema?:{tipo:string;cena_id:string;plano_id:string;timecode:string|null}})=>api<{job:{id:string}}>(cfg,'POST',`/api/v1/projetos/${id}/cenas/${i}/refazer`,o);
+export type QuadroVersao={versao?:number;t?:number;jpg?:string;erro?:string};
+export const quadrosRender=(cfg:CfgSrv,id:string,t:number,renders:string[])=>api<{quadros:Record<string,QuadroVersao>}>(cfg,'POST',`/api/v1/projetos/${id}/quadros`,{t,renders});
+export type Correcao={tipo:string;cena_id:string;plano_id:string;timecode:string;render_antes:string|null;versao_antes:number|null;criado:number};
 export const pedirCorrecao=(cfg:CfgSrv,id:string,render_sha:string,texto:string)=>api(cfg,'POST',`/api/v1/projetos/${id}/alterar`,{render_sha,texto});
 export const rejeitar=(cfg:CfgSrv,id:string,render_sha:string,motivo:string)=>api(cfg,'POST',`/api/v1/projetos/${id}/rejeitar`,{render_sha,motivo});
 export const aprovarRoteiro=(cfg:CfgSrv,id:string,revisao?:number)=>api(cfg,'POST',`/api/v1/projetos/${id}/aprovar-roteiro`,{revisao});

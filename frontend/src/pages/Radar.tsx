@@ -25,7 +25,9 @@ function fichaDoVideo(v:Video,canal:Canal|undefined,f:Filtros,coleta:string,medi
     estimado:[['Views por dia (média desde a publicação)',v.velocidade===null?'-':fmt(v.velocidade)],['Engajamento (curtidas + comentários ÷ views)',eng===null?'-':(eng*100).toFixed(1)+'%'],
       ['Força comparada aos outros desta busca',forca===null?'-':forca.toFixed(1)+'x a mediana']],
     notaEstimado:'Contas feitas com os números acima. Views por dia é média: não diz se o vídeo ainda cresce hoje.',
-    risco:dias>60||v.views===null?'alto':'medio',riscos};
+    risco:dias>60||v.views===null?'alto':'medio',riscos,
+    porque:`Passou nos filtros acima e está ordenado por ${({velocidade:'views por dia',views:'total de views',recentes:'data de publicação',engajamento:'engajamento'} as Record<string,string>)[f.ordem]||f.ordem}`+(forca!==null?`; tem ${forca.toFixed(1)}x a mediana de views por dia desta busca.`:'.'),
+    direitos:'O YouTube não informa se o canal autoriza cortes. Confira a descrição do canal ou peça autorização antes de usar; sem isso, use só como referência de pauta.'};
 }
 
 const NICHOS:[string,string][] = [['Todos os nichos',''],['Games e lives','gameplay'],['Podcasts e entrevistas','podcast entrevista'],['Humor','humor comédia'],['Esportes','esportes'],['Tecnologia e IA','tecnologia inteligência artificial'],['Educação e curiosidades','curiosidades'],['Ciência','ciência'],['História','história'],['Finanças e negócios','finanças investimentos'],['Empreendedorismo','empreendedorismo'],['Saúde e bem-estar','saúde bem-estar'],['Culinária','receita culinária'],['Viagens','viagem'],['Música','música'],['Cinema e séries','filmes séries'],['Cultura pop','cultura pop'],['Automóveis','carros'],['Beleza e moda','beleza moda'],['Notícias e análise','notícias análise']];

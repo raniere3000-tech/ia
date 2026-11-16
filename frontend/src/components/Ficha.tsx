@@ -1,7 +1,7 @@
 import { ClipboardList } from 'lucide-react';
 
 /** Ficha de oportunidade: de onde veio, quando, com quais filtros, o que foi medido e o que é estimativa, e o risco. */
-export type FichaView={coletado:string;fontes:{descricao:string;url?:string}[];filtros:[string,string][];observado:[string,string][];estimado:[string,string][];notaEstimado:string;risco:'baixo'|'medio'|'alto';riscos:string[]};
+export type FichaView={coletado:string;fontes:{descricao:string;url?:string}[];filtros:[string,string][];observado:[string,string][];estimado:[string,string][];notaEstimado:string;risco:'baixo'|'medio'|'alto';riscos:string[];porque?:string;direitos?:string};
 
 export type FichaServidor={id:string;coletado_em:number;fontes:{tipo:string;descricao:string;url?:string}[];filtros:{nicho:string;tema:string;dias:number;idioma:string;usou_youtube:boolean};
   observado:{titulos_em_alta_consultados:number;titulos_parecidos:number;exemplos:string[]};estimado:{interesse:string;como:string};risco:'baixo'|'medio'|'alto';riscos:string[]};
@@ -23,6 +23,9 @@ export default function Ficha({f}:{f:FichaView}){
     <div><b>Filtros usados</b><dl>{f.filtros.map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl></div>
     <div><b>Medido (dado real)</b><dl>{f.observado.map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl></div>
     <div><b>Estimado (conta, não é medição)</b><dl>{f.estimado.map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl><small className="hint">{f.notaEstimado}</small></div>
+    {f.porque&&<div><b>Por que apareceu</b><p className="hint">{f.porque}</p></div>}
+    {f.direitos&&<div><b>Direitos</b><p className="hint">{f.direitos}</p></div>}
+    <p className="hint">Retenção e tempo assistido não são públicos: o Radar não mostra nem inventa esses números.</p>
     {f.riscos.length>0&&<div><b>Riscos</b><ul>{f.riscos.map(r=><li key={r}>{r}</li>)}</ul></div>}
    </div></details>;
 }

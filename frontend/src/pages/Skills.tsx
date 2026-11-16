@@ -57,6 +57,7 @@ export function SkillsCard(){
   const {settings,toast}=useApp(); const cfg=useCfg();
   const [aberto,setAberto]=useState(false);
   const [f,setF]=useState({agente:'',estado:'',busca:''});
+  const [f2,setF2]=useState({prioridade:'',licenca:'',tipo:'',perfil:''});
   const [abrir,setAbrir]=useState('');
   const [busy,setBusy]=useState('');
   const [poll,setPoll]=useState(0);
@@ -67,7 +68,10 @@ export function SkillsCard(){
   const perfis=useServidor(c=>aberto?lerPerfis(c):Promise.resolve(null),0,[aberto]);
   const hist=useServidor(c=>aberto?historicoSkills(c,{etapa:'utilizada'}):Promise.resolve(null),0,[aberto]);
   const pap=useServidor(c=>aberto?pontaAPonta(c):Promise.resolve(null),0,[aberto]);
-  const todas=useMemo(()=>lista.dados?.skills||[],[lista.dados]);
+  const todasSem=useMemo(()=>lista.dados?.skills||[],[lista.dados]);
+  const todas=useMemo(()=>{ const pf=perfis.dados?.perfis.find(x=>x.id===f2.perfil);
+    return todasSem.filter(s=>(!f2.prioridade||s.prioridade===f2.prioridade)&&(!f2.tipo||s.tipo===f2.tipo)
+      &&(!f2.licenca||(f2.licenca==='sim'?!!s.licenca:!s.licenca))&&(!pf||pf.skills.includes(s.id))); },[todasSem,f2,perfis.dados]);
   if(!settings.servidor) return null;
   const r=lista.dados?.resumo; const job=t;
   const run=async(k:string,fn:()=>Promise<unknown>,msg:(x:any)=>string)=>{ setBusy(k); try{ const x=await fn(); toast(msg(x),'ok'); lista.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } };
@@ -98,10 +102,15 @@ export function SkillsCard(){
        <label>Agente<select value={f.agente} onChange={e=>setF({...f,agente:e.target.value})}><option value="">Todos</option>{Object.entries(NOME_AGENTE).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
        <label>Situação<select value={f.estado} onChange={e=>setF({...f,estado:e.target.value})}>{ESTADOS.map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
        <label>Procurar<input value={f.busca} onChange={e=>setF({...f,busca:e.target.value})} placeholder="ex.: storyboard, legenda, câmera"/></label>
+       <label>Tarefa<select value={f2.perfil} onChange={e=>setF2({...f2,perfil:e.target.value})}><option value="">Todas</option>{perfis.dados?.perfis.map(p=><option key={p.id} value={p.id}>{p.rotulo}</option>)}</select></label>
+       <label>Prioridade<select value={f2.prioridade} onChange={e=>setF2({...f2,prioridade:e.target.value})}><option value="">Todas</option>{['P0','P1','P2','P3'].map(x=><option key={x} value={x}>{x}{x==='P0'?' (mais importante)':''}</option>)}</select></label>
+       <label>Licença<select value={f2.licenca} onChange={e=>setF2({...f2,licenca:e.target.value})}><option value="">Todas</option><option value="sim">Confirmada</option><option value="nao">Não confirmada</option></select></label>
+       <label>Tipo<select value={f2.tipo} onChange={e=>setF2({...f2,tipo:e.target.value})}><option value="">Todos</option><option value="producao">Produção de vídeo</option><option value="desenvolvimento">Desenvolvimento do site</option></select></label>
       </div>
+      <p className="hint">{todas.length} de {todasSem.length} skill(s) com esse filtro.</p>
       <ul className="skills-lista">{todas.map(s=><li key={s.id}>
         <button className="skill-linha" onClick={()=>setAbrir(abrir===s.id?'':s.id)} aria-expanded={abrir===s.id}>
-          <b>{s.id}</b><span className="muted">{s.agentes.map(a=>NOME_AGENTE[a]||a).join(', ')} • {s.gatilho}</span>
+          <b>{s.id}</b><span className="muted">{s.agentes.map(a=>NOME_AGENTE[a]||a).join(', ')} • {s.gatilho} • {s.prioridade} • versão {s.versao||'—'} • {s.licenca||'licença não confirmada'} • {s.origem.replace('https://github.com/','')} • conferida {quando(s.ultimo_teste)}</span>
           <span className={'tag '+tagEstado(s)}>{s.ativa||s.estado==='nao_instalada'?s.estado_nome:'Desligada'}</span>{s.nova_versao&&<span className="tag info">versão nova</span>}</button>
         {abrir===s.id&&<Detalhe id={s.id} onMudou={()=>lista.recarregar()}/>}
       </li>)}</ul>

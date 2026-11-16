@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Play, Loader2, Server, Box, CheckCircle2 } from 'lucide-react';
+import { Play, Loader2, Server, Box, CheckCircle2, RefreshCcw } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
 import { catalogo, pedirDemo, lerFila, urlServidor, assinarAsset, lerVideos3d, testar3d, horaTexto, type EstiloInfo, type DemoInfo } from '../lib/api';
 
-const STATUS:Record<string,[string,string]>={operacional:['Operacional','ok'],beta:['Beta / em teste','warn'],indisponivel:['Indisponível','bad']};
-/** Os estilos, também sem servidor (lista fixa igual à do servidor, para mostrar a situação honesta). */
+const STATUS:Record<string,[string,string]>={operacional:['Operacional','ok'],beta:['Beta / em teste','warn'],indisponivel:['Indisponível','bad'],nao_conferido:['Não conferido (sem servidor)','']};
+/** Os estilos, também sem servidor: só os nomes. O estado (operacional/beta/indisponível) vem SEMPRE do servidor;
+ *  sem resposta dele, nenhum aparece como disponível. */
 const OFFLINE:Pick<EstiloInfo,'id'|'nome'|'status'|'descricao'>[]=[
   {id:'lousa_giz',nome:'Lousa de giz',status:'operacional',descricao:''},{id:'traco_neon',nome:'Traço neon',status:'operacional',descricao:''},
   {id:'quadrinhos',nome:'Quadrinhos',status:'operacional',descricao:''},{id:'vetor_chapado',nome:'Vetor chapado',status:'operacional',descricao:''},
@@ -37,6 +38,7 @@ function Cartao({e,demo,formato,escolher,variante=''}:{e:EstiloInfo;demo?:DemoIn
     },3000);
     return ()=>clearInterval(iv);
   },[esperando,cfg,e.id,formato,toast,variante]);
+  const refazer=async()=>{ try{ const r=await pedirDemo(cfg,e.id,formato,variante,true); if(r.job){ setUrl(''); setEsperando(r.job.id); toast('Gerando a demonstração de novo no celular. A antiga continua valendo até a nova passar na conferência.','info'); } }catch(x){ toast(erroTexto(x),'erro'); } };
   const ver=async()=>{
     try{
       if(demo){ setUrl(urlServidor(cfg,await assinarAsset(cfg,demo.asset))); return; }
@@ -59,6 +61,7 @@ function Cartao({e,demo,formato,escolher,variante=''}:{e:EstiloInfo;demo?:DemoIn
      <p className="hint">{e.servidor?<><Server size={12}/> Roda no celular • {e.formatos.join(', ')} • {e.custo}</>:<><Box size={12}/> Ainda não roda no celular (sem teste do motor no Android).</>}</p>
      <div className="row-gap left">
       {e.servidor&&!e.precisa_imagem&&<button className="subtle sm" disabled={!!esperando} onClick={ver}><Play size={14}/> {demo?'Ver demonstração':'Gerar demonstração'}</button>}
+      {e.servidor&&!e.precisa_imagem&&demo&&<button className="link-btn" disabled={!!esperando} onClick={refazer}><RefreshCcw size={13}/> Atualizar demonstração</button>}
       {e.precisa_imagem&&<span className="hint">Precisa de imagens de IA (Gemini) para cada cena; sem demonstração grátis.</span>}
       {escolher&&e.servidor&&<button className="primary sm" onClick={()=>escolher(e.id)}><CheckCircle2 size={14}/> Usar este estilo</button>}
      </div>
@@ -73,9 +76,10 @@ export function GradeEstilos({escolher,selecionado}:{escolher?:(id:string)=>void
   // Primeiro o que funciona hoje, depois beta, por último o que ainda não está disponível.
   const ORDEM=(e:EstiloInfo)=>e.status==='operacional'?0:e.status==='beta'?1:2;
   const anim=cat.dados?.estilos.find(x=>x.id==='animado2d');
-  const lista:EstiloInfo[]=cat.dados?.estilos||OFFLINE.map(o=>({...o,tecnica:'',prioridade:'',paleta:['#1b2030','#2a3045','#fff'],precisa_imagem:o.id==='cartoon2d',servidor:false,formatos:[],custo:''}));
+  const lista:EstiloInfo[]=cat.dados?.estilos||OFFLINE.map(o=>({...o,status:'nao_conferido' as EstiloInfo['status'],tecnica:'',prioridade:'',paleta:['#1b2030','#2a3045','#fff'],precisa_imagem:o.id==='cartoon2d',servidor:false,formatos:[],custo:''}));
   return <>
     {!settings.servidor&&<p className="hint warn">Sem o servidor do celular ligado, só a lista aparece. As demonstrações e a produção rodam no servidor.</p>}
+    {settings.servidor&&cat.erro&&<p className="hint bad">Não consegui falar com o servidor ({cat.erro}). Nenhum estilo é mostrado como disponível até ele responder.</p>}
     {cat.dados&&!cat.dados.ffmpeg&&<p className="hint bad">O servidor está sem FFmpeg (Termux: pkg install ffmpeg). Nenhum estilo renderiza até instalar.</p>}
     <div className="row-gap left"><span className="field-label">Formato da demonstração</span>{['9:16','16:9','1:1'].map(f=><button key={f} className={'chip '+(formato===f?'on':'')} onClick={()=>setFormato(f)}>{f}</button>)}</div>
     <div className="estilos-grade">{[...lista].sort((a,b)=>ORDEM(a)-ORDEM(b)).map(e=><div key={e.id} className={selecionado===e.id?'estilo-sel':''}><Cartao e={e} formato={formato} demo={cat.dados?.demos[`${e.id}:${formato}`]} escolher={escolher}/></div>)}</div>

@@ -7,6 +7,7 @@ import { drawCaption, type Preset } from '../lib/captions';
 import { baixar } from '../lib/exporter';
 import { baixarVideo, estadoExport, exportarNoServidor, type EstadoExport } from '../lib/exportServidor';
 import { useCfg, erroTexto } from './Servidor2';
+import { acaoFila } from '../lib/api';
 import { CATEGORIAS_SOM, gerarSom, receitaDe } from '../lib/sons';
 import { ANIMS, TAMANHO, audioDe, midias, type Anim, type Arquivo, type Formato, type TipoArq } from '../lib/montagem';
 import {
@@ -59,7 +60,9 @@ function Onda({fonte,arquivos,de,dur,loop,vol,larg}:{fonte:string;arquivos:Arqui
 
 export default function EditorVideo({inicial,arquivos,onChange,onEnviar}:{inicial:Proj;arquivos:Arquivo[];onChange:(p:Proj,manual:boolean)=>void;onEnviar?:(tipo:TipoArq,fs:FileList|null)=>Promise<Arquivo[]>}){
   const {toast,settings}=useApp(); const cfg=useCfg();
-  const [srv,setSrv]=useState<{job:string;avisos:string[];e?:EstadoExport}|null>(null);
+  // a exportação no celular continua se a página recarregar: o número do trabalho fica guardado neste aparelho
+  const [srv,setSrvBase]=useState<{job:string;avisos:string[];e?:EstadoExport}|null>(()=>{ try{ const x=JSON.parse(localStorage.getItem('estudio_export_srv')||'null'); return x&&typeof x.job==='string'?{job:x.job,avisos:Array.isArray(x.avisos)?x.avisos:[]}:null; }catch{ return null; } });
+  const setSrv:typeof setSrvBase=v=>setSrvBase(x=>{ const n=typeof v==='function'?v(x):v; try{ if(n) localStorage.setItem('estudio_export_srv',JSON.stringify({job:n.job,avisos:n.avisos})); else localStorage.removeItem('estudio_export_srv'); }catch{ /* sem armazenamento */ } return n; });
   const [p,setP]=useState<Proj>(inicial); const pRef=useRef(p); pRef.current=p;
   const desfazer=useRef<Proj[]>([]); const refazer=useRef<Proj[]>([]); const [,forca]=useState(0);
   const [sel,setSel]=useState<string>(''); const [tempo,setTempo]=useState(0); const [pps,setPps]=useState(50);
@@ -297,19 +300,30 @@ export default function EditorVideo({inicial,arquivos,onChange,onEnviar}:{inicia
     {settings.servidor&&<button className="subtle sm" onClick={exportarCelular} disabled={!!ocupado||!p.clips.length||(!!srv&&!['concluido','falhou','cancelado'].includes(srv.e?.status||''))} title="O servidor do celular faz o vídeo com o FFmpeg. Bom para vídeos longos ou quando o navegador grava devagar."><Smartphone size={14}/> Fazer no celular</button>}
    </div>
    {ocupado&&<p className="hint"><Loader2 size={13} className="spin"/> {ocupado}</p>}
+   {settings.servidor&&<details className="hint ed-suporte"><summary>O que o celular sabe fazer na exportação</summary>
+    <ul><li>Formatos 9:16, 16:9 e 1:1 em MP4 (H.264 + AAC), com o som misturado aqui.</li>
+     <li>Fotos e vídeos com corte, fade, zoom e as animações da lista; filtros de brilho, contraste e saturação.</li>
+     <li>Textos saem como texto simples (sem as legendas animadas); "Fundo desfocado" fica parado.</li>
+     <li>Se um quadro falhar, só ele é refeito; tela preta ou imagem congelada aparecem como aviso no resultado.</li>
+     <li>"Exportar vídeo" (no navegador) continua igual e faz tudo o que a prévia mostra.</li></ul></details>}
    {srv&&<div className={'ed-srv'+(srv.e?.status==='falhou'?' erro':'')} data-export={srv.e?.status||'enviado'}>
     {srv.e?.status==='falhou'?<>
      <b>O vídeo não ficou pronto no celular.</b>
      <p>{srv.e.diagnostico?.quadro!=null?<>O problema foi no <b>quadro {srv.e.diagnostico.quadro}</b> (aos {srv.e.diagnostico.timecode}), com a mídia <b>{srv.e.diagnostico.midia}</b>. Os outros quadros ficaram guardados: tentar de novo refaz só este.</>:srv.e.erro}</p>
      <details><summary>Detalhes para conferir</summary><pre>{diagTexto(srv.e)}</pre></details>
      <div className="row-gap left"><button className="primary sm" onClick={exportarCelular} disabled={!!ocupado}>Tentar de novo</button><button className="subtle sm" onClick={()=>{ navigator.clipboard?.writeText(diagTexto(srv.e!)).then(()=>toast('Detalhes copiados.','ok'),()=>{}); }}>Copiar detalhes</button><button className="link-btn" onClick={()=>setSrv(null)}>Fechar</button></div>
+    </>:srv.e?.status==='cancelado'?<>
+     <b>Exportação cancelada.</b> <span className="hint">Os quadros que já ficaram prontos continuam guardados no celular: pedir de novo aproveita eles.</span>
+     <div className="row-gap left"><button className="primary sm" onClick={exportarCelular} disabled={!!ocupado}>Retomar</button><button className="link-btn" onClick={()=>setSrv(null)}>Fechar</button></div>
     </>:srv.e?.status==='concluido'&&srv.e.resultado?<>
      <b>Feito no celular: {fmt(srv.e.resultado.duracao)}, {srv.e.resultado.tamanho_mb} MB.</b>
      {srv.e.resultado.reaproveitados>0&&<small className="hint"> {srv.e.resultado.reaproveitados} quadro(s) aproveitados da vez anterior.</small>}
-     {[...srv.avisos,...srv.e.resultado.avisos].map(a=><p key={a} className="hint">⚠ {a}</p>)}
+     {[...srv.avisos,...srv.e.resultado.avisos].map(a=><p key={a} className={'hint'+(/preta|congel|parad/i.test(a)?' bad':'')}>⚠ {a}</p>)}
+     <p className="hint">Compare com a prévia daqui: o som e os textos devem bater nos mesmos tempos.</p>
      <button className="link-btn" onClick={()=>setSrv(null)}>Fechar</button>
     </>:<>
      <span><Loader2 size={13} className="spin"/> No celular: {srv.e?.etapa||'pedido enviado'}{srv.e?` (${Math.round(srv.e.progresso)}%)`:''}</span>
+     <button className="link-btn" onClick={async()=>{ try{ await acaoFila(cfg,srv.job,'cancelar'); setSrv(x=>x&&x.e?{...x,e:{...x.e,status:'cancelado',etapa:'Cancelado'}}:x); toast('Exportação cancelada no celular.','ok'); }catch(e){ toast(erroTexto(e),'erro'); } }}>Cancelar</button>
      <div className="ed-srv-barra"><i style={{width:`${srv.e?.progresso||2}%`}}/></div>
      {srv.avisos.map(a=><p key={a} className="hint">⚠ {a}</p>)}
     </>}

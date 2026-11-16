@@ -190,6 +190,10 @@ def validar_planos(lista) -> list:
             out[-1]['chaves'] = ch
         if p.get('tremor') is True:      # câmera treme (motivado: susto, impacto, explosão)
             out[-1]['tremor'] = True
+        if _txt(p.get('acao'), 160):      # o que acontece no plano (texto do diretor; guia o roteiro e a revisão)
+            out[-1]['acao'] = _txt(p.get('acao'), 160)
+        if p.get('bloqueado') is True:   # plano aprovado: a IA e o "refazer" não mexem nele
+            out[-1]['bloqueado'] = True
     return out
 
 

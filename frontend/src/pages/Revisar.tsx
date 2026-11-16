@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { CheckCircle2, XCircle, Pencil, Loader2, AlertTriangle, Mail, ArrowLeft, Lock, Film, ShieldCheck, Clock, RotateCcw } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { CheckCircle2, XCircle, Pencil, Loader2, AlertTriangle, Mail, ArrowLeft, Lock, Film, ShieldCheck, Clock, RotateCcw, Eye } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/Servidor2';
 import { Etapas } from '../components/Prontidao';
-import { lerRevisao, aprovar, pedirCorrecao, refazerCena, rejeitar, aprovarRoteiro, reenviarEmail, urlServidor, duracaoTexto, horaTexto, type Render, type Cena, type Briefing, type Qualidade } from '../lib/api';
+import { lerRevisao, aprovar, pedirCorrecao, refazerCena, rejeitar, aprovarRoteiro, reenviarEmail, urlServidor, duracaoTexto, horaTexto, type Render, type Cena, type Briefing, type Qualidade, type Problema, type QuadroVersao, type Correcao, quadrosRender } from '../lib/api';
 
 const REDES:[string,string][]=[['youtube','YouTube'],['instagram','Instagram'],['facebook','Facebook'],['tiktok','TikTok'],['kwai','Kwai (manual)']];
 const DECISAO:Record<string,string>={aprovado:'Aprovado',alterar:'Correção pedida',rejeitado:'Rejeitado'};
@@ -16,19 +16,70 @@ const ST_Q:Record<Qualidade['status'],[string,string,string]>={
   falha_tecnica:['Falha técnica','bad','O arquivo final tem um problema técnico.'],
 };
 const NOME_T:Record<string,string>={quadro_escuro:'Quadro escuro',sem_detalhe:'Imagem sem detalhe',plano_repetido:'Plano repetido',sem_imagem:'Cena sem foto',ritmo:'Ritmo',analise_indisponivel:'Sem análise',narrativa:'Roteiro',continuidade:'Continuidade da série',sai_do_quadro:'Sai do quadro',cabeca_cortada:'Cabeça cortada',sobreposicao:'Um esconde o outro',boca_parada:'Boca parada',visual_ia:'Opinião da IA'};
-/** Relatório do diretor de qualidade: cada ponto com a cena, o instante (toque para pular até ele) e a sugestão. */
-function QualidadePainel({q,cenas}:{q:Qualidade;cenas:Cena[]}){
+const SEV:Record<string,[string,string]>={alta:['grave','bad'],media:['médio','warn'],baixa:['leve','']};
+const segDe=(tc:string|null)=>{ if(!tc) return null; const [m,ss]=tc.split(':'); return (+m)*60+(+ss); };
+/** Em que categoria o apontamento cai: técnico que bloqueia, alerta visual, sem análise ou já com você (revisão humana). */
+const categoria=(p:Problema)=>p.tipo==='analise_indisponivel'?['análise indisponível','']:p.status==='revisao_humana'?['revisão humana','warn']:['alerta visual','warn'];
+const confianca=(p:Problema)=>{ const m=/confian[çc]a\s*([\d.,]+)/i.exec(p.evidencia||''); return p.natureza==='julgamento'?`opinião da IA${m?`, confiança ${Math.round(parseFloat(m[1].replace(',','.'))*100)}%`:''}`:'medido no vídeo (certeza alta)'; };
+
+/** Quadros reais de uma ou mais versões do vídeo no mesmo instante. */
+function Quadros({pid,t,renders}:{pid:string;t:number;renders:{id:string;versao:number}[]}){
+  const cfg=useCfg(); const [q,setQ]=useState<Record<string,QuadroVersao>|null>(null); const [erro,setErro]=useState('');
+  useEffect(()=>{ setQ(null); quadrosRender(cfg,pid,t,renders.map(r=>r.id)).then(r=>setQ(r.quadros)).catch(e=>setErro(erroTexto(e))); },[pid,t,renders.map(r=>r.id).join()]); // eslint-disable-line react-hooks/exhaustive-deps
+  if(erro) return <p className="hint bad">{erro}</p>;
+  if(!q) return <p className="hint"><Loader2 size={13} className="spin"/> Tirando o quadro do vídeo…</p>;
+  return <div className="qd-quadros">{renders.map(r=>{ const x=q[r.id]; return <figure key={r.id}>
+    {x?.jpg?<img src={x.jpg} alt={`Versão ${r.versao} em ${x.t} s`}/>:<div className="hint">{x?.erro||'Sem quadro.'}</div>}
+    <figcaption>Versão {r.versao}{x?.t!=null?` • ${x.t} s`:''}</figcaption></figure>; })}</div>;
+}
+
+/** Relatório do diretor de qualidade por cena e plano: instante, tipo, gravidade, confiança, quadro de evidência, tentativas,
+ *  versão e "corrigir só esta cena/plano". Corrigir nunca aprova: o vídeo novo volta para você. */
+function QualidadePainel({q,cenas,pid,render,renders,correcoes,podeCorrigir,corrigido}:{q:Qualidade;cenas:Cena[];pid:string;render:Render;renders:{id:string;versao:number}[];correcoes:Correcao[];podeCorrigir:boolean;corrigido:()=>void}){
+  const {toast}=useApp(); const cfg=useCfg();
   const [s,cls,txt]=ST_Q[q.status]||ST_Q.analise_indisponivel;
-  const pular=(tc:string|null)=>{ if(!tc) return; const [m,ss]=tc.split(':'); const v=document.querySelector<HTMLVideoElement>('.rev-video video'); if(v){ v.currentTime=(+m)*60+(+ss); v.play().catch(()=>{}); v.scrollIntoView({behavior:'smooth',block:'center'}); } };
-  const nCena=(id:string)=>{ const i=cenas.findIndex(c=>c.id===id); return i>=0?`Cena ${i+1}`:''; };
+  const [ver,setVer]=useState<string>(''); const [busy,setBusy]=useState('');
+  const pular=(tc:string|null)=>{ const t=segDe(tc); if(t==null) return; const v=document.querySelector<HTMLVideoElement>('.rev-video video'); if(v){ v.currentTime=t; v.play().catch(()=>{}); v.scrollIntoView({behavior:'smooth',block:'center'}); } };
+  const idx=(id:string)=>cenas.findIndex(c=>c.id===id);
+  const nPlano=(c:Cena|undefined,pl:string)=>{ if(!c||!pl) return ''; const k=(c.planos||[]).findIndex((x,j)=>(x.id||`p${j+1}`)===pl); return k>=0?`plano ${k+1}${c.planos![k].plano?` (${c.planos![k].plano})`:''}`:''; };
+  const grupos=[...cenas.map((c,i)=>({chave:c.id,titulo:`Cena ${i+1}: ${c.titulo}`,lista:q.problemas.filter(p=>p.cena_id===c.id)})),
+    {chave:'',titulo:'Vídeo inteiro',lista:q.problemas.filter(p=>!p.cena_id||idx(p.cena_id)<0)}].filter(g=>g.lista.length);
+  const anterior=[...renders].filter(r=>r.versao<render.versao).sort((a,b)=>b.versao-a.versao)[0];
+  const corrigir=async(p:Problema,k:string)=>{ const i=idx(p.cena_id); if(i<0) return; setBusy(k);
+    try{ await refazerCena(cfg,pid,i,{imagem:false,voz:false,plano:p.plano_id||undefined,problema:{tipo:p.tipo,cena_id:p.cena_id,plano_id:p.plano_id||'',timecode:p.timecode}});
+      toast(`Refazendo só ${p.plano_id?nPlano(cenas[i],p.plano_id):`a cena ${i+1}`}. O vídeo novo volta para você aprovar.`,'ok'); corrigido(); }
+    catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } };
+  const tec=q.tecnico.erros.length; const hum=q.problemas.filter(p=>p.status==='revisao_humana').length; const ind=q.problemas.filter(p=>p.tipo==='analise_indisponivel').length;
   return <section className="panel qualidade">
     <div className="section-head"><h2><ShieldCheck size={18}/> Diretor de qualidade <span className={'tag '+cls}>{s}</span></h2></div>
-    <p className="subtitle">{txt}</p>
-    {q.problemas.length>0&&<ul className="qd-lista">{q.problemas.map((p,k)=><li key={k} className={'qd-'+p.severidade}>
-      <div><b>{NOME_T[p.tipo]||p.tipo}</b>{p.cena_id&&<span className="muted"> · {nCena(p.cena_id)}</span>}{p.timecode&&<button className="link-btn" onClick={()=>pular(p.timecode)}><Clock size={12}/> {p.timecode.replace(/^00:/,'').replace(/\.\d+$/,'')} s</button>}</div>
+    <p className="subtitle">{txt} Relatório da versão {render.versao}.</p>
+    <div className="row-gap left qd-resumo">
+      <span className={'tag '+(tec?'bad':'ok')}>{tec?`${tec} erro(s) técnico(s) que bloqueiam`:'arquivo técnico ok'}</span>
+      <span className="tag warn">{q.problemas.length-hum-ind} alerta(s) visual(is)</span>
+      {ind>0&&<span className="tag">{ind} sem análise</span>}
+      {hum>0&&<span className="tag warn">{hum} para sua revisão</span>}
+    </div>
+    {tec>0&&<p className="hint bad">{q.tecnico.erros.join(' ')}</p>}
+    {grupos.map(g=><div key={g.chave||'tudo'} className="qd-grupo"><div className="field-label">{g.titulo}</div>
+     <ul className="qd-lista">{g.lista.map((p,k)=>{ const chave=g.chave+k; const c=cenas[idx(p.cena_id)]; const t=segDe(p.timecode); const [cat,ccls]=categoria(p); const [sv,scls]=SEV[p.severidade]||SEV.baixa;
+      return <li key={k} className={'qd-'+p.severidade}>
+      <div><b>{NOME_T[p.tipo]||p.tipo}</b>{p.plano_id&&<span className="muted"> · {nPlano(c,p.plano_id)}</span>}
+        {p.timecode&&<button className="link-btn" onClick={()=>pular(p.timecode)}><Clock size={12}/> {p.timecode.replace(/^00:/,'').replace(/\.\d+$/,'')} s</button>}
+        <span className={'tag '+scls}>{sv}</span><span className={'tag '+ccls}>{cat}</span></div>
       <p>{p.descricao}</p>{p.correcao&&<small className="muted">Sugestão: {p.correcao}</small>}
-      {(p.natureza==='julgamento'||p.status==='revisao_humana'||p.evidencia)&&<small className="muted qd-extra">{p.natureza==='julgamento'?'Opinião, não medida. ':'Medido. '}{p.status==='revisao_humana'?`Tentei corrigir ${p.tentativas||0} vez(es); a decisão é sua. `:''}{p.evidencia?`(${p.evidencia})`:''}</small>}</li>)}</ul>}
-    {q.tecnico.erros.length>0&&<p className="hint bad">{q.tecnico.erros.join(' ')}</p>}
+      <small className="muted qd-extra">{confianca(p)} • {p.tentativas||0} tentativa(s) de correção • versão {render.versao}{p.evidencia?` • ${p.evidencia}`:''}</small>
+      <div className="row-gap left">
+        {t!=null&&<button className="link-btn" onClick={()=>setVer(ver===chave?'':chave)}><Eye size={12}/> {ver===chave?'Esconder o quadro':anterior?'Ver o quadro (agora e antes)':'Ver o quadro'}</button>}
+        {podeCorrigir&&c&&!c.bloqueada&&p.tipo!=='analise_indisponivel'&&<button className="link-btn" disabled={!!busy} onClick={()=>corrigir(p,chave)}>{busy===chave?<Loader2 size={12} className="spin"/>:<RotateCcw size={12}/>} Corrigir apenas {p.plano_id?'este plano':'esta cena'}</button>}
+      </div>
+      {ver===chave&&t!=null&&<Quadros pid={pid} t={t} renders={[{id:render.id,versao:render.versao},...(anterior?[anterior]:[])]}/>}
+     </li>; })}</ul></div>)}
+    {!q.problemas.length&&!tec&&<p className="hint">Nenhum apontamento nesta versão.</p>}
+    {correcoes.length>0&&<><div className="field-label mt">Correções feitas</div>
+     <ul className="qd-lista">{[...correcoes].reverse().slice(0,8).map((x,k)=>{ const i=idx(x.cena_id); const t=segDe(x.timecode)??0; const chave='c'+k;
+      return <li key={k}><div><b>{NOME_T[x.tipo]||x.tipo}</b> <span className="muted">· {i>=0?`Cena ${i+1}`:'cena'}{x.plano_id?` · ${nPlano(cenas[i],x.plano_id)}`:''} · a partir da versão {x.versao_antes??'?'} • {horaTexto(x.criado)}</span></div>
+        {x.render_antes&&x.render_antes!==render.id&&<button className="link-btn" onClick={()=>setVer(ver===chave?'':chave)}><Eye size={12}/> Comparar versão {x.versao_antes} com a {render.versao}</button>}
+        {ver===chave&&x.render_antes&&<Quadros pid={pid} t={t} renders={[{id:x.render_antes,versao:x.versao_antes||0},{id:render.id,versao:render.versao}]}/>}</li>; })}</ul></>}
   </section>;
 }
 
@@ -46,7 +97,7 @@ export default function Revisar(){
   if(!pid) return <section className="panel empty-state"><h2>Nenhum vídeo escolhido</h2><button className="primary" onClick={()=>go('fila')}>Abrir Fila e aprovações</button></section>;
   const r=rev.dados;
   if(!r) return <section className="panel">{rev.erro?<p className="hint bad">{rev.erro}</p>:<p className="hint"><Loader2 size={14} className="spin"/> Abrindo...</p>}</section>;
-  const p=r.projeto; const d=p.dados as {briefing:Briefing;cenas:Cena[];render:Render|null;roteiro:{titulo:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[]}|null;producao?:{erro?:string};qualidade?:Qualidade};
+  const p=r.projeto; const d=p.dados as {briefing:Briefing;cenas:Cena[];render:Render|null;roteiro:{titulo:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[]}|null;producao?:{erro?:string};qualidade?:Qualidade;renders?:{id:string;versao:number}[];correcoes?:Correcao[]};
   const render=d.render; const b=d.briefing;
   const destinos=redes??(b?.destinos?.redes||[]);
   const fazer=async(nome:string,f:()=>Promise<unknown>,ok:string)=>{ setBusy(nome); try{ await f(); toast(ok,'ok'); setTexto(''); rev.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } };
@@ -72,7 +123,7 @@ export default function Revisar(){
     </div>}
    </section>
 
-   {render&&d.qualidade&&<QualidadePainel q={d.qualidade} cenas={d.cenas||[]}/>}
+   {render&&d.qualidade&&<QualidadePainel q={d.qualidade} cenas={d.cenas||[]} pid={pid} render={render} renders={d.renders||[]} correcoes={d.correcoes||[]} podeCorrigir={esperandoVideo} corrigido={()=>rev.recarregar()}/>}
 
    {esperandoVideo&&render&&<section className="panel decisao">
     <div className="section-head"><h2>Sua decisão</h2></div>

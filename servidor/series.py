@@ -19,7 +19,7 @@ import projetos as pj
 import rig2d
 
 PASTA_RIG = pg.DADOS / 'rig2d'
-TIPOS_BIBLIA = ('fato', 'relacao', 'objeto', 'mudanca', 'regra', 'evento')
+TIPOS_BIBLIA = ('fato', 'relacao', 'objeto', 'mudanca', 'regra', 'evento', 'pose')
 
 
 class ErroSerie(pj.ErroProjeto):

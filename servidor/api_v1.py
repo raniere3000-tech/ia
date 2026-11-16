@@ -5,6 +5,7 @@ Arquivos para o <video> do navegador usam link temporário assinado (?exp=&sig=)
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -95,13 +96,13 @@ def _quando(d: dict) -> float | None:
 def job_demo(ctx):
     eid, fmt, var = ctx.dados['estilo'], ctx.dados.get('formato', '9:16'), ctx.dados.get('variante', '')
     chave = f'demo:{eid}:{fmt}:{ec.VERSAO_MOTOR}' + (f':{var}' if var else '')
-    if db.kv(chave):
+    if db.kv(chave) and not ctx.dados.get('refazer'):      # refazer: a demonstração antiga só é trocada quando a nova passar
         return {'resultado': db.kv(chave), 'etapa': 'Pronto'}
     if not ec.utilizavel(eid, False):
         raise produtor.ErroProdutor('Este estilo não roda neste servidor ainda.', True)
     W, H = ec.FORMATOS[fmt]
-    pasta = pg.DADOS / 'demos' / (f'{eid}-{fmt.replace(":", "x")}' + (f'-{var}' if var else ''))
-    shutil.rmtree(pasta, ignore_errors=True)
+    pasta = pg.DADOS / 'demos' / (f'{eid}-{fmt.replace(":", "x")}' + (f'-{var}' if var else '') + (f'-r{int(time.time())}' if ctx.dados.get('refazer') else ''))
+    shutil.rmtree(pasta, ignore_errors=True)        # (refazer usa outra pasta: o arquivo da demonstração antiga continua valendo até a nova passar)
     pasta.mkdir(parents=True)
     saida = pasta / 'demo.mp4'
     ctx.progresso(10, 'Desenhando as peças' if eid not in ec.motor3d.ESTILOS_3D else 'Desenhando o fundo 3D (só na primeira vez, uns 30 s)')
@@ -157,6 +158,106 @@ def _aparelho() -> dict:
         _FICHA.update(t=time.time(), ficha=hardware.ficha())
     j = db.um("SELECT id, status, etapa, progresso, erro FROM jobs WHERE tipo='aparelho.testar' ORDER BY criado DESC LIMIT 1")
     return {'ficha': _FICHA['ficha'], 'laudo': hardware.ultimo_laudo(), 'job': j}
+
+
+def _chave_pose(dados: dict, d: dict) -> str:
+    import rig2d
+    p = rig2d.validar_personagem(dados)
+    return f'pose:{rig2d.assinatura(p)}:{d.get("pose", "")}:{d.get("objeto", "")}:{d.get("expressao", "")}:{ec.VERSAO_MOTOR}'
+
+
+def job_pose(ctx):
+    """Prévia real de uma pose (S3): o motor 2D renderiza 2 s do personagem com a pose/objeto e o quadro do meio vira imagem."""
+    import base64
+    import rig2d
+    d = ctx.dados
+    p = srs.obter_personagem(d['personagem'])
+    chave = _chave_pose(p['dados'], d)
+    if db.kv(chave):
+        return {'resultado': {'png': db.kv(chave)}, 'etapa': 'Pronto'}
+    acoes = []
+    if d.get('pose') in rig2d.POSES:
+        acoes.append({'t': 0.1, 'tipo': 'pose', 'pose': d['pose']})
+    if d.get('objeto') in rig2d.OBJETOS:
+        acoes.append({'t': 0.1, 'tipo': 'segurar', 'objeto': d['objeto']})
+    cena = ec.validar_cena({'titulo': '', 'texto': '', 'personagem': 'x', 'cenario_id': 'previa',
+                            'elenco': [{'personagem_id': 'x', 'posicao': 'centro', 'expressao': d.get('expressao') or 'neutro', 'acoes': acoes}],
+                            'planos': [{'plano': 'WS'}]})
+    cena['_personagens'] = {'x': p['dados']}
+    cena['_cenario'] = {'tipo': 'vazio'}
+    pasta = pg.DADOS / 'rig2d' / 'poses' / hashlib.sha256(chave.encode()).hexdigest()[:16]
+    shutil.rmtree(pasta, ignore_errors=True)
+    pasta.mkdir(parents=True)
+    W, H = 360, 640
+    ctx.progresso(20, 'Desenhando a pose com o motor 2D')
+    ec.preparar('animado2d', W, H, 2.0, None, ctx.cancelado, cena=cena)
+    rd.rodar(ec.montar('animado2d', cena, W, H, 2.0, pasta, None, None, pasta / 'pose.mp4'), ctx.cancelado, tempo_max=600)
+    rd.rodar(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-ss', '1.6', '-i', str(pasta / 'pose.mp4'), '-frames:v', '1', str(pasta / 'pose.png')],
+             ctx.cancelado, tempo_max=60)
+    png = 'data:image/png;base64,' + base64.b64encode((pasta / 'pose.png').read_bytes()).decode()
+    db.kv_gravar(chave, png)
+    shutil.rmtree(pasta, ignore_errors=True)
+    return {'resultado': {'png': png}, 'etapa': 'Pronto'}
+
+
+def pedir_pose(pid: str, d: dict) -> dict:
+    import rig2d
+    p = srs.obter_personagem(pid)
+    d = {'personagem': pid, 'pose': d.get('pose') if d.get('pose') in rig2d.POSES else '',
+         'objeto': d.get('objeto') if d.get('objeto') in rig2d.OBJETOS else '',
+         'expressao': d.get('expressao') if d.get('expressao') in rig2d.EXPRESSOES else 'neutro'}
+    chave = _chave_pose(p['dados'], d)
+    if db.kv(chave):
+        return {'png': db.kv(chave)}
+    j = db.um('SELECT * FROM jobs WHERE chave LIKE ? ORDER BY criado DESC LIMIT 1', chave + '%')
+    if not j or j['status'] in ('falhou', 'cancelado'):
+        j = fila.enfileirar('personagem.pose', agente='series', dados=d, titulo='Prévia de pose do personagem',
+                            chave=chave + ('' if not j else ':' + str(int(time.time()))), max_tentativas=1)
+    return {'job': j['id'], 'status': j['status'], 'etapa': j.get('etapa') or '', 'erro': j.get('erro') or ''}
+
+
+def visemas_audio(d: dict) -> dict:
+    """Prévia da boca (S3): os níveis que o motor usaria para uma fala gravada, quadro a quadro (12 por segundo)."""
+    import rig2d
+    import tempfile
+    a = pj.asset(str(d.get('asset') or ''))
+    with tempfile.TemporaryDirectory() as t:
+        wav = Path(t) / 'fala.wav'
+        rd.rodar(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', a['caminho'], '-ac', '1', '-ar', '24000', '-t', '60', str(wav)], tempo_max=120)
+        dur = rd.duracao(wav)
+        niveis, modo = rig2d.visemas(wav, dur, str(d.get('texto') or '')[:600])
+    return {'dur': round(dur, 2), 'passo': round(1 / 12, 4), 'niveis': niveis, 'modo': modo,
+            'formas': ['fechada', 'pouco aberta', 'aberta (a)', 'redonda (o, u)', 'larga (e, i)'],
+            'limites': 'Aproximação pelo volume e pelas vogais do texto; não é leitura de fonemas.'}
+
+
+def quadros_render(pid: str, d: dict) -> dict:
+    """S4: o quadro de verdade de cada versão do vídeo num instante (para ver a falha e comparar antes/depois).
+    Só versões deste projeto; o arquivo é o render guardado. Quadro pequeno (360 px), guardado em cache no disco."""
+    import base64
+    pj.obter(pid)
+    try:
+        t = max(0.0, min(3600.0, float(d.get('t') or 0)))
+    except (TypeError, ValueError):
+        raise pj.ErroProjeto(400, 'Instante inválido.')
+    ids = [re.sub(r'[^\w]', '', str(x))[:20] for x in (d.get('renders') or [])][:3]
+    out = {}
+    for rid in ids:
+        r = db.um('SELECT id, versao, arquivo, duracao FROM renders WHERE id=? AND projeto=?', rid, pid)
+        if not r or not Path(r['arquivo']).exists():
+            out[rid] = {'erro': 'Essa versão do vídeo não está mais guardada no celular.'}
+            continue
+        tt = min(t, max(0.0, (r['duracao'] or 0) - 0.05))
+        cache = Path(r['arquivo']).with_name(f'{rid}.q{int(tt * 10)}.jpg')
+        if not cache.exists():
+            try:
+                rd.rodar(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-ss', f'{tt:.2f}', '-i', r['arquivo'], '-frames:v', '1', '-vf', 'scale=360:-2',
+                          '-q:v', '5', str(cache)], tempo_max=40)
+            except rd.ErroRender:
+                out[rid] = {'erro': 'Não consegui tirar o quadro desse instante.'}
+                continue
+        out[rid] = {'versao': r['versao'], 't': round(tt, 2), 'jpg': 'data:image/jpeg;base64,' + base64.b64encode(cache.read_bytes()).decode()}
+    return {'quadros': out}
 
 
 def job_skills(ctx):
@@ -280,6 +381,11 @@ def _series(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
         return srs.criar_personagem(corpo())
     if rota == ('POST', '/api/v1/personagens/previa'):
         return srs.folha('', corpo().get('dados') or {})
+    if rota == ('POST', '/api/v1/personagens/visemas'):
+        return visemas_audio(corpo())
+    m = re.fullmatch(r'/api/v1/personagens/([a-z0-9-]+)/pose', caminho)
+    if m and metodo == 'POST':
+        return pedir_pose(m.group(1), corpo())
     m = re.fullmatch(r'/api/v1/personagens/([a-z0-9-]+)(?:/(rig|folha))?', caminho)
     if m:
         pid, sub = m.groups()
@@ -310,6 +416,7 @@ def _series(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
 def iniciar():
     fila.registrar('estilo.demo', job_demo, 'pesado')
     fila.registrar('skills.instalar', job_skills, 'leve')
+    fila.registrar('personagem.pose', job_pose, 'pesado')
     exportacao.iniciar()
     diretor.iniciar()
     hardware.iniciar()
@@ -372,7 +479,10 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     if m and metodo == 'POST':
         d = corpo()
         return {'job': produtor.refazer_cena(m.group(1), int(m.group(2)), bool(d.get('imagem')), bool(d.get('voz')), quem,
-                                             re.sub(r'[^\w-]', '', str(d.get('plano') or ''))[:20])}
+                                             re.sub(r'[^\w-]', '', str(d.get('plano') or ''))[:20], d.get('problema') if isinstance(d.get('problema'), dict) else None)}
+    m = re.fullmatch(r'/api/v1/projetos/(\w+)/quadros', caminho)
+    if m and metodo == 'POST':
+        return quadros_render(m.group(1), corpo())
     m = re.fullmatch(r'/api/v1/projetos/(\w+)/cenas/(\d{1,3})/previa-ab', caminho)
     if m and metodo == 'POST':
         d = corpo()
@@ -458,6 +568,17 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     # ---- fila
     if rota == ('GET', '/api/v1/fila'):
         return fila.lista(q.get('filtro', [''])[0])
+    m = re.fullmatch(r'/api/v1/fila/(\w+)', caminho)
+    if m and metodo == 'GET':
+        j = fila.obter(m.group(1))
+        if not j:
+            raise pj.ErroProjeto(404, 'Trabalho não encontrado.')
+        j = dict(j)
+        j['dados'] = json.loads(j.get('dados') or '{}')
+        j['resultado'] = json.loads(j['resultado']) if j.get('resultado') else None
+        if j['status'] not in fila.FINAIS:
+            j['restante'] = round(fila.restante(j)[0])
+        return j
     m = re.fullmatch(r'/api/v1/fila/(\w+)/(pausar|retomar|cancelar|tentar|reagendar)', caminho)
     if m and metodo == 'POST':
         jid, acao = m.groups()
@@ -543,13 +664,14 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         var = d.get('variante') if d.get('variante') in ec.VARIANTES_DEMO and m.group(1) == 'animado2d' else ''
         suf = f':{var}' if var else ''
         pronto = db.kv(f'demo:{m.group(1)}:{fmt}:{ec.VERSAO_MOTOR}{suf}')
-        if pronto:
+        refazer = bool(d.get('refazer'))
+        if pronto and not refazer:
             return {'pronto': pronto, 'url': au.assinar_url(f'/api/v1/assets/{pronto["asset"]}', 6 * 3600)}
         if not ec.utilizavel(m.group(1), False):
             raise pj.ErroProjeto(400, 'Este estilo ainda não roda no servidor.')
-        j = fila.enfileirar('estilo.demo', agente='galeria', dados={'estilo': m.group(1), 'formato': fmt, 'variante': var}, recurso='pesado',
+        j = fila.enfileirar('estilo.demo', agente='galeria', dados={'estilo': m.group(1), 'formato': fmt, 'variante': var, 'refazer': refazer}, recurso='pesado',
                             titulo=f'Demonstração: {ec.estilo(m.group(1))["nome"]}' + (f' ({ec.VARIANTES_DEMO[var][0]})' if var else ''),
-                            chave=f'demo:{m.group(1)}:{fmt}:{ec.VERSAO_MOTOR}{suf}:{int(time.time() // 600)}')
+                            chave=f'demo:{m.group(1)}:{fmt}:{ec.VERSAO_MOTOR}{suf}:' + (f'r{int(time.time() // 60)}' if refazer else str(int(time.time() // 600))))
         return {'job': j}
 
     # ---- aprovações e e-mail
@@ -612,7 +734,9 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         post = next((x for x in pg.posts() if x['id'] == m.group(1)), None)
         if not post:
             raise pj.ErroProjeto(404, 'Post não encontrado.')
-        return {'redes': {r: pg.conferencia(post, r) for r in post['redes'] if r != 'kwai'}}
+        return {'redes': {r: pg.conferencia(post, r) for r in post['redes'] if r != 'kwai'},
+                'estados': {r: {'status': x.get('status', ''), 'erro': (x.get('erro') or '')[:300], 'link': x.get('link') or ''} for r, x in post['redes'].items()},
+                'hash': (post.get('hash') or '')[:16]}
     if rota == ('POST', '/api/v1/exportar'):
         return exportacao.pedir(corpo(), quem)
     m = re.fullmatch(r'/api/v1/exportar/(\w{6,40})', caminho)

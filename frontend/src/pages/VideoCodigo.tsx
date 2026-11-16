@@ -280,6 +280,7 @@ export default function VideoCodigo(){
        <button className="subtle" onClick={baixarVideo} disabled={!!ocupado}><Download size={15}/> Baixar vídeo</button>
        <button className="subtle" onClick={()=>{ parar(); setAgendar(true); }} disabled={!!ocupado}><CalendarClock size={15}/> Agendar post</button>
       </div>}
+      {rot&&<p className="hint">Este vídeo é gravado no seu navegador (os temas e animações daqui ainda não têm render no servidor do celular). Deixe a aba aberta até terminar.</p>}
       {rot&&total>MAX_SEG+0.5&&<p className="hint erro">O vídeo está com {fmt(total)}. O máximo é 2:00: tire ou encurte cenas para baixar.</p>}
       {rot&&<p className="hint">O vídeo é gravado em tempo real ({fmt(total)}). Deixe a aba aberta enquanto grava.</p>}
      </section>

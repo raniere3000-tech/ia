@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Wand2, Lightbulb, Loader2, ArrowUp, ArrowDown, Copy, Trash2, Lock, Unlock, Plus, Play, CalendarClock, Save, ClipboardPaste, ExternalLink } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Wand2, Lightbulb, Loader2, ArrowUp, ArrowDown, Copy, Trash2, Lock, Unlock, Plus, Play, CalendarClock, Save, ClipboardPaste, ExternalLink, Undo2 } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/Servidor2';
@@ -54,6 +54,10 @@ function PlanoMais({p,mudar}:{p:Plano;mudar:(n:Partial<Plano>)=>void}){
   return <details className="plano-mais"><summary>Ângulo, luz e movimento{resumo?`: ${resumo}`:''}</summary>
    <div className="plano-mais-campos">
     <label>Ângulo<select value={p.angulo||'normal'} onChange={e=>mudar({angulo:e.target.value as Plano['angulo']})}>{Object.entries(ANGULO_NOME).map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></label>
+    <label>Movimento da câmera<select value={p.camera||'aproximar'} onChange={e=>mudar({camera:e.target.value})}>{Object.entries(CAMERA_NOME).map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></label>
+    <label>Foco ←→ {Math.round((p.foco_x??0.5)*100)}%<input type="range" min={0} max={1} step={0.05} value={p.foco_x??0.5} onChange={e=>mudar({foco_x:+e.target.value})}/></label>
+    <label>Foco ↑↓ {Math.round((p.foco_y??0.45)*100)}%<input type="range" min={0} max={1} step={0.05} value={p.foco_y??0.45} onChange={e=>mudar({foco_y:+e.target.value})}/></label>
+    <label className="check"><input type="checkbox" checked={!!p.tremor} onChange={e=>mudar({tremor:e.target.checked||undefined})}/> Câmera treme (susto, impacto)</label>
     <label>Luz deste plano<select value={p.luz||''} onChange={e=>mudar({luz:e.target.value as Plano['luz']})}><option value="">Igual à cena</option>{Object.entries(LUZ_NOME).map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></label>
     <label className="check"><input type="checkbox" checked={!!ch} onChange={e=>mudar({chaves:e.target.checked?PONTO_PADRAO:[]})}/> Movimento livre (escolho onde a câmera começa e termina)</label>
     {ch&&(['Começo','Fim'] as const).map((nome,k)=><div key={nome} className="plano-ponto"><b>{nome}</b>
@@ -63,29 +67,77 @@ function PlanoMais({p,mudar}:{p:Plano;mudar:(n:Partial<Plano>)=>void}){
     </div>)}
    </div></details>;
 }
+const CAMERA_NOME:Record<string,string>={aproximar:'Aproxima devagar',afastar:'Afasta devagar',panoramica:'Passa de lado (panorâmica)',parado:'Parada'};
 const ANGULO_NOME:Record<string,string>={normal:'De frente',baixo:'De baixo (deixa imponente)',alto:'De cima (deixa pequeno)',inclinado:'Inclinado (tensão)'};
 const LUZ_NOME:Record<string,string>={neutra:'Normal',quente:'Quente',fria:'Fria',noite:'Noite',dramatica:'Dramática'};
 
-function EditorPlanos({c,mudar}:{c:Cena;mudar:(p:Partial<Cena>)=>void}){
+/** Duração aproximada da cena, para mostrar o tempo de cada plano (o servidor usa a narração de verdade). */
+const durCena=(c:Cena)=>c.duracao_alvo||c.clipe?.dur||c.audio?.dur||Math.max(3,Math.round((c.texto||'').split(/\s+/).filter(Boolean).length/2.6));
+function EditorPlanos({c,mudar,nomes={}}:{c:Cena;mudar:(p:Partial<Cena>)=>void;nomes?:Record<string,string>}){
   const ps=c.planos||[];
   const set=(n:Plano[])=>mudar({planos:n});
+  const dur=durCena(c); const soma=ps.reduce((a,p)=>a+(p.peso??1),0)||1;
+  const seg=(p:Plano)=>(p.peso??1)/soma*dur;
+  const mudarSeg=(k:number,v:number)=>{ // novo tempo de um plano: os pesos são recalculados na proporção dos tempos
+    const secs=ps.map((p,j)=>j===k?Math.max(0.3,v):seg(p)); const media=secs.reduce((a,b)=>a+b,0)/secs.length;
+    set(ps.map((p,j)=>({...p,peso:Math.round(Math.min(3,Math.max(0.3,secs[j]/media))*100)/100}))); };
+  const mover=(k:number,d:number)=>{ const j=k+d; if(j<0||j>=ps.length) return; const n=[...ps]; [n[k],n[j]]=[n[j],n[k]]; set(n); };
+  const somaSeg=ps.reduce((a,p)=>a+seg(p),0);
   return <div className="sb-planos larga">
-    <div className="field-label">Planos da câmera {ps.length?`(${ps.length})`:'(automático: aberto, médio e close)'}</div>
-    {ps.map((p,k)=><div key={p.id}><div className="plano-linha">
+    <div className="field-label">Planos da câmera {ps.length?`(${ps.length}, cerca de ${dur.toFixed(0)} s na cena)`:'(automático: aberto, médio e close)'}</div>
+    {ps.map((p,k)=>{ const trav=!!p.bloqueado; return <div key={p.id} className={'plano-bloco'+(trav?' travado':'')}><div className="plano-linha">
       <b>{k+1}</b>
-      <select value={p.plano} onChange={e=>set(ps.map((x,j)=>j===k?{...x,plano:e.target.value as Plano['plano']}:x))} aria-label="Enquadramento">{TIPOS_PLANO.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select>
-      {c.elenco?.length?<select value={p.personagem||''} onChange={e=>set(ps.map((x,j)=>j===k?{...x,personagem:e.target.value}:x))} aria-label="Em quem fica o plano"><option value="">Em quem fala</option>{c.elenco.map(e=><option key={e.personagem_id} value={e.personagem_id}>{e.personagem_id}</option>)}</select>
-      :<input value={p.busca||''} onChange={e=>set(ps.map((x,j)=>j===k?{...x,busca:e.target.value}:x))} placeholder="Outra foto (em inglês, opcional)" maxLength={60}/>}
-      <button className="icon-btn" onClick={()=>set(ps.filter((_,j)=>j!==k))} aria-label="Tirar plano"><Trash2 size={14}/></button>
-    </div><PlanoMais p={p} mudar={n=>set(ps.map((x,j)=>j===k?{...x,...n}:x))}/></div>)}
+      <select value={p.plano} disabled={trav} onChange={e=>set(ps.map((x,j)=>j===k?{...x,plano:e.target.value as Plano['plano']}:x))} aria-label="Enquadramento">{TIPOS_PLANO.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select>
+      {c.elenco?.length?<select value={p.personagem||''} disabled={trav} onChange={e=>set(ps.map((x,j)=>j===k?{...x,personagem:e.target.value}:x))} aria-label="Em quem fica o plano"><option value="">Em quem fala</option>{c.elenco.map(e=><option key={e.personagem_id} value={e.personagem_id}>{nomes[e.personagem_id]||e.personagem_id}</option>)}</select>
+      :<input value={p.busca||''} disabled={trav} onChange={e=>set(ps.map((x,j)=>j===k?{...x,busca:e.target.value}:x))} placeholder="Outra foto (em inglês, opcional)" maxLength={60}/>}
+      <label className="plano-seg">≈<input type="number" min={0.3} max={60} step={0.5} value={+seg(p).toFixed(1)} disabled={trav} onChange={e=>mudarSeg(k,+e.target.value)} aria-label="Segundos deste plano"/>s</label>
+    </div>
+    <div className="plano-linha">
+      <input className="grow" value={p.acao||''} disabled={trav} onChange={e=>set(ps.map((x,j)=>j===k?{...x,acao:e.target.value}:x))} placeholder="O que acontece neste plano (ex.: Ana aponta para o céu)" maxLength={160} aria-label="Ação do plano"/>
+      <button className="icon-btn" onClick={()=>mover(k,-1)} disabled={k===0} aria-label="Subir plano"><ArrowUp size={14}/></button>
+      <button className="icon-btn" onClick={()=>mover(k,1)} disabled={k===ps.length-1} aria-label="Descer plano"><ArrowDown size={14}/></button>
+      {ps.length<6&&<button className="icon-btn" onClick={()=>{ const n=[...ps]; n.splice(k+1,0,{...p,id:'p'+Math.random().toString(36).slice(2,7),bloqueado:undefined}); set(n); }} aria-label="Duplicar plano"><Copy size={14}/></button>}
+      <button className="icon-btn" onClick={()=>set(ps.map((x,j)=>j===k?{...x,bloqueado:trav?undefined:true}:x))} aria-label={trav?'Destravar plano':'Travar plano aprovado'} title={trav?'Travado: não muda nem é refeito':'Travar (plano aprovado)'}>{trav?<Lock size={14}/>:<Unlock size={14}/>}</button>
+      <button className="icon-btn" onClick={()=>set(ps.filter((_,j)=>j!==k))} disabled={trav} aria-label="Tirar plano"><Trash2 size={14}/></button>
+    </div>{!trav&&<PlanoMais p={p} mudar={n=>set(ps.map((x,j)=>j===k?{...x,...n}:x))}/>}</div>; })}
+    {ps.length>0&&c.duracao_alvo?Math.abs(somaSeg-c.duracao_alvo)>0.5&&<p className="hint">Os planos somam {somaSeg.toFixed(1)} s e a cena tem {c.duracao_alvo} s: o tempo é dividido na proporção.</p>:null}
     {ps.length<6&&<button className="link-btn" onClick={()=>set([...ps,{id:'p'+Math.random().toString(36).slice(2,7),plano:(['WS','MS','CU'] as const)[ps.length%3],busca:''}])}><Plus size={13}/> Plano</button>}
   </div>;
 }
 
-function EditorCenas({cenas,set,pid}:{cenas:Cena[];set:(c:Cena[])=>void;pid:string}){
+const POSES_EL:[string,string][]=[['','Em pé'],['bracos_cruzados','Braços cruzados'],['maos_na_cintura','Mãos na cintura'],['pensativo','Pensativo'],['explicando','Explicando'],['comemorar','Comemorando'],['timido','Tímido']];
+const ROSTOS:[string,string][]=[['neutro','Neutro'],['feliz','Feliz'],['triste','Triste'],['bravo','Bravo'],['surpreso','Surpreso'],['preocupado','Preocupado']];
+/** S3: quem aparece na cena (até 3), onde fica, com que rosto e pose inicial. Só para desenho 2D de série. */
+function EditorElenco({c,nomes,mudar}:{c:Cena;nomes:Record<string,string>;mudar:(p:Partial<Cena>)=>void}){
+  const el=c.elenco||[]; const trav=!!c.bloqueada;
+  const set=(n:NonNullable<Cena['elenco']>)=>mudar({elenco:n});
+  const livres=Object.keys(nomes).filter(k=>!el.some(e=>e.personagem_id===k));
+  const poseDe=(e:NonNullable<Cena['elenco']>[number])=>(e.acoes||[]).find(a=>a.tipo==='pose'&&a.t<=0.2);
+  return <div className="larga elenco-cena">
+    <div className="field-label">Quem aparece nesta cena ({el.length}/3)</div>
+    {el.map((e,k)=><div key={e.personagem_id} className="plano-linha">
+      <b>{nomes[e.personagem_id]||e.personagem_id}</b>
+      <select value={e.posicao} disabled={trav} aria-label="Posição" onChange={x=>set(el.map((y,j)=>j===k?{...y,posicao:x.target.value}:y))}><option value="esquerda">Esquerda</option><option value="centro">Centro</option><option value="direita">Direita</option></select>
+      <select value={e.expressao||'neutro'} disabled={trav} aria-label="Rosto" onChange={x=>set(el.map((y,j)=>j===k?{...y,expressao:x.target.value}:y))}>{ROSTOS.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select>
+      <select value={poseDe(e)?.pose||''} disabled={trav} aria-label="Pose ao entrar" onChange={x=>{ const resto=(e.acoes||[]).filter(a=>!(a.tipo==='pose'&&a.t<=0.2)); const v=x.target.value;
+        set(el.map((y,j)=>j===k?{...y,acoes:v?[{t:0.1,tipo:'pose',pose:v},...resto]:resto}:y)); }}>{POSES_EL.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select>
+      <button className="icon-btn" disabled={trav} onClick={()=>set(el.filter((_,j)=>j!==k))} aria-label="Tirar da cena"><Trash2 size={14}/></button>
+    </div>)}
+    {livres.length>0&&el.length<3&&!trav&&<select value="" aria-label="Pôr personagem na cena" onChange={x=>{ if(!x.target.value) return; const usadas=el.map(e=>e.posicao); set([...el,{personagem_id:x.target.value,posicao:['esquerda','direita','centro'].find(p=>!usadas.includes(p))||'centro',expressao:'neutro',acoes:[]}]); }}>
+      <option value="">+ Pôr personagem na cena</option>{livres.map(k=><option key={k} value={k}>{nomes[k]}</option>)}</select>}
+    {el.length===0&&<p className="hint">Sem ninguém escolhido, o motor põe quem fala.</p>}
+  </div>;
+}
+
+function EditorCenas({cenas,set:setBase,pid,elencoSerie={}}:{cenas:Cena[];set:(c:Cena[])=>void;pid:string;elencoSerie?:Record<string,string>}){
+  const hist=useRef<Cena[][]>([]); const [nh,setNh]=useState(0);
+  const set=(n:Cena[])=>{ hist.current=[...hist.current.slice(-29),cenas]; setNh(hist.current.length); setBase(n); };
+  const desfazer=()=>{ const a=hist.current.pop(); setNh(hist.current.length); if(a) setBase(a); };
   const mudar=(i:number,p:Partial<Cena>)=>set(cenas.map((c,k)=>k===i?{...c,...p}:c));
   const mover=(i:number,d:number)=>{ const j=i+d; if(j<0||j>=cenas.length) return; const n=[...cenas]; [n[i],n[j]]=[n[j],n[i]]; set(n); };
-  return <div className="sb-lista">{cenas.map((c,i)=><div key={c.id} className={'sb-cena'+(c.bloqueada?' bloqueada':'')}>
+  return <div className="sb-lista">
+  {nh>0&&<div className="row-gap left"><button className="subtle sm" onClick={desfazer}><Undo2 size={14}/> Desfazer a última mudança ({nh})</button></div>}
+  {cenas.map((c,i)=><div key={c.id} className={'sb-cena'+(c.bloqueada?' bloqueada':'')}>
     <div className="sb-topo"><b>Cena {i+1}</b>
      <span className="grow"/>
      <button className="icon-btn" onClick={()=>mover(i,-1)} disabled={i===0} aria-label="Subir"><ArrowUp size={15}/></button>
@@ -104,7 +156,8 @@ function EditorCenas({cenas,set,pid}:{cenas:Cena[];set:(c:Cena[])=>void;pid:stri
      <label>Clima<select value={c.clima||'nenhum'} onChange={e=>mudar(i,{clima:e.target.value as Cena['clima']})}><option value="nenhum">Nenhum</option><option value="chuva">Chuva</option><option value="neve">Neve</option><option value="poeira">Poeira no ar</option><option value="neblina">Neblina</option></select></label>
      <label>Luz<select value={c.luz||'neutra'} onChange={e=>mudar(i,{luz:e.target.value as Cena['luz']})}><option value="neutra">Normal</option><option value="quente">Quente (fim de tarde)</option><option value="fria">Fria</option><option value="noite">Noite</option><option value="dramatica">Dramática</option></select></label>
      <VozGravada c={c} mudar={p=>mudar(i,p)} pid={pid}/>
-     <EditorPlanos c={c} mudar={p=>mudar(i,p)}/>
+     {(Object.keys(elencoSerie).length>0||(c.elenco?.length||0)>0)&&<EditorElenco c={c} nomes={elencoSerie} mudar={p=>mudar(i,p)}/>}
+     <EditorPlanos c={c} mudar={p=>mudar(i,p)} nomes={elencoSerie}/>
     </div>
   </div>)}
   <button className="subtle" onClick={()=>set([...cenas,{id:novaId(),titulo:'Nova cena',texto:'',destaque:''}])}><Plus size={15}/> Cena</button>
@@ -117,7 +170,7 @@ export default function CriarIA(){
   const [b,setB]=useState<Partial<Briefing>>({tema:'',nicho:'Curiosidades',tipo:'curiosidades',duracao_alvo:45,formato:'9:16',cenas_qtd:6,voz:'Puck',imagens:'busca',modo_aprovacao:'assistido',estilo:'documentario',destinos:{redes:[],quando:'proximo'}});
   const set=(p:Partial<Briefing>)=>setB(x=>({...x,...p}));
   const [ideias,setIdeias]=useState<Ideia[]>([]);
-  const [roteiro,setRoteiro]=useState<Roteiro|null>(null);
+  const [roteiro,setRoteiro]=useState<Roteiro|null>(null); const [elencoSerie,setElencoSerie]=useState<Record<string,string>>({});
   const [colar,setColar]=useState(false); const [texto,setTexto]=useState(''); const [extrasSk,setExtrasSk]=useState<string[]>([]);
   const [busy,setBusy]=useState('');
   const [quando,setQuando]=useState('');
@@ -125,8 +178,9 @@ export default function CriarIA(){
   const [aberto,setAberto]=useState(false);
   // abrir um projeto existente (vindo da revisão: "Editar as cenas")
   useEffect(()=>{ if(!rotaExtra||!settings.servidor) return; obterProjeto(cfg,rotaExtra).then(p=>{
-    const d=p.dados as {briefing:Briefing;cenas:Cena[];roteiro:Roteiro|null};
+    const d=p.dados as {briefing:Briefing;cenas:Cena[];roteiro:Roteiro|null;serie?:{personagens?:Record<string,{nome?:string}>}};
     if(p.tipo!=='agente3') return;
+    setElencoSerie(Object.fromEntries(Object.entries(d.serie?.personagens||{}).map(([k,v])=>[k,v?.nome||k])));
     setPid(p.id); setRev(p.revisao); setB(d.briefing); setRoteiro({...(d.roteiro||{titulo:p.titulo,alternativas:[],gancho:'',publico:'',legenda:'',hashtags:[],fontes:[]}),cenas:d.cenas||[]});
   }).catch(e=>toast(erroTexto(e),'erro')); },[rotaExtra,settings.servidor,cfg,toast]);
   if(!settings.servidor) return <PrecisaServidor oque="A criação com IA"/>;
@@ -170,7 +224,7 @@ export default function CriarIA(){
      {roteiro.fontes?.length>0&&<p className="hint">Fontes para conferir: {roteiro.fontes.map(f=><a key={f.url} className="help-link" href={f.url} target="_blank" rel="noreferrer">{f.titulo||'fonte'} <ExternalLink size={11}/></a>)}</p>}
      {roteiro.skills_usadas&&roteiro.skills_usadas.length>0&&<p className="hint">Boas práticas consultadas: {roteiro.skills_usadas.join(', ')}.</p>}
      {roteiro.avisos&&roteiro.avisos.length>0&&<ul className="avisos-roteiro">{roteiro.avisos.map(a=><li key={a}>{a}</li>)}</ul>}
-     <EditorCenas cenas={roteiro.cenas} set={c=>setRoteiro({...roteiro,cenas:c})} pid={pid}/>
+     <EditorCenas cenas={roteiro.cenas} set={c=>setRoteiro({...roteiro,cenas:c})} pid={pid} elencoSerie={elencoSerie}/>
     </>}
    </section>
 
