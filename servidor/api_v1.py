@@ -24,6 +24,7 @@ import postagem as pg
 import produtor
 import projetos as pj
 import renderizador as rd
+import series as srs
 from skills import catalogo as skcat
 from skills import roteador as skrot
 
@@ -168,6 +169,69 @@ def _skills(metodo: str, caminho: str, q: dict, corpo) -> dict:
             return skcat.rollback(sid)
         if metodo == 'POST' and acao == 'atualizar':
             return skcat.aplicar_atualizacao(sid)
+    raise pj.ErroProjeto(404, 'Rota não encontrada.')
+
+
+def _series(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
+    rota = (metodo, caminho)
+    if rota == ('GET', '/api/v1/series'):
+        return {'series': srs.listar(), 'acoes': {k: v[0] for k, v in srs.rig2d.ACOES.items()}, 'expressoes': list(srs.rig2d.EXPRESSOES)}
+    if rota == ('POST', '/api/v1/series'):
+        return srs.criar(corpo())
+    m = re.fullmatch(r'/api/v1/series/(\w+)(?:/(temporadas|episodios|biblia))?', caminho)
+    if m:
+        sid, sub = m.groups()
+        if not sub:
+            if metodo == 'GET':
+                return srs.obter(sid)
+            if metodo in ('PATCH', 'PUT'):
+                return srs.atualizar(sid, corpo())
+        if sub == 'temporadas':
+            if metodo == 'GET':
+                return {'temporadas': srs.obter(sid)['temporadas']}
+            if metodo == 'POST':
+                return srs.criar_temporada(sid, corpo())
+        if sub == 'episodios':
+            if metodo == 'GET':
+                return {'episodios': srs.listar_episodios(sid)}
+            if metodo == 'POST':
+                return srs.criar_episodio(sid, corpo(), quem)
+        if sub == 'biblia':
+            if metodo == 'GET':
+                return {'biblia': srs.biblia(sid)}
+            if metodo == 'PUT':
+                return {'biblia': srs.salvar_biblia(sid, corpo().get('entradas'))}
+    m = re.fullmatch(r'/api/v1/series/episodios/(\w+)/propostas', caminho)
+    if m and metodo == 'POST':
+        return {'biblia': srs.propostas_do_episodio(m.group(1))}
+    if rota == ('GET', '/api/v1/personagens'):
+        return {'personagens': srs.listar_personagens(q.get('serie', [''])[0])}
+    if rota == ('POST', '/api/v1/personagens'):
+        return srs.criar_personagem(corpo())
+    if rota == ('POST', '/api/v1/personagens/previa'):
+        return srs.folha('', corpo().get('dados') or {})
+    m = re.fullmatch(r'/api/v1/personagens/([a-z0-9-]+)(?:/(rig|folha))?', caminho)
+    if m:
+        pid, sub = m.groups()
+        if metodo == 'GET' and not sub:
+            return srs.obter_personagem(pid)
+        if sub == 'rig' and metodo == 'GET':
+            p = srs.obter_personagem(pid)
+            return {'rig_id': p['rig_id'], 'versao': p['versao'], 'dados': p['dados'], 'aprovado': p['aprovado']}
+        if sub == 'rig' and metodo == 'PUT':
+            return srs.salvar_rig(pid, corpo())
+        if sub == 'folha' and metodo == 'GET':
+            return srs.folha(pid)
+    if rota == ('GET', '/api/v1/cenarios'):
+        return {'cenarios': srs.listar_cenarios(q.get('serie', [''])[0])}
+    if rota == ('POST', '/api/v1/cenarios'):
+        return srs.criar_cenario(corpo())
+    if rota == ('POST', '/api/v1/cenarios/previa'):
+        d = corpo()
+        return srs.previa_cenario(d.get('dados') or {}, str(d.get('formato') or '9:16'))
+    m = re.fullmatch(r'/api/v1/cenarios/([a-z0-9-]+)', caminho)
+    if m and metodo in ('PATCH', 'PUT'):
+        return srs.atualizar_cenario(m.group(1), corpo())
     raise pj.ErroProjeto(404, 'Rota não encontrada.')
 
 
@@ -426,6 +490,9 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
             return backups.testar_midias(str(corpo().get('manifesto') or ''))
         except FileNotFoundError as e:
             raise pj.ErroProjeto(404, str(e))
+    # ---- séries animadas, personagens e cenários
+    if caminho.startswith(('/api/v1/series', '/api/v1/personagens', '/api/v1/cenarios')):
+        return _series(metodo, caminho, q, corpo, quem)
     # ---- biblioteca de skills (só texto de orientação; nada é executado)
     if caminho.startswith('/api/v1/skills'):
         try:

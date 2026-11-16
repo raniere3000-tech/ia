@@ -837,3 +837,18 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .chip-add{width:auto;border-radius:20px;padding:6px 10px;font-size:12px}
 .skill-picker{margin-top:10px}.skill-picker-box{margin-top:8px;border:1px dashed var(--line2);border-radius:10px;padding:10px}
 .skill-picker .link-btn{text-align:left}
+/* séries animadas */
+.ser-editor{border:1px dashed var(--line2);border-radius:12px;padding:12px;margin:10px 0;width:100%}
+.ser-editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:760px){.ser-editor-grid{grid-template-columns:1fr}}
+.ser-folha img{width:100%;border-radius:10px;background:#faf8f3}.ser-folha .hint{padding:20px;text-align:center}
+.cores{display:flex;flex-wrap:wrap;gap:10px}.cor-campo{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11.5px}.cor-campo input{width:44px;height:34px;padding:2px;border-radius:8px}
+.ser-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:10px}
+.ser-card{border:1px solid var(--line);border-radius:12px;background:var(--panel2);overflow:hidden;display:flex;flex-direction:column}
+.ser-card.ok{border-color:#22553a}.ser-card img{width:100%;display:block;background:#faf8f3}.ser-card.cen img{aspect-ratio:9/8;object-fit:cover}
+.ser-img-vazia{height:120px;display:grid;place-items:center}
+.ser-card-txt{padding:10px 12px;display:flex;flex-direction:column;gap:4px}.ser-card-txt small{color:#aab4cc}
+.ser-card .ser-editor{margin:0;border-radius:0;border-left:0;border-right:0;border-bottom:0}
+.biblia,.eps{list-style:none;padding:0;margin:6px 0 0;display:flex;flex-direction:column;gap:8px}
+.biblia li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.biblia-txt{flex:1;min-width:180px;font-size:13px}
+.eps li{display:flex;flex-direction:column;gap:4px;border:1px solid var(--line);border-radius:10px;padding:10px 12px}.eps li .tag{align-self:flex-start}

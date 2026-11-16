@@ -75,6 +75,24 @@ ESQUEMA = [
     CREATE INDEX IF NOT EXISTS skills_ativacoes_job ON skills_ativacoes (job_id);
     CREATE INDEX IF NOT EXISTS skills_ativacoes_projeto ON skills_ativacoes (projeto_id);
     """,
+    # 3: séries animadas (só acrescenta)
+    """
+    CREATE TABLE IF NOT EXISTS series (id TEXT PRIMARY KEY, titulo TEXT NOT NULL, dados TEXT NOT NULL DEFAULT '{}', versao INTEGER NOT NULL DEFAULT 1,
+        criado REAL, atualizado REAL);
+    CREATE TABLE IF NOT EXISTS temporadas (id TEXT PRIMARY KEY, serie_id TEXT NOT NULL, ordem INTEGER NOT NULL, titulo TEXT, arco TEXT, metas TEXT, criado REAL);
+    CREATE TABLE IF NOT EXISTS episodios (id TEXT PRIMARY KEY, serie_id TEXT NOT NULL, temporada_id TEXT, ordem INTEGER NOT NULL, titulo TEXT, resumo TEXT,
+        projeto_id TEXT, criado REAL, atualizado REAL);
+    CREATE TABLE IF NOT EXISTS personagens (id TEXT PRIMARY KEY, serie_id TEXT, nome TEXT NOT NULL, dados TEXT NOT NULL, versao INTEGER NOT NULL DEFAULT 1,
+        aprovado INTEGER NOT NULL DEFAULT 0, criado REAL, atualizado REAL);
+    CREATE TABLE IF NOT EXISTS personagens_versoes (personagem_id TEXT NOT NULL, versao INTEGER NOT NULL, dados TEXT NOT NULL, t REAL,
+        PRIMARY KEY (personagem_id, versao));
+    CREATE TABLE IF NOT EXISTS cenarios (id TEXT PRIMARY KEY, serie_id TEXT, nome TEXT NOT NULL, dados TEXT NOT NULL, versao INTEGER NOT NULL DEFAULT 1,
+        criado REAL, atualizado REAL);
+    CREATE TABLE IF NOT EXISTS biblia (id TEXT PRIMARY KEY, serie_id TEXT NOT NULL, tipo TEXT NOT NULL, alvo TEXT, texto TEXT NOT NULL,
+        episodio_id TEXT, estado TEXT NOT NULL, substitui TEXT, criado REAL);
+    CREATE INDEX IF NOT EXISTS episodios_serie ON episodios (serie_id, ordem);
+    CREATE INDEX IF NOT EXISTS biblia_serie ON biblia (serie_id, estado);
+    """,
 ]
 
 

@@ -1,6 +1,6 @@
 import ErroTela from './components/ErroTela';
 import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
-import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, Film, Bot, CheckCircle2, AlertTriangle, Info, X, Circle, ListChecks, Send, FolderOpen, Palette, CalendarRange, HelpCircle, Cloud, CloudOff, RefreshCw, ChevronDown } from 'lucide-react';
+import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, Film, Bot, CheckCircle2, AlertTriangle, Info, X, Circle, ListChecks, Send, FolderOpen, Palette, CalendarRange, HelpCircle, Cloud, CloudOff, RefreshCw, ChevronDown, Users } from 'lucide-react';
 import { AppCtx, PROJETO_VAZIO, captionPresets, type Marca, type Projeto, type Settings, type Tab } from './state';
 import { store } from './lib/store';
 import { salvos, temCofre, cofreAberto, separar, atualizarCofre } from './lib/cofre';
@@ -19,7 +19,7 @@ const CARGA:Partial<Record<Tab,()=>Mod>> = {
   radar:()=>import('./pages/Radar'), cortes:()=>import('./pages/Cortes'), agendar:()=>import('./pages/Agendar'), agente:()=>import('./pages/Agente'), video:()=>import('./pages/VideoCodigo'), vozes:()=>import('./pages/Vozes'),
   manual:()=>import('./pages/Manual'), estilos:()=>import('./pages/Estilos'), templates:()=>import('./pages/Templates'), config:()=>import('./pages/Config'),
   ia:()=>import('./pages/CriarIA'), automatico:()=>import('./pages/Automatico'), projetos:()=>import('./pages/Projetos'), galeria:()=>import('./pages/Galeria'),
-  fila:()=>import('./pages/Fila'), revisar:()=>import('./pages/Revisar'),
+  fila:()=>import('./pages/Fila'), revisar:()=>import('./pages/Revisar'), series:()=>import('./pages/Series'),
 };
 const seguro=(f:()=>Mod)=>()=>f().then(m=>{ try{ sessionStorage.removeItem('studio_recarregou'); }catch{ /* sem armazenamento */ } return m; },()=>{
   let ja=true; try{ ja=!!sessionStorage.getItem('studio_recarregou'); sessionStorage.setItem('studio_recarregou','1'); }catch{ /* sem armazenamento */ }
@@ -33,7 +33,7 @@ const VIVAS:Tab[]=['cortes','video','vozes','manual'];
 const adiantar=(t:Tab)=>{ CARGA[t]?.().catch(()=>{}); };
 
 const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'seguir-rosto',servidor:'',servidorToken:'',servidorCanal:'',geminiKey:'',ia:''};
-const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['video','Animado no navegador',Sparkles],['ia','Agente 3',Bot],['manual','Montagem manual',Film],['automatico','Vários de uma vez',CalendarRange],['projetos','Meus projetos',FolderOpen],
+const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['video','Animado no navegador',Sparkles],['ia','Agente 3',Bot],['manual','Montagem manual',Film],['automatico','Vários de uma vez',CalendarRange],['series','Séries animadas',Users],['projetos','Meus projetos',FolderOpen],
   ['vozes','Estúdio de vozes',Mic],['galeria','Estilos de animação',Palette],['templates','Templates',LayoutTemplate],['estilos','Legendas e efeitos',Captions],
   ['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['agente','Agentes 1, 2 e 3',Bot],['fila','Fila e aprovações',ListChecks],['revisar','Revisar vídeo',CheckCircle2],
   ['agendar','Posts agendados',CalendarClock],['config','Ajustes',Gear]];
@@ -41,13 +41,13 @@ const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['video','Anim
 type AreaNav={id:string;nome:string;curto:string;Icon:typeof Home;abas:Tab[];extras?:[Tab,string][]};
 const AREAS_NAV:AreaNav[] = [
   {id:'inicio',nome:'Início',curto:'Início',Icon:Home,abas:['inicio']},
-  {id:'criar',nome:'Criar vídeos',curto:'Criar',Icon:Clapperboard,abas:['ia','automatico','video','manual','projetos','vozes','galeria','templates','estilos']},
+  {id:'criar',nome:'Criar vídeos',curto:'Criar',Icon:Clapperboard,abas:['ia','automatico','series','video','manual','projetos','vozes','galeria','templates','estilos']},
   {id:'radar',nome:'Radar e cortes',curto:'Radar',Icon:Search,abas:['radar','cortes','agente']},
   {id:'fila',nome:'Fila e aprovações',curto:'Fila',Icon:ListChecks,abas:['fila','revisar']},
   {id:'posts',nome:'Publicações',curto:'Posts',Icon:Send,abas:['agendar','agente'],extras:[['agente','Agente 2 (postagem)']]},
 ];
 /** Os quatro modos de criar ficam juntos no topo da área Criar. */
-const MODOS:Tab[]=['ia','automatico','video','manual'];
+const MODOS:Tab[]=['ia','automatico','series','video','manual'];
 const OCULTAS:Tab[]=['revisar'];
 const areaDe=(t:Tab,pref='')=>AREAS_NAV.find(a=>a.id===pref&&a.abas.includes(t))||AREAS_NAV.find(a=>a.abas.includes(t))||AREAS_NAV[0];
 const lerRota=():[Tab,string]=>{ const [h,...r]=decodeURIComponent(location.hash.slice(1)).split('/'); return NAV.some(n=>n[0]===h)?[h as Tab,r.join('/')]:['inicio','']; };
@@ -65,6 +65,7 @@ const TITLES:Record<Tab,[string,string]> = {
   config:['Ajustes','Servidor do celular, aparelhos conectados, chaves, e-mail, backups e tutorial.'],
   ia:['Agente 3: vídeos com IA','Escreva o assunto e o Agente 3 faz o vídeo no celular. Se preferir, veja e edite o roteiro antes.'],
   automatico:['Vários vídeos de uma vez','O celular faz vários vídeos sozinho: agora, em data marcada ou todo dia na hora que você escolher.'],
+  series:['Séries animadas','Personagens próprios, cenários e uma história que continua. Cada episódio vira um vídeo do Agente 3 com o mesmo elenco.'],
   projetos:['Meus projetos','Tudo o que está salvo no servidor do celular, com versões. Daqui você também envia os dados deste navegador.'],
   galeria:['Estilos de animação','Veja como fica cada visual antes de escolher. Os marcados como prontos já funcionam no celular.'],
   fila:['Fila e aprovações','O que o servidor está fazendo, o que vem depois e os vídeos esperando a sua decisão.'],

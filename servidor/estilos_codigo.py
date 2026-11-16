@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import random
 import re
 import textwrap
@@ -22,6 +23,7 @@ from pathlib import Path
 import icones
 import motor3d
 import raster
+import rig2d
 
 VERSAO_MOTOR = 9
 FONTE = Path(__file__).parent / 'fontes' / 'Inter-Bold.otf'
@@ -62,6 +64,9 @@ ESTILOS = [
      'Montanhas em camadas com profundidade. Com imagem de IA, a imagem vira as camadas.', ['#14213d', '#fca311', '#e5e5e5']),
     ('quadro_branco', 'Quadro branco', 'Caneta que escreve no quadro e marca-texto', 'operacional', 'prioritária',
      'Texto escrito aos poucos em caneta azul com marca-texto na palavra de destaque.', ['#fbfbf8', '#1d3557', '#ffe066']),
+    ('animado2d', 'Desenho animado com personagens', 'Personagens 2D articulados, boca pela voz e cenário em camadas', 'beta', 'prioritária',
+     'Personagens próprios que andam, apontam, acenam e falam com a boca pela voz, em cenários simples. '
+     'Use em Séries animadas para ter elenco fixo; sem série, aparece um apresentador. Só vista de frente.', ['#7ec8f2', '#ffffff', '#ff8c42']),
     ('mapas_animados', 'Mapas animados', 'Mapas vetoriais com rotas e marcadores', 'indisponivel', 'intermediária',
      'Precisa de uma base de mapas com licença de uso. Ainda não incluída.', ['#cfe8ef', '#2a6f97', '#e63946']),
 ]
@@ -129,7 +134,8 @@ def validar_planos(lista) -> list:
                     'camera': p.get('camera') if p.get('camera') in CAMERAS else 'aproximar',
                     'foco_x': _num(p.get('foco_x'), 0.5, 0.0, 1.0), 'foco_y': _num(p.get('foco_y'), 0.45, 0.0, 1.0),
                     'peso': _num(p.get('peso'), 1.0, 0.3, 3.0),
-                    'busca': _txt(p.get('busca'), 60), 'intencao': _txt(p.get('intencao'), 120)})
+                    'busca': _txt(p.get('busca'), 60), 'intencao': _txt(p.get('intencao'), 120),
+                    'personagem': re.sub(r'[^a-z0-9_-]', '', str(p.get('personagem') or '').lower())[:40]})
     return out
 
 
@@ -186,6 +192,9 @@ def validar_cena(c: dict, i: int = 0) -> dict:
         'duracao_alvo': max(0.0, min(60.0, dur)),
         'estilo': c.get('estilo') if c.get('estilo') in [e[0] for e in ESTILOS] else '',
         'planos': validar_planos(c.get('planos')),
+        'elenco': rig2d.validar_elenco(c.get('elenco'), None, max(1.0, min(60.0, dur or 60.0))),
+        'cenario_id': re.sub(r'[^a-z0-9_-]', '', str(c.get('cenario_id') or '').lower())[:40],
+        'voz': _txt(c.get('voz'), 20),
     }
 
 
@@ -197,6 +206,32 @@ def _esc(p: Path | str) -> str:
 def quebrar(texto: str, largura_px: float, tam: float) -> list[str]:
     por_linha = max(6, int(largura_px / (tam * 0.56)))
     return textwrap.wrap(texto, por_linha) or ['']
+
+
+def _escalada_para(arq: Path, w: int, h: int) -> Path:
+    out = arq.with_name(f'{arq.stem}-{w}x{h}.png')
+    if not out.exists():
+        import subprocess
+        tmp = out.with_suffix('.tmp.png')
+        subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', str(arq), '-vf', f'scale={w}:{h}:flags=bicubic', '-frames:v', '1', str(tmp)],
+                       check=True, capture_output=True, stdin=subprocess.DEVNULL, timeout=60)
+        tmp.replace(out)
+    return out
+
+
+def _escalada(arq: Path, esc: float) -> Path:
+    """Cópia da peça já no tamanho da tela (feita uma vez e guardada), para o FFmpeg não reescalar a cada quadro."""
+    esc = round(esc, 3)
+    if abs(esc - 1) < 0.002:
+        return arq
+    out = arq.with_name(f'{arq.stem}@{esc}.png')
+    if not out.exists():
+        tmp = out.with_suffix('.tmp.png')
+        import subprocess
+        subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', str(arq), '-vf', f'scale=trunc(iw*{esc}/2)*2:trunc(ih*{esc}/2)*2:flags=bicubic',
+                        '-frames:v', '1', str(tmp)], check=True, capture_output=True, stdin=subprocess.DEVNULL, timeout=60)
+        tmp.replace(out)
+    return out
 
 
 class Comp:
@@ -252,6 +287,18 @@ class Comp:
         en = f"between(t,{ini:.2f},{fim:.2f})" if fim is not None else f'gte(t,{ini:.2f})'
         o = self._rot()
         self.f.append(f"{self.v}[{r}]overlay=x='{x}':y='{y}':eval=frame:enable='{en}'[{o}]")
+        self.v = f'[{o}]'
+
+    def peca_girando(self, arq: Path, esc: float, angulo: str, x: str, y: str, enable: str = ''):
+        """Peça de personagem articulado: imagem com o pivô no centro, girada pelo ângulo (expressão de t) e posta em (x, y)."""
+        arq = _escalada(arq, esc)
+        i = self.entrada(['-loop', '1', '-framerate', str(FPS), '-t', f'{self.dur:.3f}', '-i', str(arq)])
+        r = self._rot()
+        gira = f",rotate=a='{angulo}':c=none:ow=iw:oh=ih" if angulo not in ('0', '0.0') else ''
+        self.f.append(f'[{i}:v]format=rgba{gira}[{r}]')
+        o = self._rot()
+        en = f":enable='{enable}'" if enable else ''
+        self.f.append(f"{self.v}[{r}]overlay=x='{x}':y='{y}':eval=frame{en}[{o}]")
         self.v = f'[{o}]'
 
     def imagem(self, arq: Path, x: int, y: int, w: int, h: int, camera: str, ini: float = 0, borda: str = ''):
@@ -666,7 +713,8 @@ def montar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, imagem
     fn = globals()['_e_' + e['id']]
     leg_cor, leg_borda, leg_caixa = fn(c, cena, L, W, H, dur, pasta, imagem, (p0, p1, p2), titulo, destaque, m, tam)
     if cena.get('texto'):
-        extra = {'tamanho': 0.064, 'y_rel': 0.80 if H > W else 0.88} if e['id'] == 'documentario' else {}
+        extra = {'tamanho': 0.064, 'y_rel': 0.80 if H > W else 0.88} if e['id'] == 'documentario' else \
+            {'tamanho': 0.06, 'y_rel': 0.885 if H > W else 0.95} if e['id'] == 'animado2d' else {}
         c.legenda(legenda_ass(cena['texto'], dur, W, H, leg_cor, leg_borda, leg_caixa, pasta / 'legenda.ass', **extra))
     return c.comando(audio, saida)
 
@@ -978,6 +1026,133 @@ def _e_documentario(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque,
     if c.efeitos:
         c.filtro('fade=t=in:st=0:d=0.14:color=white')      # clarão curto na entrada da cena
     return '#ffffff', '#000000', False
+
+
+def _fundo_cenario(cn: dict, w: int, h: int, chao_rel: float, arq: Path) -> Path:
+    """Cenário pequeno (1/4 da tela) desenhado em Python e ampliado pelo FFmpeg: fica levemente desfocado, como fundo de desenho."""
+    t = raster.Tela(w, h)
+    c0, c1 = raster.cor(cn['ceu']), raster.cor(cn['ceu2'])
+    chao = int(h * chao_rel)
+    for y in range(chao):
+        f = y / max(1, chao)
+        t.retangulo(0, y, w, y + 1, tuple(int(c0[k] + (c1[k] - c0[k]) * f) for k in range(3)) + (255,))
+    t.retangulo(0, chao, w, h, raster.cor(cn['chao']))
+    t.retangulo(0, chao, w, chao + max(1, h // 160), raster.cor(_escuro(cn['chao'], 0.75)))
+    rnd = random.Random(sum(map(ord, cn['nome'] + cn['tipo'])))
+    noite = cn['horario'] == 'noite'
+    if cn['tipo'] in ('parque', 'rua', 'vazio') and noite:
+        for _ in range(40):
+            t.elipse(rnd.random() * w, rnd.random() * chao * 0.7, 0.8, 0.8, (255, 255, 230, 200))
+        t.elipse(w * 0.8, h * 0.12, w * 0.06, w * 0.06, (245, 240, 210, 255))
+    elif cn['tipo'] in ('parque', 'rua'):
+        t.elipse(w * 0.82, h * 0.1, w * 0.07, w * 0.07, raster.cor('#fff3b0'))
+    if cn['tipo'] == 'parque':
+        for k in range(3):
+            t.elipse(w * (0.15 + 0.4 * k), chao + h * 0.02, w * 0.45, h * 0.12, raster.cor(_escuro(cn['chao'], 0.85 - 0.05 * k)))
+        for x in (0.1, 0.9):
+            tx = w * x
+            t.retangulo(tx - w * 0.015, chao - h * 0.14, tx + w * 0.015, chao + 2, raster.cor('#6b4226'))
+            for dx, dy, r in ((0, -0.19, 0.09), (-0.05, -0.15, 0.07), (0.05, -0.15, 0.07)):
+                t.elipse(tx + w * dx, chao + h * dy, w * r, w * r, raster.cor('#3f8f3a' if not noite else '#24502a'))
+    elif cn['tipo'] == 'rua':
+        x = 0
+        while x < w:
+            bw, bh = w * (0.18 + rnd.random() * 0.12), h * (0.22 + rnd.random() * 0.25)
+            cor = rnd.choice(['#c9ada7', '#9a8c98', '#b5838d', '#a3b18a', '#d4a373'])
+            t.retangulo(x, chao - bh, x + bw - 2, chao, raster.cor(_escuro(cor, 0.6) if noite else cor))
+            for wy in range(int(chao - bh + h * 0.03), int(chao - h * 0.04), max(4, int(h * 0.045))):
+                for wx in range(int(x + bw * 0.15), int(x + bw * 0.85), max(4, int(bw * 0.3))):
+                    t.retangulo(wx, wy, wx + bw * 0.16, wy + h * 0.022, raster.cor('#ffe8a3' if noite and rnd.random() > 0.4 else '#dfe7ef'))
+            x += bw
+        t.retangulo(0, chao + h * 0.03, w, chao + h * 0.035, raster.cor('#f1f1f1'))
+    elif cn['tipo'] in ('casa', 'escola', 'escritorio'):
+        t.retangulo(0, chao - h * 0.06, w, chao, raster.cor(_escuro(cn['ceu'], 0.88)))
+        jx, jy, jw, jh = w * 0.62, chao - h * 0.36, w * 0.26, h * 0.2
+        t.retangulo(jx - 3, jy - 3, jx + jw + 3, jy + jh + 3, raster.cor('#ffffff'))
+        t.retangulo(jx, jy, jx + jw, jy + jh, raster.cor('#203a70' if noite else '#9fd3f5'))
+        t.retangulo(jx + jw / 2 - 1, jy, jx + jw / 2 + 1, jy + jh, raster.cor('#ffffff'))
+        if cn['tipo'] == 'escola':
+            t.retangulo(w * 0.08, chao - h * 0.38, w * 0.5, chao - h * 0.17, raster.cor('#2f5d3a'))
+            t.retangulo(w * 0.08, chao - h * 0.17, w * 0.5, chao - h * 0.16, raster.cor('#8b5a2b'))
+        elif cn['tipo'] == 'escritorio':
+            t.retangulo(w * 0.05, chao - h * 0.1, w * 0.4, chao - h * 0.085, raster.cor('#6b4f3a'))
+            t.retangulo(w * 0.07, chao - h * 0.085, w * 0.09, chao, raster.cor('#6b4f3a'))
+            t.retangulo(w * 0.36, chao - h * 0.085, w * 0.38, chao, raster.cor('#6b4f3a'))
+            t.retangulo(w * 0.15, chao - h * 0.17, w * 0.28, chao - h * 0.1, raster.cor('#2b2d42'))
+        else:
+            t.retangulo(w * 0.08, chao - h * 0.33, w * 0.3, chao - h * 0.2, raster.cor('#e9c46a'))
+            t.retangulo(w * 0.1, chao - h * 0.315, w * 0.28, chao - h * 0.215, raster.cor('#2a9d8f'))
+    return t.salvar(arq)
+
+
+def _escuro(hexa: str, f: float) -> str:
+    r, g, b, _ = raster.cor(hexa)
+    return '#%02x%02x%02x' % (int(r * f), int(g * f), int(b * f))
+
+
+ZOOM_2D = {'WS': 1.0, 'MS': 1.45, 'CU': 2.0, 'ECU': 2.3}
+
+
+def _e_animado2d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):
+    """Cena com personagens articulados (rig2d). Composição em resolução maior quando há close, e a câmera
+    (cortes de plano com leve aproximação) é aplicada no fim, sem mexer na ação dos personagens."""
+    perfis = cena.get('_personagens') or {}
+    elenco = [e for e in (cena.get('elenco') or []) if e['personagem_id'] in perfis]
+    if not elenco:
+        elenco, perfis = rig2d.elenco_padrao(cena, pal)
+    cn = rig2d.validar_cenario(cena.get('_cenario') or {'tipo': 'parque' if not perfis.get('apresentador') else 'vazio', 'ceu': pal[0]})
+    planos = cena.get('planos') or [{'id': 'p1', 'plano': 'WS', 'peso': 1.0, 'personagem': ''}]
+    ss = float(os.getenv('RIG_SS', '1.0')) if any(ZOOM_2D.get(p.get('plano'), 1) > 1 for p in planos) else 1.0
+    Wc, Hc = int(W * ss) // 2 * 2, int(H * ss) // 2 * 2
+    c.W, c.H = Wc, Hc
+    v = H > W
+    chao_rel = 0.80 if v else 0.86
+    chao_y = Hc * chao_rel
+    altura = Hc * (0.40 if v else 0.62) / (1.25 if len(elenco) > 2 else 1)
+    fundo = _fundo_cenario(cn, max(64, Wc // 4), max(64, Hc // 4), chao_rel, pasta / 'cenario.png')
+    c.fundo(cn['ceu'])
+    c.png(_escalada_para(fundo, int(Wc * 1.025), Hc), f'-{Wc * 0.025:.0f}*t/{dur:.2f}', '0', 0, 0)
+    falante = (cena.get('personagem') or '').strip().lower()
+    nomes = {k: rig2d.validar_personagem(p)['nome'].lower() for k, p in perfis.items()}
+    pos = {}
+    pasta_pecas = Path(os.getenv('DADOS', str(Path.home() / '.estudioclip'))) / 'rig2d'
+    for el in elenco:
+        p = rig2d.validar_personagem(perfis[el['personagem_id']])
+        fala = falante in (el['personagem_id'], nomes.get(el['personagem_id'])) or (len(elenco) == 1 and bool(cena.get('texto')))
+        if fala and not any(a['tipo'] == 'falar' for a in el['acoes']):
+            el = dict(el, acoes=[{'t': 0.0, 'tipo': 'falar', 'alvo': '', 'intensidade': 1.0, 'dur': 0}] + el['acoes'])
+        pos[el['personagem_id']] = rig2d.colocar(c, el, p, rig2d.pecas(p, pasta_pecas), chao_y, altura, Wc, dur, fala, cena.get('_audio'))
+        if fala:
+            pos['_falante'] = pos[el['personagem_id']]
+    # câmera: cortes entre planos, foco no personagem do plano (ou em quem fala)
+    tempos = tempos_planos([dict(p, peso=p.get('peso', 1.0)) for p in planos], dur)
+    zs, xs, ys = [], [], []
+    for p, (t0, t1) in zip(planos, tempos):
+        z = ZOOM_2D.get(p.get('plano'), 1.0) / ss
+        alvo = pos.get(p.get('personagem') or '') or pos.get('_falante') or next(iter(pos.values()))
+        fy = alvo['cabeca_y'] + (0.06 * Hc if p.get('plano') in ('CU', 'ECU') else 0.12 * Hc) if p.get('plano') != 'WS' else Hc / 2
+        fx = alvo['x_px'] if p.get('plano') != 'WS' else Wc / 2
+        f0, f1 = int(t0 * FPS), max(int(t0 * FPS) + 1, int(t1 * FPS))
+        zz = f'{z * ss:.4f}*(1+0.035*(on-{f0})/{f1 - f0})' if z * ss > 1 else f'(1+0.02*on/{max(1, int(dur * FPS))})'
+        zs.append((f1, zz))
+        xs.append((f1, f'{fx:.1f}'))
+        ys.append((f1, f'{fy:.1f}'))
+        if t0 > 0.05:
+            c.sons.append(t0)
+
+    def por_plano(lst):
+        out = lst[-1][1]
+        for f1, e in reversed(lst[:-1]):
+            out = f'if(lt(on,{f1}),{e},{out})'
+        return out
+    c.filtro(f"zoompan=z='{por_plano(zs)}':x='clip({por_plano(xs)}-iw/zoom/2,0,iw-iw/zoom)':y='clip({por_plano(ys)}-ih/zoom/2,0,ih-ih/zoom)'"
+             f":d=1:s={W}x{H}:fps={FPS}")
+    c.W, c.H = W, H
+    c.sons = c.sons[:0]   # diálogo: sem 'whoosh' nos cortes
+    if titulo and not cena.get('elenco'):
+        ln = quebrar(titulo, W - 2 * m, tam * 0.8)
+        c.texto('\n'.join(ln), '(w-text_w)/2', f"{L['titulo_y']}", tam * 0.8, '#ffffff', ini=0.2, borda=max(4, W // 200), cor_borda='#111111')
+    return '#ffffff', '#000000', True
 
 
 def _e_cartoon2d(c, cena, L, W, H, dur, pasta, imagem, pal, titulo, destaque, m, tam):

@@ -98,6 +98,8 @@ def limpar_briefing(d: dict) -> dict:
     b['destinos'] = {'redes': [r for r in de.get('redes', []) if r in ag.REDES], 'quando': de.get('quando') if de.get('quando') in ('proximo', 'agora', 'data') else 'proximo',
                      'data': float(de.get('data') or 0), 'titulo': str(de.get('titulo') or '')[:100], 'legenda': str(de.get('legenda') or '')[:2200]}
     b['ia_reserva'] = d.get('ia_reserva') is not False      # misto: a IA desenha só as cenas sem foto
+    if b['estilo'] == 'animado2d':
+        b['imagens'] = 'nenhuma'        # personagens e cenário são desenhados pelo próprio servidor
     if b['estilo'] == 'documentario' and b['imagens'] == 'nenhuma':
         b['imagens'] = 'busca'          # o estilo documentário é feito de fotos reais
     if not ec.utilizavel(b['estilo'], b['imagens'] == 'gemini'):
@@ -155,8 +157,33 @@ def ideias(d: dict) -> dict:
     return {'ideias': out[:qtd], 'radar': radar, 'consultado_em': time.time()}
 
 
-def _prompt_roteiro(b: dict, ideia: str, extra: str = '') -> str:
+def _regras_animado(serie: dict | None) -> str:
+    """Regra extra do roteiro para o estilo com personagens: elenco, falas, ações do catálogo e planos."""
+    import rig2d
+    acoes = '; '.join(f'{k} ({v[0]})' for k, v in rig2d.ACOES.items() if k not in ('idle', 'piscar'))
+    if serie and serie.get('personagens'):
+        elenco = '; '.join(f'{pid}: {p.get("nome")}' + (f' ({p.get("descricao")})' if p.get('descricao') else '') for pid, p in serie['personagens'].items())
+        cen = '; '.join(f'{cid}: {c.get("nome")} ({c.get("tipo")}, {c.get("horario")})' for cid, c in (serie.get('cenarios') or {}).items()) or 'nenhum'
+        fatos = '\n'.join('- ' + f for f in (serie.get('biblia') or [])[:40]) or '- (ainda nada aprovado)'
+        anteriores = '\n'.join(f'- Ep. {e.get("ordem")}: {e.get("titulo")}: {e.get("resumo", "")[:200]}' for e in (serie.get('anteriores') or [])[-6:]) or '- (este é o primeiro)'
+        base = (f'SÉRIE "{serie.get("titulo", "")}" ({serie.get("genero", "")}, tom {serie.get("tom", "")}, público {serie.get("publico", "")}). '
+                f'Regras da série: {serie.get("regras") or "-"}.\nPERSONAGENS (use só estes ids): {elenco}.\nCENÁRIOS (use só estes ids): {cen}.\n'
+                f'FATOS APROVADOS DA SÉRIE (nunca contradiga; mudança de roupa, objeto ou acontecimento importante vai em "mudancas"):\n{fatos}\n'
+                f'EPISÓDIOS ANTERIORES:\n{anteriores}\n')
+    else:
+        base = 'Sem série: use um único personagem com id "apresentador" que fala com o público.\n'
+    return (base + '12. ANIMAÇÃO COM PERSONAGENS: cada cena é uma fala de UM personagem (texto = o que ele diz, em primeira pessoa, sem "ele disse"). '
+            'personagem: id de quem fala. cenario_id: id do cenário. elenco: até 3 personagens em cena, cada um {"personagem_id":"","posicao":"esquerda|centro|direita",'
+            '"expressao":"neutro|feliz|triste|bravo|surpreso|preocupado","acoes":[{"t":segundos desde o começo da cena,"tipo":"","alvo":""}]}. '
+            f'Ações possíveis (só estas): {acoes}. Quem ouve também reage (olhar para quem fala, rir, assustar). '
+            'planos: 2 ou 3 por cena, {"plano":"WS|MS|CU","personagem":"id em foco"}: WS mostra todos, MS e CU fecham em quem fala ou reage. '
+            'busca fica vazia. Se algo mudar de forma permanente (roupa, objeto, ferimento, segredo revelado), descreva em "mudancas":[{"alvo":"id","texto":""}].\n')
+
+
+def _prompt_roteiro(b: dict, ideia: str, extra: str = '', serie: dict | None = None) -> str:
     e = ec.estilo(b['estilo'])
+    if b.get('estilo') == 'animado2d':
+        extra = _regras_animado(serie) + extra
     palavras = int(b['duracao_alvo'] * 2.4)
     return (f'Você é roteirista de vídeos curtos que prendem a atenção até o fim. Escreva o roteiro e o storyboard de um vídeo ORIGINAL em {b["idioma"]}. '
             f'Tema: {ideia or b["tema"]}. Nicho: {b["nicho"]}. Tipo: {b["tipo"]}. Público: {b["publico"] or "geral"}. '
@@ -183,7 +210,11 @@ def _prompt_roteiro(b: dict, ideia: str, extra: str = '') -> str:
             'Antes de responder, releia: o gancho prende em 2 segundos? Alguma cena está longa ou repetida? O total cabe na duração? Corrija e só então responda.\n'
             f'{extra}Responda só JSON: {{"titulo":"","alternativas":["",""],"gancho":"","publico":"","legenda":"","hashtags":[""],'
             '"fontes":[{"titulo":"","url":""}],"cenas":[{"texto":"","titulo":"","destaque":"","numero":null,"unidade":"","elementos":[],'
-            '"camera":"aproximar","personagem":"","emocao":"","cenario":"","visual":"","busca":"","movimento":"","enquadramento":"","duracao_alvo":6' + (',"planos":[{"plano":"WS","busca":"","intencao":""}]' if b.get('estilo') == 'documentario' else '') + '}]}')
+            '"camera":"aproximar","personagem":"","emocao":"","cenario":"","visual":"","busca":"","movimento":"","enquadramento":"","duracao_alvo":6'
+            + (',"planos":[{"plano":"WS","busca":"","intencao":""}]' if b.get('estilo') == 'documentario' else '')
+            + (',"cenario_id":"","elenco":[{"personagem_id":"","posicao":"esquerda","expressao":"neutro","acoes":[{"t":0.5,"tipo":"olhar","alvo":"direita"}]}],'
+               '"planos":[{"plano":"WS","personagem":""}]' if b.get('estilo') == 'animado2d' else '') + '}]'
+            + (',"mudancas":[{"alvo":"","texto":""}]' if b.get('estilo') == 'animado2d' else '') + '}')
 
 
 _VAZIAS = set('a o e de da do das dos um uma uns umas que em no na nos nas por para com sem se mas ou como mais muito isso esse essa este esta ele ela eles elas seu sua foi ser tem não sim já quando onde porque você the and of'.split())
@@ -249,7 +280,31 @@ def validar_roteiro(j: dict, b: dict) -> dict:
         'fontes': [{'titulo': str(f.get('titulo', ''))[:150], 'url': str(f.get('url', ''))[:300]} for f in (j.get('fontes') or [])[:10]
                    if isinstance(f, dict) and re.match(r'https?://', str(f.get('url', '')))],
         'cenas': cenas,
+        'mudancas': [{'alvo': re.sub(r'[^a-z0-9_-]', '', str(m.get('alvo') or '').lower())[:40], 'texto': str(m.get('texto') or '')[:300]}
+                     for m in (j.get('mudancas') or [])[:10] if isinstance(m, dict) and m.get('texto')],
     }
+
+
+def aplicar_serie(r: dict, serie: dict | None) -> dict:
+    """Episódio de série: só personagens e cenários da série, e a voz de cada fala vem do personagem que fala."""
+    if not serie:
+        return r
+    ids = set(serie.get('personagens') or {})
+    cens = list(serie.get('cenarios') or {})
+    for c in r['cenas']:
+        c['elenco'] = [e for e in c.get('elenco') or [] if e['personagem_id'] in ids]
+        fala = (c.get('personagem') or '').lower()
+        if fala not in ids:
+            nomes = {p.get('nome', '').lower(): k for k, p in serie['personagens'].items()}
+            fala = nomes.get(fala, '')
+        c['personagem'] = fala
+        if fala:
+            c['voz'] = serie['personagens'][fala].get('voz') or ''
+            if not any(e['personagem_id'] == fala for e in c['elenco']) and len(c['elenco']) < 3:
+                c['elenco'].append({'personagem_id': fala, 'posicao': ('esquerda', 'direita', 'centro')[len(c['elenco'])], 'expressao': 'neutro', 'acoes': []})
+        if c.get('cenario_id') not in cens:
+            c['cenario_id'] = cens[0] if cens else ''
+    return r
 
 
 def apoio_skills(b: dict, pid: str = '', jid: str = '', extras: list | None = None) -> tuple[str, list]:
@@ -266,9 +321,9 @@ def apoio_skills(b: dict, pid: str = '', jid: str = '', extras: list | None = No
     return (texto + '\n' if texto else ''), usadas
 
 
-def gerar_roteiro(b: dict, ideia: str = '', pid: str = '', jid: str = '', extras: list | None = None) -> dict:
+def gerar_roteiro(b: dict, ideia: str = '', pid: str = '', jid: str = '', extras: list | None = None, serie: dict | None = None) -> dict:
     apoio, usadas = apoio_skills(b, pid, jid, extras)
-    r = validar_roteiro(ag.gemini([{'text': _prompt_roteiro(b, ideia, apoio)}], uso='roteiro'), b)
+    r = aplicar_serie(validar_roteiro(ag.gemini([{'text': _prompt_roteiro(b, ideia, apoio, serie)}], uso='roteiro'), b), serie)
     r['skills_usadas'] = usadas
     return r
 
@@ -510,12 +565,14 @@ def etapa_roteiro(ctx, pid, p, b):
     if not p['dados'].get('cenas'):
         t0 = time.time()
         _conferir_orcamento(ctx.id, b, 0.05)
-        r = gerar_roteiro(b, b['tema'], pid, ctx.id)
+        r = gerar_roteiro(b, b['tema'], pid, ctx.id, serie=p['dados'].get('serie'))
         _custo(ctx.id, 'gemini', ag.MODELO, 'roteiro', 0.03)
         fila.medir('roteiro', time.time() - t0)
 
         def f(d, _p):
-            d['roteiro'] = {k: v for k, v in r.items() if k not in ('cenas', 'skills_usadas')}
+            d['roteiro'] = {k: v for k, v in r.items() if k not in ('cenas', 'skills_usadas', 'mudancas')}
+            if r.get('mudancas'):
+                d['mudancas_propostas'] = r['mudancas']
             d['cenas'] = r['cenas']
             d['skills_usadas'] = r.get('skills_usadas', [])
             return {'titulo': r['titulo'], 'status': 'storyboard_ready'}
@@ -575,14 +632,15 @@ def etapa_narracao(ctx, pid, p, b):
             continue
         tom = TONS.get(b.get('tipo'), TONS['outro']) if os.getenv('TTS_TOM', '1') != '0' else ''
         ritmo = RITMOS.get(b.get('ritmo') or 'agil', 1.0)
-        h = _h(c['texto'], b['voz'], MODELO_TTS, tom, ritmo, 2)
+        voz = c.get('voz') if c.get('voz') in VOZES else b['voz']
+        h = _h(c['texto'], voz, MODELO_TTS, tom, ritmo, 2)
         if (c.get('audio') or {}).get('h') == h and Path((c['audio'] or {}).get('arquivo', '')).exists():
             continue
         _conferir_orcamento(ctx.id, b, 0.02)
         arq = pasta / f'{h}.wav'
         t0 = time.time()
         if not arq.exists():
-            dur = tts(c['texto'], b['voz'], arq, tom, ritmo)
+            dur = tts(c['texto'], voz, arq, tom, ritmo)
             _custo(ctx.id, 'gemini', MODELO_TTS, 'narracao', 0.002 * max(1, len(c['texto']) / 100) * float(ag.config()['orcamento'].get('dolar', 5.5)))
         else:
             dur = rd.duracao(arq)
@@ -763,8 +821,16 @@ def _render_cena(ctx, pid, i, c, cenas, b, W, H, dur, pasta, feito, total):
         eid = b['estilo'] if ec.utilizavel(b['estilo'], bool(img)) else 'vetor_chapado'
     audio = Path(c['audio']['arquivo']) if (c.get('audio') or {}).get('arquivo') and Path(c['audio']['arquivo']).exists() else None
     imgs_pl = _imagens_planos(c) if eid == 'documentario' else []
-    chave = ec.chave_cena(eid, {k: c.get(k) for k in ('texto', 'titulo', 'destaque', 'numero', 'unidade', 'elementos', 'camera', 'planos')}, W, H, dur,
-                          (c.get('audio') or {}).get('h', ''), (c.get('imagem') or {}).get('h', '') + (str(img) if img else '') + ''.join(str(x) for x in imgs_pl), b['paleta'])
+    extra = ''
+    if eid == 'animado2d':
+        serie = pj.obter(pid)['dados'].get('serie') or {}
+        c = dict(c, _personagens=serie.get('personagens') or {}, _cenario=(serie.get('cenarios') or {}).get(c.get('cenario_id') or ''),
+                 _audio=str(audio) if audio else None)
+        extra = json.dumps([c['_personagens'], c['_cenario']], sort_keys=True)
+    chave = ec.chave_cena(eid, {k: c.get(k) for k in ('texto', 'titulo', 'destaque', 'numero', 'unidade', 'elementos', 'camera', 'planos')
+                                + (('elenco', 'cenario_id', 'personagem') if eid == 'animado2d' else ())},
+                          W, H, dur, (c.get('audio') or {}).get('h', ''),
+                          (c.get('imagem') or {}).get('h', '') + (str(img) if img else '') + ''.join(str(x) for x in imgs_pl) + extra, b['paleta'])
     saida = pasta / f'{chave}.mp4'
     if saida.exists() and saida.stat().st_size > 1000 and (c.get('clipe') or {}).get('chave') == chave:
         return eid, saida

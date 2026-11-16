@@ -55,7 +55,17 @@ ROTEIRO = {'titulo': 'Por que o céu é azul', 'legenda': 'A luz do sol explica.
                      {'titulo': 'A luz', 'texto': 'A luz do sol tem todas as cores.', 'destaque': 'Todas as cores', 'numero': 7, 'unidade': 'cores'},
                      {'titulo': 'O ar', 'texto': 'O ar espalha mais o azul.', 'destaque': 'Espalha o azul'}]}
 PEDIDOS = []
+PROMPTS = []
 SEM_FOTOS = False
+ROTEIRO_SERIE = {'titulo': 'O barulho', 'legenda': 'O que foi aquilo?', 'hashtags': ['#serie'],
+                 'mudancas': [{'alvo': 'ana', 'texto': 'Ana agora guarda a chave do sótão.'}],
+                 'cenas': [{'texto': 'Beto, você ouviu isso?', 'personagem': 'ana', 'cenario_id': 'sala', 'duracao_alvo': 3,
+                            'elenco': [{'personagem_id': 'ana', 'posicao': 'esquerda', 'expressao': 'preocupado', 'acoes': [{'t': 0.3, 'tipo': 'apontar', 'alvo': 'direita'}]},
+                                       {'personagem_id': 'beto', 'posicao': 'direita', 'acoes': [{'t': 0.5, 'tipo': 'olhar', 'alvo': 'esquerda'}, {'t': 1, 'tipo': 'voar'}]},
+                                       {'personagem_id': 'intruso', 'posicao': 'centro'}],
+                            'planos': [{'plano': 'WS'}, {'plano': 'CU', 'personagem': 'ana'}]},
+                           {'texto': 'Deve ser só o vento.', 'personagem': 'Beto', 'cenario_id': 'inexistente', 'duracao_alvo': 3,
+                            'elenco': [{'personagem_id': 'beto', 'posicao': 'centro', 'expressao': 'feliz', 'acoes': [{'t': 0.2, 'tipo': 'rir'}]}]}]}
 
 
 class Gemini(BaseHTTPRequestHandler):
@@ -90,7 +100,10 @@ class Gemini(BaseHTTPRequestHandler):
             pcm = b''.join(struct.pack('<h', int(8000 * math.sin(2 * math.pi * 220 * i / 24000))) for i in range(int(24000 * 1.6)))
             r = {'candidates': [{'content': {'parts': [{'inlineData': {'mimeType': 'audio/pcm', 'data': base64.b64encode(pcm).decode()}}]}}]}
         else:
-            r = {'candidates': [{'content': {'parts': [{'text': json.dumps(ROTEIRO, ensure_ascii=False)}]}}], 'usageMetadata': {}}
+            txt = json.dumps(corpo)
+            PROMPTS.append(txt)
+            rot = ROTEIRO_SERIE if 'ANIMA\\u00c7\\u00c3O COM PERSONAGENS' in txt or 'ANIMAÇÃO COM PERSONAGENS' in txt else ROTEIRO
+            r = {'candidates': [{'content': {'parts': [{'text': json.dumps(rot, ensure_ascii=False)}]}}], 'usageMetadata': {}}
         b = json.dumps(r).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
@@ -421,6 +434,50 @@ st, t, _ = api('POST', f'/api/v1/backups/{b["arquivo"]}/testar', {}, SES)
 confere(t['ok'] and t['projetos'] >= 2, 'backup e restauração de teste conferem')
 st, a, _ = api('POST', '/agente/rodar', {'oque': 'buscar'}, SES)
 confere(st == 200 and a.get('fila'), 'pedido manual do agente de cortes entra na fila')
+
+print('Séries animadas (personagens articulados)')
+st, se, _ = api('POST', '/api/v1/series', {'titulo': 'Casa Assombrada', 'genero': 'mistério', 'tom': 'leve', 'formato': '9:16', 'cenas_qtd': 2, 'duracao_alvo': 8}, SES)
+SID = se['id']
+st, e0, _ = api('POST', f'/api/v1/series/{SID}/episodios', {'resumo': 'sem elenco'}, SES)
+confere(st == 400, 'episódio sem personagem é recusado')
+st, ana, _ = api('POST', '/api/v1/personagens', {'serie_id': SID, 'nome': 'Ana', 'cabelo_tipo': 'longo', 'roupa': '#e63946', 'voz': 'Kore'}, SES)
+st, beto, _ = api('POST', '/api/v1/personagens', {'serie_id': SID, 'nome': 'Beto', 'cabelo_tipo': 'cacheado', 'corpo': 'forte', 'voz': 'Puck', 'pele': 'roxo'}, SES)
+confere(ana['id'] == 'ana' and beto['id'] == 'beto' and beto['dados']['pele'] == '#e8b98f', 'personagens criados com id legível e cor inválida trocada')
+st, fl, _ = api('GET', '/api/v1/personagens/ana/folha', None, SES)
+confere(st == 200 and fl['png'].startswith('data:image/png;base64,') and len(fl['png']) > 2000, 'folha de modelo do personagem gerada')
+st, sala, _ = api('POST', '/api/v1/cenarios', {'serie_id': SID, 'nome': 'Sala', 'tipo': 'casa', 'horario': 'noite'}, SES)
+st, bb, _ = api('PUT', f'/api/v1/series/{SID}/biblia', {'entradas': [{'tipo': 'fato', 'alvo': 'ana', 'texto': 'Ana tem medo do escuro.', 'estado': 'aprovada'},
+                                                                   {'tipo': 'fato', 'texto': 'A casa tem um segredo no sótão.', 'estado': 'proposta'}]}, SES)
+fato = next(x for x in bb['biblia'] if 'escuro' in x['texto'])
+st, bb, _ = api('PUT', f'/api/v1/series/{SID}/biblia', {'entradas': [{'id': fato['id'], 'tipo': 'fato', 'alvo': 'ana', 'texto': 'Ana perdeu o medo do escuro.', 'estado': 'aprovada'}]}, SES)
+confere(any('perdeu' in x['texto'] and x['substitui'] == fato['id'] for x in bb['biblia']) and not any(x['id'] == fato['id'] for x in bb['biblia']),
+        'fato aprovado não muda em silêncio (vira mudança e o antigo fica guardado)')
+st, ep, _ = api('POST', f'/api/v1/series/{SID}/episodios', {'titulo': 'O barulho', 'resumo': 'Um barulho estranho na sala.', 'produzir': True,
+                                                           'modo_aprovacao': 'supervisionado'}, SES)
+confere(st == 200 and ep['ordem'] == 1 and ep['projeto_id'], 'episódio criado como projeto do Agente 3')
+api('PUT', '/api/v1/personagens/ana/rig', {'dados': {'roupa': '#00ff00'}}, SES)
+t = time.time()
+while time.time() - t < 500:
+    re_ = api('GET', f'/api/v1/projetos/{ep["projeto_id"]}/revisao', None, SES)[1]
+    if re_['projeto']['status'] in ('ready_for_review', 'failed'):
+        break
+    time.sleep(0.5)
+confere(re_['projeto']['status'] == 'ready_for_review', 'episódio animado produzido e pronto para revisão')
+if re_['projeto']['status'] != 'ready_for_review':
+    print(json.dumps(re_['job'], ensure_ascii=False)[:1500])
+dp = re_['projeto']['dados']
+pr = next(x for x in PROMPTS if 'ANIMA' in x)
+confere('perdeu o medo' in pr and 'segredo no s' not in pr and 'beto: Beto' in pr, 'roteiro do episódio vê só fatos aprovados e o elenco da série')
+c0, c1 = dp['cenas'][0], dp['cenas'][1]
+confere([e['personagem_id'] for e in c0['elenco']] == ['ana', 'beto'] and [a['tipo'] for a in c0['elenco'][1]['acoes']] == ['olhar'],
+        'só personagens da série e só ações do catálogo')
+confere(c0['voz'] == 'Kore' and c1['personagem'] == 'beto' and c1['voz'] == 'Puck' and c1['cenario_id'] == 'sala', 'cada fala com a voz do seu personagem')
+confere(dp['serie']['personagens']['ana']['roupa'] == '#e63946', 'mudar o personagem depois não altera o episódio já criado')
+confere(api('GET', '/api/v1/personagens/ana', None, SES)[1]['versao'] == 2, 'mudança de aparência vira versão nova do personagem')
+st, bb, _ = api('POST', f'/api/v1/series/episodios/{ep["id"]}/propostas', {}, SES)
+confere(any(x['texto'] == 'Ana agora guarda a chave do sótão.' and x['estado'] == 'proposta' for x in bb['biblia']), 'mudanças do episódio entram na bíblia como proposta')
+st, so, _ = api('GET', f'/api/v1/series/{SID}', None, SES)
+confere(so['episodios'][0]['status'] == 'ready_for_review' and len(so['personagens']) == 2, 'série mostra episódios com a situação do vídeo')
 
 print(f'\n{ok_n} ok, {falhas} falhas   (pasta {TMP})')
 if os.getenv('MANTER_SERVIDOR'):
