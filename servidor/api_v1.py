@@ -346,6 +346,23 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     m = re.fullmatch(r'/api/v1/backups/([\w.-]+)/testar', caminho)
     if m and metodo == 'POST':
         return backups.testar_restauracao(m.group(1))
+    if rota == ('GET', '/api/v1/midias-backup'):
+        return backups.estado_midias()
+    if rota == ('PUT', '/api/v1/midias-backup'):
+        try:
+            return backups.salvar_config_midias(corpo())
+        except ValueError as e:
+            raise pj.ErroProjeto(400, str(e))
+    if rota == ('POST', '/api/v1/midias-backup/fazer'):
+        try:
+            return backups.fazer_midias('manual')
+        except OSError as e:
+            raise pj.ErroProjeto(400, str(e))
+    if rota == ('POST', '/api/v1/midias-backup/testar'):
+        try:
+            return backups.testar_midias(str(corpo().get('manifesto') or ''))
+        except FileNotFoundError as e:
+            raise pj.ErroProjeto(404, str(e))
     if rota == ('GET', '/api/v1/eventos'):
         n = max(1, min(_int(q.get('limite', ['50'])[0], 50), 300))
         return {'eventos': db.todos('SELECT * FROM eventos ORDER BY n DESC LIMIT ?', n)}

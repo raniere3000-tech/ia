@@ -189,6 +189,11 @@ export const lerRespostasAgora=(cfg:CfgSrv)=>api<{ok:boolean;lidos:number;aplica
 export type Diagnostico={ffmpeg:boolean;livre_mb:number;minimo_mb:number;capacidade:Capacidade;jobs:Record<string,number>;falhas_recentes:{t:number;ator:string;acao:string;recurso:string}[];backups:{arquivo:string;tamanho:number;criado:number}[];banco:{arquivo:string;tamanho:number}};
 export const diagnostico=(cfg:CfgSrv)=>api<Diagnostico>(cfg,'GET','/api/v1/diagnostico');
 export const fazerBackup=(cfg:CfgSrv)=>api<{arquivo:string;tamanho:number}>(cfg,'POST','/api/v1/backups',{});
+export type MidiasBackup={config:{ligado:boolean;categorias:string[];destino:string};destino:string;categorias:Record<string,{nome:string;arquivos:number;mb:number}>;escolhidos:number;ja_copiados:number;falta_mb:number;livre_mb:number;mesmo_aparelho:boolean;ultimos:{arquivo:string;criado:number}[]};
+export const lerMidiasBackup=(cfg:CfgSrv)=>api<MidiasBackup>(cfg,'GET','/api/v1/midias-backup');
+export const salvarMidiasBackup=(cfg:CfgSrv,d:Partial<MidiasBackup['config']>)=>api<MidiasBackup>(cfg,'PUT','/api/v1/midias-backup',d);
+export const fazerMidiasBackup=(cfg:CfgSrv)=>api<{novos:number;ja_existiam:number;faltando:string[];destino:string}>(cfg,'POST','/api/v1/midias-backup/fazer',{});
+export const testarMidiasBackup=(cfg:CfgSrv)=>api<{ok:boolean;conferidos:number;problemas:string[];referencias_sem_arquivo:string[]}>(cfg,'POST','/api/v1/midias-backup/testar',{});
 export const testarBackup=(cfg:CfgSrv,arquivo:string)=>api<{ok:boolean;erros:string[];banco_ok:boolean;projetos:number}>(cfg,'POST',`/api/v1/backups/${encodeURIComponent(arquivo)}/testar`,{});
 
 /** Texto curto de tempo: 45 s, 3 min, 1 h 20. */

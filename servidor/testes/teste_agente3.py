@@ -392,6 +392,25 @@ if motor3d.disponivel():
 else:
     print('  (sem numpy: 3D continua indisponível)')
 
+print('Backup das mídias')
+st, em, _ = api('GET', '/api/v1/midias-backup', None, SES)
+confere(st == 200 and em['categorias']['finais']['arquivos'] >= 1 and em['mesmo_aparelho'], 'mostra o que existe e avisa que o destino é o mesmo celular')
+st, _, _ = api('PUT', '/api/v1/midias-backup', {'destino': '/etc'}, SES)
+confere(st == 400, 'destino fora do Termux/armazenamento é recusado')
+st, em, _ = api('PUT', '/api/v1/midias-backup', {'categorias': ['finais', 'audios', 'imagens']}, SES)
+st, m1, _ = api('POST', '/api/v1/midias-backup/fazer', {}, SES)
+st2, m2, _ = api('POST', '/api/v1/midias-backup/fazer', {}, SES)
+confere(st == 200 and m1['novos'] > 0 and m2['novos'] == 0 and m2['ja_existiam'] == m1['novos'] + m1['ja_existiam'], 'backup incremental: a segunda vez não copia de novo')
+st, tm, _ = api('POST', '/api/v1/midias-backup/testar', {}, SES)
+confere(st == 200 and tm['ok'] and tm['conferidos'] == m1['novos'] + m1['ja_existiam'], 'restauração de teste confere todos os sha256')
+import backups as bk  # noqa: E402
+obj = next((bk._destino(bk.config_midias()) / 'objetos').rglob('*'))
+while obj.is_dir():
+    obj = next(obj.iterdir())
+obj.write_bytes(b'estragado')
+st, tm2, _ = api('POST', '/api/v1/midias-backup/testar', {}, SES)
+confere(not tm2['ok'] and any('corrompido' in x for x in tm2['problemas']), 'arquivo estragado no backup aparece como problema')
+
 print('Fila, capacidade, backup')
 st, f, _ = api('GET', '/api/v1/fila', None, SES)
 confere(st == 200 and f['contagem']['concluidos'] >= 1, 'fila lista os concluídos')

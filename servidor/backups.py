@@ -2,7 +2,8 @@
 
 - Cópia consistente do SQLite (API de backup, sem parar o servidor) + arquivos JSON do agente e da postagem.
 - Manifesto com sha256 de cada arquivo; retenção configurável (padrão: 7 diários).
-- Os vídeos e assets NÃO entram (são grandes); o manifesto lista quantos existem.
+- Os vídeos e assets NÃO entram no zip diário (são grandes). Eles têm um backup próprio, opcional e incremental
+  (fazer_midias): cada arquivo é guardado uma vez só, pelo sha256, com manifesto e teste de restauração.
 - O cofre (chave mestra e segredos cifrados) entra cifrado como está; a chave mestra NÃO é copiada
   para dentro do backup por padrão (guarde-a à parte, como o README explica).
 - Restaurar é sempre para uma pasta de TESTE; trocar os dados de verdade é um passo manual descrito no README.
@@ -111,7 +112,151 @@ def iniciar():
                 ult = listar()
                 if not ult or time.time() - ult[0]['criado'] > 86400:
                     fazer('diário')
+                    if config_midias()['ligado']:
+                        fazer_midias('diário')
             except Exception as e:  # noqa: BLE001
                 print('backup:', e)
             time.sleep(3600)
     threading.Thread(target=laco, daemon=True, name='backup').start()
+
+
+# ---------------------------------------------------------------- backup das mídias importantes (opcional, incremental)
+CATEGORIAS = {'finais': 'Vídeos finais aprovados ou prontos', 'audios': 'Narrações e áudios', 'imagens': 'Fotos e imagens das cenas'}
+PADRAO_MIDIAS = {'ligado': False, 'categorias': ['finais', 'audios'], 'destino': ''}
+
+
+def _destino(cfg: dict) -> Path:
+    d = (cfg.get('destino') or '').strip()
+    return Path(d).expanduser() if d else PASTA / 'midias'
+
+
+def config_midias() -> dict:
+    c = {**PADRAO_MIDIAS, **(db.kv('backup_midias', {}) or {})}
+    c['categorias'] = [x for x in c['categorias'] if x in CATEGORIAS]
+    return c
+
+
+def salvar_config_midias(d: dict) -> dict:
+    c = config_midias()
+    if 'ligado' in d:
+        c['ligado'] = bool(d['ligado'])
+    if isinstance(d.get('categorias'), list):
+        c['categorias'] = [x for x in d['categorias'] if x in CATEGORIAS]
+    if 'destino' in d:
+        dest = str(d.get('destino') or '').strip()
+        if dest:
+            p = Path(dest).expanduser()
+            casa = Path.home().resolve()
+            ok = p.is_absolute() and (str(p.resolve()).startswith(str(casa)) or str(p).startswith(('/sdcard', '/storage')))
+            if not ok:
+                raise ValueError('Escolha uma pasta dentro do Termux (~) ou do armazenamento do celular (/sdcard ou /storage).')
+        c['destino'] = dest
+    db.kv_gravar('backup_midias', c)
+    return estado_midias()
+
+
+def _midias(categorias: list) -> list:
+    """Lista o que entra no backup: cada item com sha256, tamanho, caminho, projeto e categoria."""
+    out, vistos = [], set()
+    if 'finais' in categorias:
+        for r in db.todos('SELECT projeto, arquivo, sha256, versao FROM renders WHERE validado=1'):
+            a = Path(r['arquivo'] or '')
+            if r['sha256'] and r['sha256'] not in vistos and a.exists():
+                vistos.add(r['sha256'])
+                out.append({'sha256': r['sha256'], 'tamanho': a.stat().st_size, 'caminho': str(a), 'projeto': r['projeto'], 'nome': f'final-v{r["versao"]}{a.suffix}', 'categoria': 'finais'})
+    for r in db.todos('SELECT projeto, nome, mime, sha256, caminho, tamanho FROM assets'):
+        cat = 'audios' if (r['mime'] or '').startswith('audio/') else 'imagens' if (r['mime'] or '').startswith('image/') else ''
+        if cat in categorias and r['sha256'] and r['sha256'] not in vistos:
+            vistos.add(r['sha256'])
+            out.append({'sha256': r['sha256'], 'tamanho': r['tamanho'] or 0, 'caminho': r['caminho'], 'projeto': r['projeto'], 'nome': r['nome'], 'categoria': cat})
+    return out
+
+
+def estado_midias() -> dict:
+    c = config_midias()
+    dest = _destino(c)
+    tudo = _midias(list(CATEGORIAS))
+    por = {k: {'nome': v, 'arquivos': 0, 'mb': 0.0} for k, v in CATEGORIAS.items()}
+    for m in tudo:
+        por[m['categoria']]['arquivos'] += 1
+        por[m['categoria']]['mb'] += m['tamanho'] / 1048576
+    escolhidas = [m for m in tudo if m['categoria'] in c['categorias']]
+    ja = sum(1 for m in escolhidas if (dest / 'objetos' / m['sha256'][:2] / m['sha256']).exists())
+    falta_mb = sum(m['tamanho'] for m in escolhidas if not (dest / 'objetos' / m['sha256'][:2] / m['sha256']).exists()) / 1048576
+    mesmo = not str(dest).startswith(('/sdcard', '/storage'))
+    manis = sorted(dest.glob('manifesto-*.json'), reverse=True) if dest.exists() else []
+    return {'config': c, 'destino': str(dest), 'categorias': por, 'escolhidos': len(escolhidas), 'ja_copiados': ja, 'falta_mb': round(falta_mb, 1),
+            'livre_mb': __import__('renderizador').livre_mb(dest if dest.exists() else PASTA), 'mesmo_aparelho': mesmo,
+            'ultimos': [{'arquivo': m.name, 'criado': m.stat().st_mtime} for m in manis[:3]]}
+
+
+def fazer_midias(motivo: str = 'manual') -> dict:
+    """Copia só o que ainda não está no destino (endereçado pelo sha256: o mesmo arquivo nunca é copiado duas vezes)
+    e grava um manifesto com o que este backup cobre."""
+    c = config_midias()
+    dest = _destino(c)
+    (dest / 'objetos').mkdir(parents=True, exist_ok=True)
+    itens = _midias(c['categorias'])
+    precisa = sum(m['tamanho'] for m in itens if not (dest / 'objetos' / m['sha256'][:2] / m['sha256']).exists()) / 1048576
+    import renderizador as rd
+    livre = rd.livre_mb(dest)
+    if 0 <= livre < precisa + rd.MIN_LIVRE_MB:
+        raise OSError(f'Falta espaço: o backup precisa de {precisa:.0f} MB e o destino tem {livre} MB livres (fora a reserva de {rd.MIN_LIVRE_MB} MB).')
+    novos, ja, faltando = 0, 0, []
+    for m in itens:
+        alvo = dest / 'objetos' / m['sha256'][:2] / m['sha256']
+        if alvo.exists():
+            ja += 1
+            continue
+        orig = Path(m['caminho'])
+        if not orig.exists():
+            faltando.append(m['nome'])
+            continue
+        alvo.parent.mkdir(parents=True, exist_ok=True)
+        tmp = alvo.with_suffix('.tmp')
+        shutil.copy2(orig, tmp)
+        if _sha(tmp) != m['sha256']:
+            tmp.unlink(missing_ok=True)
+            faltando.append(m['nome'] + ' (mudou desde que foi registrado)')
+            continue
+        tmp.replace(alvo)
+        novos += 1
+    nome = datetime.now().strftime('manifesto-%Y%m%d-%H%M%S.json')
+    man = {'criado': time.time(), 'motivo': motivo, 'categorias': c['categorias'],
+           'itens': [{k: m[k] for k in ('sha256', 'tamanho', 'projeto', 'nome', 'categoria')} | {'caminho': m['caminho']} for m in itens if m['nome'] not in faltando]}
+    (dest / nome).write_text(json.dumps(man, ensure_ascii=False, indent=1), encoding='utf-8')
+    for velho in sorted(dest.glob('manifesto-*.json'))[:-MANTER]:
+        velho.unlink(missing_ok=True)
+    db.evento('servidor', 'backup_midias', nome, {'novos': novos, 'ja': ja, 'faltando': len(faltando)})
+    return {'manifesto': nome, 'novos': novos, 'ja_existiam': ja, 'faltando': faltando, 'destino': str(dest)}
+
+
+def testar_midias(nome: str = '') -> dict:
+    """Confere um manifesto: cada arquivo existe no destino e o sha256 bate. Restaura numa pasta de TESTE e
+    aponta referências do banco que estão sem arquivo. Nunca diz 'ok' se faltar alguma mídia."""
+    dest = _destino(config_midias())
+    manis = sorted(dest.glob('manifesto-*.json'), reverse=True)
+    if nome:
+        manis = [m for m in manis if m.name == Path(nome).name]
+    if not manis:
+        raise FileNotFoundError('Nenhum backup de mídias ainda.')
+    man = json.loads(manis[0].read_text(encoding='utf-8'))
+    teste = PASTA / 'teste-midias'
+    shutil.rmtree(teste, ignore_errors=True)
+    teste.mkdir(parents=True)
+    ruins, ok_n = [], 0
+    for it in man['itens']:
+        obj = dest / 'objetos' / it['sha256'][:2] / it['sha256']
+        if not obj.exists():
+            ruins.append(f'{it["nome"]}: não está no backup')
+            continue
+        saida = teste / (it['projeto'] or 'sem-projeto') / Path(it['nome']).name
+        saida.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(obj, saida)
+        if _sha(saida) != it['sha256']:
+            ruins.append(f'{it["nome"]}: arquivo corrompido')
+        else:
+            ok_n += 1
+    sem_arquivo = [a['nome'] for a in db.todos('SELECT nome, caminho FROM assets') if not Path(a['caminho'] or '').exists()][:20]
+    shutil.rmtree(teste, ignore_errors=True)
+    return {'ok': not ruins, 'conferidos': ok_n, 'problemas': ruins[:30], 'manifesto': manis[0].name, 'referencias_sem_arquivo': sem_arquivo}
