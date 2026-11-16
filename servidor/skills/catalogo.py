@@ -114,7 +114,14 @@ def sincronizar():
     except Exception as e:  # noqa: BLE001  (banco antigo sem a tabela: segue sem o histórico)
         print('skills: histórico do manifesto', e)
     for s in manifesto()['skills']:
-        if sg.item_manifesto_valido(s) or _linha(s['id']):
+        if sg.item_manifesto_valido(s):
+            continue
+        r = _linha(s['id'])
+        if r and s.get('licenca') and not r['licenca'] and not r['ativa'] and (r['motivo'] or '').startswith('Licença não confirmada'):
+            # a licença foi confirmada depois (manifesto novo): liga a skill que só estava desligada por isso
+            db.executar("UPDATE skills_catalogo SET licenca=?, ativa=1, motivo='' WHERE id=?", s['licenca'], s['id'])
+            db.evento('skills', 'licenca_confirmada', 'skill:' + s['id'], {'licenca': s['licenca'], 'fonte': s.get('licenca_fonte', '')})
+        if r:
             continue
         sem_lic = not s.get('licenca')
         db.executar('INSERT OR IGNORE INTO skills_catalogo (id, nome, origem_url, arquivo_origem, commit_sha, sha256, categoria, tipo, estado, licenca, '

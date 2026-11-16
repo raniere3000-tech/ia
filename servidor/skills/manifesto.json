@@ -1662,7 +1662,7 @@
    "commit": "1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62",
    "sha256": "f4647ca866a3accf763777f83e7682954f0187cd6bea7eea0399796652414e8f",
    "tamanho": 1231,
-   "licenca": "",
+   "licenca": "MIT",
    "uso": "Fable/Site",
    "agentes": [
     "desenvolvimento"
@@ -1671,7 +1671,8 @@
    "tipo": "desenvolvimento",
    "modalidade": "guia",
    "prioridade": "P0",
-   "gatilho": "frontend React"
+   "gatilho": "frontend React",
+   "licenca_fonte": "README do repositório (não há arquivo LICENSE no commit fixado)"
   },
   {
    "id": "frontend-design",
@@ -2133,7 +2134,7 @@
    "commit": "2c19448d43ef280a4b29d5238afaf7e1c6f00c01",
    "sha256": "d9895e2d334e0143e2737497ef7bdd0150b4ee6ca9c2a29798b75013ce0685e3",
    "tamanho": 10915,
-   "licenca": "",
+   "licenca": "MIT",
    "uso": "A3/Elenco",
    "agentes": [
     "agente3"
@@ -2142,7 +2143,8 @@
    "tipo": "producao",
    "modalidade": "externo-condicional",
    "prioridade": "P2",
-   "gatilho": "só texto sem conta externa"
+   "gatilho": "só texto sem conta externa",
+   "licenca_fonte": "README do repositório (não há arquivo LICENSE no commit fixado)"
   },
   {
    "id": "storyboard-creation",
@@ -2151,7 +2153,7 @@
    "commit": "2c19448d43ef280a4b29d5238afaf7e1c6f00c01",
    "sha256": "749938fdd50497d00e68ac52d9603de5bd0a5345eb188b56c7020a65607bd12b",
    "tamanho": 10419,
-   "licenca": "",
+   "licenca": "MIT",
    "uso": "A3/Diretor",
    "agentes": [
     "agente3"
@@ -2160,7 +2162,8 @@
    "tipo": "producao",
    "modalidade": "externo-condicional",
    "prioridade": "P2",
-   "gatilho": "só texto sem conta externa"
+   "gatilho": "só texto sem conta externa",
+   "licenca_fonte": "README do repositório (não há arquivo LICENSE no commit fixado)"
   },
   {
    "id": "video-analysis-skill",
