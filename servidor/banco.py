@@ -105,6 +105,19 @@ ESQUEMA = [
     CREATE TABLE IF NOT EXISTS skills_manifestos (sha256 TEXT PRIMARY KEY, versao TEXT, total INTEGER, fonte TEXT, conteudo TEXT NOT NULL, t REAL);
     CREATE INDEX IF NOT EXISTS skills_ativacoes_etapa ON skills_ativacoes (etapa, t);
     """,
+    # 5: núcleo criativo (biblioteca compartilhada e propostas da Modelagem com IA; só acrescenta)
+    """
+    CREATE TABLE IF NOT EXISTS criativo_assets (id TEXT PRIMARY KEY, tipo TEXT NOT NULL, nome TEXT NOT NULL, descricao TEXT, dados TEXT NOT NULL,
+        origem TEXT NOT NULL, status TEXT NOT NULL, versao INTEGER NOT NULL DEFAULT 1, hash TEXT, proveniencia TEXT, modalidades TEXT,
+        escopo TEXT NOT NULL DEFAULT 'servidor', schema_version INTEGER NOT NULL DEFAULT 1, criado REAL, atualizado REAL);
+    CREATE TABLE IF NOT EXISTS criativo_assets_versoes (asset_id TEXT NOT NULL, versao INTEGER NOT NULL, dados TEXT NOT NULL, hash TEXT, t REAL, por TEXT,
+        PRIMARY KEY (asset_id, versao));
+    CREATE TABLE IF NOT EXISTS criativo_propostas (id TEXT PRIMARY KEY, lote TEXT, tipo TEXT, contexto TEXT, status TEXT NOT NULL, revisao INTEGER NOT NULL,
+        dados TEXT NOT NULL, schema_version INTEGER NOT NULL DEFAULT 1, criado REAL, atualizado REAL);
+    CREATE INDEX IF NOT EXISTS criativo_assets_tipo ON criativo_assets (tipo, status);
+    CREATE INDEX IF NOT EXISTS criativo_assets_hash ON criativo_assets (hash);
+    CREATE INDEX IF NOT EXISTS criativo_propostas_atual ON criativo_propostas (atualizado);
+    """,
 ]
 
 

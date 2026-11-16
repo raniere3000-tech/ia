@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
-import { Search, RefreshCcw, ExternalLink, Bookmark, X, KeyRound, Loader2, Users, PlaySquare, Scissors, Smartphone, Download, ListChecks } from 'lucide-react';
+import { Search, RefreshCcw, ExternalLink, Bookmark, X, KeyRound, Loader2, Users, PlaySquare, Scissors, Smartphone, Download, ListChecks, Wand2 } from 'lucide-react';
 import { PROJETO_VAZIO } from '../state';
 import { baixarLote, lerLinks, type ItemLote } from '../lib/loteVideos';
 import { useApp } from '../state';
+import { guardarDoRadar } from '../lib/criativo';
 import { usarVideoInteiro, abrirLote } from './Cortes';
 import { HelpButton } from '../components/Help';
 import { radarDireto, canaisDe, ordenar, testarChaveYouTube, type Video, type Canal, type RadarParams } from '../lib/radar';
@@ -30,11 +31,13 @@ function fichaDoVideo(v:Video,canal:Canal|undefined,f:Filtros,coleta:string,medi
     direitos:'O YouTube não informa se o canal autoriza cortes. Confira a descrição do canal ou peça autorização antes de usar; sem isso, use só como referência de pauta.'};
 }
 
-const NICHOS:[string,string][] = [['Todos os nichos',''],['Games e lives','gameplay'],['Podcasts e entrevistas','podcast entrevista'],['Humor','humor comédia'],['Esportes','esportes'],['Tecnologia e IA','tecnologia inteligência artificial'],['Educação e curiosidades','curiosidades'],['Ciência','ciência'],['História','história'],['Finanças e negócios','finanças investimentos'],['Empreendedorismo','empreendedorismo'],['Saúde e bem-estar','saúde bem-estar'],['Culinária','receita culinária'],['Viagens','viagem'],['Música','música'],['Cinema e séries','filmes séries'],['Cultura pop','cultura pop'],['Automóveis','carros'],['Beleza e moda','beleza moda'],['Notícias e análise','notícias análise']];
+const NICHOS:[string,string][] = [['Todos os nichos',''],['Games e lives','gameplay'],['Podcasts e entrevistas','podcast entrevista'],['Humor','humor comédia'],['Esportes','esportes'],['Tecnologia e IA','tecnologia inteligência artificial'],['Educação e curiosidades','curiosidades'],['Ciência','ciência'],['História','história'],['Finanças e negócios','finanças investimentos'],['Empreendedorismo','empreendedorismo'],['Saúde e bem-estar','saúde bem-estar'],['Culinária','receita culinária'],['Viagens','viagem'],['Música','música'],['Cinema e séries','filmes séries'],['Cultura pop','cultura pop'],['Automóveis','carros'],['Beleza e moda','beleza moda'],['Notícias e análise','notícias análise'],['Histórias e animações com IA','AI animated story história animada']];
 type Filtros = {nicho:string;tema:string;dias:number;views:number;minutos:number;ordem:string;regiao:string;idioma:string};
 type Salva = {nome:string;f:Filtros};
 const PADRAO:Filtros = {nicho:'Todos os nichos',tema:'',dias:30,views:100000,minutos:20,ordem:'velocidade',regiao:'BR',idioma:'pt'};
 const PRESET_GTA:Salva = {nome:'Radar GTA — teste',f:{...PADRAO,tema:'GTA'}};
+// para criar história original (preset de pesquisa, não um segundo buscador)
+const PRESET_HISTORIAS:Salva = {nome:'Histórias animadas com IA',f:{...PADRAO,nicho:'Histórias e animações com IA',dias:30,views:10000,minutos:-1,ordem:'views'}};
 
 export default function Radar(){
   const {settings,setSettings,go,toast,setLinkRef,setProjeto}=useApp();
@@ -87,6 +90,7 @@ export default function Radar(){
     const nome=[f.tema,f.nicho!=='Todos os nichos'?f.nicho:'',`${f.dias===3650?'sempre':f.dias+'d'}`].filter(Boolean).join(' • ');
     persist([...salvas.filter(s=>s.nome!==nome),{nome,f}]); toast('Pesquisa salva.','ok');
   }
+  const criarOriginal=(vs:Video[])=>{ guardarDoRadar(vs,[f.nicho,f.tema].filter(Boolean).join(' ')); go('ia','','criar'); toast('Abrindo "Criar com a IA" com estas referências. A proposta é original: nada do vídeo é copiado.','ok'); };
   const usar=(link:string)=>{ usarVideoInteiro(false); setLinkRef(link); go('cortes'); toast('Vídeo aberto no estúdio. Assista e marque os trechos que quer cortar.','ok'); };
   const usarInteiro=(link:string)=>{ usarVideoInteiro(true); setLinkRef(link); go('cortes'); toast(settings.servidor?'Baixando o vídeo inteiro pelo servidor. Depois é só colocar o template e a legenda.':'Ligue o servidor para baixar sozinho, ou use "Enviar arquivo" com o vídeo baixado.','ok'); };
 
@@ -112,7 +116,7 @@ export default function Radar(){
      <label>País<select value={f.regiao} onChange={e=>set({regiao:e.target.value})}><option value="BR">Brasil</option><option value="PT">Portugal</option><option value="US">Estados Unidos</option><option value="">Qualquer</option></select></label>
      <label>Idioma<select value={f.idioma} onChange={e=>set({idioma:e.target.value})}><option value="pt">Português</option><option value="en">Inglês</option><option value="es">Espanhol</option><option value="">Qualquer</option></select></label>
     </div>
-    <div className="actions"><button className="primary lg" onClick={pesquisar} disabled={loading}>{loading?<Loader2 size={17} className="spin"/>:<Search size={17}/>}{loading?'Pesquisando...':'Pesquisar'}</button><button className="subtle" onClick={salvar}><Bookmark size={16}/> Salvar pesquisa</button><button className="subtle" onClick={()=>setF(PADRAO)}><RefreshCcw size={16}/> Restaurar filtros gerais</button></div>
+    <div className="actions"><button className="primary lg" onClick={pesquisar} disabled={loading}>{loading?<Loader2 size={17} className="spin"/>:<Search size={17}/>}{loading?'Pesquisando...':'Pesquisar'}</button><button className="subtle" onClick={salvar}><Bookmark size={16}/> Salvar pesquisa</button><button className="subtle" onClick={()=>setF(PADRAO)}><RefreshCcw size={16}/> Restaurar filtros gerais</button><button className="subtle" onClick={()=>{ setF(PRESET_HISTORIAS.f); toast('Filtros de histórias animadas com IA (Shorts, 30 dias, por views). Clique em Pesquisar.'); }}><Wand2 size={16}/> Histórias animadas com IA</button></div>
     {salvas.length>0&&<div className="saved"><span>Pesquisas salvas:</span>{salvas.map(s=><span key={s.nome} className="saved-chip"><button onClick={()=>{setF(s.f);toast(`Filtros de “${s.nome}” aplicados. Clique em Pesquisar.`)}}>{s.nome}</button><button aria-label="Apagar" onClick={()=>persist(salvas.filter(x=>x.nome!==s.nome))}><X size={12}/></button></span>)}</div>}
    </section>
 
@@ -126,6 +130,7 @@ export default function Radar(){
       <button className={marcados.size?'subtle':'primary'} disabled={!linksLidos.length} onClick={()=>editarVarios(linksLidos)}><Download size={15}/> Baixar e editar {linksLidos.length} link(s) colado(s)</button>
       {videos.some(v=>v.duracao_segundos<=240)&&<button className="subtle" onClick={()=>setMarcados(new Set(videos.filter(v=>v.duracao_segundos<=240).map(v=>v.id)))}>Marcar todos os curtos ({videos.filter(v=>v.duracao_segundos<=240).length})</button>}
       {marcados.size>0&&<button className="subtle" onClick={()=>setMarcados(new Set())}>Desmarcar todos</button>}
+      {videos.length>0&&<button className="subtle" onClick={()=>criarOriginal(ordenados.slice(0,12))}><Wand2 size={15}/> Criar vídeo original inspirado nesta pesquisa</button>}
     </div>}
     {!settings.servidor&&<p className="hint">Precisa do servidor ligado (celular ou PC) para baixar os vídeos.</p>}
    </section>
@@ -139,7 +144,7 @@ export default function Radar(){
       <div className="video-body">{v.duracao_segundos<=240&&<label className="check sel-video"><input type="checkbox" checked={marcados.has(v.id)} disabled={!!lote} onChange={e=>marcar(v.id,e.target.checked)}/> Selecionar</label>}<h3 title={v.titulo}>{v.titulo}</h3><a className="channel" href={v.link_canal} target="_blank" rel="noreferrer">{v.canal} <ExternalLink size={12}/></a>
        <div className="metrics"><span>▶ {v.views===null?'Não informado':fmt(v.views)+' views'}</span><span>⚡ {v.velocidade===null?'Não informado':fmt(v.velocidade)+'/dia'}</span><span>📅 {new Date(v.publicado).toLocaleDateString('pt-BR')}</span></div>
        <Ficha f={fichaDoVideo(v,canais.find(c=>c.id===v.canal_id),f,coleta,mediana)}/>
-       <div className="card-actions"><a className="subtle sm" href={v.link} target="_blank" rel="noreferrer"><ExternalLink size={13}/> Assistir</a>{v.duracao_segundos<=240?<button className="action-link" onClick={()=>usarInteiro(v.link)}><Smartphone size={13}/> Usar inteiro (sem cortar)</button>:<button className="action-link" onClick={()=>usar(v.link)}><Scissors size={13}/> Abrir no estúdio de cortes</button>}</div></div></article>)}</div>
+       <div className="card-actions"><a className="subtle sm" href={v.link} target="_blank" rel="noreferrer"><ExternalLink size={13}/> Assistir</a><button className="action-link" onClick={()=>criarOriginal([v])}><Wand2 size={13}/> Criar história original</button>{v.duracao_segundos<=240?<button className="action-link" onClick={()=>usarInteiro(v.link)}><Smartphone size={13}/> Usar inteiro (sem cortar)</button>:<button className="action-link" onClick={()=>usar(v.link)}><Scissors size={13}/> Abrir no estúdio de cortes</button>}</div></div></article>)}</div>
       :<div className="empty"><Search size={30}/><strong>Nenhum vídeo encontrado</strong><p>Amplie o período, reduza as views mínimas ou mude a duração.</p></div>)
     :(canais.length?<div className="channel-list">{canais.map(c=><article key={c.id} className="channel-row">{c.thumbnail?<img src={c.thumbnail} alt=""/>:<span className="avatar"><Users size={18}/></span>}<div className="grow"><a href={c.link} target="_blank" rel="noreferrer"><strong>{c.nome}</strong> <ExternalLink size={12}/></a><small>{c.inscritos===null?'Inscritos: não informado':fmt(c.inscritos)+' inscritos'} • {c.videos} vídeo(s) nesta pesquisa • {fmt(c.views)} views somadas</small><small className="muted">Destaque: {c.melhor.titulo}</small></div><a className="subtle sm" href={c.melhor.link} target="_blank" rel="noreferrer">Ver destaque</a></article>)}</div>
       :<div className="empty"><Users size={30}/><strong>Nenhum canal</strong></div>)}

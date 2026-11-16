@@ -17,6 +17,7 @@ import agendador
 import aprovacoes as apv
 import autenticacao as au
 import backups
+import criativo as cri
 import banco as db
 import emails
 import descricao as descricao_mod
@@ -344,6 +345,83 @@ def _skills(metodo: str, caminho: str, q: dict, corpo, quem: str = '') -> dict:
     raise pj.ErroProjeto(404, 'Rota não encontrada.')
 
 
+_PEDIDOS_IA: dict = {}
+
+
+def _limite_ia(sid: str, por_hora: int = 30):
+    """Freio simples de gasto: no máximo `por_hora` pedidos de proposta por aparelho em uma hora."""
+    agora = time.time()
+    lista = [t for t in _PEDIDOS_IA.get(sid or '-', []) if agora - t < 3600]
+    if len(lista) >= por_hora:
+        raise pj.ErroProjeto(429, 'Muitos pedidos de proposta na última hora. Espere um pouco para não gastar a cota da IA.')
+    _PEDIDOS_IA[sid or '-'] = lista + [agora]
+
+
+def _criativo(metodo: str, caminho: str, q: dict, corpo, quem: str, sid: str) -> dict:
+    """Núcleo criativo: biblioteca compartilhada, Modelagem com IA e tendências. Nada aqui produz, cobra vídeo ou posta."""
+    rota = (metodo, caminho)
+    p = lambda k, padrao='': q.get(k, [padrao])[0]  # noqa: E731
+    if rota == ('GET', '/api/v1/criativo/capacidades'):
+        return cri.capacidades()
+    if rota == ('GET', '/api/v1/criativo/biblioteca'):
+        return cri.biblioteca(p('tipo'), p('q')[:80], _int(p('pagina', '1'), 1))
+    if rota == ('POST', '/api/v1/criativo/biblioteca'):
+        return cri.criar_asset(corpo(), quem)
+    if rota == ('POST', '/api/v1/criativo/tendencias/pesquisar'):
+        d = corpo()
+        return cri.pesquisar_tendencias(d.get('filtros'), d.get('evidencias_radar'), bool(d.get('atualizar')))
+    if rota == ('POST', '/api/v1/criativo/modelagem/propor'):
+        _limite_ia(sid)
+        return cri.propor(corpo(), quem)
+    if rota == ('GET', '/api/v1/criativo/propostas'):
+        return {'propostas': cri.listar_propostas(p('favoritas') == '1')}
+    if rota == ('POST', '/api/v1/criativo/usar-no-projeto'):
+        d = corpo()
+        return cri.usar_no_projeto(str(d.get('projeto_id') or ''), d, quem)
+    m = re.fullmatch(r'/api/v1/criativo/propostas/(\w+)(?:/(salvar-modelo|aplicar|previa))?', caminho)
+    if m:
+        prid, acao = m.groups()
+        if not acao and metodo == 'GET':
+            return cri.obter_proposta(prid)
+        if not acao and metodo == 'PATCH':
+            return cri.editar_proposta(prid, corpo())
+        if acao == 'salvar-modelo' and metodo == 'POST':
+            return cri.aplicar(prid, dict(corpo(), destino='biblioteca'), quem, quem)
+        if acao == 'aplicar' and metodo == 'POST':
+            return cri.aplicar(prid, corpo(), quem, quem)
+        if acao == 'previa' and metodo == 'POST':
+            return cri.previa(prid, corpo())
+    m = re.fullmatch(r'/api/v1/criativo/assets/([\w-]+)(?:/(duplicar|versoes|previa))?', caminho)
+    if m:
+        aid, acao = m.groups()
+        if aid.startswith('ca'):
+            if not acao and metodo == 'GET':
+                return cri.obter_asset(aid)
+            if not acao and metodo == 'PATCH':
+                return cri.atualizar_asset(aid, corpo(), quem)
+            if acao == 'duplicar' and metodo == 'POST':
+                return cri.duplicar_asset(aid, quem)
+            if acao == 'versoes' and metodo == 'GET':
+                return {'versoes': cri.versoes_asset(aid)}
+            if acao == 'previa' and metodo == 'POST':
+                return {'status': 'indisponivel', 'motivo': 'Este tipo de modelo é uma ficha em texto; não há desenho dele.'}
+        else:   # personagem ou cenário das Séries (mesma biblioteca, sem copiar)
+            if not acao and metodo == 'GET':
+                try:
+                    return srs.obter_personagem(aid)
+                except srs.ErroSerie:
+                    c = next((x for x in srs.listar_cenarios() if x['id'] == aid), None)
+                    if not c:
+                        raise pj.ErroProjeto(404, 'Modelo não encontrado.')
+                    return c
+            if acao == 'versoes' and metodo == 'GET':
+                return {'versoes': srs.obter_personagem(aid)['versoes']}
+            if acao == 'previa' and metodo == 'POST':
+                c = next((x for x in srs.listar_cenarios() if x['id'] == aid), None)
+                return srs.previa_cenario(c['dados']) if c else srs.folha(aid)
+    raise pj.ErroProjeto(404, 'Rota não encontrada.')
+
+
 def _series(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
     rota = (metodo, caminho)
     if rota == ('GET', '/api/v1/series'):
@@ -661,7 +739,10 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         if str(d.get('roteiro_texto') or '').strip():
             return produtor.ler_roteiro_colado(str(d['roteiro_texto'])[:20000], b)
         extras = [str(x) for x in (d.get('skills') or [])[:6] if isinstance(x, str)]
-        return produtor.gerar_roteiro(b, str(d.get('ideia') or b['tema']), extras=extras)
+        serie = None
+        if d.get('projeto_id'):   # vídeo com personagens da biblioteca (ou episódio): a IA escreve com esse elenco, na versão fixada
+            serie = pj.obter(str(d['projeto_id'])[:40])['dados'].get('serie') or None
+        return produtor.gerar_roteiro(b, str(d.get('ideia') or b['tema']), extras=extras, serie=serie)
     if rota == ('POST', '/api/v1/agente3/projetos'):
         d = corpo()
         p = produtor.novo(d, quem)
@@ -774,6 +855,9 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     # ---- séries animadas, personagens e cenários
     if caminho.startswith(('/api/v1/series', '/api/v1/personagens', '/api/v1/cenarios')):
         return _series(metodo, caminho, q, corpo, quem)
+    # ---- núcleo criativo (Modelagem com IA, biblioteca compartilhada e tendências)
+    if caminho.startswith('/api/v1/criativo/'):
+        return _criativo(metodo, caminho, q, corpo, quem, sid)
     # ---- biblioteca de skills (só texto de orientação; nada é executado)
     if caminho.startswith('/api/v1/skills'):
         try:

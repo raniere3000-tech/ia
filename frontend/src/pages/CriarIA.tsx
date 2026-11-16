@@ -9,6 +9,8 @@ import SkillPicker from '../components/SkillPicker';
 import VozGravada from '../components/VozGravada';
 import Ficha, { fichaDoServidor } from '../components/Ficha';
 import Diretor from '../components/Diretor';
+import ModelagemIA, { EscolherDaBiblioteca } from '../components/ModelagemIA';
+import type { Campos } from '../lib/criativo';
 import { catalogo, ideias as pedirIdeias, gerarRoteiro, novoVideo, obterProjeto, salvarStoryboard, aprovarRoteiro, type Briefing, type Cena, type Roteiro, type Ideia, type Plano, type Chave } from '../lib/api';
 
 const REDES:[string,string][]=[['youtube','YouTube'],['instagram','Instagram'],['facebook','Facebook'],['tiktok','TikTok'],['kwai','Kwai']];
@@ -195,9 +197,26 @@ export default function CriarIA(){
     go('revisar',p.id,'fila');
   });
   const detalhado=aberto||!!pid||!!roteiro;
+  // proposta da Modelagem com IA levada para este vídeo: mostra o que muda e só troca com confirmação
+  const usarCampos=(c:Campos)=>{
+    const novo:Partial<Briefing>={tema:c.titulo,descricao:[c.sinopse,c.gancho&&`Gancho: ${c.gancho}`].filter(Boolean).join(' '),publico:c.publico||b.publico,nicho:c.genero||b.nicho,
+      duracao_alvo:c.duracao_seg,formato:c.formato,...(cat.dados?.estilos.some(e=>e.id===c.estilo)?{estilo:c.estilo}:{})};
+    const muda=(Object.keys(novo) as (keyof Briefing)[]).filter(k=>b[k]&&String(b[k])!==String(novo[k]));
+    if(muda.length&&!window.confirm('Isto troca: '+muda.map(k=>`${k}: "${String(b[k]).slice(0,40)}" → "${String(novo[k]).slice(0,40)}"`).join('; ')+'. Continuar?')) return;
+    set(novo);
+    if(c.cenas.length&&(!roteiro||window.confirm('Trocar as cenas atuais pelas da proposta? Cenas bloqueadas continuam iguais.'))){
+      const travadas=(roteiro?.cenas||[]).filter(x=>x.bloqueada);
+      setRoteiro({titulo:c.titulo,alternativas:[],gancho:c.gancho,publico:c.publico,legenda:roteiro?.legenda||'',hashtags:c.hashtags,fontes:[],...(roteiro||{}),
+        cenas:[...travadas,...c.cenas.map(x=>({id:novaId(),titulo:x.titulo,texto:x.texto,destaque:''}))]});
+    }
+    setAberto(true); toast('Proposta levada para o vídeo. Confira e ajuste.','ok');
+  };
+  const garantirProjeto=async()=>{ if(pid) return pid; const p=await novoVideo(cfg,{briefing:b,roteiro:roteiro||undefined}); setPid(p.id); setRev(p.revisao); toast('Rascunho salvo em Meus projetos.','ok'); return p.id; };
   return <div className="criar-ia">
    <Prontidao cat={cat.dados}/>
    {!pid&&!roteiro&&<CriarRapido/>}
+   <ModelagemIA compacto titulo="Criar com a IA" contexto="agente3" tipos={['ideia','historia','pacote','cena']} destinos={['video','biblioteca']}
+     onUsarCampos={usarCampos} onAplicado={r=>{ if(r.projeto_id) go('ia',r.projeto_id,'criar'); }}/>
    {!detalhado&&<button className="subtle" onClick={()=>setAberto(true)}><Wand2 size={15}/> Prefiro ver e editar o roteiro, cena por cena, antes de produzir</button>}
    {detalhado&&<><section className="panel">
     <div className="section-head"><h2><Lightbulb size={17}/> 1. Assunto do vídeo</h2></div>
@@ -206,13 +225,15 @@ export default function CriarIA(){
      <button className="subtle" disabled={!!busy} onClick={()=>fazer('ideias',async()=>{ const r=await pedirIdeias(cfg,{...b,quantidade:6}); setIdeias(r.ideias); if(!r.ideias.length) toast('A IA não trouxe ideias. Tente outro nicho.','info'); })}>{busy==='ideias'?<Loader2 size={15} className="spin"/>:<Lightbulb size={15}/>} Sugerir pautas originais</button>
     </div>
     {ideias.length>0&&<div className="ideias">{ideias.map(x=><div key={x.titulo} className="ideia-item"><button className={'ideia'+(b.tema===x.titulo?' on':'')} onClick={()=>set({tema:x.titulo})}><b>{x.titulo}</b><small>{x.gancho||x.porque}</small>{x.fontes.length>0&&<small className="muted">{x.fontes.length} fonte(s) para conferir</small>}{!x.fato&&<span className="tag warn">opinião</span>}</button>{x.ficha&&<Ficha f={fichaDoServidor(x.ficha)}/>}</div>)}</div>}
+    <div className="row-gap left mt"><EscolherDaBiblioteca projetoId={pid} garantirProjeto={garantirProjeto} onUsado={n=>{ setElencoSerie(n); if(!['animado2d','animado3d'].includes(b.estilo||'')) set({estilo:'animado2d'}); }}/>
+     {Object.keys(elencoSerie).length>0&&<span className="muted">No vídeo: {Object.values(elencoSerie).join(', ')}</span>}</div>
     <div className="mt"><CamposBriefing b={b} set={set} cat={cat.dados}/></div>
    </section>
 
    <section className="panel">
     <div className="section-head"><h2><Wand2 size={17}/> 2. Roteiro, cena por cena <HelpButton topic="storyboard"/></h2></div>
     <div className="row-gap left">
-     <button className="primary" disabled={!!busy||!b.tema?.trim()} onClick={()=>fazer('rot',async()=>{ const r=await gerarRoteiro(cfg,b,'',extrasSk); setRoteiro(r); setPid(''); })}>{busy==='rot'?<Loader2 size={15} className="spin"/>:<Wand2 size={15}/>} {roteiro?'Gerar outro roteiro':'Gerar roteiro com IA'}</button>
+     <button className="primary" disabled={!!busy||!b.tema?.trim()} onClick={()=>fazer('rot',async()=>{ const r=await gerarRoteiro(cfg,b,'',extrasSk,Object.keys(elencoSerie).length?pid:''); setRoteiro(r); if(!Object.keys(elencoSerie).length) setPid(''); })}>{busy==='rot'?<Loader2 size={15} className="spin"/>:<Wand2 size={15}/>} {roteiro?'Gerar outro roteiro':'Gerar roteiro com IA'}</button>
      <button className="subtle" onClick={()=>setColar(!colar)}><ClipboardPaste size={15}/> Colar meu roteiro</button>
     </div>
     <SkillPicker perfil="agente3.roteiro" valor={extrasSk} onChange={setExtrasSk}/>

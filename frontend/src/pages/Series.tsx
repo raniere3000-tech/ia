@@ -7,6 +7,7 @@ import { listarSeries, criarSerie, obterSerie, criarPersonagem, salvarPersonagem
   salvarBiblia, criarEpisodio, trazerMudancas, criarTemporada, lerRig, pedirPose, lerJob, visemasDoAudio, nomePose, CABELOS, CORPOS, ACESSORIOS, TIPOS_CENARIO, HORARIOS,
   type Personagem, type Serie, type EntradaBiblia, type Rig, type PedidoPose, type Visemas } from '../lib/series';
 import { enviarArquivo } from '../lib/api';
+import ModelagemIA from '../components/ModelagemIA';
 
 const NOVO_P:Personagem['dados']={nome:'',descricao:'',pele:'#e8b98f',cabelo:'#3b2a1a',olhos:'#2b1d0e',roupa:'#3a86ff',calca:'#1d3557',sapato:'#222222',cabelo_tipo:'curto',corpo:'medio',acessorio:'nenhum',altura:1,voz:'Puck'};
 const ESTADO_B:Record<string,[string,string]>={proposta:['para aprovar','warn'],aprovada:['vale na história','ok'],rejeitada:['rejeitada','bad']};
@@ -145,6 +146,7 @@ function Personagens({s,recarregar}:{s:Serie;recarregar:()=>void}){
   return <section className="panel">
     <div className="section-head"><h2><Users size={17}/> Personagens</h2><button className="subtle sm" onClick={()=>setEdit(edit==='novo'?'':'novo')}><Plus size={14}/> Novo</button></div>
     <p className="hint">Cada personagem é desenhado em partes com juntas: anda, aponta, acena, se assusta e mexe a boca com a própria voz. Por enquanto só de frente (sem perfil).</p>
+    <ModelagemIA compacto titulo="Criar personagem com a IA" contexto="series.personagem" tipos={['personagem']} destinos={['personagem']} serieId={s.id} onAplicado={()=>recarregar()}/>
     {edit==='novo'&&<EditorPersonagem serie={s.id} onPronto={()=>{ setEdit(''); recarregar(); }}/>}
     <div className="ser-cards">{s.personagens.map(p=><div key={p.id} className={'ser-card'+(p.aprovado?' ok':'')}>
       {folhas[p.id+p.versao]?<img src={folhas[p.id+p.versao]} alt={`Folha de ${p.nome}`}/>:<div className="ser-img-vazia"><Loader2 size={16} className="spin"/></div>}
@@ -169,6 +171,7 @@ function Cenarios({s,recarregar}:{s:Serie;recarregar:()=>void}){
   useEffect(()=>{ s.cenarios.forEach(c=>{ const k=c.id+c.versao; if(!png[k]) previaCenario(cfg,c.dados,s.formato).then(r=>setPng(x=>({...x,[k]:r.png}))).catch(()=>{}); }); },[s.cenarios]); // eslint-disable-line react-hooks/exhaustive-deps
   return <section className="panel">
     <div className="section-head"><h2><Map size={17}/> Cenários</h2><button className="subtle sm" onClick={()=>setNovo(!novo)}><Plus size={14}/> Novo</button></div>
+    <ModelagemIA compacto titulo="Criar cenário com a IA" contexto="series.cenario" tipos={['cenario']} destinos={['cenario']} serieId={s.id} onAplicado={()=>recarregar()}/>
     {novo&&<div className="small-grid">
       <label>Nome<input value={d.nome} onChange={e=>setD({...d,nome:e.target.value})} placeholder="Ex.: Sala da casa"/></label>
       <label>Lugar<select value={d.tipo} onChange={e=>setD({...d,tipo:e.target.value})}>{TIPOS_CENARIO.map(([k,n])=><option key={k} value={k}>{n}</option>)}</select></label>
@@ -229,6 +232,8 @@ function Episodios({s,recarregar}:{s:Serie;recarregar:()=>void}){
       </div>
     </li>)}</ul>
     </div>)}
+    <ModelagemIA compacto titulo="Criar episódio com a IA" contexto="series.episodio" tipos={['episodio']} destinos={['episodio']} serieId={s.id}
+      assets={s.personagens.map(p=>({id:p.id,tipo:'character',nome:p.nome,descricao:p.dados.descricao}))} onAplicado={()=>recarregar()}/>
     <div className="field-label mt">Novo episódio {s.episodios.length+1}</div>
     <label>Título<input value={d.titulo} onChange={e=>setD({...d,titulo:e.target.value})} placeholder={`Episódio ${s.episodios.length+1}`}/></label>
     <label className="mt">O que acontece<textarea rows={3} value={d.resumo} onChange={e=>setD({...d,resumo:e.target.value})} placeholder="Ex.: Ana ouve um barulho no sótão e convence Beto a subir com ela."/></label>
@@ -266,6 +271,8 @@ export default function Series(){
     <section className="panel">
       <div className="section-head"><h2>Nova série</h2></div>
       <p className="hint">Uma série tem elenco fixo, cenários e uma história que continua. Cada episódio vira um vídeo do Agente 3 com os mesmos personagens.</p>
+      <ModelagemIA contexto="series.nova" tipos={['serie','pacote']} destinos={['serie','biblioteca']} onAplicado={r=>{ if(r.serie_id) go('series',r.serie_id,'criar'); }}/>
+      <div className="field-label mt">Ou preencha você mesmo</div>
       <div className="small-grid">
         <label>Nome da série<input value={nova.titulo} onChange={e=>setNova({...nova,titulo:e.target.value})} placeholder="Ex.: A Casa do Sótão"/></label>
         <label>Gênero<input value={nova.genero} onChange={e=>setNova({...nova,genero:e.target.value})} placeholder="Ex.: mistério infantil"/></label>

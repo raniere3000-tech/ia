@@ -955,3 +955,20 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .elenco-cena>select{margin-top:6px;width:100%}
 .elenco-cena .plano-linha>b{order:-2;flex:1 1 calc(100% - 52px)}
 .elenco-cena .plano-linha>.icon-btn{order:-1}
+/* Modelagem com IA (núcleo criativo) */
+.mod{border:1px solid var(--line2);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px;background:#0f131e;margin:10px 0}
+.mod.compacto{padding:10px}
+.mod-abas{display:flex;gap:6px;flex-wrap:wrap}.mod-abas button{flex:1 1 120px;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border-radius:10px;border:1px solid var(--line2);background:#0c1018;color:inherit;font-weight:600}
+.mod-abas button.on{border-color:var(--accent,#3a86ff);background:#16213a}
+.mod-abrir{margin:8px 0}
+.mod-refs summary,.mod details summary{cursor:pointer}
+.mod-ref-lista{list-style:none;padding:0;margin:6px 0;display:flex;flex-direction:column;gap:8px}.mod-ref-lista li{display:flex;flex-direction:column;gap:2px;min-width:0}
+.mod-ref-lista a{word-break:break-word}
+.mod-props{display:flex;flex-direction:column;gap:10px}
+.mod-prop{border:1px solid var(--line2);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:6px;min-width:0}.mod-prop.ok{border-color:#2f7a4f}
+.mod-prop p{margin:0}
+.mod-prop-topo{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.mod-prop-topo b{flex:1 1 100%}
+.mod-pers{display:flex;flex-wrap:wrap;gap:8px}.mod-per{width:140px;display:flex;flex-direction:column;gap:3px}.mod-per img{width:100%;border-radius:8px;background:#fff}
+.mod-sem-img{height:90px;border:1px dashed var(--line2);border-radius:8px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;color:var(--muted,#8a93a6);padding:6px}
+.mod-mini{margin:2px 0 0;padding-left:18px}.mod-confirma{display:flex;flex-direction:column;gap:6px}
+.bib-lista{display:flex;flex-wrap:wrap;gap:6px}
