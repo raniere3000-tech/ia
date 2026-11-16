@@ -4,7 +4,7 @@ import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/Servidor2';
 import { Etapas } from '../components/Prontidao';
-import { lerRevisao, aprovar, pedirCorrecao, refazerCena, rejeitar, aprovarRoteiro, reenviarEmail, urlServidor, duracaoTexto, horaTexto, type Render, type Cena, type Briefing, type Qualidade, type Problema, type QuadroVersao, type Correcao, quadrosRender } from '../lib/api';
+import { lerRevisao, aprovar, pedirCorrecao, refazerCena, rejeitar, aprovarRoteiro, reenviarEmail, lerDescricao, salvarDescricao, type Descricao, urlServidor, duracaoTexto, horaTexto, type Render, type Cena, type Briefing, type Qualidade, type Problema, type QuadroVersao, type Correcao, quadrosRender } from '../lib/api';
 
 const REDES:[string,string][]=[['youtube','YouTube'],['instagram','Instagram'],['facebook','Facebook'],['tiktok','TikTok'],['kwai','Kwai (manual)']];
 const DECISAO:Record<string,string>={aprovado:'Aprovado',alterar:'Correção pedida',rejeitado:'Rejeitado'};
@@ -83,6 +83,36 @@ function QualidadePainel({q,cenas,pid,render,renders,correcoes,podeCorrigir,corr
   </section>;
 }
 
+// Descrição de publicação: o servidor monta (título, hashtags, três pontos e "Link original do vídeo []"); aqui só se vê e edita.
+type DescEstado={txt:string;link:string;srv:Descricao|null};
+function DescricaoPub({pid,redes,v,setV}:{pid:string;redes:string[];v:DescEstado;setV:(f:(x:DescEstado)=>DescEstado)=>void}){
+  const cfg=useCfg(); const {toast}=useApp(); const [busy,setBusy]=useState(false);
+  const chave=redes.join(',');
+  const receber=(d:Descricao,trocarTexto:boolean)=>setV(x=>({txt:trocarTexto||!x.srv?d.legenda:x.txt,link:d.link_original,srv:d}));
+  useEffect(()=>{ if(!cfg) return; let vivo=true;
+    lerDescricao(cfg,pid,redes).then(d=>{ if(vivo) setV(x=>({txt:!x.srv||x.txt===x.srv.legenda?d.legenda:x.txt,link:x.srv?x.link:d.link_original,srv:d})); }).catch(()=>{});
+    return ()=>{ vivo=false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[pid,chave]);
+  const mandar=async(d:{legenda?:string;restaurar?:boolean;link_original?:string},trocar:boolean,ok:string)=>{ if(!cfg) return; setBusy(true);
+    try{ receber(await salvarDescricao(cfg,pid,d),trocar); if(ok) toast(ok,'ok'); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(false); } };
+  if(!v.srv) return <p className="hint"><Loader2 size={14} className="spin"/> Montando a descrição...</p>;
+  const mudou=v.txt!==v.srv.legenda;
+  return <div className="descricao-pub">
+    <label>Descrição da publicação (pode editar; o que você escrever vai do jeito que está)
+     <textarea rows={8} value={v.txt} onChange={e=>{ const t=e.target.value; setV(x=>({...x,txt:t})); }}/></label>
+    <small className="muted">{v.txt.length} caracteres{v.srv.editada||mudou?' • editada por você':' • modelo padrão'}</small>
+    <label className="field-label">Link original do vídeo (opcional; só entra se for um endereço completo, começando com https://)
+     <input type="url" value={v.link} placeholder="https://..." onChange={e=>{ const t=e.target.value; setV(x=>({...x,link:t})); }}
+      onBlur={()=>{ if(v.link!==v.srv?.link_original) mandar({link_original:v.link},!v.srv?.editada&&!mudou,''); }}/></label>
+    {v.srv.avisos.map(a=><p key={a} className="hint warn"><AlertTriangle size={13}/> {a}</p>)}
+    <div className="row-gap left">
+     <button className="subtle sm" disabled={busy||!mudou} onClick={()=>mandar({legenda:v.txt,link_original:v.link},true,'Descrição guardada.')}><CheckCircle2 size={14}/> Guardar a descrição</button>
+     <button className="subtle sm" disabled={busy||(!v.srv.editada&&!mudou)} onClick={()=>mandar({restaurar:true,link_original:v.link},true,'Voltou ao modelo padrão.')}><RotateCcw size={14}/> Restaurar o modelo padrão</button>
+    </div>
+  </div>;
+}
+
 export default function Revisar(){
   const {settings,rotaExtra,toast,go}=useApp(); const cfg=useCfg();
   const pid=rotaExtra;
@@ -93,6 +123,7 @@ export default function Revisar(){
   const [quando,setQuando]=useState<'proximo'|'agora'|'data'>('proximo');
   const [data,setData]=useState('');
   const [refazer,setRefazer]=useState<{i:number;imagem:boolean;voz:boolean;plano?:string}|null>(null);
+  const [desc,setDesc]=useState<DescEstado>({txt:'',link:'',srv:null});
   if(!settings.servidor) return <PrecisaServidor oque="A revisão"/>;
   if(!pid) return <section className="panel empty-state"><h2>Nenhum vídeo escolhido</h2><button className="primary" onClick={()=>go('fila')}>Abrir Fila e aprovações</button></section>;
   const r=rev.dados;
@@ -137,8 +168,10 @@ export default function Revisar(){
      <label className="check"><input type="radio" checked={quando==='data'} onChange={()=>setQuando('data')}/> Data e hora</label>
      {quando==='data'&&<input type="datetime-local" value={data} onChange={e=>setData(e.target.value)}/>}
     </div>
+    <DescricaoPub pid={pid} redes={destinos} v={desc} setV={setDesc}/>
     <div className="row-gap left mt">
-     <button className="primary" disabled={!!busy||(quando==='data'&&!data)} onClick={()=>fazer('ok',()=>aprovar(cfg,pid,render.sha,{redes:destinos,quando,data:quando==='data'?new Date(data).getTime()/1000:undefined}),destinos.length?'Aprovado e entregue ao Agente 2.':'Aprovado. Sem rede escolhida: o vídeo fica salvo.')}>
+     <button className="primary" disabled={!!busy||(quando==='data'&&!data)||!desc.srv} onClick={()=>fazer('ok',()=>aprovar(cfg,pid,render.sha,{redes:destinos,quando,data:quando==='data'?new Date(data).getTime()/1000:undefined,
+       link_original:desc.link,legenda:desc.srv&&(desc.srv.editada||desc.txt!==desc.srv.legenda)?desc.txt:undefined}),destinos.length?'Aprovado e entregue ao Agente 2.':'Aprovado. Sem rede escolhida: o vídeo fica salvo.')}>
       {busy==='ok'?<Loader2 size={15} className="spin"/>:<CheckCircle2 size={15}/>} Aprovar{destinos.length?' e agendar':''}</button>
      <button className="subtle" disabled={!!busy} onClick={()=>fazer('mail',()=>reenviarEmail(cfg,pid),'E-mail com código novo enviado (o anterior deixou de valer).')}><Mail size={15}/> Reenviar e-mail</button>
     </div>
@@ -162,7 +195,6 @@ export default function Revisar(){
 
    <section className="panel">
     <div className="section-head"><h2>Roteiro ({d.cenas?.length||0} cenas)</h2></div>
-    {d.roteiro?.legenda&&<p><b>Legenda:</b> {d.roteiro.legenda} <span className="muted">{d.roteiro.hashtags?.join(' ')}</span></p>}
     <ol className="cenas-lista">{(d.cenas||[]).map((c,i)=><li key={c.id}><b>{c.titulo}</b>{c.bloqueada&&<Lock size={12}/>} {c.destaque&&<span className="tag">{c.destaque}</span>}<p>{c.texto}</p>{c.clipe?.dur?<small className="muted">{c.clipe.dur.toFixed(1)} s</small>:null}
       {esperandoVideo&&render&&(refazer?.i===i?<div className="refazer-box">
         <p className="hint">O celular faz de novo só esta cena; as outras ficam iguais. Depois o vídeo volta para você aprovar.</p>

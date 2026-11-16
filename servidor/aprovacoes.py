@@ -11,6 +11,7 @@ Regra de ouro: só vira post se
 """
 from __future__ import annotations
 
+import descricao as ds
 import hashlib
 import hmac
 import json
@@ -164,6 +165,22 @@ def _quando(dest: dict) -> float:
 
 
 # ---------------------------------------------------------------- decisões
+def descricao(p: dict, dest: dict | None = None) -> dict:
+    """Descrição de publicação de um projeto do Agente 3 (a mesma usada na prévia do site e na aprovação).
+    A editada à mão vale como está (só os créditos obrigatórios são garantidos); sem edição, o modelo padrão."""
+    import produtor
+    dest = dict(p['dados']['briefing'].get('destinos') or {}) if dest is None else dest
+    creds = produtor.creditos(p['dados'])
+    exigidos = [c for c in creds if 'Wikimedia' in c]
+    dados_desc = dict(p['dados'], briefing=dict(p['dados']['briefing'], destinos=dest))
+    padrao = ds.do_projeto(dados_desc, creds, p['titulo'])
+    editada = str(dest.get('legenda') or '').strip()
+    legenda = ds.com_creditos(editada or padrao, exigidos)
+    redes = [x for x in dest.get('redes') or [] if x in pg.REDES]
+    return {'legenda': legenda, 'padrao': padrao, 'editada': bool(editada), 'exigidos': exigidos,
+            'link_original': ds.link_valido(dest.get('link_original')), 'avisos': ds.excede(legenda, redes)}
+
+
 def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: str, chave: str = '') -> dict:
     """Aprovação válida da versão final -> posts no Agente 2. Repetir a mesma chamada não duplica nada."""
     p = pj.obter(pid)
@@ -182,11 +199,18 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
         raise ErroAprovacao(409, f'Este vídeo não está esperando aprovação (situação: {p["status"]}).')
     dest = dict(p['dados']['briefing'].get('destinos') or {})
     if isinstance(destinos, dict):
-        dest.update({k: v for k, v in destinos.items() if k in ('redes', 'quando', 'data', 'titulo', 'legenda')})
+        dest.update({k: v for k, v in destinos.items() if k in ('redes', 'quando', 'data', 'titulo', 'legenda', 'link_original')})
     redes = [x for x in dest.get('redes') or [] if x in pg.REDES]
     ok, faltam = contas_ok(redes)
     if faltam:
         raise ErroAprovacao(412, 'Conecte a conta antes de aprovar: ' + ', '.join(x.capitalize() for x in faltam) + '. Ou tire essa rede da lista.')
+    roteiro = p['dados'].get('roteiro') or {}
+    titulo = ds.titulo_limpo(dest.get('titulo') or roteiro.get('titulo') or p['titulo'])[:100]
+    dsc = descricao(p, dest)
+    legenda, exigidos = dsc['legenda'], dsc['exigidos']
+    excesso = ds.excede(legenda, redes)
+    if excesso:
+        raise ErroAprovacao(422, 'A descrição não cabe sem cortar: ' + ' '.join(excesso) + ' Encurte a descrição ou tire essa rede.')
     quando = _quando(dest) if redes else 0
     aid = uuid.uuid4().hex[:16]
     agora = time.time()
@@ -206,22 +230,13 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
             tmp = pg.VIDEOS / f'{vid}.copia.tmp'
             shutil.copy(r['arquivo'], tmp)
             tmp.replace(destino)
-        roteiro = p['dados'].get('roteiro') or {}
-        titulo = (dest.get('titulo') or roteiro.get('titulo') or p['titulo'])[:100]
-        legenda = dest.get('legenda') or ((roteiro.get('legenda') or titulo) + '\n\n' + ' '.join(roteiro.get('hashtags') or [])).strip()
         novas = []
         for rede in ok:
             if db.um('SELECT id FROM publicacoes WHERE chave=?', f'{render_sha}:{rede}'):
                 continue            # este vídeo já foi entregue a esta rede antes
             novas.append(rede)
         if novas:
-            import produtor
-            creds = produtor.creditos(p['dados'])
-            if creds and not dest.get('legenda'):
-                # crédito das fotos vai na legenda (exigido pela licença CC BY do Wikimedia; cortesia para Pexels/Pixabay)
-                legenda = (legenda + '\n\nImagens: ' + '; '.join(creds))[:2200]
-            exigidos = [c for c in creds if 'Wikimedia' in c]
-            post = pg.criar_post({'video': vid, 'redes': novas, 'quando': quando, 'titulo': titulo, 'legenda': legenda[:2200],
+            post = pg.criar_post({'video': vid, 'redes': novas, 'quando': quando, 'titulo': titulo, 'legenda': legenda,
                                   'origem': 'agente3', 'direitos': {'origem': 'meu', 'nota': 'Vídeo original do Agente 3, aprovado por ' + origem},
                                   'projeto': pid, 'render_sha': render_sha, 'creditos': exigidos})
             for rede in novas:

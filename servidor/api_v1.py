@@ -19,6 +19,7 @@ import autenticacao as au
 import backups
 import banco as db
 import emails
+import descricao as descricao_mod
 import diretor
 import estilos_codigo as ec
 import exportacao
@@ -505,7 +506,7 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
             return pj.atualizar(pid, d, quem, 'site')
         if metodo == 'DELETE':
             return pj.apagar(pid, quem)
-    m = re.fullmatch(r'/api/v1/projetos/(\w+)/(versoes|restaurar|duplicar|exportar|revisao|aprovar|alterar|rejeitar|aprovar-roteiro|produzir|reenviar-email|storyboard)', caminho)
+    m = re.fullmatch(r'/api/v1/projetos/(\w+)/(versoes|restaurar|duplicar|exportar|revisao|aprovar|alterar|rejeitar|aprovar-roteiro|produzir|reenviar-email|storyboard|descricao)', caminho)
     if m:
         pid, acao = m.groups()
         if acao == 'versoes' and metodo == 'GET':
@@ -525,6 +526,34 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
             return {'projeto': p, 'ref': apv.ref(pid), 'links': links_render(r), 'historico': apv.historico(pid),
                     'contas': {'ok': ok, 'faltam': faltam}, 'estados': produtor.ESTADOS,
                     'job': db.um("SELECT * FROM jobs WHERE projeto=? ORDER BY criado DESC LIMIT 1", pid)}
+        if acao == 'descricao':
+            # prévia da descrição de publicação (a mesma que a aprovação manda ao Agente 2); POST guarda a edição ou volta ao padrão
+            p = pj.obter(pid)
+            if p['tipo'] != 'agente3':
+                raise pj.ErroProjeto(400, 'Só vídeos do Agente 3 têm esta descrição.')
+            if metodo == 'POST':
+                d = corpo()
+
+                def _salvar(dd, _p):
+                    de = dd['briefing'].setdefault('destinos', {})
+                    if 'link_original' in d:
+                        de['link_original'] = descricao_mod.link_valido(d.get('link_original'))
+                    if d.get('restaurar'):
+                        de['legenda'] = ''
+                    elif 'legenda' in d:
+                        txt = str(d.get('legenda') or '').strip()[:5000]
+                        # igual ao modelo padrão = não editada (assim o padrão continua acompanhando título, hashtags e link)
+                        de['legenda'] = '' if txt == apv.descricao(dict(_p, dados=dd), dict(de, legenda=''))['padrao'] else txt
+                pj.mudar_dados(pid, _salvar, 'site')
+                p = pj.obter(pid)
+            elif metodo != 'GET':
+                raise pj.ErroProjeto(405, 'Método não permitido.')
+            dest = dict(p['dados']['briefing'].get('destinos') or {})
+            if 'redes' in q:
+                dest['redes'] = [x for x in q['redes'][0].split(',') if x]
+            out = apv.descricao(p, dest)
+            out.pop('exigidos', None)
+            return out
         if metodo != 'POST':
             raise pj.ErroProjeto(405, 'Método não permitido.')
         d = corpo()

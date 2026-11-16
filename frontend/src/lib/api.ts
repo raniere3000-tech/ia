@@ -149,7 +149,7 @@ export type Qualidade={status:'falha_tecnica'|'alerta_visual'|'analise_indisponi
 export type Cena={id:string;audio_manual?:{asset:string;nome:string}|null;clima?:'nenhum'|'chuva'|'neve'|'poeira'|'neblina';luz?:'neutra'|'quente'|'fria'|'noite'|'dramatica';planos?:Plano[];elenco?:{personagem_id:string;posicao:string;expressao?:string;acoes?:{t:number;tipo:string;alvo?:string;pose?:string;objeto?:string}[]}[];cenario_id?:string;busca?:string;titulo:string;texto:string;destaque?:string;numero?:number|null;unidade?:string;personagem?:string;prompt_visual?:string;duracao_alvo?:number;bloqueada?:boolean;elementos?:{rotulo:string;valor:number}[];audio?:{dur:number}|null;clipe?:{dur:number}|null};
 export type Briefing={tema:string;nicho:string;publico:string;objetivo:string;idioma:string;tipo:string;descricao:string;origem:string;referencias:string;duracao_alvo:number;formato:string;cenas_qtd:number;
   estilo:string;paleta:string[];voz:string;ritmo?:string;trilha:string;imagens:string;modo_aprovacao:'assistido'|'supervisionado';qa_visao?:boolean;prioridade:number;orcamento_max:number;max_tentativas:number;
-  destinos:{redes:string[];quando:'proximo'|'agora'|'data';data?:number;titulo?:string;legenda?:string};temas:string[]};
+  destinos:{redes:string[];quando:'proximo'|'agora'|'data';data?:number;titulo?:string;legenda?:string;link_original?:string};temas:string[]};
 export type Catalogo={estilos:EstiloInfo[];vozes:string[];tipos:string[];estados:Record<string,string>;briefing:Briefing;formatos:string[];ffmpeg:boolean;requisitos?:{ffmpeg:boolean;gemini:boolean;email:boolean;pexels:boolean;numpy:boolean};demos:Record<string,DemoInfo>;efeitos?:{id:string;nome:string;demos:Record<string,{asset:string;segundos:number}>}[]};
 export type Ideia={titulo:string;gancho:string;porque:string;tipo:string;fato:boolean;fontes:{titulo:string;url:string}[];ficha?:import('../components/Ficha').FichaServidor};
 export type Roteiro={titulo:string;alternativas:string[];gancho:string;publico:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[];cenas:Cena[];avisos?:string[];skills_usadas?:string[]};
@@ -175,6 +175,10 @@ export type Revisao={projeto:ProjetoSrv;ref:string;links:Record<string,string>;h
 export type Pendente={projeto:string;ref:string;titulo:string;status:string;atualizado:number;tipo:'video'|'roteiro';render:Partial<Render>|null;destinos:Briefing['destinos']};
 export const pendentes=(cfg:CfgSrv)=>api<{pendentes:Pendente[]}>(cfg,'GET','/api/v1/aprovacoes');
 export const lerRevisao=(cfg:CfgSrv,id:string)=>api<Revisao>(cfg,'GET',`/api/v1/projetos/${id}/revisao`);
+// descrição de publicação (montada só pelo servidor; o site mostra e edita)
+export type Descricao={legenda:string;padrao:string;editada:boolean;link_original:string;avisos:string[]};
+export const lerDescricao=(cfg:CfgSrv,id:string,redes:string[])=>api<Descricao>(cfg,'GET',`/api/v1/projetos/${id}/descricao?redes=${encodeURIComponent(redes.join(',')||'-')}`);
+export const salvarDescricao=(cfg:CfgSrv,id:string,d:{legenda?:string;restaurar?:boolean;link_original?:string})=>api<Descricao>(cfg,'POST',`/api/v1/projetos/${id}/descricao`,d);
 export const aprovar=(cfg:CfgSrv,id:string,render_sha:string,destinos?:Partial<Briefing['destinos']>)=>
   api<{ok:boolean;quando?:number;posts:{id:string}[];repetido?:boolean}>(cfg,'POST',`/api/v1/projetos/${id}/aprovar`,{render_sha,destinos},{'Idempotency-Key':`site:${id}:${render_sha}`});
 export const refazerCena=(cfg:CfgSrv,id:string,i:number,o:{imagem:boolean;voz:boolean;plano?:string;problema?:{tipo:string;cena_id:string;plano_id:string;timecode:string|null}})=>api<{job:{id:string}}>(cfg,'POST',`/api/v1/projetos/${id}/cenas/${i}/refazer`,o);

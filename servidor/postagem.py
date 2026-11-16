@@ -484,7 +484,7 @@ def criar_post(d: dict) -> dict:
                 raise ErroRede('Este mesmo vídeo já está agendado ou postado em ' + ', '.join(x.capitalize() for x in repetidas) + '. Para postar de novo mesmo assim, cancele o post anterior.')
     p = {
         'id': uuid.uuid4().hex[:10], 'video': vid, 'criado': agora(), 'quando': quando,
-        'titulo': str(d.get('titulo', ''))[:100], 'legenda': str(d.get('legenda', ''))[:2200],
+        'titulo': str(d.get('titulo', ''))[:100], 'legenda': str(d.get('legenda', ''))[:5000],
         'opcoes': {'youtube_privacidade': d.get('youtube_privacidade', 'public'), 'tiktok_modo': d.get('tiktok_modo', 'rascunho')},
         'redes': {r: {'status': 'manual' if r == 'kwai' else 'agendado', 'link': '', 'erro': ''} for r in redes},
         'modelo': re.sub(r'[^a-zA-Z0-9_-]', '', str(d.get('modelo', '')))[:40], 'origem': str(d.get('origem', 'manual'))[:20], 'hash': marca,
@@ -571,7 +571,7 @@ def editar_post(pid: str, d: dict) -> dict:
         if d.get('titulo') is not None:
             p['titulo'] = str(d['titulo'])[:100]
         if d.get('legenda') is not None:
-            p['legenda'] = str(d['legenda'])[:2200]
+            p['legenda'] = str(d['legenda'])[:5000]
     p = _mudar(pid, f)
     acordar()
     try:                                  # o corte do agente acompanha o novo horário

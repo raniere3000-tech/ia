@@ -10,6 +10,7 @@ versão final, entrega o vídeo ao Agente 2.
 """
 from __future__ import annotations
 
+import descricao as ds
 import base64
 import hashlib
 import json
@@ -97,7 +98,8 @@ def limpar_briefing(d: dict) -> dict:
     b['temas'] = [str(t)[:200] for t in (d.get('temas') or []) if str(t).strip()][:30]
     de = d.get('destinos') if isinstance(d.get('destinos'), dict) else {}
     b['destinos'] = {'redes': [r for r in de.get('redes', []) if r in ag.REDES], 'quando': de.get('quando') if de.get('quando') in ('proximo', 'agora', 'data') else 'proximo',
-                     'data': float(de.get('data') or 0), 'titulo': str(de.get('titulo') or '')[:100], 'legenda': str(de.get('legenda') or '')[:2200]}
+                     'data': float(de.get('data') or 0), 'titulo': str(de.get('titulo') or '')[:100], 'legenda': str(de.get('legenda') or '')[:5000],
+                     'link_original': ds.link_valido(de.get('link_original'))}
     b['ia_reserva'] = d.get('ia_reserva') is not False      # misto: a IA desenha só as cenas sem foto
     b['revisao_ia'] = d.get('revisao_ia') is not False      # leitura crítica do roteiro (só texto, não bloqueia)
     b['qa_visao'] = d.get('qa_visao') is True                # olhar da IA nos quadros (opcional, pago por imagem, nunca bloqueia)
