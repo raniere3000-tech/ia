@@ -128,7 +128,7 @@ def mapa(pid: str) -> dict:
 # ---------------------------------------------------------------- render pequeno (o mesmo desenho do vídeo final)
 def _versao(d: dict) -> str:
     cs = [{k: c.get(k) for k in ('texto', 'titulo', 'destaque', 'numero', 'elementos', 'camera', 'planos', 'elenco', 'cenario_id', 'personagem',
-                                 'duracao_alvo', 'estilo')} | {'a': (c.get('audio') or {}).get('h', '')} for c in d.get('cenas') or []]
+                                 'duracao_alvo', 'estilo', 'clima', 'luz')} | {'a': (c.get('audio') or {}).get('h', '')} for c in d.get('cenas') or []]
     return hashlib.sha256(json.dumps([cs, (d.get('briefing') or {}).get('estilo'), (d.get('briefing') or {}).get('formato'),
                                       d.get('serie')], sort_keys=True, default=str).encode()).hexdigest()[:16]
 
@@ -143,7 +143,7 @@ def _render_pequeno(pid: str, d: dict, i: int, c: dict, pasta: Path, cancelado, 
     dur = produtor._dur_cena(c)
     eid, c2, img, audio, imgs_pl, extra = produtor.preparar_cena(pid, i, c, cenas, b, d)
     chave = ec.chave_cena(eid, {k: c2.get(k) for k in ('texto', 'titulo', 'destaque', 'numero', 'unidade', 'elementos', 'camera', 'planos', 'elenco',
-                                                         'cenario_id', 'personagem')},
+                                                         'cenario_id', 'personagem', 'clima', 'luz')},
                           W, H, dur, (c.get('audio') or {}).get('h', ''), (str(img) if img else '') + extra + f'fps{fps}', b['paleta'])
     saida = pasta / f'{chave}.mp4'
     if saida.exists() and saida.stat().st_size > 500:

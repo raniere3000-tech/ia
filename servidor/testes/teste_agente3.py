@@ -523,6 +523,20 @@ if eb['status'] == 'concluido':
 st, ab2, _ = api('POST', f'/api/v1/projetos/{EPID}/cenas/9/previa-ab', {'a': [], 'b': []}, SES)
 confere(st == 404, 'cena que não existe é recusada')
 
+print('Clima e luz por cena')
+import estilos_codigo as ec2  # noqa: E402
+cv = ec2.validar_cena({'texto': 'x', 'clima': 'chuva', 'luz': 'noite'})
+confere(cv['clima'] == 'chuva' and cv['luz'] == 'noite' and ec2.validar_cena({'clima': 'fogo', 'luz': 'x'})['clima'] == 'nenhum', 'clima e luz só da lista')
+pt = TMP / 'clima'
+pt.mkdir()
+cmd = ec2.montar('vetor_chapado', cv, 540, 960, 2, pt, None, None, pt / 'o.mp4')
+g = cmd[cmd.index('-filter_complex') + 1]
+confere('colorbalance' in g and any('clima-chuva' in x for x in cmd), 'cena com chuva à noite ganha partículas e camada de cor')
+cmd2 = ec2.montar('vetor_chapado', ec2.validar_cena({'texto': 'x'}), 540, 960, 2, pt, None, None, pt / 'o2.mp4')
+confere('colorbalance' not in cmd2[cmd2.index('-filter_complex') + 1] and not any('clima-' in x for x in cmd2), 'cena comum fica sem efeito extra')
+rd.rodar(cmd)
+confere(abs(rd.duracao(pt / 'o.mp4') - 2) < 0.2, 'render com clima funciona')
+
 print(f'\n{ok_n} ok, {falhas} falhas   (pasta {TMP})')
 if os.getenv('MANTER_SERVIDOR'):
     # Para testar o site no navegador contra este servidor de teste.

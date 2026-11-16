@@ -77,6 +77,8 @@ function EditorCenas({cenas,set}:{cenas:Cena[];set:(c:Cena[])=>void}){
      <label>Número (opcional)<input type="number" value={c.numero??''} onChange={e=>mudar(i,{numero:e.target.value===''?null:+e.target.value})}/></label>
      <label>Duração em segundos (0 = o tempo da fala)<input type="number" min={0} max={60} value={c.duracao_alvo||0} onChange={e=>mudar(i,{duracao_alvo:+e.target.value})}/></label>
      <label>Foto da cena (busca em inglês)<input value={c.busca||''} onChange={e=>mudar(i,{busca:e.target.value})} maxLength={60} placeholder="Ex.: blue sky sunlight"/></label>
+     <label>Clima<select value={c.clima||'nenhum'} onChange={e=>mudar(i,{clima:e.target.value as Cena['clima']})}><option value="nenhum">Nenhum</option><option value="chuva">Chuva</option><option value="neve">Neve</option><option value="poeira">Poeira no ar</option><option value="neblina">Neblina</option></select></label>
+     <label>Luz<select value={c.luz||'neutra'} onChange={e=>mudar(i,{luz:e.target.value as Cena['luz']})}><option value="neutra">Normal</option><option value="quente">Quente (fim de tarde)</option><option value="fria">Fria</option><option value="noite">Noite</option><option value="dramatica">Dramática</option></select></label>
      <EditorPlanos c={c} mudar={p=>mudar(i,p)}/>
     </div>
   </div>)}

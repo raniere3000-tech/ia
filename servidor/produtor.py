@@ -200,6 +200,8 @@ def _prompt_roteiro(b: dict, ideia: str, extra: str = '', serie: dict | None = N
             '7. busca: 2 a 4 palavras EM INGLÊS de algo concreto que dá para fotografar e que mostra a cena (ex.: "lightning storm night", "astronaut in space"). '
             'Nada abstrato ("success", "idea") e não repita a mesma busca em cenas diferentes.\n'
             '8. camera: varie entre aproximar, afastar e panoramica (parado só em cena de número). visual: descrição da imagem da cena. duracao_alvo: segundos da cena.\n'
+            '8b. clima (nenhum, chuva, neve, poeira, neblina) e luz (neutra, quente, fria, noite, dramatica): use só quando somam emoção ou informação '
+            '(chuva numa cena triste, noite num mistério). Na maioria das cenas deixe clima "nenhum" e luz "neutra".\n'
             '9. Não invente dados. Em temas de fato (história, ciência, saúde), liste fontes confiáveis para conferir e, se não tiver certeza, diga isso no texto. '
             'Não use marcas, personagens ou músicas de terceiros.\n'
             + ('11. planos: divida CADA cena em 2 ou 3 planos de câmera, como um editor de vídeo curto: {"plano":"WS|MS|CU","busca":"","intencao":""}. '
@@ -210,7 +212,7 @@ def _prompt_roteiro(b: dict, ideia: str, extra: str = '', serie: dict | None = N
             'Antes de responder, releia: o gancho prende em 2 segundos? Alguma cena está longa ou repetida? O total cabe na duração? Corrija e só então responda.\n'
             f'{extra}Responda só JSON: {{"titulo":"","alternativas":["",""],"gancho":"","publico":"","legenda":"","hashtags":[""],'
             '"fontes":[{"titulo":"","url":""}],"cenas":[{"texto":"","titulo":"","destaque":"","numero":null,"unidade":"","elementos":[],'
-            '"camera":"aproximar","personagem":"","emocao":"","cenario":"","visual":"","busca":"","movimento":"","enquadramento":"","duracao_alvo":6'
+            '"camera":"aproximar","personagem":"","emocao":"","cenario":"","visual":"","busca":"","movimento":"","enquadramento":"","duracao_alvo":6,"clima":"nenhum","luz":"neutra"'
             + (',"planos":[{"plano":"WS","busca":"","intencao":""}]' if b.get('estilo') == 'documentario' else '')
             + (',"cenario_id":"","elenco":[{"personagem_id":"","posicao":"esquerda","expressao":"neutro","acoes":[{"t":0.5,"tipo":"olhar","alvo":"direita"}]}],'
                '"planos":[{"plano":"WS","personagem":""}]' if b.get('estilo') == 'animado2d' else '') + '}]'
@@ -833,7 +835,7 @@ def preparar_cena(pid, i, c, cenas, b, dados=None):
 def _render_cena(ctx, pid, i, c, cenas, b, W, H, dur, pasta, feito, total):
     """Faz o clipe de uma cena (ou reaproveita o que já existe com a mesma chave). Devolve (estilo usado, arquivo)."""
     eid, c, img, audio, imgs_pl, extra = preparar_cena(pid, i, c, cenas, b)
-    chave = ec.chave_cena(eid, {k: c.get(k) for k in ('texto', 'titulo', 'destaque', 'numero', 'unidade', 'elementos', 'camera', 'planos')
+    chave = ec.chave_cena(eid, {k: c.get(k) for k in ('texto', 'titulo', 'destaque', 'numero', 'unidade', 'elementos', 'camera', 'planos', 'clima', 'luz')
                                 + (('elenco', 'cenario_id', 'personagem') if eid == 'animado2d' else ())},
                           W, H, dur, (c.get('audio') or {}).get('h', ''),
                           (c.get('imagem') or {}).get('h', '') + (str(img) if img else '') + ''.join(str(x) for x in imgs_pl) + extra, b['paleta'])

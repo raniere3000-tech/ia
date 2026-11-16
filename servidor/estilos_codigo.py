@@ -74,6 +74,8 @@ CAMPOS = ('id', 'nome', 'tecnica', 'status', 'prioridade', 'descricao', 'paleta'
 CAMERAS = ('parado', 'aproximar', 'afastar', 'panoramica')
 PLANOS = ('WS', 'MS', 'CU', 'ECU')                       # aberto, médio, close, close extremo
 ZOOM_PLANO = {'WS': 1.0, 'MS': 1.4, 'CU': 1.9, 'ECU': 2.6}
+CLIMAS = ('nenhum', 'chuva', 'neve', 'poeira', 'neblina')       # partículas por cima da cena (só quando a cena pede)
+LUZES = ('neutra', 'quente', 'fria', 'noite', 'dramatica')      # camada de cor
 NOME_PLANO = {'WS': 'aberto', 'MS': 'médio', 'CU': 'close', 'ECU': 'close extremo'}
 FORMATOS = {'9:16': (1080, 1920), '16:9': (1920, 1080), '1:1': (1080, 1080)}
 
@@ -195,6 +197,8 @@ def validar_cena(c: dict, i: int = 0) -> dict:
         'elenco': rig2d.validar_elenco(c.get('elenco'), None, max(1.0, min(60.0, dur or 60.0))),
         'cenario_id': re.sub(r'[^a-z0-9_-]', '', str(c.get('cenario_id') or '').lower())[:40],
         'voz': _txt(c.get('voz'), 20),
+        'clima': c.get('clima') if c.get('clima') in CLIMAS else 'nenhum',
+        'luz': c.get('luz') if c.get('luz') in LUZES else 'neutra',
     }
 
 
@@ -712,11 +716,69 @@ def montar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, imagem
     tam = L['titulo_tam']
     fn = globals()['_e_' + e['id']]
     leg_cor, leg_borda, leg_caixa = fn(c, cena, L, W, H, dur, pasta, imagem, (p0, p1, p2), titulo, destaque, m, tam)
+    if efeitos:
+        _ambiente(c, cena, W, H, dur)
     if cena.get('texto'):
         extra = {'tamanho': 0.064, 'y_rel': 0.80 if H > W else 0.88} if e['id'] == 'documentario' else \
             {'tamanho': 0.06, 'y_rel': 0.885 if H > W else 0.95} if e['id'] == 'animado2d' else {}
         c.legenda(legenda_ass(cena['texto'], dur, W, H, leg_cor, leg_borda, leg_caixa, pasta / 'legenda.ass', **extra))
     return c.comando(audio, saida)
+
+
+def _camada_clima(tipo: str, w: int, h: int) -> Path:
+    """Partículas desenhadas uma vez (semente fixa: o mesmo vídeo sai igual sempre) num ladrilho que se repete ao rolar."""
+    pasta = Path(os.getenv('DADOS', str(Path.home() / '.estudioclip'))) / 'efeitos'
+    pasta.mkdir(parents=True, exist_ok=True)
+    horizontal = tipo == 'neblina'
+    tw, th = (w * 2, h) if horizontal else (w, h * 2)
+    arq = pasta / f'clima-{tipo}-{tw}x{th}-v1.png'
+    if arq.exists():
+        return arq
+    rnd = random.Random(7)
+    t = raster.Tela(tw, th)
+    n = {'chuva': 170, 'neve': 110, 'poeira': 80, 'neblina': 16}[tipo]
+    for _ in range(n):
+        x, y = rnd.uniform(0, w if horizontal else tw), rnd.uniform(0, h if not horizontal else th)
+        for dx, dy in ((0, 0), (w, 0)) if horizontal else ((0, 0), (0, h)):
+            if tipo == 'chuva':
+                comp = rnd.uniform(8, 16) if dy == 0 else comp
+                t.linha(x + dx, y + dy, x + dx - comp * 0.18, y + dy + comp, raster.cor('#dbe9ff', 120), esp=1.1)
+            elif tipo == 'neve':
+                r = rnd.uniform(0.8, 2.2) if dy == 0 else r
+                t.elipse(x + dx, y + dy, r, r, raster.cor('#ffffff', 215))
+            elif tipo == 'poeira':
+                r = rnd.uniform(0.5, 1.2) if dy == 0 else r
+                t.elipse(x + dx, y + dy, r, r, raster.cor('#ffe7ad', 130))
+            else:
+                rx, ry = (rnd.uniform(w * 0.18, w * 0.4), rnd.uniform(h * 0.03, h * 0.07)) if dx == 0 else (rx, ry)
+                t.elipse(x + dx, y + dy, rx, ry, raster.cor('#ffffff', 20))
+    t.salvar(arq)
+    return arq
+
+
+def _ambiente(c, cena, W, H, dur):
+    """Luz (camada de cor) e clima (chuva, neve, poeira, neblina). Só entra o que a cena pediu."""
+    luz = cena.get('luz') or 'neutra'
+    if luz == 'quente':
+        c.filtro('colorbalance=rs=.07:gs=.02:bs=-.07:rm=.05:bm=-.05')
+    elif luz == 'fria':
+        c.filtro('colorbalance=rs=-.06:bs=.09:rm=-.04:bm=.06')
+    elif luz == 'noite':
+        c.filtro('eq=brightness=-0.10:saturation=0.75,colorbalance=rs=-.05:bs=.12:bm=.08')
+    elif luz == 'dramatica':
+        c.filtro('eq=contrast=1.22:saturation=1.1:brightness=-0.03,vignette=PI/4')
+    clima = cena.get('clima') or 'nenhum'
+    if clima not in CLIMAS or clima == 'nenhum':
+        return
+    w, h = max(64, W // 4), max(64, H // 4)
+    arq = _camada_clima(clima, w, h)
+    if clima == 'neblina':
+        c.png(arq, f'-mod(t*{W * 0.04:.1f},{W})', '0', 0, 0.6, (W * 2, H))
+        return
+    vel = {'chuva': H * 1.6, 'neve': H * 0.12, 'poeira': -H * 0.04}[clima]
+    y = f'-{H}+mod(t*{vel:.1f},{H})' if vel > 0 else f'-mod(t*{-vel:.1f},{H})'
+    x = f'{W * 0.02:.1f}*sin(t*0.7)' if clima != 'chuva' else '0'
+    c.png(arq, x, y, 0, 0.3, (W, H * 2))
 
 
 def _y_dest(L, H):
