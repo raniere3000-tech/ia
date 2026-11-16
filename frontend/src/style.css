@@ -972,3 +972,4 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .mod-sem-img{height:90px;border:1px dashed var(--line2);border-radius:8px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;color:var(--muted,#8a93a6);padding:6px}
 .mod-mini{margin:2px 0 0;padding-left:18px}.mod-confirma{display:flex;flex-direction:column;gap:6px}
 .bib-lista{display:flex;flex-wrap:wrap;gap:6px}
+.proj-lista .w100{flex-basis:100%;min-width:0}

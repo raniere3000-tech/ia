@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { CheckCircle2, Wand2 } from 'lucide-react';
 import { useApp, captionPresets, effectPresets } from '../state';
 import { drawCaption, type Preset } from '../lib/captions';
+import ModelagemIA from '../components/ModelagemIA';
 
 const EFEITOS:Record<string,string> = {
   'blur-background':'O vídeo horizontal fica no centro e o fundo é preenchido com uma versão desfocada dele.',
@@ -39,5 +40,6 @@ export default function Estilos(){
       <span className={'fx-demo fx-'+p.id}><i/></span><div><strong>{settings.efeitoPadrao===p.id&&<CheckCircle2 size={14}/>} {p.nome}</strong><small>{EFEITOS[p.id]}</small></div></button>)}</div>
     {projeto.clips.length>0&&<button className="subtle mt" onClick={()=>aplicar('efeito',settings.efeitoPadrao)}><Wand2 size={15}/> Aplicar o efeito padrão a todos os cortes atuais</button>}
    </section>
+   {settings.servidor&&<section className="panel"><ModelagemIA compacto titulo="Criar modelo de estilo com IA" contexto="estilos" tipos={['estilo']} destinos={['biblioteca']}/></section>}
   </>;
 }

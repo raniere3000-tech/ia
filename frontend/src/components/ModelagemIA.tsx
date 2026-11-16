@@ -28,8 +28,8 @@ function Lista({titulo,itens}:{titulo:string;itens:string[]}){
   return itens.length?<div><div className="field-label">{titulo}</div><ul className="mod-mini">{itens.map((x,i)=><li key={i}>{x}</li>)}</ul></div>:null;
 }
 
-function CartaoProposta({p,destinos,serieId,projetoId,onMudou,onAplicado,outra}:{p:Proposta;destinos:Destino[];serieId?:string;projetoId?:string;
-  onMudou:(p:Proposta)=>void;onAplicado?:(r:Aplicado,p:Proposta)=>void;outra:()=>void}){
+export function CartaoProposta({p,destinos,serieId,projetoId,onMudou,onAplicado,outra}:{p:Proposta;destinos:Destino[];serieId?:string;projetoId?:string;
+  onMudou:(p:Proposta)=>void;onAplicado?:(r:Aplicado,p:Proposta)=>void;outra?:()=>void}){
   const {toast}=useApp(); const cfg=useCfg();
   const [edit,setEdit]=useState(false); const [c,setC]=useState<Campos>(p.campos); const [busy,setBusy]=useState('');
   const [previas,setPrevias]=useState<Record<string,string>>({});
@@ -83,7 +83,7 @@ function CartaoProposta({p,destinos,serieId,projetoId,onMudou,onAplicado,outra}:
     <div className="row-gap left mt">
       {edit?<><button className="primary sm" disabled={!!busy} onClick={salvar}><Save size={14}/> Salvar a edição</button><button className="link-btn" onClick={()=>{ setC(p.campos); setEdit(false); }}>Cancelar</button></>
         :<button className="subtle sm" onClick={()=>setEdit(true)}><Pencil size={14}/> Editar proposta</button>}
-      <button className="subtle sm" disabled={!!busy} onClick={outra}><RotateCcw size={14}/> Gerar outra versão</button>
+      {outra&&<button className="subtle sm" disabled={!!busy} onClick={outra}><RotateCcw size={14}/> Gerar outra versão</button>}
       {destinos.map(d=><button key={d} className={d==='biblioteca'?'subtle sm':'primary sm'} disabled={!!busy||edit||(d!=='biblioteca'&&!p.pronto_para_aplicar)||(d==='episodio'&&!serieId)||(d==='projeto'&&!projetoId)} onClick={()=>aplicar(d)}>
         {busy===d?<Loader2 size={14} className="spin"/>:null} {NOME_DESTINO[d]}</button>)}
     </div>
@@ -91,12 +91,12 @@ function CartaoProposta({p,destinos,serieId,projetoId,onMudou,onAplicado,outra}:
 }
 
 /** "Modelagem com IA": Descrever para a IA ou Surpreenda-me. Igual em todas as telas; muda só o que dá para criar e onde aplicar. */
-export default function ModelagemIA({contexto,tipos,destinos,serieId,projetoId,compacto,titulo,rotuloUsar,assets,onAplicado,onUsarCampos}:{contexto:string;tipos:TipoModelo[];destinos:Destino[];
+export default function ModelagemIA({contexto,tipos,destinos,serieId,projetoId,compacto,titulo,rotuloUsar,assets,onAplicado,onUsarCampos,descricaoInicial}:{contexto:string;tipos:TipoModelo[];destinos:Destino[];descricaoInicial?:string;
   serieId?:string;projetoId?:string;compacto?:boolean;titulo?:string;rotuloUsar?:string;assets?:{id:string;tipo:string;nome:string;descricao?:string}[];
   onAplicado?:(r:Aplicado,p:Proposta)=>void;onUsarCampos?:(c:Campos,p:Proposta)=>void}){
   const {toast}=useApp(); const cfg=useCfg();
   const [aberto,setAberto]=useState(!compacto); const [modo,setModo]=useState<'descricao'|'surpresa'>('descricao');
-  const [tipo,setTipo]=useState<TipoModelo>(tipos[0]); const [desc,setDesc]=useState(''); const [f,setF]=useState<Filtros>(FILTROS0);
+  const [tipo,setTipo]=useState<TipoModelo>(tipos[0]); const [desc,setDesc]=useState(descricaoInicial||''); const [f,setF]=useState<Filtros>(FILTROS0);
   const [ousada,setOusada]=useState(false); const [verificadas,setVerificadas]=useState(false); const [estilo,setEstilo]=useState(''); const [formato,setFormato]=useState('9:16');
   const [radar,setRadar]=useState<ReturnType<typeof lerDoRadar>>(null);
   const [res,setRes]=useState<Resultado|null>(null); const [busy,setBusy]=useState(''); const [cap,setCap]=useState<Capacidades|null>(null); const [ultimo,setUltimo]=useState<PedidoModelagem|null>(null);
@@ -208,5 +208,23 @@ export function ModelosBiblioteca({onUsar}:{onUsar:(titulo:string,item:ItemBibli
     <ul className="mod-ref-lista">{itens.map(x=><li key={x.id}><b>{x.nome}</b><small className="muted">{x.descricao} • versão {x.versao} • {x.origem==='ia'?'gerado com IA':x.origem==='codigo'?'sorteio do código':x.origem}</small>
       <button className="link-btn" onClick={()=>onUsar(x.nome,x)}>Usar como assunto</button></li>)}</ul>
     <button className="link-btn" onClick={()=>setItens(null)}>Fechar</button>
+  </div>;
+}
+
+/** Personagem ou cenário da biblioteca como IMAGEM PARADA (desenho real do servidor), para editores que não animam o boneco. */
+export function MidiaDaBiblioteca({onEscolher,fechar}:{onEscolher:(f:File,item:ItemBiblioteca)=>Promise<void>|void;fechar:()=>void}){
+  const {toast}=useApp(); const cfg=useCfg();
+  const [itens,setItens]=useState<ItemBiblioteca[]|null>(null); const [busy,setBusy]=useState('');
+  useEffect(()=>{ Promise.all([biblioteca(cfg,'character'),biblioteca(cfg,'environment')]).then(rs=>setItens(rs.flatMap(r=>r.itens))).catch(e=>{ toast(erroTexto(e),'erro'); fechar(); }); },[cfg]); // eslint-disable-line react-hooks/exhaustive-deps
+  const usar=async(x:ItemBiblioteca)=>{ setBusy(x.id);
+    try{ const r=await previaAsset(cfg,x.id); if(!r.png) throw new Error(r.motivo||'Este item não tem desenho.');
+      const b=await (await fetch(r.png)).blob(); await onEscolher(new File([b],`${x.tipo==='character'?'personagem':'cenario'}-${x.id}-v${x.versao}.png`,{type:'image/png'}),x); }
+    catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } };
+  return <div className="mod compacto">
+    <div className="field-label">Da biblioteca (personagens e cenários das Séries)</div>
+    <p className="hint warn"><AlertTriangle size={12}/> Aqui entra como imagem parada: este editor não mexe o esqueleto do boneco. Para o personagem andar, falar e fazer poses, use o Agente 3 com desenho 2D.</p>
+    {!itens?<p className="hint"><Loader2 size={13} className="spin"/> Abrindo…</p>:!itens.length?<p className="hint">Nada na biblioteca ainda. Crie em Séries ou com "Criar com a IA".</p>
+      :<div className="bib-lista">{itens.map(x=><button key={x.id} className="chip" disabled={!!busy} onClick={()=>usar(x)}>{busy===x.id?<Loader2 size={12} className="spin"/>:null} {x.tipo==='character'?'🧍':'🏞️'} {x.nome} (v{x.versao})</button>)}</div>}
+    <button className="link-btn" onClick={fechar}>Fechar</button>
   </div>;
 }

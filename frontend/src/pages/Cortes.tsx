@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Upload, Film, Sparkles, Loader2, CheckCircle2, Circle, AlertTriangle, Pencil, Download, Copy, Trash2, Undo2, FileText, Wand2, Package, Play, CalendarClock, ArrowRight, Clock, GitCompare, RotateCcw, X, ChevronDown } from 'lucide-react';
 import { useApp, captionPresets, PROJETO_VAZIO, type Job } from '../state';
+import ModelagemIA from '../components/ModelagemIA';
 import { HelpButton } from '../components/Help';
 import Editor from '../components/Editor';
 import LinkStudio from '../components/LinkStudio';
@@ -58,6 +59,20 @@ export function lerTempos(txt:string){
     janelas.push({inicio:a,fim:b,titulo:m[3].trim()||undefined});
   }
   return {janelas,erros};
+}
+
+/** Opção à parte: não mexe nos cortes. Abre a modelagem para criar um vídeo ORIGINAL sobre o mesmo assunto (vira rascunho no Agente 3). */
+function OriginalSobreAssunto({nome,trecho}:{nome:string;trecho:string}){
+  const {settings}=useApp(); const [abrir,setAbrir]=useState(false);
+  if(!settings.servidor) return null;
+  const assunto=nome.replace(/\.\w+$/,'').replace(/[_-]+/g,' ').trim();
+  if(!abrir) return <p className="hint center"><button className="link-btn inline" onClick={()=>setAbrir(true)}>Criar conteúdo original sobre este assunto</button> (à parte: os cortes continuam iguais)</p>;
+  return <section className="panel">
+    <p className="hint">Isto não usa nem altera os cortes. A IA propõe um vídeo novo sobre o mesmo assunto, com roteiro e personagens próprios (sem copiar falas, cenas ou o estilo do vídeo enviado). Nada é produzido nem postado até você aprovar no Agente 3.</p>
+    <ModelagemIA titulo="Criar conteúdo original" contexto="cortes" tipos={['ideia','historia','pacote']} destinos={['video','biblioteca']}
+      descricaoInicial={`Vídeo original sobre o mesmo assunto de "${assunto}".${trecho?` Do que o vídeo fala (só como assunto, não copiar): ${trecho.slice(0,300)}`:''}`}/>
+    <button className="link-btn" onClick={()=>setAbrir(false)}>Fechar</button>
+  </section>;
 }
 
 export default function Cortes(){
@@ -481,6 +496,7 @@ export default function Cortes(){
    </section>
    <p className="hint center">Ainda sem vídeo? Ache inspiração no <button className="link-btn inline" onClick={()=>go('radar')}>Radar</button>.</p>     </>:<>
    <section className="panel file-bar"><Film size={20}/><div className="grow"><strong>{projeto.nome}</strong><small>{projeto.duracao?`${tm(projeto.duracao)} de vídeo`:'Lendo...'}{projeto.cuesFonte&&` • ${projeto.cues.length} falas na legenda`}</small></div><button className="subtle" disabled={rodando||!!exp} onClick={()=>{ if(projeto.url) URL.revokeObjectURL(projeto.url); cache={file:null,audio:null,energy:null}; setProjeto(()=>PROJETO_VAZIO); setE('cortes'); setSel(new Set()); setAberto('video'); }}>Trocar vídeo</button></section>
+   <OriginalSobreAssunto nome={projeto.nome} trecho={projeto.cues.slice(0,12).map(c=>c.text).join(' ')}/>
    {legErro&&temResultado&&<div className="note-bar"><AlertTriangle size={16}/><span><b>Legenda:</b> {legErro}</span><button className="subtle sm" onClick={()=>setLegErro('')}>Ok</button></div>}
       {!temResultado?<>
        <button id="btn-gerar" className="primary lg full" disabled={!direitos||rodando||!projeto.duracao} onClick={()=>gerar()}>{rodando?<Loader2 size={18} className="spin"/>:<Sparkles size={18}/>} {rodando?(inteiro?'Preparando...':'Gerando cortes...'):(inteiro?'Usar o vídeo inteiro':'Gerar cortes')}</button>

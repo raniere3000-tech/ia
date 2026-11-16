@@ -6,6 +6,7 @@ import { TARJA_PADRAO, type Formato, type Tarja } from '../lib/analyze';
 import { EFEITOS_MODELO, LAYOUTS, QUALIDADES, marcaDe, novoModelo, visualDe, type Modelo, type Qualidade } from '../lib/modelos';
 import { verAgente, salvarAgente } from '../lib/agente';
 import type { Regiao } from '../lib/render';
+import ModelagemIA from '../components/ModelagemIA';
 
 const MAX_AGENTE=3;
 const CANTOS:[string,Regiao][] = [['Canto inferior direito',{x:0.72,y:0.62,w:0.28,h:0.38}],['Canto inferior esquerdo',{x:0,y:0.62,w:0.28,h:0.38}],['Canto superior direito',{x:0.72,y:0,w:0.28,h:0.38}],['Canto superior esquerdo',{x:0,y:0,w:0.28,h:0.38}]];
@@ -168,6 +169,7 @@ export default function Templates(){
       </li>; })}</ul>
       {ativos?<p className="hint">{ativos.length} de {MAX_AGENTE} templates ativos nos agentes. O Agente de Cortes sorteia um deles para cada corte.</p>
         :<p className="hint">Com o servidor ligado, você marca aqui até {MAX_AGENTE} templates para os agentes.</p>}
+      {settings.servidor&&<ModelagemIA compacto titulo="Criar modelo com IA" contexto="templates" tipos={['estilo']} destinos={['biblioteca']}/>}
     </section>
     <section className="panel tpl-editor">
       <div className="section-head"><h2>Editar: {atual.nome}</h2><div className="row-gap">

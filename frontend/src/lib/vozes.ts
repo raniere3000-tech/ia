@@ -30,7 +30,7 @@ export const ehVoz = (v:string)=>VOZES_TTS.some(([n])=>n===v);
 export const vozDoNome = (nome:string)=>VOZES_TTS.find(([n])=>n.toLowerCase()===nome.trim().toLowerCase())?.[0]||'';
 
 export type Projeto = {id:string;nome:string;criado:number};
-export type Personagem = {id:string;projetoId:string;nome:string;voz:string;modelo:string;genero:string;gravidade:number;ritmo:number;energia:number;emocao:string;sotaque:string;descricao:string;aprovada:boolean;criado:number;testes?:string[];intensidade?:number;pct?:boolean};
+export type Personagem = {id:string;projetoId:string;nome:string;voz:string;modelo:string;genero:string;gravidade:number;ritmo:number;energia:number;emocao:string;sotaque:string;descricao:string;aprovada:boolean;criado:number;testes?:string[];intensidade?:number;pct?:boolean;biblioteca?:{id:string;versao:number}};
 export type Fala = {id:string;projetoId:string;ordem:number;cena:string;nomeRoteiro:string;personagemId:string;texto:string;direcao:string;pausa:number;tipo:'fala'|'acao'|'som';quadro?:number;volume?:number;sobrepor?:boolean;fonteSom?:'auto'|'site'|'ia'|'arquivo'};
 export type Take = {id:string;projetoId:string;falaId:string;personagemId:string;texto:string;direcao:string;pedido:string;voz:string;modelo:string;ajustes:string;data:number;duracao:number;wav:Blob;aprovado:boolean;nota:string};
 export type Loja = 'projetos'|'personagens'|'falas'|'takes';

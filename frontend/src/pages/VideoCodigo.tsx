@@ -11,6 +11,8 @@ import { VOZES } from '../lib/dublagem';
 import { loadImage } from '../lib/render';
 import { baixar } from '../lib/exporter';
 import AgendarPost from '../components/AgendarPost';
+import ModelagemIA, { MidiaDaBiblioteca } from '../components/ModelagemIA';
+import type { Campos } from '../lib/criativo';
 import { criarImagemGoogle, desenharPorCodigo, modelosImagem, type ModeloG } from '../lib/googleImagem';
 import { MODELOS_ANIMAR, MODELOS_IMAGEM, baixarResultado, enviarArquivo, gerarMuapi } from '../lib/muapi';
 import {
@@ -112,6 +114,16 @@ export default function VideoCodigo(){
     }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
     finally{ setOcupado(null); }
   }
+  const [bibCena,setBibCena]=useState('');
+  // proposta da Modelagem com IA: vira ideia e cenas (cenas atuais só são trocadas com confirmação)
+  function usarProposta(c:Campos){
+    muda({ideia:[c.titulo,c.sinopse].filter(Boolean).join(': ')});
+    if(!c.cenas.length){ toast('Ideia preenchida. Toque em "Criar roteiro com IA" ou escreva as cenas.','ok'); return; }
+    if(rot&&!window.confirm('Trocar as cenas atuais pelas da proposta?')) return;
+    parar(); setRot({titulo:c.titulo,selo:rot?.selo||'',formato:aj.formato,tema:rot?.tema||'neon',legenda:c.sinopse.slice(0,300),hashtags:c.hashtags,
+      cenas:c.cenas.map(x=>cenaVazia({texto:x.texto,personagem:x.personagem||''}))}); setNar(null); setTempo(0);
+    toast('Cenas da proposta no roteiro. Confira e ajuste.','ok');
+  }
   async function enviarMidia(c:Cena,f:File|undefined){
     if(!f) return;
     setOcupado({txt:'Guardando '+f.name,pct:50});
@@ -197,6 +209,7 @@ export default function VideoCodigo(){
        <button className="subtle" onClick={()=>{ parar(); setRot({...EXEMPLO,cenas:EXEMPLO.cenas.map(c=>({...c}))}); setNar(null); setTempo(0); }} disabled={!!ocupado}><Wand2 size={15}/> Ver exemplo</button>
        <button className="subtle" onClick={()=>{ parar(); setRot({titulo:aj.ideia||'Meu vídeo',selo:FORMATOS.find(f=>f.id===aj.formato)!.selo,formato:aj.formato,tema:rot?.tema||'neon',cenas:[cenaVazia({texto:'Escreva aqui a primeira frase'})],legenda:'',hashtags:[]}); setNar(null); }} disabled={!!ocupado}><Plus size={15}/> Escrever eu mesmo</button>
       </div>
+      {settings.servidor&&<ModelagemIA compacto titulo="Criar com a IA (proposta editável)" contexto="video_navegador" tipos={['ideia','historia','cena']} destinos={['biblioteca']} rotuloUsar="Usar neste vídeo" onUsarCampos={usarProposta}/>}
       {!ia&&<p className="hint">Para a IA escrever, cole a chave do Gemini (grátis) ou da Claude em <button className="link-btn" onClick={()=>go('config')}>Chaves e ajustes</button>. Sem chave, use "Escrever eu mesmo".</p>}
      </section>
 
@@ -221,7 +234,9 @@ export default function VideoCodigo(){
         <div className="vc-linha"><label>Quem fala<input list="vc-quem" value={c.personagem||''} onChange={e=>mudaCena(c.id,{personagem:e.target.value})} placeholder="Voz padrão"/></label>
          <label>Movimento da imagem<select value={c.anim||'zoom-in'} disabled={!c.midia} onChange={e=>mudaCena(c.id,{anim:e.target.value as Anim})}>{ANIMS.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></label></div>
         <div className="vc-midia">{c.midia&&midias.get(c.midia)?<><span className="tag ok">{midias.get(c.midia)!.tipo==='video'?'🎬':'🖼️'} {midias.get(c.midia)!.nome}{midias.get(c.midia)!.tipo==='video'?` • ${Math.round(midias.get(c.midia)!.duracao)} s`:''}</span><button className="icon-btn" onClick={()=>mudaCena(c.id,{midia:undefined})} aria-label="Tirar imagem"><X size={14}/></button></>:c.midia?<small className="hint">Carregando a imagem...</small>:null}
-         <label className="subtle sm vc-upload"><ImagePlus size={14}/> {c.midia?'Trocar':'Imagem ou vídeo'}<input type="file" accept="image/*,video/*" hidden onChange={e=>{ enviarMidia(c,e.target.files?.[0]); e.target.value=''; }}/></label></div>
+         <label className="subtle sm vc-upload"><ImagePlus size={14}/> {c.midia?'Trocar':'Imagem ou vídeo'}<input type="file" accept="image/*,video/*" hidden onChange={e=>{ enviarMidia(c,e.target.files?.[0]); e.target.value=''; }}/></label>
+         {settings.servidor&&<button className="subtle sm" onClick={()=>setBibCena(bibCena===c.id?'':c.id)}>Da biblioteca</button>}</div>
+        {bibCena===c.id&&<MidiaDaBiblioteca fechar={()=>setBibCena('')} onEscolher={async f=>{ await enviarMidia(c,f); setBibCena(''); }}/>}
         {(muapi||gkey)&&<div className="vc-ia">
          <input value={c.pedidoIA||''} onChange={e=>mudaCena(c.id,{pedidoIA:e.target.value})} placeholder="O que a IA deve mostrar (vazio = usa o texto da cena)" aria-label="Pedido para a IA"/>
          <span><button className="subtle sm" onClick={()=>criarImagemIA(c)} disabled={!!ocupado}><Sparkles size={14}/> {iaImg==='g-svg'?'Desenhar com IA':'Criar imagem com IA'}</button>

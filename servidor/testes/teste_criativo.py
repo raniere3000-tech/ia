@@ -182,6 +182,21 @@ ep = pj.obter(e['projeto_id'])
 confere(ep['dados']['serie']['serie_id'] == s['serie_id'] and not db.um('SELECT id FROM jobs WHERE projeto=?', ep['id']), 'episódio criado sem produzir')
 st, _ = erro(lambda: api('POST', '/api/v1/criativo/usar-no-projeto', {'projeto_id': ep['id'], 'personagens': [rolo]}))
 confere(st == 409, 'episódio de série não troca elenco pela biblioteca')
+print('\nProjetos: duplicar proposta e transformar vídeo em série')
+rev0 = api('GET', f'/api/v1/criativo/propostas/{pr["id"]}')['revisao']
+dpr = api('POST', f'/api/v1/criativo/propostas/{pr["id"]}/duplicar')
+confere(dpr['id'] != pr['id'] and dpr['revisao'] == 1 and dpr['status'] == 'rascunho' and dpr['copia_de'] == pr['id'] and not dpr.get('aplicacoes'),
+        'proposta duplicada vira rascunho novo, sem as aplicações da original')
+confere(api('GET', f'/api/v1/criativo/propostas/{pr["id"]}')['revisao'] == rev0, 'a proposta original não muda')
+n_jobs = db.um('SELECT COUNT(*) n FROM jobs')['n']
+ts = api('POST', '/api/v1/criativo/transformar-em-serie', {'projeto_id': p2['id']})
+sn = srs.obter(ts['serie']['id'])
+confere(len(sn['personagens']) == 1 and sn['personagens'][0]['id'] != rolo and ts['personagens'][0]['de'] == rolo, 'série nova com CÓPIA do elenco do vídeo (o original da biblioteca fica igual)')
+confere(pj.obter(p2['id'])['dados']['serie'].get('serie_id') == '' and db.um('SELECT COUNT(*) n FROM jobs')['n'] == n_jobs, 'vídeo original continua vídeo único e nada é produzido')
+ts2 = api('POST', '/api/v1/criativo/transformar-em-serie', {'projeto_id': p2['id']})
+confere(ts2.get('repetido') and ts2['serie']['id'] == ts['serie']['id'], 'pedir de novo devolve a mesma série')
+st, _ = erro(lambda: api('POST', '/api/v1/criativo/transformar-em-serie', {'projeto_id': ep['id']}))
+confere(st == 409, 'episódio de série não vira outra série')
 pp = api('POST', '/api/v1/criativo/modelagem/propor', {'modo': 'descricao', 'tipo_modelo': 'personagem', 'descricao': 'robô com mochila verde'})['propostas'][0]
 cp = api('POST', f'/api/v1/criativo/propostas/{pp["id"]}/aplicar', {'destino': 'personagem', 'so_primeiro': True})
 confere(len(cp['criados']) == 1 and srs.obter_personagem(cp['criados'][0]['id'])['nome'] == 'Rolo', 'personagem salvo na biblioteca (tabela de Séries)')

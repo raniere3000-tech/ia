@@ -3,6 +3,7 @@ import { Play, Loader2, Server, Box, CheckCircle2, RefreshCcw } from 'lucide-rea
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
+import ModelagemIA from '../components/ModelagemIA';
 import { catalogo, pedirDemo, lerFila, urlServidor, assinarAsset, lerVideos3d, testar3d, horaTexto, type EstiloInfo, type DemoInfo } from '../lib/api';
 
 const STATUS:Record<string,[string,string]>={operacional:['Operacional','ok'],beta:['Beta / em teste','warn'],indisponivel:['Indisponível','bad'],nao_conferido:['Não conferido (sem servidor)','']};
@@ -116,9 +117,11 @@ function Revisao3D(){
 }
 
 export default function Galeria(){
+  const {settings}=useApp();
   return <><section className="panel">
     <div className="section-head"><h2>17 estilos de animação <HelpButton topic="estilos3"/></h2></div>
     <p className="subtitle">A demonstração usa a mesma cena em todos os estilos para comparar. Ela é renderizada de verdade no seu celular (não é imagem ilustrativa). Os 3D foram testados no celular: são beta e lentos (o 3D é um fundo em loop, guardado depois da primeira vez). Os personagens em 3D são beta: o tempo no celular aparece abaixo depois do teste. Os mapas seguem indisponíveis. Nenhum pedido vira outro estilo escondido.</p>
     <GradeEstilos/>
+    {settings.servidor&&<ModelagemIA compacto titulo="Criar modelo de estilo com IA" contexto="galeria" tipos={['estilo']} destinos={['biblioteca']}/>}
   </section><Revisao3D/></>;
 }

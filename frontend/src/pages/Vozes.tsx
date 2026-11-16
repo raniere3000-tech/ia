@@ -6,6 +6,8 @@ import { receberVozes, type MetaVoz } from '../lib/montagem';
 /** Sons de fundo (ambiente) já começam tocando junto com a fala seguinte, mais baixos. */
 const AMBIENTE=/murm|multid|taverna|chuva|fogo|fogueira|vento|tens|ambiente|fundo|clima/i;
 import { useApp } from '../state';
+import { useCfg, erroTexto } from '../components/Servidor2';
+import { biblioteca, type ItemBiblioteca } from '../lib/criativo';
 import { baixar } from '../lib/exporter';
 import { uid, store } from '../lib/store';
 import {
@@ -186,6 +188,7 @@ export default function Vozes(){
    </section>
    {semChave}
    {ocupado&&<div className="dl-box"><div className="row"><Loader2 size={16} className="spin"/><span><b>{ocupado.txt}</b> {ocupado.pct}%</span><button className="subtle sm" onClick={()=>{ parar.current=true; }}>Parar</button></div><div className="dl-bar"><i style={{width:Math.max(3,ocupado.pct)+'%'}}/></div></div>}
+   {aba==='elenco'&&settings.servidor&&<ElencoDaBiblioteca elenco={elenco} add={addPersonagem} mudar={mudarPersonagem}/>}
    {aba==='elenco'&&<Elenco elenco={elenco} aleatoria={async(g:Genero)=>{ const n=elenco.length+1; const p=await addPersonagem(g==='feminina'?`PERSONAGEM ${n} (F)`:g==='masculina'?`PERSONAGEM ${n} (M)`:`PERSONAGEM ${n}`); mudarPersonagem(p.id,{...vozAleatoria(g),genero:g==='feminina'?'mulher':g==='masculina'?'homem':''}); toast('Voz sorteada. Dê um nome e teste no Laboratório; não gostou, toque em Sortear outra.','ok'); }} importar={importarFichas} comIA={fichasComIA} add={addPersonagem} mudar={mudarPersonagem} apagar={apagarPersonagem} testar={id=>{ setLabPid(id); setAba('lab'); }}/>}
    {aba==='lab'&&<Lab pid={labPid} setPid={setLabPid} elenco={elenco} takes={meusTakes.filter(t=>!t.falaId)} gerando={gerando==='lab'} gerar={async(p,txt,dir,vozB)=>{
       setGerando('lab');
@@ -226,6 +229,40 @@ export default function Vozes(){
 }
 
 // ================= Elenco =================
+/** Liga um personagem da biblioteca criativa (Séries) a uma ficha de voz deste projeto.
+ *  Nunca troca a voz de uma ficha que já existe nem mexe nos takes: só guarda o vínculo (id + versão). */
+function ElencoDaBiblioteca({elenco,add,mudar}:{elenco:Personagem[];add:(nome:string)=>Promise<Personagem>;mudar:(id:string,p:Partial<Personagem>)=>void}){
+  const {toast}=useApp(); const cfg=useCfg();
+  const [itens,setItens]=useState<ItemBiblioteca[]|null>(null); const [busy,setBusy]=useState('');
+  const abrir=()=>biblioteca(cfg,'character').then(r=>setItens(r.itens)).catch(e=>toast(erroTexto(e),'erro'));
+  const ligado=(x:ItemBiblioteca)=>elenco.find(p=>p.biblioteca?.id===x.id);
+  const usar=async(x:ItemBiblioteca)=>{
+    setBusy(x.id);
+    try{
+      const d=x.dados as Record<string,unknown>; const nome=x.nome.trim().toUpperCase().slice(0,40);
+      const ja=elenco.find(p=>p.biblioteca?.id===x.id)||elenco.find(p=>p.nome.trim().toUpperCase()===nome);
+      const desc=[d.descricao,d.personalidade].filter(v=>typeof v==='string'&&v.trim()).join('. ');
+      const vozBib=typeof d.voz==='string'?VOZES_TTS.find(([v])=>v.toLowerCase()===String(d.voz).trim().toLowerCase())?.[0]:undefined;
+      if(ja){
+        mudar(ja.id,{biblioteca:{id:x.id,versao:x.versao},...(!ja.descricao.trim()&&desc?{descricao:desc}:{})});
+        toast(`${ja.nome} agora está ligado ao personagem da biblioteca (versão ${x.versao}). A voz e os takes aprovados continuam como estavam.`,'ok');
+      }else{
+        const p=await add(nome);
+        mudar(p.id,{biblioteca:{id:x.id,versao:x.versao},descricao:desc,...(vozBib?{voz:vozBib}:{})});
+        toast(`${nome} entrou no elenco${vozBib?` com a voz ${vozBib}`:''}. Teste no Laboratório e marque Voz aprovada quando gostar.`,'ok');
+      }
+    }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); }
+  };
+  if(!itens) return <div className="row-gap left mb"><button className="subtle sm" onClick={abrir}><Users size={14}/> Trazer personagem da biblioteca</button></div>;
+  return <section className="panel">
+    <div className="section-head"><h2><Users size={17}/> Personagens da biblioteca</h2><button className="link-btn" onClick={()=>setItens(null)}>Fechar</button></div>
+    <p className="hint">O personagem vira (ou se liga a) uma ficha de voz com o mesmo nome. Se a ficha já existe, a voz escolhida e os takes aprovados <b>não mudam</b>; só fica guardado de qual versão do personagem ela veio.</p>
+    {!itens.length?<p className="hint">Nada na biblioteca ainda. Crie personagens em Séries ou com "Criar com a IA".</p>
+     :<div className="bib-lista">{itens.map(x=>{ const l=ligado(x); return <button key={x.id} className={'chip'+(l?' on':'')} disabled={!!busy} onClick={()=>usar(x)}>
+       {busy===x.id?<Loader2 size={12} className="spin"/>:l?<CheckCircle2 size={12}/>:null} {x.nome} (v{x.versao}){l&&l.biblioteca?.versao!==x.versao?` • ficha ligada à v${l.biblioteca?.versao}`:''}</button>; })}</div>}
+  </section>;
+}
+
 function Elenco({elenco,add,mudar,apagar,testar,importar,comIA,aleatoria}:{aleatoria:(g:Genero)=>Promise<void>;elenco:Personagem[];add:()=>void;mudar:(id:string,p:Partial<Personagem>)=>void;apagar:(p:Personagem)=>void;testar:(id:string)=>void;importar:(f:FichaLida[])=>Promise<void>;comIA:(t:string)=>Promise<FichaLida[]>}){
   const {toast}=useApp();
   const [abrir,setAbrir]=useState(false); const [txt,setTxt]=useState(''); const [lidas,setLidas]=useState<FichaLida[]|null>(null); const [lendo,setLendo]=useState(false);

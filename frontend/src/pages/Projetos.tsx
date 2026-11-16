@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { FolderOpen, Cloud, Download, Copy, Trash2, History, Loader2, Eye, ShieldCheck, RefreshCw } from 'lucide-react';
+import { FolderOpen, Sparkles, Layers, Users, Cloud, Download, Copy, Trash2, History, Loader2, Eye, ShieldCheck, RefreshCw } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton, Modal } from '../components/Help';
 import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/Servidor2';
 import { listarProjetos, versoesProjeto, restaurarVersao, duplicarProjeto, apagarProjeto, baixarExportacao, horaTexto, type ProjetoMeta } from '../lib/api';
+import { EscolherDaBiblioteca, CartaoProposta } from '../components/ModelagemIA';
+import { listarPropostas, duplicarProposta, transformarEmSerie, NOME_TIPO, type Proposta } from '../lib/criativo';
 import { AREAS, lerEstado, gravarEstado, copiaLocal, retrato } from '../lib/sincronia';
 
 const TIPO:Record<string,string>={video:'Vídeo animado',manual:'Montagem',vozes:'Vozes',agente3:'Agente 3',outro:'Preferências'};
@@ -50,10 +52,32 @@ function Migracao(){
   </section>;
 }
 
+/** Propostas que a IA já fez (em qualquer tela): reabrir, duplicar para variar sem perder a original, salvar ou criar vídeo/série. */
+function Propostas(){
+  const cfg=useCfg(); const {toast}=useApp();
+  const lista=useServidor(c=>listarPropostas(c));
+  const [aberta,setAberta]=useState<Proposta|null>(null); const [busy,setBusy]=useState('');
+  const ps=lista.dados?.propostas||[];
+  const duplicar=async(p:Proposta)=>{ setBusy(p.id); try{ const n=await duplicarProposta(cfg,p.id); lista.recarregar(); setAberta(n); toast('Cópia criada. Mude o que quiser: a original fica igual.','ok'); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } };
+  return <section className="panel">
+    <div className="section-head"><h2><Sparkles size={17}/> Propostas da IA ({ps.length})</h2></div>
+    <p className="hint">Ideias, histórias, personagens e estilos que a IA propôs nas outras telas. Nada aqui é produzido nem postado sem você escolher.</p>
+    {lista.erro&&<p className="hint bad">{lista.erro}</p>}
+    {!ps.length&&!lista.erro&&<p className="hint">Nenhuma ainda. Use "Criar com a IA" em Séries, Agente 3, Radar ou Automático.</p>}
+    <ul className="proj-lista">{ps.map(p=><li key={p.id}>
+      <div className="grow"><b>{p.campos.titulo||'Sem título'}</b><small className="muted"> {NOME_TIPO[p.tipo]||p.tipo} • {p.status}{p.origem==='codigo'?' • sorteio sem IA':''}</small></div>
+      <button className="subtle sm" onClick={()=>setAberta(aberta?.id===p.id?null:p)}><Eye size={14}/> {aberta?.id===p.id?'Fechar':'Abrir'}</button>
+      <button className="subtle sm" disabled={!!busy} onClick={()=>duplicar(p)}>{busy===p.id?<Loader2 size={14} className="spin"/>:<Copy size={14}/>} Duplicar proposta</button>
+      {aberta?.id===p.id&&<div className="w100"><CartaoProposta p={aberta} destinos={['biblioteca','video','serie']} onMudou={n=>{ setAberta(n); lista.recarregar(); }} onAplicado={()=>lista.recarregar()}/></div>}
+    </li>)}</ul>
+    {aberta&&!ps.some(x=>x.id===aberta.id)&&<CartaoProposta p={aberta} destinos={['biblioteca','video','serie']} onMudou={n=>{ setAberta(n); lista.recarregar(); }} onAplicado={()=>lista.recarregar()}/>}
+  </section>;
+}
+
 export default function Projetos(){
   const {settings,toast,go}=useApp(); const cfg=useCfg();
   const lista=useServidor(c=>listarProjetos(c),20);
-  const [vendo,setVendo]=useState<ProjetoMeta|null>(null);
+  const [vendo,setVendo]=useState<ProjetoMeta|null>(null); const [bib,setBib]=useState('');
   if(!settings.servidor) return <PrecisaServidor oque="Meus projetos"/>;
   const ps=lista.dados?.projetos||[];
   return <div className="projetos">
@@ -67,10 +91,15 @@ export default function Projetos(){
       {p.tipo==='agente3'&&<button className="subtle sm" onClick={()=>go('revisar',p.id,'fila')}><Eye size={14}/> Abrir</button>}
       <button className="subtle sm" onClick={()=>setVendo(p)}><History size={14}/> Versões</button>
       <button className="subtle sm" onClick={()=>baixarExportacao(cfg,p.id,p.titulo).catch(e=>toast(erroTexto(e),'erro'))}><Download size={14}/> .zip</button>
+      {p.tipo==='agente3'&&<button className="subtle sm" onClick={()=>setBib(bib===p.id?'':p.id)}><Users size={14}/> Usar biblioteca criativa</button>}
+      {p.tipo==='agente3'&&<button className="subtle sm" onClick={async()=>{ if(!window.confirm(`Criar uma série nova a partir de "${p.titulo}"? O vídeo continua como está; a série nasce com o mesmo assunto e uma cópia dos personagens dele.`)) return;
+        try{ const r=await transformarEmSerie(cfg,p.id); toast(r.repetido?'Esta série já tinha sido criada: abrindo.':'Série criada. Crie os episódios nela.','ok'); go('series',r.serie.id,'criar'); }catch(e){ toast(erroTexto(e),'erro'); } }}><Layers size={14}/> Transformar em série</button>}
       {p.tipo==='agente3'&&<button className="subtle sm" onClick={async()=>{ try{ await duplicarProjeto(cfg,p.id); lista.recarregar(); toast('Cópia criada.','ok'); }catch(e){ toast(erroTexto(e),'erro'); } }}><Copy size={14}/> Duplicar</button>}
+      {bib===p.id&&<div className="w100"><EscolherDaBiblioteca projetoId={p.id} garantirProjeto={async()=>p.id} onUsado={()=>{ setBib(''); lista.recarregar(); }}/></div>}
       <button className="icon-btn" aria-label="Apagar" onClick={async()=>{ if(!window.confirm(`Mandar "${p.titulo}" para a lixeira do servidor? (dá para recuperar pelo backup)`)) return; try{ await apagarProjeto(cfg,p.id); lista.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); } }}><Trash2 size={15}/></button>
      </li>)}</ul>
     </section>
+    <Propostas/>
     {vendo&&<Versoes p={vendo} fechar={()=>{ setVendo(null); lista.recarregar(); }}/>}
   </div>;
 }

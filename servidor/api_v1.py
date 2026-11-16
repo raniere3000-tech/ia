@@ -378,7 +378,9 @@ def _criativo(metodo: str, caminho: str, q: dict, corpo, quem: str, sid: str) ->
     if rota == ('POST', '/api/v1/criativo/usar-no-projeto'):
         d = corpo()
         return cri.usar_no_projeto(str(d.get('projeto_id') or ''), d, quem)
-    m = re.fullmatch(r'/api/v1/criativo/propostas/(\w+)(?:/(salvar-modelo|aplicar|previa))?', caminho)
+    if rota == ('POST', '/api/v1/criativo/transformar-em-serie'):
+        return cri.transformar_em_serie(str(corpo().get('projeto_id') or ''), quem)
+    m = re.fullmatch(r'/api/v1/criativo/propostas/(\w+)(?:/(salvar-modelo|aplicar|previa|duplicar))?', caminho)
     if m:
         prid, acao = m.groups()
         if not acao and metodo == 'GET':
@@ -391,6 +393,8 @@ def _criativo(metodo: str, caminho: str, q: dict, corpo, quem: str, sid: str) ->
             return cri.aplicar(prid, corpo(), quem, quem)
         if acao == 'previa' and metodo == 'POST':
             return cri.previa(prid, corpo())
+        if acao == 'duplicar' and metodo == 'POST':
+            return cri.duplicar_proposta(prid, quem)
     m = re.fullmatch(r'/api/v1/criativo/assets/([\w-]+)(?:/(duplicar|versoes|previa))?', caminho)
     if m:
         aid, acao = m.groups()

@@ -4,6 +4,8 @@ import { useApp } from '../state';
 import { transcrever, transcreverGemini } from '../lib/transcribe';
 import type { Cue } from '../lib/captions';
 import EditorVideo from '../components/EditorVideo';
+import ModelagemIA, { MidiaDaBiblioteca } from '../components/ModelagemIA';
+import type { Campos } from '../lib/criativo';
 import { deSinc, type Proj } from '../lib/editor';
 import {
   MODELO_ROTEIRO, OPCOES_PADRAO, apagarArquivo, audioDe, batidas, conferirImagensIA, guardarArquivo, lerQuadros,
@@ -98,6 +100,15 @@ export default function Manual(){
   const nAvisos=rascunho?rascunho.quadros.filter(q=>q.avisos?.length).length:0;
   const ABAS:[typeof aba,string,typeof FileText,string][]=[['roteiro','Roteiro',FileText,quadros.length?`${quadros.length} quadros`:'colar'],['arquivos','Arquivos',ImagePlus,arqs.length?`${arqs.length}`:'enviar'],['conferencia','Conferência',ListChecks,rascunho?(nAvisos?`${nAvisos} aviso(s)`:'tudo certo'):'—'],['opcoes','Opções',Settings2,o.formato]];
   const vazio:Proj={clips:[],formato:o.formato,abaixarTrilha:true};
+  const [bib,setBib]=useState(false);
+  // proposta da Modelagem com IA vira quadros no FIM do roteiro (o que já existe e o editor não são mexidos)
+  function usarProposta(c:Campos){
+    if(!c.cenas.length){ toast('Esta proposta não tem cenas. Peça "História / roteiro" ou "Cena / storyboard".','info'); return; }
+    const n0=quadros.length; const pers=Object.fromEntries(c.personagens.map(p=>[p.nome.toUpperCase(),p.nome]));
+    const blocos=c.cenas.map((x,i)=>`QUADRO ${n0+i+1}\nVISUAL: ${x.titulo}${c.cenarios[0]?` (${c.cenarios[0].nome})`:''}\n${(x.personagem&&pers[x.personagem.toUpperCase()]?x.personagem.toUpperCase():'NARRADOR')}: ${x.texto}`).join('\n\n');
+    if(texto.trim()&&!window.confirm(`Acrescentar ${c.cenas.length} quadro(s) no fim do roteiro? O que já está escrito e o editor continuam iguais.`)) return;
+    setTexto(t=>(t.trim()?t.trimEnd()+'\n\n':'')+blocos); toast('Quadros acrescentados ao roteiro. Envie as imagens e toque em Analisar e sincronizar.','ok');
+  }
 
   return <div className="manual">
    <section className="panel prep">
@@ -115,6 +126,7 @@ export default function Manual(){
     <div className="prep-corpo" hidden={aba!=='roteiro'}>
      <div className="row-gap left"><button className="subtle sm" onClick={()=>setTexto(t=>t.trim()?t:MODELO_ROTEIRO)} disabled={!!texto.trim()}>Usar modelo</button></div>
     <p className="hint">Um bloco por quadro, começando com <b>QUADRO 1</b>. Dentro: <b>VISUAL:</b> o que aparece, falas <b>NOME: texto</b>, <b>[SOM: porta batendo]</b> (com <b>@1.5</b> para tocar 1,5 s depois do início do quadro), <b>[TRILHA: tensa]</b>, <b>MOVIMENTO: aproximar</b> e, se quiser, o tempo no título: <b>QUADRO 2 (0:04–0:09)</b> ou <b>(4 s)</b>. Sem tempo, o site calcula pela narração, pelos vídeos ou pela duração padrão.</p>
+    {settings.servidor&&<ModelagemIA compacto titulo="Criar quadros com a IA" contexto="montagem" tipos={['historia','cena']} destinos={['biblioteca']} rotuloUsar="Acrescentar ao roteiro" onUsarCampos={usarProposta}/>}
     <textarea className="roteiro-quadros" rows={12} value={texto} onChange={e=>setTexto(e.target.value)} placeholder={MODELO_ROTEIRO} aria-label="Roteiro de quadros"/>
     {quadros.length>0&&<p className="hint">Li: <b>{resumo}</b></p>}
     </div>
@@ -124,6 +136,8 @@ export default function Manual(){
      <div className="manual-area-top"><b><I size={15}/> {tit}</b>{l.length>0&&<button className="link-btn" onClick={()=>limpar(tipo)}>Tirar todos</button>}</div>
      <small className="hint">{dica}</small>
      <label className="subtle sm vc-upload mt">Enviar<input type="file" accept={acc} multiple hidden data-area={tipo} onChange={e=>{ enviar(tipo,e.target.files); e.target.value=''; }}/></label>
+     {tipo==='quadro'&&settings.servidor&&<button className="subtle sm mt" onClick={()=>setBib(!bib)}>Da biblioteca</button>}
+     {tipo==='quadro'&&bib&&<MidiaDaBiblioteca fechar={()=>setBib(false)} onEscolher={async f=>{ try{ const a=await guardarArquivo(f,'quadro'); setArqs(x=>[...x,a]); toast(`${a.nome} guardado. A montagem atual não mudou; ele entra na próxima sincronização ou escolhido na conferência.`,'ok'); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } }}/>}
      {l.length>0&&<ul className="manual-lista">{l.map(a=><li key={a.id}>{a.tipo==='quadro'&&midias.get(a.id)?.tipo==='imagem'?<img src={(midias.get(a.id)!.el as HTMLImageElement).src} alt=""/>:null}<span title={a.nome}>{a.nome}</span><small>{a.duracao?fmt(a.duracao):''}</small><button className="icon-btn" onClick={()=>remover(a)} aria-label={'Tirar '+a.nome}><Trash2 size={13}/></button></li>)}</ul>}
     </div>; })}</div>
     </div>

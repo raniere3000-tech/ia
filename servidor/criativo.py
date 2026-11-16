@@ -581,6 +581,52 @@ def duplicar_asset(aid: str, quem: str = '') -> dict:
                         'proveniencia': dict(a['proveniencia'], copia_de=aid), 'modalidades': a['modalidades']}, quem)
 
 
+def duplicar_proposta(prid: str, quem: str = '') -> dict:
+    """Cópia editável de uma proposta (rascunho novo, revisão 1). A original não muda e nada é produzido."""
+    p = obter_proposta(prid)
+    n = json.loads(json.dumps(p))
+    for k in ('aplicacoes', 'aplicada', 'favorita'):
+        n.pop(k, None)
+    agora = time.time()
+    n.update(id='pr' + uuid.uuid4().hex[:12], status='rascunho', revisao=1, copia_de=prid, criado=agora)
+    db.executar('INSERT INTO criativo_propostas (id, lote, tipo, contexto, status, revisao, dados, criado, atualizado) VALUES (?,?,?,?,?,?,?,?,?)',
+                n['id'], n.get('lote') or '', n.get('tipo') or '', n.get('contexto') or '', 'rascunho', 1, json.dumps(n, ensure_ascii=False), agora, agora)
+    db.evento(quem or 'site', 'criativo_proposta_duplicada', 'proposta:' + n['id'], {'de': prid})
+    return obter_proposta(n['id'])
+
+
+def transformar_em_serie(projeto_id: str, quem: str = '') -> dict:
+    """Cria uma série nova a partir de um vídeo único do Agente 3: mesmo assunto, formato e uma CÓPIA do elenco da biblioteca.
+    O vídeo original não muda (continua vídeo único). Chamar de novo devolve a mesma série."""
+    import series as srs
+    p = pj.obter(projeto_id)
+    if p['tipo'] != 'agente3':
+        raise ErroCriativo(400, 'Só vídeos do Agente 3 viram série.')
+    dd = p['dados']
+    foto = dd.get('serie') or {}
+    if foto.get('serie_id'):
+        raise ErroCriativo(409, 'Este vídeo já é episódio de uma série.')
+    ja = db.kv('criativo_serie_de:' + projeto_id)
+    if ja:
+        try:
+            return {'serie': srs.obter(ja), 'repetido': True}
+        except Exception:
+            pass
+    b = dd.get('briefing') or {}
+    titulo = _txt((dd.get('roteiro') or {}).get('titulo') or b.get('tema') or p.get('titulo'), 80) or 'Série nova'
+    s = srs.criar({'titulo': titulo, 'genero': b.get('nicho') or '', 'formato': b.get('formato'), 'publico': b.get('publico') or '',
+                   'duracao_alvo': b.get('duracao_alvo'), 'cenas_qtd': b.get('cenas_qtd'), 'estilo': b.get('estilo')})
+    copiados = []
+    for pid, dados in list((foto.get('personagens') or {}).items())[:4]:
+        copiados.append({'de': pid, 'versao': (foto.get('versoes') or {}).get(pid), 'id': srs.criar_personagem({'serie_id': s['id'], 'dados': dados})['id']})
+    for cid, dados in list((foto.get('cenarios') or {}).items())[:4]:
+        if cid != 'parque-padrao':
+            srs.criar_cenario({'serie_id': s['id'], 'dados': dados})
+    db.kv_gravar('criativo_serie_de:' + projeto_id, s['id'])
+    db.evento(quem or 'site', 'criativo_virou_serie', 'projeto:' + projeto_id, {'serie': s['id'], 'personagens': copiados})
+    return {'serie': srs.obter(s['id']), 'personagens': copiados}
+
+
 def biblioteca(tipo: str = '', q: str = '', pagina: int = 1) -> dict:
     import series as srs
     itens = []

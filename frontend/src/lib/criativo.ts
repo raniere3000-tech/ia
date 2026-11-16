@@ -38,6 +38,8 @@ export const listarPropostas=(cfg:CfgSrv,favoritas=false)=>api<{propostas:Propos
 export const biblioteca=(cfg:CfgSrv,tipo='',q='')=>api<{itens:ItemBiblioteca[];total:number}>(cfg,'GET',`/api/v1/criativo/biblioteca?tipo=${encodeURIComponent(tipo)}&q=${encodeURIComponent(q)}`);
 export const usarNoProjeto=(cfg:CfgSrv,projeto_id:string,personagens:string[],cenarios:string[]=[])=>
   api<{ok:boolean;serie:{personagens:Record<string,{nome:string}>;versoes:Record<string,number>}}>(cfg,'POST','/api/v1/criativo/usar-no-projeto',{projeto_id,personagens,cenarios});
+export const duplicarProposta=(cfg:CfgSrv,id:string)=>api<Proposta>(cfg,'POST',`/api/v1/criativo/propostas/${id}/duplicar`,{});
+export const transformarEmSerie=(cfg:CfgSrv,projeto_id:string)=>api<{serie:{id:string;titulo:string};repetido?:boolean}>(cfg,'POST','/api/v1/criativo/transformar-em-serie',{projeto_id});
 export const previaAsset=(cfg:CfgSrv,id:string)=>api<{png?:string;status?:string;motivo?:string}>(cfg,'POST',`/api/v1/criativo/assets/${id}/previa`,{});
 
 export const NOME_TIPO:Record<TipoModelo,string>={ideia:'Ideia de vídeo',historia:'História / roteiro',serie:'Série',episodio:'Episódio',personagem:'Personagem',cenario:'Cenário',
