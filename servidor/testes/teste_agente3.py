@@ -102,9 +102,11 @@ class Gemini(BaseHTTPRequestHandler):
         else:
             txt = json.dumps(corpo)
             PROMPTS.append(txt)
-            if 'REVISOR DE ROTEIRO' in txt:
+            if 'REVISOR DE ROTEIRO' in txt or 'VERIFICADOR DE CONTINUIDADE' in txt:
                 m = re.search(r'\\n\[([^\]]+)\]', txt)
-                rot = {'pontos': [{'cena': m.group(1) if m else '', 'gravidade': 'baixa', 'problema': 'Gancho fraco no começo', 'sugestao': 'Comece pela pergunta.'}]}
+                rot = ({'pontos': [{'cena': m.group(1) if m else '', 'gravidade': 'baixa', 'problema': 'Gancho fraco no começo', 'sugestao': 'Comece pela pergunta.'}]}
+                       if 'REVISOR' in txt else
+                       {'contradicoes': [{'cena': m.group(1) if m else '', 'fato': 'Ana perdeu o medo do escuro.', 'problema': 'Ana diz que tem medo do escuro'}]})
                 r = {'candidates': [{'content': {'parts': [{'text': json.dumps(rot, ensure_ascii=False)}]}}], 'usageMetadata': {}}
                 b = json.dumps(r).encode()
                 self.send_response(200)
@@ -492,6 +494,43 @@ st, bb, _ = api('POST', f'/api/v1/series/episodios/{ep["id"]}/propostas', {}, SE
 confere(any(x['texto'] == 'Ana agora guarda a chave do sótão.' and x['estado'] == 'proposta' for x in bb['biblia']), 'mudanças do episódio entram na bíblia como proposta')
 st, so, _ = api('GET', f'/api/v1/series/{SID}', None, SES)
 confere(so['episodios'][0]['status'] == 'ready_for_review' and len(so['personagens']) == 2, 'série mostra episódios com a situação do vídeo')
+
+print('Continuidade com a bíblia e voz gravada no Estúdio')
+qs = dp.get('qualidade', {}).get('problemas', [])
+confere(any(x['tipo'] == 'continuidade' and x['descricao'].startswith('Bíblia:') and x['cena_id'] == c0['id'] for x in qs), 'contradição com a bíblia vira alerta na cena')
+confere(any(x['tipo'] == 'continuidade' and 'mudou de aparência' in x['descricao'] for x in qs), 'avisa que o personagem mudou depois do episódio criado')
+confere(any('VERIFICADOR DE CONTINUIDADE' in x and 'perdeu o medo' in x and 'segredo no s' not in x for x in PROMPTS), 'conferência usa só os fatos aprovados')
+
+
+def enviar(dados: bytes, nome: str, mime: str, projeto: str) -> str:
+    st_, r_, _ = api('POST', '/api/v1/uploads', {'sha256': hashlib.sha256(dados).hexdigest(), 'tamanho': len(dados), 'mime': mime, 'nome': nome, 'projeto': projeto}, SES)
+    if r_.get('pronto'):
+        return r_['asset']['id']
+    req = urllib.request.Request(BASE + f'/api/v1/uploads/{r_["upload"]}?offset=0', data=dados, method='PUT', headers={'Content-Type': 'application/octet-stream', **SES})
+    urllib.request.urlopen(req, timeout=60).read()
+    return api('POST', f'/api/v1/uploads/{r_["upload"]}/fim', {}, SES)[1]['asset']['id']
+
+
+wav = TMP / 'take.wav'
+subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=f=300:d=1.4', '-ar', '44100', '-ac', '2', str(wav)], check=True)
+aid = enviar(wav.read_bytes(), 'take-ana.wav', 'audio/wav', ep['projeto_id'])
+cs = [dict(c, audio_manual={'asset': aid, 'nome': 'take-ana.wav'}) if k == 0 else c for k, c in enumerate(dp['cenas'])]
+st, sb, _ = api('POST', f'/api/v1/projetos/{ep["projeto_id"]}/storyboard', {'revisao': re_['projeto']['revisao'], 'cenas': cs}, SES)
+confere(st == 200, f'storyboard com voz gravada salvo ({sb if st != 200 else ""})')
+n_tts = sum('tts' in x for x in PEDIDOS)
+st, jb, _ = api('POST', f'/api/v1/projetos/{ep["projeto_id"]}/produzir', {'etapa': 'narracao'}, SES)
+t = time.time()
+while time.time() - t < 300:
+    rv = api('GET', f'/api/v1/projetos/{ep["projeto_id"]}/revisao', None, SES)[1]
+    if (rv.get('job') or {}).get('id') == jb['job']['id'] and rv['job']['status'] in ('concluido', 'falhou'):
+        break
+    time.sleep(0.5)
+a0 = rv['projeto']['dados']['cenas'][0].get('audio') or {}
+confere(rv['projeto']['status'] == 'ready_for_review' and a0.get('manual') and abs(a0.get('dur', 0) - 1.4) < 0.1, f'cena usa a voz gravada no lugar da IA ({rv["job"].get("erro")})')
+confere(sum('tts' in x for x in PEDIDOS) == n_tts, 'não pagou voz da IA para a cena com voz gravada')
+import rig2d as rg  # noqa: E402
+nv = rg.niveis_fala(Path(a0['arquivo']), 1.4)
+confere(sum(v > 0 for v in nv) > len(nv) * 0.6, 'boca do personagem segue a voz gravada')
 
 print('Diretor: mapa de palco, eixo, animatic e prévia A/B')
 EPID = ep['projeto_id']

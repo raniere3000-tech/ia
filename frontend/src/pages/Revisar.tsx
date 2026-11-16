@@ -15,7 +15,7 @@ const ST_Q:Record<Qualidade['status'],[string,string,string]>={
   analise_indisponivel:['Não conferido','','Não deu para analisar os quadros desta vez.'],
   falha_tecnica:['Falha técnica','bad','O arquivo final tem um problema técnico.'],
 };
-const NOME_T:Record<string,string>={quadro_escuro:'Quadro escuro',sem_detalhe:'Imagem sem detalhe',plano_repetido:'Plano repetido',sem_imagem:'Cena sem foto',ritmo:'Ritmo',analise_indisponivel:'Sem análise'};
+const NOME_T:Record<string,string>={quadro_escuro:'Quadro escuro',sem_detalhe:'Imagem sem detalhe',plano_repetido:'Plano repetido',sem_imagem:'Cena sem foto',ritmo:'Ritmo',analise_indisponivel:'Sem análise',narrativa:'Roteiro',continuidade:'Continuidade da série'};
 /** Relatório do diretor de qualidade: cada ponto com a cena, o instante (toque para pular até ele) e a sugestão. */
 function QualidadePainel({q,cenas}:{q:Qualidade;cenas:Cena[]}){
   const [s,cls,txt]=ST_Q[q.status]||ST_Q.analise_indisponivel;

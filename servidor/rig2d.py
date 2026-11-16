@@ -29,7 +29,7 @@ CORPOS = ('magro', 'medio', 'forte')
 ACESSORIOS = ('nenhum', 'oculos', 'bone', 'laco')
 EXPRESSOES = ('neutro', 'feliz', 'triste', 'bravo', 'surpreso', 'preocupado')
 POSICOES = {'esquerda': 0.27, 'centro': 0.5, 'direita': 0.73}
-BOCAS = ('fechada', 'pequena', 'aberta', 'o', 'sorriso', 'triste')
+BOCAS = ('fechada', 'pequena', 'aberta', 'o', 'sorriso', 'triste', 'larga')
 ACOES = {
     # tipo: (descrição, duração padrão em s, expressão que força ou '')
     'idle': ('parado, respirando', 0, ''),
@@ -272,6 +272,9 @@ def _boca(p, tipo: str) -> _Peca:
         t.eli(0, y + 1.6, 1.8, 1.0, '#e06666')
     elif tipo == 'o':
         t.eli(0, y + 0.2, 1.7, 2.2, esc)
+    elif tipo == 'larga':        # 'e', 'i': boca esticada com dentes
+        t.eli(0, y + 0.3, 3.4, 1.5, esc)
+        t.ret(-2.6, y - 0.5, 2.6, y + 0.3, '#f4f1ea', 0.4)
     return t
 
 
@@ -495,7 +498,8 @@ def canais(el: dict, dur: float, x0: float, u: float, W: int) -> tuple[dict, E, 
 
 # ---------------------------------------------------------------- boca pelo volume da fala
 def niveis_fala(wav: Path | None, dur: float, passo: float = 1 / 12) -> list[int]:
-    """0 = boca fechada, 1 = pouco aberta, 2 = aberta, 3 = 'o'. Por volume da voz (aproximação, sem fonemas)."""
+    """0 = fechada, 1 = pouco aberta, 2 = aberta ('a'), 3 = redonda ('o', 'u'), 4 = larga ('e', 'i').
+    Abertura pelo volume; forma pela taxa de cruzamentos por zero (vogal fechada/escura x aberta/clara). Aproximação, sem fonemas."""
     n = max(1, int(dur / passo))
     if not wav or not Path(wav).exists():
         return [0] * n
@@ -513,21 +517,28 @@ def niveis_fala(wav: Path | None, dur: float, passo: float = 1 / 12) -> list[int
     if ch > 1:
         a = a[::ch]
     jan = max(1, int(sr * passo))
-    rms = []
+    rms, zcr = [], []
     for i in range(n):
         bloco = a[i * jan:(i + 1) * jan]
         rms.append(math.sqrt(sum(x * x for x in bloco[::4]) / max(1, len(bloco[::4]))) if bloco else 0.0)
+        zcr.append(sum((bloco[k] >= 0) != (bloco[k + 1] >= 0) for k in range(0, len(bloco) - 1, 2)) / max(1, len(bloco) // 2) if bloco else 0.0)
     ref = sorted(rms)[int(len(rms) * 0.92)] if rms else 0
     if ref <= 50:
         return [0] * n
+    vozes = sorted(z for r, z in zip(rms, zcr) if r / ref >= 0.5)
+    med = (vozes[len(vozes) // 4] + vozes[len(vozes) * 3 // 4]) / 2 if vozes else 0     # meio entre as vogais escuras e as claras
     out, abertos = [], 0
-    for r in rms:
+    for r, z in zip(rms, zcr):
         v = r / ref
         nv = 0 if v < 0.18 else 1 if v < 0.5 else 2
         if nv == 2:
-            abertos += 1
-            if abertos % 5 == 0:
+            if med > 0 and z > med * 1.25:
+                nv = 4
+            elif med > 0 and z < med * 0.75:
                 nv = 3
+            elif med <= 0:
+                abertos += 1
+                nv = 3 if abertos % 5 == 0 else 2
         out.append(nv)
     return out
 
@@ -590,7 +601,7 @@ def colocar(c, el: dict, p: dict, arqs: dict, chao_y: float, altura_px: float, W
     if falando:
         nv = niveis_fala(wav, dur, passo)
         fechada = 'sorriso' if base == 'feliz' else 'triste' if base in ('triste', 'preocupado') else 'fechada'
-        for valor, nome in ((0, fechada), (1, 'pequena'), (2, 'aberta'), (3, 'o')):
+        for valor, nome in ((0, fechada), (1, 'pequena'), (2, 'aberta'), (3, 'o'), (4, 'larga')):
             seg = _segmentos(nv, valor, passo)
             if valor == 0:
                 seg = seg + [(len(nv) * passo, dur + 1)]

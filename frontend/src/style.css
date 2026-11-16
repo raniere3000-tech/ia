@@ -902,3 +902,9 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .plano-mais-campos{display:flex;flex-direction:column;gap:6px;margin-top:6px}
 .plano-ponto{display:grid;grid-template-columns:1fr;gap:4px;padding:6px 8px;border:1px solid #2a3142;border-radius:8px}
 .plano-ponto input[type=range]{width:100%}
+.voz-gravada{font-size:12px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.voz-box{width:100%;display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid #2a3142;border-radius:8px}
+.voz-takes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.voz-takes li{display:flex;flex-direction:column;gap:4px;padding-bottom:6px;border-bottom:1px solid #222838}
+.voz-takes p{margin:2px 0;color:#c3c9d8}.voz-takes audio{width:100%;height:32px}
+.file-btn{cursor:pointer;align-self:flex-start}

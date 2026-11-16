@@ -176,7 +176,7 @@ def folha(pid: str = '', dados: dict | None = None) -> dict:
     if not arq.exists():
         arq.parent.mkdir(parents=True, exist_ok=True)
         rig2d.folha_modelo(p, PASTA_RIG, arq)
-    return {'png': _png64(arq), 'limites': 'Só vista de frente (sem ¾ e perfil). Boca pelo volume da voz (aproximada).'}
+    return {'png': _png64(arq), 'limites': 'Só vista de frente (sem ¾ e perfil). Boca pela voz: abre pelo volume e muda de forma (a, o, e/i) de modo aproximado, sem fonemas.'}
 
 
 # ---------------------------------------------------------------- cenários

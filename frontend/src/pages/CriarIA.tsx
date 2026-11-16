@@ -6,6 +6,7 @@ import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/S
 import { GradeEstilos } from './Galeria';
 import { Prontidao, CriarRapido } from '../components/Prontidao';
 import SkillPicker from '../components/SkillPicker';
+import VozGravada from '../components/VozGravada';
 import Diretor from '../components/Diretor';
 import { catalogo, ideias as pedirIdeias, gerarRoteiro, novoVideo, obterProjeto, salvarStoryboard, aprovarRoteiro, type Briefing, type Cena, type Roteiro, type Ideia, type Plano, type Chave } from '../lib/api';
 
@@ -79,7 +80,7 @@ function EditorPlanos({c,mudar}:{c:Cena;mudar:(p:Partial<Cena>)=>void}){
   </div>;
 }
 
-function EditorCenas({cenas,set}:{cenas:Cena[];set:(c:Cena[])=>void}){
+function EditorCenas({cenas,set,pid}:{cenas:Cena[];set:(c:Cena[])=>void;pid:string}){
   const mudar=(i:number,p:Partial<Cena>)=>set(cenas.map((c,k)=>k===i?{...c,...p}:c));
   const mover=(i:number,d:number)=>{ const j=i+d; if(j<0||j>=cenas.length) return; const n=[...cenas]; [n[i],n[j]]=[n[j],n[i]]; set(n); };
   return <div className="sb-lista">{cenas.map((c,i)=><div key={c.id} className={'sb-cena'+(c.bloqueada?' bloqueada':'')}>
@@ -100,6 +101,7 @@ function EditorCenas({cenas,set}:{cenas:Cena[];set:(c:Cena[])=>void}){
      <label>Foto da cena (busca em inglês)<input value={c.busca||''} onChange={e=>mudar(i,{busca:e.target.value})} maxLength={60} placeholder="Ex.: blue sky sunlight"/></label>
      <label>Clima<select value={c.clima||'nenhum'} onChange={e=>mudar(i,{clima:e.target.value as Cena['clima']})}><option value="nenhum">Nenhum</option><option value="chuva">Chuva</option><option value="neve">Neve</option><option value="poeira">Poeira no ar</option><option value="neblina">Neblina</option></select></label>
      <label>Luz<select value={c.luz||'neutra'} onChange={e=>mudar(i,{luz:e.target.value as Cena['luz']})}><option value="neutra">Normal</option><option value="quente">Quente (fim de tarde)</option><option value="fria">Fria</option><option value="noite">Noite</option><option value="dramatica">Dramática</option></select></label>
+     <VozGravada c={c} mudar={p=>mudar(i,p)} pid={pid}/>
      <EditorPlanos c={c} mudar={p=>mudar(i,p)}/>
     </div>
   </div>)}
@@ -166,7 +168,7 @@ export default function CriarIA(){
      {roteiro.fontes?.length>0&&<p className="hint">Fontes para conferir: {roteiro.fontes.map(f=><a key={f.url} className="help-link" href={f.url} target="_blank" rel="noreferrer">{f.titulo||'fonte'} <ExternalLink size={11}/></a>)}</p>}
      {roteiro.skills_usadas&&roteiro.skills_usadas.length>0&&<p className="hint">Boas práticas consultadas: {roteiro.skills_usadas.join(', ')}.</p>}
      {roteiro.avisos&&roteiro.avisos.length>0&&<ul className="avisos-roteiro">{roteiro.avisos.map(a=><li key={a}>{a}</li>)}</ul>}
-     <EditorCenas cenas={roteiro.cenas} set={c=>setRoteiro({...roteiro,cenas:c})}/>
+     <EditorCenas cenas={roteiro.cenas} set={c=>setRoteiro({...roteiro,cenas:c})} pid={pid}/>
     </>}
    </section>
 

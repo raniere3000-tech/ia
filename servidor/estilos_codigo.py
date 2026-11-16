@@ -245,6 +245,9 @@ def validar_cena(c: dict, i: int = 0) -> dict:
         'elenco': rig2d.validar_elenco(c.get('elenco'), None, max(1.0, min(60.0, dur or 60.0))),
         'cenario_id': re.sub(r'[^a-z0-9_-]', '', str(c.get('cenario_id') or '').lower())[:40],
         'voz': _txt(c.get('voz'), 20),
+        **({'audio_manual': {'asset': re.sub(r'[^a-zA-Z0-9]', '', str(c['audio_manual'].get('asset') or ''))[:40],
+                             'nome': _txt(c['audio_manual'].get('nome'), 80)}}
+           if isinstance(c.get('audio_manual'), dict) and c['audio_manual'].get('asset') else {}),
         'clima': c.get('clima') if c.get('clima') in CLIMAS else 'nenhum',
         'luz': c.get('luz') if c.get('luz') in LUZES else 'neutra',
     }
