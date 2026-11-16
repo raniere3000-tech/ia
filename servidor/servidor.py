@@ -634,11 +634,13 @@ def _rotas_agenda(self, caminho: str):
         return pg.finalizar_video(m.group(1))
     if caminho == '/posts':
         return pg.criar_post(d)
-    m = re.fullmatch(r'/posts/(\w+)/(agora|cancelar|feito|editar)', caminho)
+    m = re.fullmatch(r'/posts/(\w+)/(agora|cancelar|feito|editar|liberar)', caminho)
     if m:
         pid, acao = m.groups()
         if acao == 'editar':
             return pg.editar_post(pid, d)
+        if acao == 'liberar':
+            return pg.liberar(pid)
         if acao == 'agora':
             return pg.postar_agora(pid)
         if acao == 'cancelar':

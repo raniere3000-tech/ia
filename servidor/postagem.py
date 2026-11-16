@@ -544,6 +544,23 @@ def postar_agora(pid: str):
     acordar()
 
 
+def liberar(pid: str, quem: str = 'site') -> dict:
+    """Liberação especial: você decide postar mesmo sem a origem do vídeo registrada.
+    Vale só para os bloqueios liberáveis e só para este arquivo; fica registrada no relatório do post."""
+    def f(p):
+        redes = [r for r, x in p['redes'].items() if x['status'] in ('liberacao', 'erro')]
+        itens = sorted({x['item'] for r in redes for x in conferencia(dict(p, liberacao=None), r) if x.get('liberavel')})
+        if not itens:
+            raise ErroRede('Este post não tem nada que precise de liberação especial.')
+        p['liberacao'] = {'itens': itens, 't': agora(), 'quem': str(quem)[:60], 'hash': p.get('hash') or ''}
+        for r in redes:
+            p['redes'][r].update(status='agendado', erro='', tentativas=0, proxima=0)
+            _anotar(p, r, 'liberado', 'Liberação especial dada por você para: ' + ', '.join(itens))
+    p = _mudar(pid, f)
+    acordar()
+    return p
+
+
 def editar_post(pid: str, d: dict) -> dict:
     """Muda a hora, as redes, o título ou a legenda de um post que ainda não saiu.
     Redes que já postaram ficam como estão; tirar uma rede só vale para as que ainda não foram."""
@@ -758,6 +775,17 @@ def _anotar(p: dict, rede: str, evento: str, detalhe: str = ''):
 
 
 DONOS = ('meu', 'autorizado', 'regra')       # de quem é o vídeo (mesma lista do Agente 1)
+LIBERAVEIS = ('direitos',)                  # bloqueios que VOCÊ pode liberar (liberação especial); os técnicos continuam barrando
+
+
+def liberacao_valida(p: dict) -> dict | None:
+    """Liberação especial dada por você, presa ao arquivo: se o vídeo mudar, precisa liberar de novo."""
+    lib = p.get('liberacao') or {}
+    if not lib.get('itens'):
+        return None
+    if lib.get('hash', '') != (p.get('hash') or ''):
+        return None
+    return lib
 
 
 def conferencia(p: dict, rede: str) -> list[dict]:
@@ -812,6 +840,14 @@ def conferencia(p: dict, rede: str) -> list[dict]:
         item('direitos', dono in DONOS, f'Origem registrada: {dono}.' if dono in DONOS else 'Falta registrar de quem é o vídeo (seu, autorizado ou regra pública de cortes).')
     else:
         item('direitos', True, f'Origem registrada: {dono}.' if dono else 'Enviado por você, sem origem registrada (confira se pode postar).', False)
+    lib = liberacao_valida(p)
+    for x in out:
+        if x['item'] in LIBERAVEIS and x['bloqueia']:
+            if lib and x['item'] in lib['itens']:
+                quando = datetime.fromtimestamp(lib.get('t') or agora()).strftime('%d/%m %H:%M')
+                x.update(bloqueia=False, liberado=True, detalhe=x['detalhe'] + f' Liberação especial dada por você em {quando}: vai postar mesmo assim.')
+            else:
+                x['liberavel'] = True
     if p.get('origem') in ('agente', 'agente-manual'):
         _portao_agente1(p, item)
     if p.get('origem') == 'agente3' and p.get('projeto'):
@@ -883,6 +919,13 @@ def _publicar_um(pid: str, rede: str):
         return
     conf = conferencia(atual, rede)
     bloqueios = [x['detalhe'] for x in conf if x['bloqueia']]
+    if bloqueios and all(x.get('liberavel') for x in conf if x['bloqueia']):
+        msg = 'Precisa da sua liberação especial para postar: ' + ' '.join(bloqueios) + ' Toque em "Liberar e postar" se quiser postar mesmo assim.'
+        def pedir(q):
+            q['redes'][rede].update(status='liberacao', erro=msg[:500])
+            _anotar(q, rede, 'pede_liberacao', msg)
+        _mudar(pid, pedir)
+        return
     if bloqueios:
         msg = 'Conferência antes de postar: ' + ' '.join(bloqueios)
         def barrar(q):

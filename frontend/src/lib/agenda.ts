@@ -4,7 +4,7 @@ export type Prov = 'google'|'meta'|'tiktok';
 export type Rede = 'youtube'|'facebook'|'instagram'|'tiktok'|'kwai';
 export type Conta = {app:boolean;conectado:boolean;nome:string;client_id:string;paginas:{id:string;nome:string;instagram:string}[];pagina:string;erro:string;verificado?:number};
 export type Contas = Record<Prov,Conta>;
-export type StatusRede = {status:'agendado'|'postando'|'postado'|'erro'|'manual';link:string;erro:string};
+export type StatusRede = {status:'agendado'|'postando'|'postado'|'erro'|'manual'|'liberacao';link:string;erro:string};
 export type Post = {id:string;video:string;criado:number;quando:number;titulo:string;legenda:string;opcoes:{youtube_privacidade:string;tiktok_modo:string};redes:Partial<Record<Rede,StatusRede>>;preparando?:boolean;relatorio?:{t:number;rede:string;evento:string;detalhe:string}[]};
 
 export const REDES:{id:Rede;nome:string;prov:Prov|null}[] = [
@@ -69,6 +69,8 @@ export const listarPosts=(c:Cfg)=>chamar<{posts:Post[];agora:number}>(c,'GET','/
 export const postarAgora=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/agora`,{});
 export const cancelarPost=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/cancelar`,{});
 export const editarPost=(c:Cfg,id:string,d:{quando?:number;redes?:Rede[];titulo?:string;legenda?:string})=>chamar<Post>(c,'POST',`/posts/${id}/editar`,d);
+export const liberarPost=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/liberar`,{});
+export const AVISO_LIBERAR='Postar mesmo sem registrar de quem é o vídeo? Fica registrado que você deu esta liberação especial, só para este arquivo. A responsabilidade pelos direitos do vídeo fica com você.';
 export const marcarFeito=(c:Cfg,id:string,rede:Rede)=>chamar(c,'POST',`/posts/${id}/feito`,{rede});
 /** Baixa o vídeo do post. A senha vai no cabeçalho, nunca no endereço (endereços ficam no histórico). */
 export async function baixarVideoPost(c:Cfg,id:string,nome:string){

@@ -1431,6 +1431,15 @@ def acompanhar():
         sts = {r: d['status'] for r, d in p['redes'].items()}
         if any(s in ('agendado', 'postando') for s in sts.values()):
             continue
+        pede = {r: d.get('erro', '') for r, d in p['redes'].items() if d['status'] == 'liberacao'}
+        if pede:                          # espera a sua liberação especial (não é falha); avisa uma vez por arquivo
+            marca = p.get('hash') or p['id']
+            if c.get('aviso_liberacao') != marca:
+                _mudar(lambda e, cid=c['id']: [x.update(aviso_liberacao=marca) for x in e['cortes'] if x['id'] == cid])
+                avisar('falha', 'Precisa da sua liberação: ' + c['titulo'][:60],
+                       f'Corte: {c["titulo"]}\n\n' + ''.join(f'- {r.capitalize()}: {m}\n' for r, m in pede.items()) +
+                       '\nSe quiser postar mesmo assim, abra Publicações (Agendar posts) e toque em "Liberar e postar". Sem a sua liberação, nada é postado.\n')
+            continue
         links = {r: d.get('link', '') for r, d in p['redes'].items() if d['status'] == 'postado'}
         erros = {r: d.get('erro', '') for r, d in p['redes'].items() if d['status'] == 'erro'}
         _mudar(lambda e, cid=c['id']: [x.update(status='postado', postado=time.time(), links=links, erros=erros) for x in e['cortes'] if x['id'] == cid])

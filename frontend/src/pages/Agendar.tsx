@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Youtube, Instagram, Music2, CalendarClock, LogIn, LogOut, Loader2, Server, Copy, ExternalLink, Download, Send, Trash2, RefreshCw, Upload, CheckCircle2, AlertTriangle, Clock, Hand, Pencil, X, ChevronDown } from 'lucide-react';
+import { ShieldCheck, Youtube, Instagram, Music2, CalendarClock, LogIn, LogOut, Loader2, Server, Copy, ExternalLink, Download, Send, Trash2, RefreshCw, Upload, CheckCircle2, AlertTriangle, Clock, Hand, Pencil, X, ChevronDown } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import AgendarPost from '../components/AgendarPost';
 import ConferenciaPost from '../components/ConferenciaPost';
-import { REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, editarPost, cancelarPost, marcarFeito, baixarVideoPost, enderecoRetorno, type Contas, type Prov, type Post, type Rede, type StatusRede } from '../lib/agenda';
+import { REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, editarPost, cancelarPost, marcarFeito, baixarVideoPost, enderecoRetorno, type Contas, type Prov, type Post, type Rede, type StatusRede, liberarPost, AVISO_LIBERAR } from '../lib/agenda';
 
 const PROVS:{id:Prov;nome:string;redes:string;icone:typeof Youtube;help:'app_google'|'app_meta'|'app_tiktok';idLabel:string;segLabel:string}[] = [
   {id:'google',nome:'YouTube',redes:'Shorts no seu canal',icone:Youtube,help:'app_google',idLabel:'ID do cliente OAuth',segLabel:'Chave secreta do cliente'},
   {id:'meta',nome:'Facebook + Instagram',redes:'Reels na Página e no Instagram profissional',icone:Instagram,help:'app_meta',idLabel:'ID do app (Meta)',segLabel:'Chave secreta do app'},
   {id:'tiktok',nome:'TikTok',redes:'Vídeo nos rascunhos ou direto',icone:Music2,help:'app_tiktok',idLabel:'Client key',segLabel:'Client secret'},
 ];
-const ST:Record<string,[string,string]> = {agendado:['Agendado','info'],postando:['Postando...','info'],postado:['Postado','ok'],erro:['Erro','bad'],manual:['Postar no app','warn']};
+const ST:Record<string,[string,string]> = {agendado:['Agendado','info'],postando:['Postando...','info'],postado:['Postado','ok'],erro:['Erro','bad'],manual:['Postar no app','warn'],liberacao:['Esperando sua liberação','warn']};
 const fmtData=(ts:number)=>new Date(ts*1000).toLocaleString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
 const dia=(ts:number)=>new Date(ts*1000).toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
 
@@ -71,9 +71,9 @@ export function ContasPainel({aoMudar,onContas}:{aoMudar?:()=>void;onContas?:(c:
    </section>;
 }
 
-const EV:Record<string,string>={enviando:'conferido e enviando',postado:'publicado',tentar_de_novo:'falhou, vai tentar de novo',erro:'falhou',bloqueado:'barrado na conferência'};
+const EV:Record<string,string>={enviando:'conferido e enviando',postado:'publicado',tentar_de_novo:'falhou, vai tentar de novo',erro:'falhou',bloqueado:'barrado na conferência',pede_liberacao:'esperando sua liberação especial',liberado:'liberado por você'};
 const paraInput=(ts:number)=>{ const d=new Date(ts*1000); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
-const pendente=(p:Post)=>Object.values(p.redes).some(s=>s&&(s.status==='agendado'||s.status==='erro'||s.status==='postando'||s.status==='manual'));
+const pendente=(p:Post)=>Object.values(p.redes).some(s=>s&&(s.status==='agendado'||s.status==='erro'||s.status==='postando'||s.status==='manual'||s.status==='liberacao'));
 
 /** Uma linha da agenda: hora, redes e o que dá para fazer com o post (postar agora, mudar hora e redes, baixar, cancelar). */
 function PostLinha({p,acao}:{p:Post;acao:(f:()=>Promise<unknown>,ok:string)=>void}){
@@ -91,8 +91,8 @@ function PostLinha({p,acao}:{p:Post;acao:(f:()=>Promise<unknown>,ok:string)=>voi
      {p.preparando&&<p className="hint"><Loader2 size={13} className="spin"/> Preparando o vídeo no servidor (convertendo para MP4). No celular isso pode levar alguns minutos.</p>}
      {atrasado&&<p className="hint warn">Passou da hora e ainda não saiu. O servidor está ligado? Use Postar agora.</p>}
      <div className="post-redes">{(Object.entries(p.redes) as [Rede,StatusRede][]).map(([r,s])=><span key={r} className={'tag '+ST[s.status][1]} title={s.erro||s.link}>{REDES.find(x=>x.id===r)?.nome.replace(' (manual)','')}: {ST[s.status][0]}{s.status==='postado'&&s.link.startsWith('http')&&<a href={s.link.split(' ')[0]} target="_blank" rel="noreferrer"> <ExternalLink size={11}/></a>}</span>)}</div>
-     {Object.entries(p.redes).filter(([,s])=>s&&(s.status==='erro'||(s.status==='agendado'&&!!s.erro)||(s.status==='postado'&&!s.link.startsWith('http'))||s.link.includes('('))).map(([r,s])=><p key={r} className={'hint '+(s!.status==='erro'?'bad':s!.status==='agendado'?'warn':'')}><b>{REDES.find(x=>x.id===r)?.nome}:</b> {s!.erro||s!.link}</p>)}
-     {settings.servidor&&pendente(p)&&<ConferenciaPost id={p.id}/>}
+     {Object.entries(p.redes).filter(([,s])=>s&&(s.status==='erro'||s.status==='liberacao'||(s.status==='agendado'&&!!s.erro)||(s.status==='postado'&&!s.link.startsWith('http'))||s.link.includes('('))).map(([r,s])=><p key={r} className={'hint '+(s!.status==='erro'?'bad':s!.status==='agendado'?'warn':'')}><b>{REDES.find(x=>x.id===r)?.nome}:</b> {s!.erro||s!.link}</p>)}
+     {settings.servidor&&pendente(p)&&<ConferenciaPost id={p.id} onLiberado={()=>acao(async()=>{},'Liberado. Postando...')}/>}
      {!!p.relatorio?.length&&<details className="post-rel"><summary>Relatório da publicação</summary><ul>{p.relatorio.slice().reverse().map((e,k)=><li key={k}><small className="muted">{fmtData(e.t)}</small> <b>{REDES.find(x=>x.id===e.rede)?.nome.replace(' (manual)','')||e.rede}</b>: {EV[e.evento]||e.evento}{e.detalhe&&e.evento!=='postado'?` — ${e.detalhe}`:''}{e.evento==='postado'&&e.detalhe.startsWith('http')&&<a href={e.detalhe} target="_blank" rel="noreferrer"> abrir</a>}</li>)}</ul></details>}
      {editar&&<div className="post-editar">
        <label>Novo dia e hora<input type="datetime-local" value={hora} onChange={e=>setHora(e.target.value)}/></label>
@@ -103,6 +103,7 @@ function PostLinha({p,acao}:{p:Post;acao:(f:()=>Promise<unknown>,ok:string)=>voi
     </div>
     <div className="post-acoes">
      {Object.values(p.redes).some(s=>s?.status==='agendado'||s?.status==='erro')&&<button className="primary sm" onClick={()=>acao(()=>postarAgora(settings,p.id),'Postando agora...')}>{Object.values(p.redes).some(s=>s?.status==='erro')?<><RefreshCw size={14}/> Tentar de novo</>:<><Send size={14}/> Postar agora</>}</button>}
+     {Object.values(p.redes).some(s=>s?.status==='liberacao'||(s?.status==='erro'&&s.erro.includes('de quem é o vídeo')))&&<button className="primary sm" onClick={()=>{ if(window.confirm(AVISO_LIBERAR)) acao(()=>liberarPost(settings,p.id),'Liberado. Postando...'); }}><ShieldCheck size={14}/> Liberar e postar</button>}
      {pendente(p)&&!editar&&<button className="subtle sm" onClick={abrir}><Pencil size={14}/> Mudar hora ou redes</button>}
      <button className="subtle sm" onClick={()=>acao(()=>baixarVideoPost(settings,p.id,p.titulo||'corte'),'Vídeo baixado.')}><Download size={14}/> Baixar</button>
      {p.redes.kwai?.status==='manual'&&<button className="subtle sm" onClick={()=>acao(()=>marcarFeito(settings,p.id,'kwai'),'Kwai marcado como postado.')}><CheckCircle2 size={14}/> Já postei no Kwai</button>}
