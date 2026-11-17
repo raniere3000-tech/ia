@@ -104,7 +104,8 @@ if [ "$1" = "link" ]; then
   trap 'kill $SRV $PUB $VIGIA_TUNEL 2>/dev/null; pkill -f "python servidor.py" 2>/dev/null; pkill -x cloudflared 2>/dev/null' EXIT
   sleep 2
   while true; do
-  cloudflared tunnel --no-autoupdate --url http://localhost:${PORTA:-8787} 2>&1 | while read -r linha; do
+  # http2 (TCP) em vez de QUIC (UDP): muitas redes de celular e Wi-Fi bloqueiam UDP e o link dá "Erro 1033".
+  cloudflared tunnel --no-autoupdate --protocol ${TUNEL_PROTOCOLO:-http2} --url http://localhost:${PORTA:-8787} 2>&1 | tee -a "$HOME/cloudflared.log" | while read -r linha; do
     URL=$(echo "$linha" | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' || true)
     if [ -n "$URL" ]; then
       echo "$URL" > .url_atual
