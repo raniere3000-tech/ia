@@ -31,6 +31,7 @@ let eu = new Set();                      // os seus identificadores (número e L
 let minhaConversa = '';                  // para onde vão as respostas e os avisos
 const enviadas = new Set();              // ids das mensagens que a ponte mandou (não processa de novo)
 let pronta = false;
+let codigoPedido = false;                // um código por vez (pedir outro invalida o anterior)
 
 function dizer(...t) { console.log('  [WhatsApp]', ...t); }
 
@@ -62,29 +63,35 @@ function deMim(msg) {
   return eu.has(chat);                                            // ...na conversa com você mesmo
 }
 
+// Tentativa de pareamento que não terminou deixa chaves pela metade: começa do zero.
+if (parear) {
+  try { const c = JSON.parse(fs.readFileSync(path.join(AUTH, 'creds.json'), 'utf8')); if (!c.registered) fs.rmSync(AUTH, { recursive: true, force: true }); }
+  catch { fs.rmSync(AUTH, { recursive: true, force: true }); }
+}
+
 async function ligar() {
   fs.mkdirSync(AUTH, { recursive: true, mode: 0o700 });
   const { state, saveCreds } = await useMultiFileAuthState(AUTH);
   let version;
   try { version = (await fetchLatestWaWebVersion({})).version; } catch { /* usa a versão embutida */ }
-  sock = makeWASocket({ auth: state, logger: log, browser: Browsers.ubuntu('EstúdioClip'), markOnlineOnConnect: false,
+  sock = makeWASocket({ auth: state, logger: log, browser: Browsers.macOS('Chrome'), markOnlineOnConnect: false,
                         syncFullHistory: false, ...(version ? { version } : {}) });
   sock.ev.on('creds.update', saveCreds);
 
-  if (parear && !state.creds.registered) {
-    setTimeout(async () => {
+  sock.ev.on('connection.update', async (u) => {
+    // O código só pode ser pedido quando o WhatsApp já está pronto para parear (é quando ele mandaria o QR code).
+    if (u.qr && parear && !state.creds.registered && !codigoPedido) {
+      codigoPedido = true;
       try {
         const cod = await sock.requestPairingCode(parear);
         console.log('\n  ============================================================');
         console.log(`  CÓDIGO PARA LIGAR O WHATSAPP:  ${cod.slice(0, 4)}-${cod.slice(4)}`);
-        console.log('  No WhatsApp: Configurações > Aparelhos conectados > Conectar um aparelho');
+        console.log('  No WhatsApp: ⋮ > Aparelhos conectados > Conectar um aparelho');
         console.log('  > "Conectar com número de telefone" e digite o código acima.');
+        console.log('  Deixe esta tela aberta até aparecer "conectado".');
         console.log('  ============================================================\n');
       } catch (e) { dizer('Não consegui pedir o código:', e.message); process.exit(1); }
-    }, 3000);
-  }
-
-  sock.ev.on('connection.update', async (u) => {
+    }
     if (u.connection === 'open') {
       const id = sock.user?.id || '';
       const lid = sock.user?.lid || '';
@@ -101,6 +108,8 @@ async function ligar() {
     if (u.connection === 'close') {
       pronta = false;
       const cod = u.lastDisconnect?.error?.output?.statusCode;
+      if (parear) dizer(`conexão fechou (código ${cod ?? '?'}${cod === DisconnectReason.restartRequired ? ': normal depois de digitar o código, religando' : ''}).`);
+      if (parear && !state.creds.registered && cod !== DisconnectReason.restartRequired) codigoPedido = false;   // venceu: pede outro
       if (cod === DisconnectReason.loggedOut) {
         dizer('o aparelho foi desconectado no WhatsApp. Para ligar de novo: bash iniciar-termux.sh whatsapp SEU_NUMERO');
         fs.rmSync(AUTH, { recursive: true, force: true });
