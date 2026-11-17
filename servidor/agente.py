@@ -1133,6 +1133,9 @@ def processar_video(v: dict, quantos: int) -> list:
         if not v.get('titulo'):
             v['titulo'] = info.get('title') or 'vídeo'
         palavras = palavras_json3(legenda.read_text(encoding='utf-8', errors='replace')) if legenda else []
+        if info.get('trecho_inicial'):       # vídeo maior que o limite: só os primeiros minutos foram baixados
+            palavras = [p for p in palavras if p[1] <= dur]
+            anotar(f'"{v.get("titulo") or info.get("title", "")[:60]}" passa do limite: cortei só dos primeiros {int(dur // 60)} minutos.')
         fonte = 'legenda do YouTube'
         if len(palavras) < 40:
             fonte = 'IA'

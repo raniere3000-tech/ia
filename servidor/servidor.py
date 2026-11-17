@@ -307,9 +307,34 @@ def baixar_para_agente(url: str, pasta: Path, idioma: str, progresso):
         (pasta / 'cookies.tmp').unlink(missing_ok=True)
     if info is None:
         raise ag.ErroAgente(f'O vídeo passa de {int(MAX_MIN)} minutos ou é uma live.')
-    videos = sorted((a for a in pasta.glob('video.*') if a.suffix in ('.mp4', '.webm', '.mkv', '.mov')), key=lambda p: p.stat().st_size, reverse=True)
+    achar = lambda: sorted((a for a in pasta.glob('video.*') if a.suffix in ('.mp4', '.webm', '.mkv', '.mov')  # noqa: E731
+                            and not re.search(r'\.f\d+$', a.stem)), key=lambda p: p.stat().st_size, reverse=True)
+    videos = achar()
+    if not videos and info.get('is_live'):
+        raise ag.ErroAgente('Este vídeo é uma live que ainda está no ar. O agente tenta de novo depois que ela terminar.')
+    if not videos and (info.get('duration') or 0) > MAX_MIN * 60:
+        # O yt-dlp pula (sem erro) o vídeo que passa do limite: baixa só os primeiros MAX_MIN minutos e corta deles.
+        if not (ffmpeg_path() or shutil.which('ffmpeg')):
+            raise ag.ErroAgente(f'O vídeo tem {int(info["duration"] // 60)} minutos (limite {int(MAX_MIN)}). Para baixar só um pedaço, instale o FFmpeg: pkg install -y ffmpeg')
+        progresso(0)
+        estado['parte'] = 0
+        opts.update(download_ranges=yt_dlp.utils.download_range_func(None, [(0, MAX_MIN * 60)]), force_keyframes_at_cuts=False,
+                    match_filter=yt_dlp.utils.match_filter_func('!is_live'))
+        try:
+            ck = cookies_para(pasta)
+            if ck:
+                opts['cookiefile'] = ck
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True) or info
+        except Exception as e:  # noqa: BLE001
+            raise ag.ErroAgente(erro_amigavel(str(e)))
+        finally:
+            (pasta / 'cookies.tmp').unlink(missing_ok=True)
+        info = dict(info, duration=MAX_MIN * 60, trecho_inicial=True)
+        videos = achar()
     if not videos:
-        raise ag.ErroAgente('O arquivo não apareceu depois do download.')
+        sobras = ', '.join(a.name for a in pasta.glob('video.*'))[:200]
+        raise ag.ErroAgente('O arquivo não apareceu depois do download.' + (f' Ficou só: {sobras}.' if sobras else ''))
     legendas = sorted(pasta.glob('video.*.json3'), key=lambda p: ('orig' not in p.name, len(p.name)))
     return videos[0], info, (legendas[0] if legendas else None)
 
