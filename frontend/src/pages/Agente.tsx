@@ -396,8 +396,14 @@ export default function Agente(){
           <li>No WhatsApp, mande para esse contato: <b>I allow callmebot to send me messages</b></li>
           <li>Ele responde com a sua <b>apikey</b>. Cole aqui, guarde e toque em Mandar mensagem de teste.</li>
         </ol><p className="hint">O CallMeBot é um serviço de fora: o texto do aviso passa por ele. Por isso a mensagem leva só o título, o resumo e o link, nunca senha, código de aprovação ou o vídeo.</p></details>
-        <span className="field-label mt">Quais avisos mandar no WhatsApp</span>
-        <div className="chips">{([['aprovacao','Vídeo pronto para você aprovar'],['corte','Corte pronto para você aprovar'],['falha','Falhas e liberações'],['postado','Post enviado'],['agendado','Post agendado'],['canal','Canais novos sugeridos'],['semana','Resumo da semana']] as [string,string][]).map(([k,t])=><button key={k} type="button" className={'chip '+(zap.avisos[k]?'on':'')} aria-pressed={!!zap.avisos[k]} onClick={()=>salvar({whatsapp:{avisos:{[k]:!zap.avisos[k]}}})}>{t}</button>)}</div>
+        <span className="field-label mt">O que cada agente manda para o seu WhatsApp</span>
+        {([
+          ['Agente 1 · Cortes do Radar',[['a1_corte','Corte aprovado pelo diretor, esperando você'],['a1_reprovado','Corte reprovado pelo diretor'],['a1_canal','Canais novos sugeridos'],['a1_falha','Vídeo que não deu para cortar']]],
+          ['Agente 2 · Postagem',[['a2_liberacao','Post esperando a sua liberação'],['a2_falha','Post que falhou'],['a2_postado','Post enviado'],['a2_agendado','Post agendado'],['a2_semana','Resumo da semana']]],
+          ['Agente 3 · Vídeos com IA',[['a3_roteiro','Roteiro pronto para conferir'],['a3_aprovacao','Vídeo aprovado pelo diretor, esperando você'],['a3_refazendo','Diretor mandou refazer'],['a3_falha','Produção que parou']]],
+        ] as [string,[string,string][]][]).map(([nome,itens])=><div key={nome} className="mt"><b>{nome}</b>
+          <div className="chips">{itens.map(([k,t])=><button key={k} type="button" className={'chip '+(zap.avisos[k]?'on':'')} aria-pressed={!!zap.avisos[k]} onClick={()=>salvar({whatsapp:{avisos:{[k]:!zap.avisos[k]}}})}>{t}</button>)}</div></div>)}
+        <p className="hint">Os pedidos de aprovação (corte e vídeo) trazem o código para você responder ali mesmo: <b>aprovar VID-…</b> ou <b>agendar corte 2</b>. Os avisos do e-mail continuam com as escolhas da parte de e-mail.</p>
       </section>
       <section className="panel">
         <h3>Chaves do Gemini: grátis e com saldo</h3>

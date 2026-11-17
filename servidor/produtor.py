@@ -1407,6 +1407,11 @@ def decisao_do_diretor(ctx, pid: str, b: dict, render: dict, sha: str, versao: i
                 return {'status': 'rendering'}
             pj.mudar_dados(pid, r_)
             db.evento('qualidade', 'diretor_reprovou', 'projeto:' + pid, {'sha': sha, 'tentativa': tent + 1, 'motivos': vd['motivos'][:4]})
+            try:
+                ag.avisar_whatsapp('a3_refazendo', f'*EstúdioClip — Agente 3*\nO diretor de qualidade mandou refazer "{pj.obter(pid)["titulo"][:60]}" '
+                                                   f'(tentativa {tent + 1} de {qd.MAX_REFAZER}): ' + ' '.join(vd['motivos'])[:300])
+            except Exception as e:  # noqa: BLE001
+                print('produtor: aviso de refação', e)
             return {'proxima': True, 'recurso': 'leve', 'etapa': f'Diretor de qualidade mandou refazer (tentativa {tent + 1} de {qd.MAX_REFAZER})',
                     'refazer': True}
         msg = ('O diretor de qualidade reprovou o vídeo' + (f' depois de {tent} tentativa(s) de refazer' if tent else ' e não há como refazer sozinho') +

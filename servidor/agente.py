@@ -86,8 +86,11 @@ PADRAO = {
     'email': {'para': '', 'de': '', 'smtp': '', 'porta': 0, 'anexar': True,
               'avisos': {'corte': True, 'agendado': True, 'postado': True, 'falha': True, 'canal': True, 'semana': True}},
     # WhatsApp (CallMeBot): o mesmo fluxo de avisos, em texto curto com o link; 'aprovacao' = vídeo pronto para a sua aprovação final
-    'whatsapp': {'ligado': False, 'numero': '',
-                 'avisos': {'aprovacao': True, 'corte': True, 'agendado': False, 'postado': True, 'falha': True, 'canal': False, 'semana': True}},
+    # avisos do WhatsApp separados por agente (a1_ = Agente 1 cortes, a2_ = Agente 2 postagem, a3_ = Agente 3 vídeos com IA)
+    'whatsapp': {'ligado': False, 'numero': '', 'avisos': {
+        'a1_corte': True, 'a1_reprovado': False, 'a1_canal': False, 'a1_falha': True,
+        'a2_agendado': False, 'a2_postado': True, 'a2_liberacao': True, 'a2_falha': True, 'a2_semana': True,
+        'a3_roteiro': True, 'a3_refazendo': False, 'a3_aprovacao': True, 'a3_falha': True}},
     'orcamento': {'teto': 10.0, 'dolar': 5.6, 'preco_texto': 0.30, 'preco_audio': 1.00, 'preco_saida': 2.50},
     # qual chave do Gemini cada tarefa usa: 'gratis' (projeto sem cobrança) ou 'paga' (projeto com saldo)
     'chaves_uso': {'cortes': 'gratis', 'camera': 'gratis', 'roteiro': 'gratis', 'voz': 'gratis', 'imagens': 'paga', 'reserva': True},
@@ -444,7 +447,7 @@ def buscar_canais() -> int:
         anotar(f'{len(novos)} canal(is) novo(s) sugerido(s) para você aprovar.')
         avisar('canal', f'{len(novos)} canal(is) novo(s) para aprovar',
                'O agente achou estes canais em alta. Abra a aba Agente para aprovar ou recusar:\n\n' +
-               '\n'.join(f'- {c["nome"]} ({c["nicho"]}): média de {c["media"]:,} visualizações em {c["videos"]} vídeo(s) da semana'.replace(',', '.') for c in novos))
+               '\n'.join(f'- {c["nome"]} ({c["nicho"]}): média de {c["media"]:,} visualizações em {c["videos"]} vídeo(s) da semana'.replace(',', '.') for c in novos), zap_tipo='a1_canal')
     _mudar(lambda e: e['marcas'].update(busca=time.time()))
     return len(novos)
 
@@ -1073,9 +1076,10 @@ def _texto_zap(assunto: str, corpo: str) -> str:
     return f'*EstúdioClip — {assunto}*\n\n{resumo}' + ('\n\n' + '\n'.join(links) if links else '')
 
 
-def avisar(tipo: str, assunto: str, corpo: str, anexo: Path | None = None, nome_anexo: str = 'corte.mp4', zap: str | None = None) -> bool:
+def avisar(tipo: str, assunto: str, corpo: str, anexo: Path | None = None, nome_anexo: str = 'corte.mp4', zap: str | None = None,
+           zap_tipo: str = '') -> bool:
     """Avisa por e-mail e pelo WhatsApp (cada um com as suas escolhas). Devolve se o E-MAIL saiu."""
-    avisar_whatsapp(tipo, zap or _texto_zap(assunto, corpo))
+    avisar_whatsapp(zap_tipo or tipo, zap or _texto_zap(assunto, corpo))
     cfg = config()['email']
     if not cfg['avisos'].get(tipo, True) or not cfg['para']:
         return False
@@ -1134,10 +1138,13 @@ def email_corte(c: dict):
     elif menor:
         corpo += '\nO anexo é uma cópia menor (720p) para caber no e-mail. A versão completa está na aba Agente do aplicativo.\n'
     site = os.getenv('SITE', 'https://raniere3000-tech.github.io/ia/').rstrip('/') + '/'
+    fila = [x['id'] for x in sorted((x for x in estado()['cortes'] if x['status'] == 'pronto'), key=lambda x: x.get('criado', 0))]
+    n_fila = fila.index(c['id']) + 1 if c['id'] in fila else 0     # o mesmo número da lista "pendentes" do WhatsApp
     zap = (f'*EstúdioClip — corte aprovado pelo diretor de qualidade*\n\n{c["titulo"]}\n'
            f'Pontuação {c["nota"]}/99 · {c["fim"] - c["ini"]:.0f} s · de "{c["origem_titulo"][:80]}"\n\n'
-           f'Falta a sua aprovação final. Abra, assista e toque em "Aprovar e agendar":\n{site}#agente/fila')
-    ok = avisar('corte', 'Corte pronto: ' + c['titulo'], corpo, anexo, _nome_arq(c['titulo']), zap=zap)
+           f'Falta a sua aprovação final. Assista e toque em "Aprovar e agendar":\n{site}#agente/fila'
+           + (f'\n\nOu responda aqui: *agendar corte {n_fila}*' if n_fila else ''))
+    ok = avisar('corte', 'Corte pronto: ' + c['titulo'], corpo, anexo, _nome_arq(c['titulo']), zap=zap, zap_tipo='a1_corte')
     if menor:
         menor.unlink(missing_ok=True)
     return ok
@@ -1254,7 +1261,7 @@ def trabalhar_cortes(forcar: bool = False, link: str = '') -> str:
     except (ErroAgente, pg.ErroRede) as e:
         _marcar_visto(v['id'], 'erro: ' + str(e))
         anotar(f'Não deu para cortar "{v.get("titulo") or link}": {e}', 'erro')
-        avisar('falha', 'Um vídeo não pôde ser cortado', f'Vídeo: {v.get("titulo") or link}\nMotivo: {e}')
+        avisar('falha', 'Um vídeo não pôde ser cortado', f'Vídeo: {v.get("titulo") or link}\nMotivo: {e}', zap_tipo='a1_falha')
         return str(e)
     _marcar_visto(v['id'], f'{len(criados)} corte(s)')
     anotar(f'{len(criados)} corte(s) pronto(s) de "{v["titulo"][:80]}".', 'ok')
@@ -1262,6 +1269,9 @@ def trabalhar_cortes(forcar: bool = False, link: str = '') -> str:
     if reprovados:
         anotar(f'O diretor de qualidade reprovou {len(reprovados)} corte(s) de "{v["titulo"][:60]}" mesmo depois de refazer: '
                + ' '.join(reprovados[0]['qa']['diretor']['motivos'])[:200], 'erro')
+        avisar_whatsapp('a1_reprovado', f'*EstúdioClip — Agente 1*\nO diretor de qualidade reprovou {len(reprovados)} corte(s) de "{v["titulo"][:60]}" '
+                                        f'mesmo depois de refazer. Eles não vão para você nem para as redes.\nMotivo: '
+                                        + ' '.join(reprovados[0]['qa']['diretor']['motivos'])[:300])
     for c in [x for x in criados if x['status'] == 'pronto']:
         etapa('Enviando o corte por e-mail', 97)
         if email_corte(c):
@@ -1509,7 +1519,7 @@ def agendar_corte(cid: str) -> dict:
            '- YouTube: chega como ' + ('privado' if po['youtube_privacidade'] == 'private' else 'não listado' if po['youtube_privacidade'] == 'unlisted' else 'público') + '.\n'
            '- TikTok: chega ' + ('nos rascunhos, na caixa de entrada do aplicativo' if po['tiktok_modo'] == 'rascunho' else 'direto no perfil') + '.\n'
            '- Instagram e Facebook: saem públicos direto.\n'
-           '- Kwai: não aceita postagem automática; use o arquivo que chegou por e-mail.\n')
+           '- Kwai: não aceita postagem automática; use o arquivo que chegou por e-mail.\n', zap_tipo='a2_agendado')
     pg.acordar()
     return p
 
@@ -1552,7 +1562,7 @@ def acompanhar():
                 _mudar(lambda e, cid=c['id']: [x.update(aviso_liberacao=marca) for x in e['cortes'] if x['id'] == cid])
                 avisar('falha', 'Precisa da sua liberação: ' + c['titulo'][:60],
                        f'Corte: {c["titulo"]}\n\n' + ''.join(f'- {r.capitalize()}: {m}\n' for r, m in pede.items()) +
-                       '\nSe quiser postar mesmo assim, abra Publicações (Agendar posts) e toque em "Liberar e postar". Sem a sua liberação, nada é postado.\n')
+                       '\nSe quiser postar mesmo assim, abra Publicações (Agendar posts) e toque em "Liberar e postar". Sem a sua liberação, nada é postado.\n', zap_tipo='a2_liberacao')
             continue
         links = {r: d.get('link', '') for r, d in p['redes'].items() if d['status'] == 'postado'}
         erros = {r: d.get('erro', '') for r, d in p['redes'].items() if d['status'] == 'erro'}
@@ -1565,9 +1575,9 @@ def acompanhar():
         else:
             corpo += '\nEntre em cada aplicativo para conferir e deixar público o que chegou privado ou como rascunho.\n'
         if erros:
-            avisar('falha', 'Um post falhou em ' + ', '.join(erros), corpo)
+            avisar('falha', 'Um post falhou em ' + ', '.join(erros), corpo, zap_tipo='a2_falha')
         else:
-            avisar('postado', 'Post enviado: ' + c['titulo'][:60], corpo)
+            avisar('postado', 'Post enviado: ' + c['titulo'][:60], corpo, zap_tipo='a2_postado')
 
 
 def _numero(v):
@@ -1787,7 +1797,7 @@ def relatorio_semana():
             f'- {dias[int(fx.split("-")[0])]} {fx.split("-")[1]}: média de {h["views"] // h["n"]} visualizações em {h["n"]} post(s)\n' for fx, h in hs[:5])
     else:
         corpo += '\nAinda não há visualizações medidas para comparar horários (o agente mede 2 dias depois de cada post, pelo YouTube).\n'
-    avisar('semana', 'Resumo da semana', corpo)
+    avisar('semana', 'Resumo da semana', corpo, zap_tipo='a2_semana')
 
 
 # ---------------------------------------------------------------- comando e relógio

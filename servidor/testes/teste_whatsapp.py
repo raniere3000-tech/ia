@@ -57,7 +57,7 @@ db.migrar()
 api_v1.iniciar()
 ag.enviar_email = lambda *a, **k: 'mid'
 
-confere(not ag.avisar_whatsapp('falha', 'x'), 'desligado: não manda nada')
+confere(not ag.avisar_whatsapp('a1_falha', 'x'), 'desligado: não manda nada')
 try:
     ag.avisar_whatsapp('teste', 'x', erro=True)
     confere(False, 'teste sem número avisa o que falta')
@@ -70,12 +70,12 @@ confere(ag.config()['whatsapp']['numero'] == '5511912345678', 'número fica só 
 v = ag.ver()
 confere(v['chaves']['callmebot'] is True and 'CHAVE-SECRETA' not in json.dumps(v), 'a chave fica só no servidor')
 
-ag.avisar('falha', 'Um vídeo não pôde ser cortado', 'Vídeo: X\nMotivo: Y\nVeja: https://site/#fila')
+ag.avisar('falha', 'Um vídeo não pôde ser cortado', 'Vídeo: X\nMotivo: Y\nVeja: https://site/#fila', zap_tipo='a1_falha')
 m = recebidas[-1]
 confere(m['phone'] == ['+5511912345678'] and m['apikey'] == ['CHAVE-SECRETA'] and 'Motivo: Y' in m['text'][0] and 'https://site/#fila' in m['text'][0],
         'falha chega no WhatsApp com o motivo e o link')
 n = len(recebidas)
-ag.avisar('agendado', 'Post agendado', 'x')
+ag.avisar('agendado', 'Post agendado', 'x', zap_tipo='a2_agendado')
 confere(len(recebidas) == n, 'aviso desmarcado não vai para o WhatsApp')
 
 # vídeo pronto: só depois que o diretor aprovou
@@ -101,8 +101,14 @@ try:
     confere(False, 'chave errada: explica o que fazer')
 except ag.ErroAgente as e:
     confere('não confere' in str(e), 'chave errada: explica o que fazer')
-confere(not ag.avisar_whatsapp('falha', 'x') and any('WhatsApp não enviado' in l['texto'] for l in ag.estado()['log'][:3]),
+confere(not ag.avisar_whatsapp('a1_falha', 'x') and any('WhatsApp não enviado' in l['texto'] for l in ag.estado()['log'][:3]),
         'erro no envio fica no histórico e não trava o resto')
 
+resposta[0] = 'Message queued.'
+ag.salvar_config({'whatsapp': {'avisos': {'a2_postado': False}}})
+n = len(recebidas)
+ag.avisar('postado', 'Post enviado', 'x', zap_tipo='a2_postado')
+ag.avisar('falha', 'Falha na produção', 'y', zap_tipo='a3_falha')
+confere(len(recebidas) == n + 1 and 'Falha na produção' in recebidas[-1]['text'][0], 'cada agente tem a sua escolha: Agente 2 desligado não cala o Agente 3')
 print('\nTUDO OK' if not falhas else f'\n{falhas} FALHA(S)')
 sys.exit(1 if falhas else 0)

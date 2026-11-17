@@ -111,7 +111,7 @@ def zap_pronto(pid: str, sha: str) -> bool:
     dr = p['dados'].get('diretor') or {}
     refeito = f' (refeito {dr["tentativas"]} vez(es) até passar)' if dr.get('tentativas') else ''
     redes = ', '.join(x.capitalize() for x in ((p['dados']['briefing'].get('destinos') or {}).get('redes') or [])) or 'nenhuma rede escolhida'
-    return ag.avisar_whatsapp('aprovacao',
+    return ag.avisar_whatsapp('a3_aprovacao',
                               f'*EstúdioClip — vídeo pronto para a sua aprovação* [{apv.ref(pid)}]\n\n'
                               f'"{p["titulo"]}"\n{r.get("duracao", 0):.0f} s · versão {r.get("versao")} · redes: {redes}\n'
                               f'✅ Aprovado pelo diretor de qualidade{refeito}.\n\n'
@@ -180,7 +180,7 @@ def avisar_roteiro(pid: str) -> bool:
     resumo = '\n'.join(f'{i + 1}. {c.get("titulo", "")}: {c.get("texto", "")[:140]}' for i, c in enumerate(cenas[:12]))
     return ag.avisar('corte', f'Roteiro pronto para conferir [{apv.ref(pid)}]',
                      f'O roteiro e o storyboard de "{p["titulo"]}" estão prontos.\n\n{resumo}\n\n'
-                     f'Confira, edite se quiser e aprove no site para o vídeo ser produzido: {_link(pid)}')
+                     f'Confira, edite se quiser e aprove no site para o vídeo ser produzido: {_link(pid)}', zap_tipo='a3_roteiro')
 
 
 def avisar_falha(pid: str, msg: str) -> bool:
@@ -191,7 +191,7 @@ def avisar_falha(pid: str, msg: str) -> bool:
         titulo = pid
     return ag.avisar('falha', f'Falha na produção [{apv.ref(pid)}]',
                      f'A produção de "{titulo}" parou depois das tentativas automáticas.\n\nMotivo: {msg[:600]}\n\n'
-                     f'Veja em Fila e aprovações e toque em "Tentar de novo": {apv.SITE}#fila')
+                     f'Veja em Fila e aprovações e toque em "Tentar de novo": {apv.SITE}#fila', zap_tipo='a3_falha')
 
 
 # ---------------------------------------------------------------- leitura das respostas
