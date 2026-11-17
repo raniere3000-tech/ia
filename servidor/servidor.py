@@ -28,6 +28,7 @@ import visual_presets as vp
 import gameplay_indexer as gpi
 import modo_render as mr
 import perfis as pf
+import publish_package as pub
 import banco as db
 import autenticacao as au
 import projetos as pj
@@ -515,7 +516,7 @@ class Handler(BaseHTTPRequestHandler):
             self.json(e.status, {'detail': str(e), **(getattr(e, 'extra', None) or {})})
         except apv.ErroAprovacao as e:
             self.json(e.status, {'detail': str(e)})
-        except (pg.ErroRede, ag.ErroAgente, mo.ErroModelo, vp.ErroEstilo, gpi.ErroGameplay, pf.ErroPerfil, produtor.ErroProdutor, rd.ErroRender, ValueError, FileNotFoundError) as e:
+        except (pg.ErroRede, ag.ErroAgente, mo.ErroModelo, vp.ErroEstilo, gpi.ErroGameplay, pf.ErroPerfil, pub.ErroPacote, produtor.ErroProdutor, rd.ErroRender, ValueError, FileNotFoundError) as e:
             self.json(400, {'detail': str(e)})
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -545,6 +546,12 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == '/agente':
             self.token_ok()
             return self.json(200, ag.ver())
+        mk = re.fullmatch(r'/agente/cortes/(\w+)/pacote(?:/capa/(\d))?', caminho)
+        if mk:
+            self.token_ok()
+            if mk.group(2) is not None:
+                return self.enviar_arquivo(pub.capa_arquivo(mk.group(1), int(mk.group(2))), 'capa')
+            return self.json(200, pub.obter(mk.group(1)))
         if caminho == '/perfis':
             self.token_ok()
             return self.json(200, {'perfis': pf.listar()})
@@ -607,7 +614,7 @@ class Handler(BaseHTTPRequestHandler):
         tamanho = caminho_arq.stat().st_size
         self.send_response(200)
         self.cors()
-        self.send_header('Content-Type', 'video/mp4' if caminho_arq.suffix == '.mp4' else 'video/webm')
+        self.send_header('Content-Type', 'image/jpeg' if caminho_arq.suffix == '.jpg' else 'video/mp4' if caminho_arq.suffix == '.mp4' else 'video/webm')
         self.send_header('Content-Length', str(tamanho))
         self.send_header('X-Titulo', re.sub(r'[^\x20-\x7e]', '', j.get('titulo') or '')[:200])
         self.end_headers()
@@ -681,6 +688,16 @@ def _rotas_agenda(self, caminho: str):
         return ag.acao_canal(d)
     if caminho == '/modelos':
         return mo.salvar(d)
+    mk = re.fullmatch(r'/agente/cortes/(\w+)/pacote/(montar|editar|aprovar)', caminho)
+    if mk:
+        c = next((x for x in ag.estado()['cortes'] if x['id'] == mk.group(1)), None)
+        if not c:
+            raise ag.ErroAgente('Corte não encontrado.')
+        if mk.group(2) == 'montar':
+            return pub.montar(c, ag.config()['postagem']['redes'], d.get('redes'))
+        if mk.group(2) == 'editar':
+            return pub.editar(mk.group(1), d)
+        return pub.aprovar(mk.group(1), 'site')
     if caminho == '/perfis':
         return pf.salvar(d, str(d.get('id', '')))
     mp = re.fullmatch(r'/perfis/(\w+)/(duplicar|restaurar|apagar)', caminho)

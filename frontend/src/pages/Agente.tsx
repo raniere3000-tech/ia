@@ -1,7 +1,9 @@
+import PacotePublicacao from '../components/PacotePublicacao';
+import Perfis from '../components/Perfis';
 import GameplayNarrativa from '../components/GameplayNarrativa';
 import { ESTILOS } from '../lib/estilosVisuais';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bot, Scissors, Send, Square, Play, Search, Link2, Loader2, CheckCircle2, AlertTriangle, Trash2, Mail, Download, Eye, Plus, X, KeyRound, Clock, RefreshCw, ExternalLink, CalendarClock, ShieldCheck } from 'lucide-react';
+import { Bot, Scissors, Send, Square, Play, Search, Link2, Loader2, CheckCircle2, AlertTriangle, Trash2, Mail, Download, Eye, Plus, X, KeyRound, Clock, RefreshCw, ExternalLink, CalendarClock, ShieldCheck, Package } from 'lucide-react';
 import { useApp } from '../state';
 import { REDES } from '../lib/agenda';
 import { useServidor } from '../components/Servidor2';
@@ -86,7 +88,7 @@ function CanalLinha({c,fazer}:{c:Canal;fazer:(d:Parameters<typeof acaoCanal>[1])
 
 function CorteLinha({c,fazer}:{c:CorteAgente;fazer:(acao:'descartar'|'agendar'|'liberar'|'email')=>void}){
   const {settings,toast}=useApp();
-  const [url,setUrl]=useState(''); const [busy,setBusy]=useState(false);
+  const [url,setUrl]=useState(''); const [busy,setBusy]=useState(false); const [pacote,setPacote]=useState(false);
   useEffect(()=>()=>{ if(url) URL.revokeObjectURL(url); },[url]);
   const trazer=async(baixar:boolean)=>{
     setBusy(true);
@@ -98,6 +100,7 @@ function CorteLinha({c,fazer}:{c:CorteAgente;fazer:(acao:'descartar'|'agendar'|'
   };
   const [rot,cls]=ST[c.status]||[c.status,''];
   return <li className="ag-corte">
+    {pacote&&<PacotePublicacao corte={c.id} onClose={()=>setPacote(false)}/>}
     {url&&<video src={url} controls playsInline className="ag-video"/>}
     <div className="grow">
       <div className="label-row"><strong>{c.titulo}</strong><span className={'tag '+cls}>{rot}</span>{c.tipo==='manual'?<span className="tag">feito por você</span>:<span className="tag">pontuação {c.nota}/99</span>}<span className="tag">{c.modelo_nome||'Sem template'}</span>{c.espera&&c.status==='pronto'&&<span className="tag warn">guardado, fora da fila</span>}{c.email&&<span className="tag"><Mail size={11}/> enviado por e-mail</span>}</div>
@@ -117,6 +120,7 @@ function CorteLinha({c,fazer}:{c:CorteAgente;fazer:(acao:'descartar'|'agendar'|'
       <button className="subtle sm" disabled={busy} onClick={()=>trazer(true)}><Download size={14}/> Baixar</button>
       {c.status==='pronto'&&!c.conferencia?.bloqueios.length&&<button className="primary sm" onClick={()=>fazer('agendar')}><CalendarClock size={14}/> Aprovar e agendar</button>}
       {c.status==='pronto'&&!!c.conferencia?.bloqueios.length&&(c.conferencia.liberavel?<button className="primary sm" onClick={()=>fazer('liberar')}><ShieldCheck size={14}/> Liberar e agendar mesmo assim</button>:<button className="primary sm" disabled><CalendarClock size={14}/> Aprovar e agendar</button>)}
+      {c.status==='pronto'&&<button className="subtle sm" onClick={()=>setPacote(true)}><Package size={14}/> Pacote de publicação</button>}
       <button className="subtle sm" onClick={()=>fazer('email')}><Mail size={14}/> E-mail</button>
       {c.status!=='descartado'&&c.status!=='postado'&&<button className="link-btn" onClick={()=>fazer('descartar')}><Trash2 size={13}/> Descartar</button>}
     </div>}
@@ -211,6 +215,7 @@ export default function Agente(){
   const guardarChaves=(k:Partial<typeof chaves>)=>run(async()=>{ const r=await salvarChaves(settings,k); setChaves({gemini:'',gemini_pago:'',youtube:'',email_senha:'',pexels:'',pixabay:'',callmebot:''}); return r; },'Guardado no servidor.');
 
   return <div className="agente">
+    <Perfis atual={co.perfil||''} escolher={id=>salvar({cortes:{perfil:id}})} modelos={v.modelos}/>
     <GameplayNarrativa modelos={v.modelos}/>
     <section className="panel ag-topo">
       <div className={'ag-card '+(co.ligado?'on':'')}>

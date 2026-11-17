@@ -37,6 +37,7 @@ import cofre
 import modelos as mo
 import modo_render as mr
 import perfis as pf
+import publish_package as pub
 import visual_presets as vp
 import postagem as pg
 import hashlib
@@ -1500,6 +1501,9 @@ def conferir(c: dict, e: dict | None = None) -> dict:
     if qa.get('erros'):
         bloq.append('A inspeção do corte achou problema técnico: ' + ' '.join(qa['erros']))
     avisos += qa.get('avisos', [])
+    sit = pub.situacao(c)
+    if sit is not None and not sit['aprovado']:       # o corte tem pacote de publicação: o que sai é o pacote APROVADO (texto, capa e arquivo)
+        bloq.append('O pacote de publicação deste corte não foi aprovado, ou mudou depois da aprovação. Confira e aprove o pacote.')
     outros = [x for x in e['cortes'] if x['id'] != c['id'] and x['status'] in ('agendado', 'postado')]
     if c.get('hash') and any(x.get('hash') == c['hash'] for x in outros):
         bloq.append('Este mesmo arquivo já foi agendado ou postado.')
@@ -1609,12 +1613,16 @@ def agendar_corte(cid: str, liberado: bool = False, quem: str = 'site') -> dict:
     if not vaga:
         raise ErroAgente('Não há horário livre. Marque mais horários na parte Postagem.')
     legenda = c.get('legenda_post') or (c['titulo'] + '\n\n' + ' '.join(c['hashtags'])).strip()
-    redes = [r for r in (c.get('redes') or po['redes']) if r in pg.REDES]
-    if c.get('redes'):
+    sit = pub.situacao(c)
+    titulo_post = c['titulo']
+    if sit:                                           # pacote aprovado: usa o texto exato aprovado, sem acrescentar nada
+        legenda, titulo_post = sit['descricao'], sit['titulo']
+    redes = [r for r in ((sit['redes'] if sit else None) or c.get('redes') or po['redes']) if r in pg.REDES]
+    if c.get('redes') or sit:
         sem = [r for r in redes if r not in po['redes']]
         if sem:
             raise ErroAgente('O perfil deste corte quer postar em ' + ', '.join(x.capitalize() for x in sem) + ', mas essa rede não está ligada em Postagem.')
-    p = pg.criar_post({'video': c['video'], 'redes': redes, 'quando': vaga['quando'], 'titulo': c['titulo'], 'legenda': legenda,
+    p = pg.criar_post({'video': c['video'], 'redes': redes, 'quando': vaga['quando'], 'titulo': titulo_post, 'legenda': legenda,
                        'youtube_privacidade': po['youtube_privacidade'], 'tiktok_modo': po['tiktok_modo'],
                        'modelo': c.get('modelo', ''), 'origem': 'agente-manual' if c.get('tipo') == 'manual' else 'agente', 'repetir': True,
                        'direitos': c.get('direitos') or _direitos_do_canal(c)})
