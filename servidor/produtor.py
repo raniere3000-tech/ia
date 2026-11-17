@@ -1388,14 +1388,89 @@ def etapa_final(ctx, pid, p, b):
     render = {'id': rid, 'sha': sha, 'versao': versao, 'duracao': conf['duracao'], 'validado': True, 'avisos': conf['avisos'], 'assets': ids,
               'tamanho': final.stat().st_size, 'criado': time.time(), 'codec': f'{conf["codec"]}/{conf["audio"]}', 'largura': W, 'altura': H}
 
+    return decisao_do_diretor(ctx, pid, b, render, sha, versao, conf)
+
+
+def decisao_do_diretor(ctx, pid: str, b: dict, render: dict, sha: str, versao: int, conf: dict) -> dict:
+    """Depois do vídeo montado: aprovado vai para você; reprovado é refeito (ou, sem mais o que tentar, para com o motivo)."""
+    # Diretor de qualidade: só manda para a sua aprovação o que ele aprovou; o que reprovar é refeito (até QA_MAX_REFAZER vezes)
+    vd = qd.veredito(pj.obter(pid)['dados'].get('qualidade'))
+    dir0 = pj.obter(pid)['dados'].get('diretor') or {}
+    tent = int(dir0.get('tentativas') or 0) if dir0.get('ciclo') == ctx.id else 0
+    if not vd['aprovado']:
+        refez = tent < qd.MAX_REFAZER and _refazer_pelo_diretor(pid, vd, b)
+        hist = (list(dir0.get('historico') or []) + [{'t': time.time(), 'sha': sha, 'versao': versao, 'veredito': 'reprovado', 'motivos': vd['motivos']}])[-20:]
+        if refez:
+            def r_(d, _p):
+                d['diretor'] = {'veredito': 'refazendo', 'sha': sha, 'motivos': vd['motivos'], 'tentativas': tent + 1, 'ciclo': ctx.id, 'historico': hist}
+                d['render_reprovado'] = render
+                return {'status': 'rendering'}
+            pj.mudar_dados(pid, r_)
+            db.evento('qualidade', 'diretor_reprovou', 'projeto:' + pid, {'sha': sha, 'tentativa': tent + 1, 'motivos': vd['motivos'][:4]})
+            return {'proxima': True, 'recurso': 'leve', 'etapa': f'Diretor de qualidade mandou refazer (tentativa {tent + 1} de {qd.MAX_REFAZER})',
+                    'refazer': True}
+        msg = ('O diretor de qualidade reprovou o vídeo' + (f' depois de {tent} tentativa(s) de refazer' if tent else ' e não há como refazer sozinho') +
+               ': ' + ' '.join(vd['motivos'])[:400] + ' Ajuste as cenas apontadas e mande produzir de novo.')
+
+        def rep(d, _p):
+            d['diretor'] = {'veredito': 'reprovado', 'sha': sha, 'motivos': vd['motivos'], 'tentativas': tent, 'ciclo': ctx.id, 'historico': hist}
+            d['render_reprovado'] = render
+            d.setdefault('producao', {})['erro'] = msg
+            return {'status': 'failed'}
+        pj.mudar_dados(pid, rep)
+        db.evento('qualidade', 'diretor_desistiu', 'projeto:' + pid, {'sha': sha, 'tentativas': tent})
+        try:
+            import emails
+            emails.avisar_falha(pid, msg)
+        except Exception as e:  # noqa: BLE001
+            print('produtor: aviso do diretor', e)
+        return {'resultado': {'render': None, 'diretor': 'reprovado'}, 'etapa': 'Reprovado pelo diretor de qualidade'}
+
     def f(d, _p):
         d['render'] = render
         d.setdefault('renders', []).append({k: render[k] for k in ('id', 'sha', 'versao', 'duracao', 'criado')})
         d['revisao'] = {'status': 'pendente', 'historico': d.get('revisao', {}).get('historico', [])}
+        hist = (list((d.get('diretor') or {}).get('historico') or []) + [{'t': time.time(), 'sha': sha, 'versao': versao, 'veredito': 'aprovado'}])[-20:]
+        d['diretor'] = {'veredito': 'aprovado', 'sha': sha, 'motivos': [], 'tentativas': tent, 'ciclo': ctx.id, 'historico': hist, 't': time.time()}
+        d.pop('render_reprovado', None)
         return {'status': 'ready_for_review'}
     pj.mudar_dados(pid, f)
-    db.evento('agente3', 'render_pronto', 'projeto:' + pid, {'sha': sha, 'versao': versao, 'avisos': conf['avisos']})
+    db.evento('agente3', 'render_pronto', 'projeto:' + pid, {'sha': sha, 'versao': versao, 'avisos': conf['avisos'], 'diretor': 'aprovado', 'refeito': tent})
     return {'proxima': True, 'recurso': 'leve', 'etapa': 'Avisando por e-mail'}
+
+
+def _refazer_pelo_diretor(pid: str, vd: dict, b: dict) -> bool:
+    """Marca para refazer só as cenas que o diretor reprovou. Documentário: troca a foto. Desenho animado: planos abertos e
+    personagens afastados. Falha técnica: monta tudo de novo. Devolve False quando não há nada diferente a tentar."""
+    p = pj.obter(pid)
+    cenas = p['dados'].get('cenas') or []
+    alvo = [i for i, c in enumerate(cenas) if c.get('id') in vd['cenas']]
+    if vd.get('tecnico'):
+        alvo = list(range(len(cenas)))
+    if not alvo:
+        return False
+    eid = b.get('estilo')
+    mudou = []
+
+    def m(d, _p):
+        for i in alvo:
+            c = d['cenas'][i]
+            if eid == 'animado2d' and not vd.get('tecnico'):
+                forte = qd.correcao_forte(c)
+                if not forte:
+                    continue
+                c.update(forte)
+            elif eid == 'documentario' and not vd.get('tecnico') and not (c.get('imagem') or {}).get('manual'):
+                fora = [str(x) for x in [(c.get('imagem') or {}).get('id')] + [f_.get('id') for f_ in (c.get('fotos_planos') or {}).values()] if x]
+                c['fotos_recusadas'] = (list(c.get('fotos_recusadas') or []) + fora)[-30:]
+                c['variante_imagem'] = int(c.get('variante_imagem') or 0) + 1
+                c.pop('imagem', None)
+                c.pop('fotos_planos', None)
+            c['refazer'] = int(c.get('refazer') or 0) + 1
+            c.pop('clipe', None)
+            mudou.append(c.get('id'))
+    pj.mudar_dados(pid, m)
+    return bool(mudou)
 
 
 def etapa_notificar(ctx, pid, p, b):
@@ -1434,6 +1509,8 @@ def job_produzir(ctx):
             ctx.dados['etapa'] = 'visual' if r.get('etapa') == 'Imagens' else 'render'
         elif etapa == 'revisar' and r.get('etapa') == 'Roteiro':
             ctx.dados['etapa'] = 'roteiro'
+        elif etapa == 'final' and r.get('refazer'):
+            ctx.dados['etapa'] = 'narracao'      # refaz pelo caminho normal: o que não mudou sai do cache
         else:
             ctx.dados['etapa'] = SEGUINTE[etapa]
     return r

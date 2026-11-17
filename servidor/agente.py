@@ -1114,7 +1114,7 @@ def _semana_ini() -> float:
 
 def cortes_da_semana() -> int:
     ini = _semana_ini()
-    return sum(1 for c in estado()['cortes'] if c['criado'] >= ini and c['status'] != 'descartado')
+    return sum(1 for c in estado()['cortes'] if c['criado'] >= ini and c['status'] not in ('descartado', 'reprovado'))
 
 
 def processar_video(v: dict, quantos: int) -> list:
@@ -1157,7 +1157,22 @@ def processar_video(v: dict, quantos: int) -> list:
             vid = uuid.uuid4().hex[:12]
             editar(arq, c, palavras, tpl, pg.VIDEOS / (vid + '.mp4'), pasta)
             qa = inspecionar_corte(pg.VIDEOS / (vid + '.mp4'), c, palavras, pasta)
-            c.update(id=uuid.uuid4().hex[:10], chave=secrets.token_urlsafe(18), video=vid, criado=time.time(), status='pronto', post='',
+            # Diretor de qualidade: corte reprovado é refeito (ajusta começo/fim ou troca o template) até aprovar ou acabar as tentativas
+            refeito = 0
+            while not veredito_corte(qa)['aprovado'] and refeito < MAX_REFAZER_CORTE:
+                refeito += 1
+                etapa(f'Diretor de qualidade mandou refazer o corte {i + 1} (tentativa {refeito} de {MAX_REFAZER_CORTE})', 62 + 34 * i / len(escolhidos))
+                ajuste = ajustar_corte(c, palavras, qa, co, dur)
+                if qa.get('erros') or not ajuste:
+                    tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
+                    ajustar_camera(tpl, arq, c, pasta, memo_cam)
+                else:
+                    c.update(ajuste)
+                editar(arq, c, palavras, tpl, pg.VIDEOS / (vid + '.mp4'), pasta)
+                qa = inspecionar_corte(pg.VIDEOS / (vid + '.mp4'), c, palavras, pasta)
+            vd = veredito_corte(qa)
+            qa['diretor'] = {'veredito': 'aprovado' if vd['aprovado'] else 'reprovado', 'motivos': vd['motivos'], 'tentativas': refeito, 't': time.time()}
+            c.update(id=uuid.uuid4().hex[:10], chave=secrets.token_urlsafe(18), video=vid, criado=time.time(), status='pronto' if vd['aprovado'] else 'reprovado', post='',
                      origem=v['id'], origem_titulo=v['titulo'][:150], canal=v.get('canal', ''), canal_nome=v.get('canal_nome', ''),
                      variacoes=usadas, fala=fonte, tamanho=(pg.VIDEOS / (vid + '.mp4')).stat().st_size, email=False,
                      tipo='agente', modelo=modelo['id'], modelo_nome=modelo['nome'], hash=_hash(pg.VIDEOS / (vid + '.mp4')),
@@ -1203,7 +1218,11 @@ def trabalhar_cortes(forcar: bool = False, link: str = '') -> str:
         return str(e)
     _marcar_visto(v['id'], f'{len(criados)} corte(s)')
     anotar(f'{len(criados)} corte(s) pronto(s) de "{v["titulo"][:80]}".', 'ok')
-    for c in criados:
+    reprovados = [c for c in criados if c['status'] == 'reprovado']
+    if reprovados:
+        anotar(f'O diretor de qualidade reprovou {len(reprovados)} corte(s) de "{v["titulo"][:60]}" mesmo depois de refazer: '
+               + ' '.join(reprovados[0]['qa']['diretor']['motivos'])[:200], 'erro')
+    for c in [x for x in criados if x['status'] == 'pronto']:
         etapa('Enviando o corte por e-mail', 97)
         if email_corte(c):
             _mudar(lambda e, cid=c['id']: [x.update(email=True) for x in e['cortes'] if x['id'] == cid])
@@ -1239,10 +1258,64 @@ def inspecionar_corte(arq: Path, c: dict, palavras: list, pasta: Path) -> dict:
         primeira = dentro[0][0] - ini
         if primeira > 2.0:
             avisos.append(f'O corte demora {primeira:.1f} s para alguém falar: o gancho pode se perder.')
-        ultima = str(dentro[-1][2]).strip()
-        if ultima and not ultima.endswith(('.', '!', '?')):
+        fins = fins_de_frase(palavras)
+        if fins is not None and dentro[-1][1] not in fins:
             avisos.append('O corte termina no meio de uma frase.')
     return {'ok': not erros, 'erros': erros, 'avisos': avisos[:6]}
+
+
+MAX_REFAZER_CORTE = int(os.getenv('QA_MAX_REFAZER', '3'))
+
+
+def fins_de_frase(palavras: list) -> set | None:
+    """Fim de cada frase (pelo instante em que a palavra acaba). Com pontuação, vale o ponto final; legenda automática
+    não tem pontuação, então vale uma pausa de 0,6 s. None = não dá para saber onde as frases acabam (não reprova por isso)."""
+    if not palavras:
+        return None
+    if any(str(p[2]).strip().endswith(('.', '!', '?')) for p in palavras):
+        return {p[1] for p in palavras if str(p[2]).strip().endswith(('.', '!', '?'))} | {palavras[-1][1]}
+    fins = {a[1] for a, b in zip(palavras, palavras[1:]) if b[0] - a[1] >= 0.6}
+    fala = palavras[-1][1] - palavras[0][0]
+    return (fins | {palavras[-1][1]}) if len(fins) >= fala / 30 else None    # pausas raras demais: não dá para confiar
+
+
+def veredito_corte(qa: dict) -> dict:
+    """Diretor de qualidade do corte: reprova problema técnico, corte que demora para alguém falar e corte que termina no meio da frase."""
+    motivos = list(qa.get('erros') or [])
+    motivos += [a for a in qa.get('avisos') or [] if a.startswith('O corte demora') or a.startswith('O corte termina no meio')]
+    return {'aprovado': not motivos, 'motivos': motivos[:6]}
+
+
+def ajustar_corte(c: dict, palavras: list, qa: dict, co: dict, dur_video: float) -> dict | None:
+    """Novo começo/fim para o corte reprovado: começa logo antes da primeira fala e termina no fim de uma frase,
+    respeitando a duração mínima e máxima. None = não há ajuste possível."""
+    ini, fim = float(c['ini']), float(c['fim'])
+    dentro = [p for p in palavras if ini <= p[0] <= fim]
+    if not dentro:
+        return None
+    n_ini = ini
+    if dentro[0][0] - ini > 2.0:
+        n_ini = max(0.0, dentro[0][0] - 0.3)
+    fins = fins_de_frase(palavras) or set()
+    fim_frase = lambda p: p[1] in fins  # noqa: E731
+    n_fim = fim
+    ult = [p for p in palavras if n_ini <= p[0] <= fim]
+    if ult and not fim_frase(ult[-1]):
+        depois = [p for p in palavras if fim < p[1] <= n_ini + co['dur_max'] and fim_frase(p)]
+        antes = [p for p in palavras if n_ini + co['dur_min'] <= p[1] <= fim and fim_frase(p)]
+        if depois:
+            n_fim = depois[0][1] + 0.3
+        elif antes:
+            n_fim = antes[-1][1] + 0.3
+    while n_fim - n_ini < co['dur_min'] and n_fim < (dur_video or n_fim + 1):       # ficou curto: estende até a próxima frase
+        prox = [p for p in palavras if p[1] > n_fim and fim_frase(p)]
+        if not prox or prox[0][1] - n_ini > co['dur_max']:
+            break
+        n_fim = prox[0][1] + 0.3
+    n_fim = min(n_fim, dur_video) if dur_video else n_fim
+    if abs(n_ini - ini) < 0.05 and abs(n_fim - fim) < 0.05:
+        return None
+    return {'ini': round(n_ini, 2), 'fim': round(n_fim, 2)}
 
 
 def _direitos_do_canal(c: dict) -> dict:
@@ -1404,7 +1477,8 @@ def agendar_corte(cid: str) -> dict:
 def trabalhar_postagem() -> str:
     """Agenda os cortes prontos e acompanha os que já foram ao ar."""
     feitos = 0
-    for c in [x for x in estado()['cortes'] if x['status'] == 'pronto' and not x.get('espera')]:
+    # só agenda sozinho o que VOCÊ aprovou (o diretor aprova antes; a aprovação final é sua)
+    for c in [x for x in estado()['cortes'] if x['status'] == 'pronto' and not x.get('espera') and x.get('aprovado_voce')]:
         problemas = conferir(c)['bloqueios']
         if problemas:       # fica parado esperando você, sem travar o resto da fila
             _mudar(lambda e, cid=c['id']: [x.update(espera=True) for x in e['cortes'] if x['id'] == cid])
@@ -1751,7 +1825,10 @@ def acao_corte(cid: str, acao: str) -> dict:
                 pass
         _mudar(lambda e: [x.update(status='descartado') for x in e['cortes'] if x['id'] == cid])
         limpar()
-    elif acao == 'agendar':
+    elif acao == 'agendar':           # agendar = a sua aprovação final
+        if c['status'] == 'reprovado':
+            raise ErroAgente('O diretor de qualidade reprovou este corte: ' + ' '.join((c.get('qa') or {}).get('diretor', {}).get('motivos') or [])[:300])
+        _mudar(lambda e: [x.update(aprovado_voce=time.time()) for x in e['cortes'] if x['id'] == cid])
         agendar_corte(cid)
     elif acao == 'email':
         if not email_corte(c):

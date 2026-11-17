@@ -128,7 +128,7 @@ export default function Revisar(){
   if(!pid) return <section className="panel empty-state"><h2>Nenhum vídeo escolhido</h2><button className="primary" onClick={()=>go('fila')}>Abrir Fila e aprovações</button></section>;
   const r=rev.dados;
   if(!r) return <section className="panel">{rev.erro?<p className="hint bad">{rev.erro}</p>:<p className="hint"><Loader2 size={14} className="spin"/> Abrindo...</p>}</section>;
-  const p=r.projeto; const d=p.dados as {briefing:Briefing;cenas:Cena[];render:Render|null;roteiro:{titulo:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[]}|null;producao?:{erro?:string};qualidade?:Qualidade;renders?:{id:string;versao:number}[];correcoes?:Correcao[]};
+  const p=r.projeto; const d=p.dados as {briefing:Briefing;cenas:Cena[];render:Render|null;roteiro:{titulo:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[]}|null;producao?:{erro?:string};qualidade?:Qualidade;diretor?:{veredito:string;motivos:string[];tentativas:number};renders?:{id:string;versao:number}[];correcoes?:Correcao[]};
   const render=d.render; const b=d.briefing;
   const destinos=redes??(b?.destinos?.redes||[]);
   const fazer=async(nome:string,f:()=>Promise<unknown>,ok:string)=>{ setBusy(nome); try{ await f(); toast(ok,'ok'); setTexto(''); rev.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } };
@@ -143,6 +143,8 @@ export default function Revisar(){
     {!render&&!esperandoRoteiro&&!['failed','cancelled','rejected'].includes(p.status)&&<p className="hint">O celular está trabalhando. Pode fechar esta tela: quando o vídeo ficar pronto ele aparece aqui e em Fila e aprovações{' '}(e chega um e-mail, se estiver configurado).</p>}
     {p.status==='failed'&&<div className="row-gap left"><button className="primary sm" onClick={()=>go('fila')}>Abrir a fila para tentar de novo</button></div>}
     {d.producao?.erro&&p.status==='failed'&&<p className="hint bad"><AlertTriangle size={14}/> {d.producao.erro}</p>}
+    {d.diretor?.veredito==='aprovado'&&render&&<p className="hint ok"><ShieldCheck size={14}/> Aprovado pelo diretor de qualidade{d.diretor.tentativas>0?` depois de refazer ${d.diretor.tentativas} vez(es)`:''}. Agora falta a sua aprovação final.</p>}
+    {d.diretor?.veredito==='refazendo'&&<p className="hint warn"><ShieldCheck size={14}/> O diretor de qualidade mandou refazer (tentativa {d.diretor.tentativas}): {d.diretor.motivos.join(' · ')}</p>}
     {render&&<div className="rev-video">
      {r.links.video?<video src={urlServidor(cfg,r.links.preview||r.links.video)} controls playsInline preload="metadata" poster={r.links.thumb?urlServidor(cfg,r.links.thumb):undefined} className={render.altura>render.largura?'vertical':''}/>:<p className="hint">Prévia indisponível.</p>}
      <div className="rev-info">

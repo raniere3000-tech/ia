@@ -900,6 +900,10 @@ def _portao_agente3(p: dict, item):
         depois = db.um("SELECT id FROM aprovacoes WHERE projeto=? AND render_sha=? AND decisao='rejeitado' AND criado>?", p['projeto'], p.get('render_sha') or '',
                        (ap or {}).get('criado') or 0)
         item('aprovacao', bool(ap) and not depois, 'Versão aprovada por você.' if ap and not depois else 'Esta versão do vídeo não está aprovada (ou foi rejeitada depois).')
+        import aprovacoes as apv
+        dr = apv.diretor_ok(pj.obter(p['projeto']), p.get('render_sha') or '')
+        item('diretor', dr['aprovado'], 'Aprovado pelo diretor de qualidade.' if dr['aprovado'] else
+             'O diretor de qualidade não aprovou este vídeo: ' + ' '.join(dr['motivos'])[:300])
         q = (pj.obter(p['projeto'])['dados'].get('qualidade') or {}).get('status', '')
         ok_q = q not in ('', 'falha_tecnica')      # sem conferência técnica registrada também não sai
         item('qualidade', ok_q, 'Conferência de qualidade sem falha técnica.' if ok_q else

@@ -10,7 +10,7 @@ type Parte = 'cortes'|'postagem'|'agente3'|'desempenho'|'avisos'|'fila';
 const num=(n:number)=>n.toLocaleString('pt-BR');
 const tempo=(s:number)=>s<60?`${s} s`:`${Math.floor(s/60)} min${s%60?` e ${s%60} s`:''}`;
 const quando=(ts:number)=>new Date(ts*1000).toLocaleString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-const ST:Record<string,[string,string]>={pronto:['Pronto','info'],agendado:['Agendado','warn'],postado:['Enviado','ok'],descartado:['Descartado','']};
+const ST:Record<string,[string,string]>={pronto:['Aprovado pelo diretor, falta você','info'],reprovado:['Reprovado pelo diretor','bad'],agendado:['Agendado','warn'],postado:['Enviado','ok'],descartado:['Descartado','']};
 
 /** Campo que só salva quando você sai dele (não manda um pedido a cada letra). */
 function Campo({valor,salvar,tipo='text',...resto}:{valor:string|number;salvar:(v:string)=>void;tipo?:string}&Omit<React.InputHTMLAttributes<HTMLInputElement>,'value'|'onChange'|'type'>){
@@ -105,13 +105,14 @@ function CorteLinha({c,fazer}:{c:CorteAgente;fazer:(acao:'descartar'|'agendar'|'
       {c.conferencia?.bloqueios.map(b=><p key={b} className="hint bad"><AlertTriangle size={13}/> Não pode ser publicado: {b}</p>)}
       {c.conferencia?.avisos.map(b=><p key={b} className="hint warn"><AlertTriangle size={13}/> {b}</p>)}
       {c.metricas&&Object.entries(c.metricas).filter(([,m])=>m.views!==null||m.curtidas!==null).map(([r,m])=><small key={r} className="muted">{r}: {m.views!==null?`${num(m.views)} visualizações`:''}{m.curtidas!==null?` · ${num(m.curtidas)} curtidas · ${num(m.comentarios||0)} comentários`:''}</small>)}
+      {c.qa?.diretor&&(c.qa.diretor.veredito==='aprovado'?<p className="hint ok">Diretor de qualidade aprovou{c.qa.diretor.tentativas>0?` depois de refazer ${c.qa.diretor.tentativas} vez(es)`:''}.</p>:<p className="hint bad"><AlertTriangle size={13}/> Diretor de qualidade reprovou mesmo depois de refazer {c.qa.diretor.tentativas} vez(es): {c.qa.diretor.motivos.join(' · ')}. Este corte não vai para você nem para as redes.</p>)}
       {c.erros&&Object.entries(c.erros).map(([r,m])=><p key={r} className="hint bad"><AlertTriangle size={13}/> {r}: {m}</p>)}
       {c.links&&Object.entries(c.links).filter(([,l])=>/^https?:/.test(l)).map(([r,l])=><a key={r} className="link-btn" href={l.split(' ')[0]} target="_blank" rel="noreferrer">{r} <ExternalLink size={12}/></a>)}
     </div>
     {c.video&&<div className="ag-canal-acoes">
       {!url&&<button className="subtle sm" disabled={busy} onClick={()=>trazer(false)}>{busy?<Loader2 size={14} className="spin"/>:<Eye size={14}/>} Ver</button>}
       <button className="subtle sm" disabled={busy} onClick={()=>trazer(true)}><Download size={14}/> Baixar</button>
-      {c.status==='pronto'&&<button className="primary sm" disabled={!!c.conferencia?.bloqueios.length} onClick={()=>fazer('agendar')}><CalendarClock size={14}/> Agendar</button>}
+      {c.status==='pronto'&&<button className="primary sm" disabled={!!c.conferencia?.bloqueios.length} onClick={()=>fazer('agendar')}><CalendarClock size={14}/> Aprovar e agendar</button>}
       <button className="subtle sm" onClick={()=>fazer('email')}><Mail size={14}/> E-mail</button>
       {c.status!=='descartado'&&c.status!=='postado'&&<button className="link-btn" onClick={()=>fazer('descartar')}><Trash2 size={13}/> Descartar</button>}
     </div>}
@@ -419,7 +420,7 @@ export default function Agente(){
     {parte==='fila'&&<>
       <section className="panel">
         <h3>Cortes feitos pelo agente</h3>
-        {v.cortes.length?<ul className="ag-cortes">{v.cortes.map(x=><CorteLinha key={x.id} c={x} fazer={a=>{ if(a==='descartar'&&!confirm('Descartar este corte? O arquivo é apagado do servidor.')) return; run(()=>acaoCorte(settings,x.id,a),a==='email'?'E-mail enviado.':a==='agendar'?'Corte agendado.':'Corte descartado.'); }}/>)}</ul>:<div className="empty"><strong>Nenhum corte ainda</strong><p>Aprove um canal e toque em Cortar agora, ou cole o link de um vídeo na parte Cortes.</p></div>}
+        {v.cortes.length?<ul className="ag-cortes">{v.cortes.map(x=><CorteLinha key={x.id} c={x} fazer={a=>{ if(a==='descartar'&&!confirm('Descartar este corte? O arquivo é apagado do servidor.')) return; run(()=>acaoCorte(settings,x.id,a),a==='email'?'E-mail enviado.':a==='agendar'?'Corte aprovado por você e agendado.':'Corte descartado.'); }}/>)}</ul>:<div className="empty"><strong>Nenhum corte ainda</strong><p>Aprove um canal e toque em Cortar agora, ou cole o link de um vídeo na parte Cortes.</p></div>}
       </section>
       <section className="panel">
         <h3>Histórico</h3>

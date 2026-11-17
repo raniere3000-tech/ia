@@ -5,7 +5,7 @@ import { useCfg, erroTexto } from './Servidor2';
 import { AVISO_LIBERAR } from '../lib/agenda';
 
 type Item={item:string;ok:boolean;bloqueia:boolean;detalhe:string;liberavel?:boolean;liberado?:boolean};
-const NOME:Record<string,string>={arquivo:'Arquivo',versao:'Versão',conta:'Conta e permissões',duracao:'Duração',direitos:'Direitos',origem_do_corte:'Origem do corte',aprovacao:'Aprovação (mesmo arquivo aprovado)',qualidade:'Qualidade (QA)',creditos:'Créditos',boas_praticas:'Boas práticas',formato:'Formato da plataforma'};
+const NOME:Record<string,string>={arquivo:'Arquivo',versao:'Versão',conta:'Conta e permissões',duracao:'Duração',direitos:'Direitos',origem_do_corte:'Origem do corte',aprovacao:'Aprovação (mesmo arquivo aprovado)',qualidade:'Qualidade (QA)',diretor:'Diretor de qualidade',creditos:'Créditos',boas_praticas:'Boas práticas',formato:'Formato da plataforma'};
 const ESTADO:Record<string,[string,string]>={agendado:['agendado',''],postando:['postando agora','warn'],postado:['postado','ok'],erro:['deu erro','bad'],manual:['você posta no app',''],bloqueado:['bloqueado','bad'],cancelado:['cancelado',''],liberacao:['esperando sua liberação','warn']};
 type Estado={status:string;erro:string;link:string};
 

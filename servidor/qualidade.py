@@ -26,6 +26,7 @@ ESCURO = 18          # média de brilho (0-255) abaixo disso: quadro escuro dema
 SEM_DETALHE = 7      # desvio padrão abaixo disso: imagem lisa, sem nada para ver
 PARECIDO = 6         # diferença média entre dois planos seguidos abaixo disso: parece o mesmo plano
 MAX_CORRECOES = int(os.getenv('QA_MAX_CORRECOES', '2'))
+MAX_REFAZER = int(os.getenv('QA_MAX_REFAZER', '3'))      # quantas vezes o diretor manda refazer o vídeo antes de desistir
 
 
 def _problema(tipo, sev, descricao, correcao, cena='', plano='', t=None, evidencia='', natureza='objetivo') -> dict:
@@ -231,3 +232,35 @@ def resumo(problemas: list, tecnico: dict | None) -> dict:
             'contagem': {'objetivo': sum(1 for p in problemas if p.get('natureza') != 'julgamento'),
                          'julgamento': sum(1 for p in problemas if p.get('natureza') == 'julgamento')},
             'tecnico': {'erros': (tecnico or {}).get('erros', []), 'avisos': (tecnico or {}).get('avisos', [])}}
+
+
+# ---------------------------------------------------------------- veredito do diretor (antes da sua aprovação)
+# Defeitos de IMAGEM medidos no vídeo pronto: estes o diretor reprova e manda refazer. Observações de roteiro, ritmo e
+# direção (e opiniões da IA de visão) não reprovam: vão junto para você ler na revisão.
+REPROVA = {'quadro_escuro', 'sem_detalhe', 'sai_do_quadro', 'cabeca_cortada', 'sobreposicao'}
+
+
+def veredito(q: dict | None) -> dict:
+    """{aprovado, motivos, cenas}: o vídeo só vai para a sua aprovação quando o diretor aprova."""
+    q = q or {}
+    if q.get('status') == 'falha_tecnica':
+        erros = (q.get('tecnico') or {}).get('erros') or ['falha técnica no arquivo']
+        return {'aprovado': False, 'motivos': ['Falha técnica: ' + '; '.join(erros)[:300]], 'cenas': [], 'tecnico': True}
+    ruins = [p for p in q.get('problemas') or [] if p.get('tipo') in REPROVA and p.get('natureza') != 'julgamento'
+             and p.get('severidade') in ('media', 'alta') and p.get('status') != 'resolvido']
+    if not q.get('status'):
+        return {'aprovado': False, 'motivos': ['O vídeo ainda não passou pela conferência do diretor de qualidade.'], 'cenas': [], 'tecnico': False}
+    return {'aprovado': not ruins, 'motivos': [p['descricao'] for p in ruins][:8],
+            'cenas': sorted({p.get('cena_id') for p in ruins if p.get('cena_id')}), 'tecnico': False}
+
+
+def correcao_forte(c: dict) -> dict | None:
+    """Refação pedida pelo diretor no desenho animado: todos os planos abertos e cada personagem num lugar diferente
+    (o jeito mais seguro de ninguém sair do quadro, ter a cabeça cortada ou ficar escondido). None = já está assim."""
+    planos = [dict(p, plano='WS') for p in (c.get('planos') or [])]
+    elenco = [dict(e) for e in (c.get('elenco') or [])]
+    lugares = ['esquerda', 'direita', 'centro']
+    for k, e in enumerate(elenco[:3]):
+        e['posicao'] = lugares[k]
+    novo = {'planos': planos, 'elenco': elenco}
+    return None if planos == (c.get('planos') or []) and elenco == (c.get('elenco') or []) else novo

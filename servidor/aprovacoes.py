@@ -181,6 +181,15 @@ def descricao(p: dict, dest: dict | None = None) -> dict:
             'link_original': ds.link_valido(dest.get('link_original')), 'avisos': ds.excede(legenda, redes)}
 
 
+def diretor_ok(p: dict, sha: str) -> dict:
+    """O diretor de qualidade aprovou ESTE arquivo? Vídeos feitos antes do diretor existir são julgados pelo laudo guardado."""
+    import qualidade as qd
+    d = p['dados'].get('diretor') or {}
+    if d.get('sha') == sha and d.get('veredito') in ('aprovado', 'reprovado'):
+        return {'aprovado': d['veredito'] == 'aprovado', 'motivos': d.get('motivos') or []}
+    return qd.veredito(p['dados'].get('qualidade'))
+
+
 def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: str, chave: str = '') -> dict:
     """Aprovação válida da versão final -> posts no Agente 2. Repetir a mesma chamada não duplica nada."""
     p = pj.obter(pid)
@@ -197,6 +206,9 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
         return {'ok': True, 'repetido': True, 'aprovacao': ja, 'posts': db.todos('SELECT * FROM publicacoes WHERE aprovacao=?', ja['id'])}
     if p['status'] not in ('ready_for_review', 'changes_requested'):
         raise ErroAprovacao(409, f'Este vídeo não está esperando aprovação (situação: {p["status"]}).')
+    dr = diretor_ok(p, render_sha)
+    if not dr['aprovado']:
+        raise ErroAprovacao(409, 'O diretor de qualidade não aprovou esta versão: ' + ' '.join(dr['motivos'])[:400] + ' Refaça as cenas apontadas.')
     dest = dict(p['dados']['briefing'].get('destinos') or {})
     if isinstance(destinos, dict):
         dest.update({k: v for k, v in destinos.items() if k in ('redes', 'quando', 'data', 'titulo', 'legenda', 'link_original')})
