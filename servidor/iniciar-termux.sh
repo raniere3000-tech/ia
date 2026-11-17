@@ -5,6 +5,7 @@
 #          bash iniciar-termux.sh sempre  -> liga sozinho quando o celular reinicia (precisa do app Termux:Boot)
 #          bash iniciar-termux.sh parear  -> gera um código de uso único (10 min) para conectar mais um aparelho
 #          bash iniciar-termux.sh diagnostico -> mede o celular (ficha + render de 5 s + prévia leve); não instala nada
+#          bash iniciar-termux.sh whatsapp 5511912345678 -> liga o seu WhatsApp (comandos e avisos na conversa com você mesmo)
 set -e
 cd "$(dirname "$0")"
 if [ "$1" = "senha" ]; then
@@ -35,6 +36,27 @@ if [ "$1" = "parear" ]; then
   else echo "  O endereço do servidor ainda não saiu. Espere o túnel ligar e rode de novo, ou gere o link no site em Ajustes > Aparelhos."; fi
   exit 0
 fi
+# Ponte do WhatsApp Web: instala as dependências (uma vez, e de novo quando mudarem depois de um git pull).
+ponte_deps() {
+  command -v node >/dev/null || pkg install -y nodejs
+  if [ ! -f whatsapp-ponte/node_modules/.ok ] || [ whatsapp-ponte/package.json -nt whatsapp-ponte/node_modules/.ok ]; then
+    echo "  Instalando a ponte do WhatsApp (uma vez, leva 1 a 2 minutos)..."
+    ( cd whatsapp-ponte && npm install --omit=dev --no-audit --no-fund && touch node_modules/.ok )
+  fi
+}
+ZAP_MARCA="${DADOS:-$HOME/.estudioclip}/whatsapp-ligado"
+if [ "$1" = "whatsapp" ]; then
+  NUM=$(echo "$2" | tr -dc '0-9')
+  if [ ${#NUM} -lt 12 ]; then echo "Use:  bash iniciar-termux.sh whatsapp 5511912345678   (55 + DDD + número, só o seu)"; exit 1; fi
+  ponte_deps
+  pkill -f "ponte-estudioclip" 2>/dev/null || true
+  pkill -f "whatsapp-ponte/ponte.mjs" 2>/dev/null || true
+  node whatsapp-ponte/ponte.mjs --parear "$NUM"
+  echo
+  echo "  WhatsApp ligado. Agora ligue o servidor de novo:  bash iniciar-termux.sh link"
+  echo "  Depois mande \"ajuda\" na conversa com você mesmo no WhatsApp."
+  exit 0
+fi
 if [ "$1" = "skills" ]; then
   command -v python >/dev/null || { echo "Falta o Python. Rode:  pkg install -y python"; exit 1; }
   python -m skills.relatorio $2
@@ -59,6 +81,8 @@ fi
 pkill -f "vigia-estudioclip" 2>/dev/null || true
 pkill -f "python servidor.py" 2>/dev/null && sleep 1 || true
 pkill -x cloudflared 2>/dev/null || true
+pkill -f "ponte-estudioclip" 2>/dev/null || true
+pkill -f "whatsapp-ponte/ponte.mjs" 2>/dev/null || true
 command -v termux-wake-lock >/dev/null && termux-wake-lock || true   # não deixa o Android dormir no meio do download
 
 if [ "$1" = "link" ]; then
@@ -90,6 +114,12 @@ if [ "$1" = "link" ]; then
   # Vigia: se o servidor cair (os agentes trabalham por horas), liga de novo em 5 segundos.
   bash -c 'while true; do python servidor.py; sleep 5; done # vigia-estudioclip' &
   SRV=$!
+  # WhatsApp (se você já ligou com: bash iniciar-termux.sh whatsapp SEU_NUMERO): comandos e avisos na conversa com você mesmo.
+  if [ -f "$ZAP_MARCA" ]; then
+    ponte_deps || true
+    bash -c 'while true; do node whatsapp-ponte/ponte.mjs; [ $? = 2 ] && break; sleep 10; done # ponte-estudioclip' &
+    echo "  WhatsApp: ponte ligada (mande \"ajuda\" na conversa com você mesmo)."
+  fi
   # Repete o aviso a cada 6 horas (o canal esquece mensagens depois de 12 horas).
   ( while sleep 21600; do [ -f .url_atual ] && curl -s -m 20 -d "$(assinar "$(cat .url_atual)")" "$TOPICO" >/dev/null; done ) &
   PUB=$!
@@ -101,7 +131,7 @@ if [ "$1" = "link" ]; then
       if [ "$falhas" -ge 2 ]; then echo "  (Túnel não responde: reiniciando o endereço...)"; pkill -x cloudflared 2>/dev/null || true; falhas=0; fi
     done ) &
   VIGIA_TUNEL=$!
-  trap 'kill $SRV $PUB $VIGIA_TUNEL 2>/dev/null; pkill -f "python servidor.py" 2>/dev/null; pkill -x cloudflared 2>/dev/null' EXIT
+  trap 'kill $SRV $PUB $VIGIA_TUNEL 2>/dev/null; pkill -f "python servidor.py" 2>/dev/null; pkill -x cloudflared 2>/dev/null; pkill -f "ponte-estudioclip" 2>/dev/null; pkill -f "whatsapp-ponte/ponte.mjs" 2>/dev/null' EXIT
   sleep 2
   while true; do
   # http2 (TCP) em vez de QUIC (UDP): muitas redes de celular e Wi-Fi bloqueiam UDP e o link dá "Erro 1033".

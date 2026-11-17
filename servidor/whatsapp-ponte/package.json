@@ -1,0 +1,10 @@
+{
+  "name": "estudioclip-whatsapp-ponte",
+  "private": true,
+  "type": "module",
+  "description": "Ponte do WhatsApp Web para o servidor do EstúdioClip (comandos e avisos na conversa com você mesmo).",
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "pino": "9.6.0"
+  }
+}

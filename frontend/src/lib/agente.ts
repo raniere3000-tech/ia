@@ -24,7 +24,7 @@ export type Desempenho = {
   filas:Record<string,{fila:number;postados:number;erros:number;manual:number;ultimo_erro:string}>; canais:Record<string,{n:number;views:number}>; medidos:number; indisponivel:string;
 };
 export type VisaoAgente = {
-  config:ConfigAgente; chaves:{gemini:boolean;gemini_pago?:boolean;youtube:boolean;email_senha:boolean;pexels?:boolean;pixabay?:boolean;callmebot?:boolean}; canais:Canal[]; cortes:CorteAgente[];
+  config:ConfigAgente; chaves:{gemini:boolean;gemini_pago?:boolean;youtube:boolean;email_senha:boolean;pexels?:boolean;pixabay?:boolean;callmebot?:boolean}; whatsapp_ponte?:boolean; canais:Canal[]; cortes:CorteAgente[];
   log:{t:number;tipo:string;texto:string}[]; gasto:{reais:number;chamadas:number}; semana:number; horarios:Record<string,{n:number;views:number}>;
   modelos:{id:string;nome:string;layout:string;formato:string}[]; ativos:string[]; desempenho:Desempenho;
   atual:{etapa:string;pct:number;ocupado:boolean}; opcoes:{idiomas:Record<string,string>;paises:Record<string,string>;nichos:string[];proibidos:string[];variacoes:Record<string,string>;motivos:string[]}; ffmpeg:boolean; agora:number;

@@ -1051,10 +1051,10 @@ def avisar_whatsapp(tipo: str, texto: str, erro: bool = False) -> bool:
     """Manda o aviso pelo WhatsApp, se estiver ligado e o tipo marcado. erro=True devolve o motivo em ErroAgente (teste)."""
     import whatsapp
     w = config()['whatsapp']
-    if not erro and (not w['ligado'] or not w['avisos'].get(tipo, False)):
+    if not erro and (not (w['ligado'] or whatsapp.ponte_ligada()) or not w['avisos'].get(tipo, False)):
         return False
     try:
-        whatsapp.enviar(w['numero'], segredos()['callmebot'], texto)
+        whatsapp.enviar_aviso(w['numero'], segredos()['callmebot'], texto)
         return True
     except whatsapp.ErroWhatsApp as e:
         if erro:
@@ -1791,11 +1791,16 @@ def relatorio_semana():
 
 
 # ---------------------------------------------------------------- comando e relógio
+def _ponte() -> bool:
+    import whatsapp
+    return whatsapp.ponte_ligada()
+
+
 def ver() -> dict:
     c, s, e = config(), segredos(), estado()
     mo.biblioteca(c['cortes']['template'])
     return {
-        'config': c, 'chaves': {'gemini': bool(s['gemini']), 'gemini_pago': bool(s['gemini_pago']), 'youtube': bool(s['youtube']), 'email_senha': bool(s['email_senha']), 'pexels': bool(s['pexels']), 'pixabay': bool(s['pixabay']), 'callmebot': bool(s['callmebot'])},
+        'config': c, 'chaves': {'gemini': bool(s['gemini']), 'gemini_pago': bool(s['gemini_pago']), 'youtube': bool(s['youtube']), 'email_senha': bool(s['email_senha']), 'pexels': bool(s['pexels']), 'pixabay': bool(s['pixabay']), 'callmebot': bool(s['callmebot'])}, 'whatsapp_ponte': _ponte(),
         'canais': sorted(e['canais'], key=lambda x: ({'aprovado': 0, 'sugerido': 1, 'recusado': 2}.get(x['status'], 3), -x.get('media', 0))),
         'cortes': [dict({k: v for k, v in x.items() if k != 'chave'}, conferencia=conferir(x, e) if x['status'] == 'pronto' else None)
                    for x in sorted(e['cortes'], key=lambda x: -x['criado'])][:80],

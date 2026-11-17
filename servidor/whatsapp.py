@@ -10,12 +10,15 @@ por isso a mensagem não leva senha, código de aprovação nem o vídeo.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import threading
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
+from pathlib import Path
 
 BASE = os.getenv('BASE_CALLMEBOT', 'https://api.callmebot.com')
 LIMITE = 1400              # o CallMeBot corta mensagens muito longas
@@ -32,10 +35,47 @@ def numero_limpo(n: str) -> str:
     return d if 10 <= len(d) <= 15 else ''
 
 
+PONTE = os.getenv('PONTE_WHATSAPP', 'http://127.0.0.1:' + os.getenv('PORTA_PONTE', '8788'))
+
+
+def ponte_ligada() -> bool:
+    """A ponte do WhatsApp Web (whatsapp-ponte/ponte.mjs) foi pareada e está rodando neste celular?"""
+    dados = Path(os.getenv('DADOS', str(Path.home() / '.estudioclip')))
+    if not (dados / 'whatsapp-ligado').exists():
+        return False
+    try:
+        with urllib.request.urlopen(PONTE + '/estado', timeout=3) as r:
+            return bool(json.loads(r.read(2000) or b'{}').get('pronta'))
+    except (OSError, ValueError):
+        return False
+
+
+def _pela_ponte(texto: str) -> None:
+    req = urllib.request.Request(PONTE + '/enviar', data=json.dumps({'texto': texto}).encode(), method='POST',
+                                 headers={'Content-Type': 'application/json', 'X-Token': os.getenv('TOKEN', '')})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            r.read(2000)
+    except urllib.error.HTTPError as e:
+        raise ErroWhatsApp('A ponte do WhatsApp não mandou: ' + e.read(300).decode('utf-8', 'replace')) from None
+    except OSError as e:
+        raise ErroWhatsApp(f'A ponte do WhatsApp não respondeu: {getattr(e, "reason", e)}') from None
+
+
+def enviar_aviso(numero: str, apikey: str, texto: str) -> str:
+    """Pela ponte do WhatsApp Web (se pareada), senão pelo CallMeBot. Devolve por onde foi."""
+    if ponte_ligada():
+        _pela_ponte(texto)
+        return 'ponte'
+    enviar(numero, apikey, texto)
+    return 'callmebot'
+
+
 def enviar(numero: str, apikey: str, texto: str) -> None:
     num = numero_limpo(numero)
     if not num or not apikey:
-        raise ErroWhatsApp('Falta o número (com DDI e DDD, ex.: 55 11 91234-5678) ou a chave do CallMeBot.')
+        raise ErroWhatsApp('O WhatsApp não está ligado: rode no Termux  bash iniciar-termux.sh whatsapp SEU_NUMERO  '
+                           '(ou preencha número e chave do CallMeBot).')
     texto = texto.strip()
     if len(texto) > LIMITE:
         texto = texto[:LIMITE - 1] + '…'
