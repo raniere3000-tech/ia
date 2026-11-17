@@ -4,7 +4,7 @@ import { useApp } from '../state';
 import { REDES } from '../lib/agenda';
 import { useServidor } from '../components/Servidor2';
 import { lerFila, pendentes, listarProjetos, catalogo, horaTexto } from '../lib/api';
-import { verAgente, salvarAgente, salvarChaves, acaoCanal, rodarAgente, pararAgente, testarEmail, acaoCorte, videoDoCorte, salvarPesos, aprenderAgora, DIAS, MOTIVOS, type VisaoAgente, type ConfigAgente, type Uso, type Canal, type CorteAgente } from '../lib/agente';
+import { verAgente, salvarAgente, salvarChaves, acaoCanal, rodarAgente, pararAgente, testarEmail, testarWhatsapp, acaoCorte, videoDoCorte, salvarPesos, aprenderAgora, DIAS, MOTIVOS, type VisaoAgente, type ConfigAgente, type Uso, type Canal, type CorteAgente } from '../lib/agente';
 
 type Parte = 'cortes'|'postagem'|'agente3'|'desempenho'|'avisos'|'fila';
 const num=(n:number)=>n.toLocaleString('pt-BR');
@@ -177,7 +177,7 @@ export default function Agente(){
   const [v,setV]=useState<VisaoAgente|null>(null); const [erro,setErro]=useState(''); const [parte,setParte]=useState<Parte>(()=>PARTES.includes(rotaExtra as Parte)?rotaExtra as Parte:'cortes');
   useEffect(()=>{ if(PARTES.includes(rotaExtra as Parte)) setParte(rotaExtra as Parte); },[rotaExtra]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [link,setLink]=useState(''); const [canalLink,setCanalLink]=useState(''); const [canalMotivo,setCanalMotivo]=useState('');
-  const [chaves,setChaves]=useState({gemini:'',gemini_pago:'',youtube:'',email_senha:'',pexels:'',pixabay:''}); const [hora,setHora]=useState('18:00'); const [diasSel,setDiasSel]=useState<number[]>([0,1,2,3,4,5]);
+  const [chaves,setChaves]=useState({gemini:'',gemini_pago:'',youtube:'',email_senha:'',pexels:'',pixabay:'',callmebot:''}); const [hora,setHora]=useState('18:00'); const [diasSel,setDiasSel]=useState<number[]>([0,1,2,3,4,5]);
   const vivo=useRef(true);
   useEffect(()=>{ vivo.current=true; return ()=>{ vivo.current=false; }; },[]);
   const carregar=useCallback(()=>{ if(!settings.servidor) return; verAgente(settings).then(x=>{ if(vivo.current){ setV(x); setErro(''); } }).catch(e=>{ if(vivo.current) setErro(e.message); }); },[settings]);
@@ -193,6 +193,7 @@ export default function Agente(){
   const nomeModelo=(id:string)=>v.modelos.find(m=>m.id===id)?.nome||'Template apagado';
   const trocarModelo=(k:number,id:string)=>{ const n=[...v.ativos]; if(id) n[k]=id; else n.splice(k,1); const lista=[...new Set(n.filter(Boolean))]; if(!lista.length){ toast('Deixe pelo menos um template.','erro'); return; } salvar({cortes:{modelos:lista}}); };
   const aprovados=v.canais.filter(x=>x.status==='aprovado'); const sugeridos=v.canais.filter(x=>x.status==='sugerido'); const recusados=v.canais.filter(x=>x.status==='recusado');
+  const zap=v.config.whatsapp||{ligado:false,numero:'',avisos:{} as Record<string,boolean>};
   const prontos=v.cortes.filter(x=>x.status==='pronto').length;
   const faltas:string[]=[];
   if(!v.ffmpeg) faltas.push('Falta o FFmpeg no servidor (no Termux: pkg install ffmpeg).');
@@ -202,7 +203,7 @@ export default function Agente(){
   if(!em.para||!em.de||!v.chaves.email_senha) faltas.push('O e-mail de avisos não está completo (parte Avisos e chaves).');
   const variar=(k:string)=>{ const tem=co.variar.includes(k); if(!tem&&co.variar.length>=3){ toast('Escolha no máximo 3 elementos para variar.','erro'); return; } salvar({cortes:{variar:tem?co.variar.filter(x=>x!==k):[...co.variar,k]}}); };
   const addFaixas=()=>{ if(!/^\d\d:\d\d$/.test(hora)||!diasSel.length) return; salvar({postagem:{faixas:[...po.faixas,...diasSel.map(d=>({dia:d,hora}))]}}); };
-  const guardarChaves=(k:Partial<typeof chaves>)=>run(async()=>{ const r=await salvarChaves(settings,k); setChaves({gemini:'',gemini_pago:'',youtube:'',email_senha:'',pexels:'',pixabay:''}); return r; },'Guardado no servidor.');
+  const guardarChaves=(k:Partial<typeof chaves>)=>run(async()=>{ const r=await salvarChaves(settings,k); setChaves({gemini:'',gemini_pago:'',youtube:'',email_senha:'',pexels:'',pixabay:'',callmebot:''}); return r; },'Guardado no servidor.');
 
   return <div className="agente">
     <section className="panel ag-topo">
@@ -378,6 +379,24 @@ export default function Agente(){
         <details className="mt"><summary>Outro provedor de e-mail</summary><div className="ag-grade mt">
           <label>Servidor SMTP<Campo valor={em.smtp} placeholder="Vazio = descobrir pelo e-mail" salvar={x=>salvar({email:{smtp:x.trim()}})}/></label>
           <label>Porta<Campo tipo="number" valor={em.porta} salvar={x=>salvar({email:{porta:+x}})}/></label></div></details>
+      </section>
+      <section className="panel">
+        <h3>Avisos e aprovação pelo WhatsApp</h3>
+        <p className="subtitle">O servidor manda para o seu WhatsApp os mesmos avisos do e-mail, em texto curto e com o link. Quando um vídeo passa pelo diretor de qualidade, chega a mensagem com o link da revisão: você assiste e dá a aprovação final com um toque no site.</p>
+        <label className="check"><input type="checkbox" checked={!!zap.ligado} onChange={e=>salvar({whatsapp:{ligado:e.target.checked}})}/> Mandar avisos pelo WhatsApp</label>
+        <div className="ag-grade mt">
+          <label>Seu número com DDI e DDD<Campo valor={zap.numero} placeholder="55 11 91234-5678" salvar={x=>salvar({whatsapp:{numero:x}})}/></label>
+          <label>Chave do CallMeBot (apikey) {v.chaves.callmebot&&<span className="tag ok">guardada</span>}<input type="password" autoComplete="off" value={chaves.callmebot} onChange={e=>setChaves(s=>({...s,callmebot:e.target.value}))} placeholder={v.chaves.callmebot?'Digite só para trocar':'o número que o robô respondeu'}/></label>
+          <div className="row-gap left"><button className="primary sm" disabled={!chaves.callmebot.trim()} onClick={()=>guardarChaves({callmebot:chaves.callmebot.trim()})}><KeyRound size={14}/> Guardar chave</button>
+            <button className="subtle sm" onClick={()=>run(()=>testarWhatsapp(settings),'Mensagem de teste enviada. Confira o WhatsApp.')}><Send size={14}/> Mandar mensagem de teste</button></div>
+        </div>
+        <details className="mt"><summary>Como pegar a chave (uma vez só, grátis)</summary><ol className="hint">
+          <li>Abra <a href="https://www.callmebot.com/blog/free-api-whatsapp-messages/" target="_blank" rel="noreferrer">a página do CallMeBot</a> e salve nos contatos o número do robô que aparece lá.</li>
+          <li>No WhatsApp, mande para esse contato: <b>I allow callmebot to send me messages</b></li>
+          <li>Ele responde com a sua <b>apikey</b>. Cole aqui, guarde e toque em Mandar mensagem de teste.</li>
+        </ol><p className="hint">O CallMeBot é um serviço de fora: o texto do aviso passa por ele. Por isso a mensagem leva só o título, o resumo e o link, nunca senha, código de aprovação ou o vídeo.</p></details>
+        <span className="field-label mt">Quais avisos mandar no WhatsApp</span>
+        <div className="chips">{([['aprovacao','Vídeo pronto para você aprovar'],['corte','Corte pronto para você aprovar'],['falha','Falhas e liberações'],['postado','Post enviado'],['agendado','Post agendado'],['canal','Canais novos sugeridos'],['semana','Resumo da semana']] as [string,string][]).map(([k,t])=><button key={k} type="button" className={'chip '+(zap.avisos[k]?'on':'')} aria-pressed={!!zap.avisos[k]} onClick={()=>salvar({whatsapp:{avisos:{[k]:!zap.avisos[k]}}})}>{t}</button>)}</div>
       </section>
       <section className="panel">
         <h3>Chaves do Gemini: grátis e com saldo</h3>

@@ -85,6 +85,9 @@ PADRAO = {
     },
     'email': {'para': '', 'de': '', 'smtp': '', 'porta': 0, 'anexar': True,
               'avisos': {'corte': True, 'agendado': True, 'postado': True, 'falha': True, 'canal': True, 'semana': True}},
+    # WhatsApp (CallMeBot): o mesmo fluxo de avisos, em texto curto com o link; 'aprovacao' = vídeo pronto para a sua aprovação final
+    'whatsapp': {'ligado': False, 'numero': '',
+                 'avisos': {'aprovacao': True, 'corte': True, 'agendado': False, 'postado': True, 'falha': True, 'canal': False, 'semana': True}},
     'orcamento': {'teto': 10.0, 'dolar': 5.6, 'preco_texto': 0.30, 'preco_audio': 1.00, 'preco_saida': 2.50},
     # qual chave do Gemini cada tarefa usa: 'gratis' (projeto sem cobrança) ou 'paga' (projeto com saldo)
     'chaves_uso': {'cortes': 'gratis', 'camera': 'gratis', 'roteiro': 'gratis', 'voz': 'gratis', 'imagens': 'paga', 'reserva': True},
@@ -142,6 +145,8 @@ def _limpar_cfg(c: dict) -> dict:
     co['dur_min'] = max(10, min(175, co['dur_min']))
     co['dur_max'] = max(co['dur_min'] + 5, min(180, co['dur_max']))
     co['nota_min'] = max(0, min(99, co['nota_min']))
+    import whatsapp
+    c['whatsapp']['numero'] = whatsapp.numero_limpo(c['whatsapp']['numero'])
     for k, v in c['chaves_uso'].items():
         if k != 'reserva' and v not in ('gratis', 'paga'):
             c['chaves_uso'][k] = PADRAO['chaves_uso'][k]
@@ -174,7 +179,7 @@ def salvar_config(novo: dict) -> dict:
 def segredos() -> dict:
     with LOCK:
         s = cofre.ler_json(ARQ_SEG, {})
-        return {k: str(s.get(k, '')) for k in ('gemini', 'gemini_pago', 'youtube', 'email_senha', 'pexels', 'pixabay')}
+        return {k: str(s.get(k, '')) for k in ('gemini', 'gemini_pago', 'youtube', 'email_senha', 'pexels', 'pixabay', 'callmebot')}
 
 
 def salvar_segredos(novo: dict):
@@ -1042,7 +1047,35 @@ def enviar_email(assunto: str, corpo: str, anexo: Path | None = None, nome_anexo
     raise ErroAgente(f'Não consegui enviar o e-mail por {host} (portas {", ".join(map(str, tentativas))}): {ultimo}')
 
 
-def avisar(tipo: str, assunto: str, corpo: str, anexo: Path | None = None, nome_anexo: str = 'corte.mp4') -> bool:
+def avisar_whatsapp(tipo: str, texto: str, erro: bool = False) -> bool:
+    """Manda o aviso pelo WhatsApp, se estiver ligado e o tipo marcado. erro=True devolve o motivo em ErroAgente (teste)."""
+    import whatsapp
+    w = config()['whatsapp']
+    if not erro and (not w['ligado'] or not w['avisos'].get(tipo, False)):
+        return False
+    try:
+        whatsapp.enviar(w['numero'], segredos()['callmebot'], texto)
+        return True
+    except whatsapp.ErroWhatsApp as e:
+        if erro:
+            raise ErroAgente(str(e)) from None
+        anotar(f'WhatsApp não enviado: {e}', 'erro')
+        return False
+
+
+def _texto_zap(assunto: str, corpo: str) -> str:
+    """Versão curta do e-mail para o WhatsApp: assunto, começo do texto e os links."""
+    links = list(dict.fromkeys(re.findall(r'https://\S+', corpo)))[:3]
+    resumo = corpo
+    for u in links:
+        resumo = resumo.replace(u, '')
+    resumo = re.sub(r'\n{3,}', '\n\n', resumo).strip()[:600]
+    return f'*EstúdioClip — {assunto}*\n\n{resumo}' + ('\n\n' + '\n'.join(links) if links else '')
+
+
+def avisar(tipo: str, assunto: str, corpo: str, anexo: Path | None = None, nome_anexo: str = 'corte.mp4', zap: str | None = None) -> bool:
+    """Avisa por e-mail e pelo WhatsApp (cada um com as suas escolhas). Devolve se o E-MAIL saiu."""
+    avisar_whatsapp(tipo, zap or _texto_zap(assunto, corpo))
     cfg = config()['email']
     if not cfg['avisos'].get(tipo, True) or not cfg['para']:
         return False
@@ -1100,7 +1133,11 @@ def email_corte(c: dict):
         corpo += '\nO vídeo ficou grande demais para anexo. Baixe na aba Agente do aplicativo' + (f' ou por este link (vale enquanto o servidor não reiniciar):\n{url}/agente/cortes/{c["id"]}/video?chave={c["chave"]}' if url else '.') + '\n'
     elif menor:
         corpo += '\nO anexo é uma cópia menor (720p) para caber no e-mail. A versão completa está na aba Agente do aplicativo.\n'
-    ok = avisar('corte', 'Corte pronto: ' + c['titulo'], corpo, anexo, _nome_arq(c['titulo']))
+    site = os.getenv('SITE', 'https://raniere3000-tech.github.io/ia/').rstrip('/') + '/'
+    zap = (f'*EstúdioClip — corte aprovado pelo diretor de qualidade*\n\n{c["titulo"]}\n'
+           f'Pontuação {c["nota"]}/99 · {c["fim"] - c["ini"]:.0f} s · de "{c["origem_titulo"][:80]}"\n\n'
+           f'Falta a sua aprovação final. Abra, assista e toque em "Aprovar e agendar":\n{site}#agente/fila')
+    ok = avisar('corte', 'Corte pronto: ' + c['titulo'], corpo, anexo, _nome_arq(c['titulo']), zap=zap)
     if menor:
         menor.unlink(missing_ok=True)
     return ok
@@ -1758,7 +1795,7 @@ def ver() -> dict:
     c, s, e = config(), segredos(), estado()
     mo.biblioteca(c['cortes']['template'])
     return {
-        'config': c, 'chaves': {'gemini': bool(s['gemini']), 'gemini_pago': bool(s['gemini_pago']), 'youtube': bool(s['youtube']), 'email_senha': bool(s['email_senha']), 'pexels': bool(s['pexels']), 'pixabay': bool(s['pixabay'])},
+        'config': c, 'chaves': {'gemini': bool(s['gemini']), 'gemini_pago': bool(s['gemini_pago']), 'youtube': bool(s['youtube']), 'email_senha': bool(s['email_senha']), 'pexels': bool(s['pexels']), 'pixabay': bool(s['pixabay']), 'callmebot': bool(s['callmebot'])},
         'canais': sorted(e['canais'], key=lambda x: ({'aprovado': 0, 'sugerido': 1, 'recusado': 2}.get(x['status'], 3), -x.get('media', 0))),
         'cortes': [dict({k: v for k, v in x.items() if k != 'chave'}, conferencia=conferir(x, e) if x['status'] == 'pronto' else None)
                    for x in sorted(e['cortes'], key=lambda x: -x['criado'])][:80],

@@ -102,8 +102,29 @@ def _link(pid: str) -> str:
     return f'{apv.SITE}#revisar/{pid}'
 
 
+def zap_pronto(pid: str, sha: str) -> bool:
+    """WhatsApp do vídeo pronto: só depois que o diretor de qualidade aprovou; a aprovação final é um toque seu no site."""
+    p = _projeto(pid)
+    r = p['dados'].get('render') or {}
+    if not sha or r.get('sha') != sha or not apv.diretor_ok(p, sha)['aprovado']:
+        return False
+    dr = p['dados'].get('diretor') or {}
+    refeito = f' (refeito {dr["tentativas"]} vez(es) até passar)' if dr.get('tentativas') else ''
+    redes = ', '.join(x.capitalize() for x in ((p['dados']['briefing'].get('destinos') or {}).get('redes') or [])) or 'nenhuma rede escolhida'
+    return ag.avisar_whatsapp('aprovacao',
+                              f'*EstúdioClip — vídeo pronto para a sua aprovação* [{apv.ref(pid)}]\n\n'
+                              f'"{p["titulo"]}"\n{r.get("duracao", 0):.0f} s · versão {r.get("versao")} · redes: {redes}\n'
+                              f'✅ Aprovado pelo diretor de qualidade{refeito}.\n\n'
+                              f'Assista e dê a aprovação final (ou peça correção):\n{_link(pid)}\n\n'
+                              f'Nada é publicado sem a sua aprovação.')
+
+
 def enviar_pronto(pid: str, sha: str) -> bool:
     """E-mail do vídeo pronto: resumo, link para revisar no site, código de aprovação e a prévia leve anexada."""
+    try:
+        zap_pronto(pid, sha)
+    except Exception as e:  # noqa: BLE001
+        print('emails: WhatsApp do vídeo pronto', e)
     cfg = ag.config()['email']
     if not cfg['para']:
         return False

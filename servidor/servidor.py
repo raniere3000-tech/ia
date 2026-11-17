@@ -658,6 +658,9 @@ def _rotas_agenda(self, caminho: str):
         return ag.rodar_agora(str(d.get('oque', '')), str(d.get('link', '')).strip())
     if caminho == '/agente/parar':
         return ag.parar_tudo()
+    if caminho == '/agente/whatsapp/teste':
+        ag.avisar_whatsapp('teste', '*EstúdioClip*: teste de aviso. Se chegou, os avisos e os pedidos de aprovação vão aparecer aqui.', erro=True)
+        return {'ok': True}
     if caminho == '/agente/email/teste':
         ag.enviar_email('Teste de aviso', 'Se você recebeu este e-mail, os avisos do agente estão funcionando.')
         return {'ok': True}
