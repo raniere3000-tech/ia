@@ -628,6 +628,49 @@ if eb['status'] == 'concluido':
 st, ab2, _ = api('POST', f'/api/v1/projetos/{EPID}/cenas/9/previa-ab', {'a': [], 'b': []}, SES)
 confere(st == 404, 'cena que não existe é recusada')
 
+print('Porta do storyboard visual: quadros reais, aprovação por versão da cena')
+import storyboard as sbv  # noqa: E402
+st, sv, _ = api('GET', f'/api/v1/projetos/{EPID}/storyboard-visual', None, SES)
+confere(st == 200 and len(sv['cenas']) >= 2 and all(c['status'] == 'sem_miniatura' for c in sv['cenas']) and not sv['todas_aprovadas'], 'sem quadros ainda: nada aprovado')
+st, r_, _ = api('POST', f'/api/v1/projetos/{EPID}/storyboard-visual/aprovar', {}, SES)
+confere(st == 409, 'não aprova cena sem ver o quadro')
+def esperar_job(jid):
+    t = time.time()
+    while time.time() - t < 300:
+        e = api('GET', f'/api/v1/diretor/{jid}', None, SES)[1]
+        if e.get('status') in ('concluido', 'falhou'):
+            return e
+        time.sleep(0.5)
+    return {'status': 'tempo'}
+st, jq, _ = api('POST', f'/api/v1/projetos/{EPID}/storyboard-visual/quadros', {}, SES)
+eq = esperar_job(jq['job'])
+confere(eq['status'] == 'concluido', f'quadros gerados ({eq.get("erro")})')
+sv = api('GET', f'/api/v1/projetos/{EPID}/storyboard-visual', None, SES)[1]
+confere(all(c['status'] == 'pronta_para_conferir' and c['quadros'] for c in sv['cenas']), 'cada cena ganhou miniaturas de prévia real')
+q0 = sv['cenas'][0]['quadros'][0]
+imb = api('GET', f'/api/v1/assets/{q0["asset"]}', None, SES, cru=True)
+confere(imb[0] == 200 and imb[1][:3] == b'\xff\xd8\xff', 'a miniatura é uma imagem JPEG de verdade')
+st, ap, _ = api('POST', f'/api/v1/projetos/{EPID}/storyboard-visual/aprovar', {'cenas': [sv['cenas'][0]['id']]}, SES)
+confere(st == 200 and ap['cenas'][0]['status'] == 'aprovada' and ap['cenas'][1]['status'] == 'pronta_para_conferir' and not ap['todas_aprovadas'], 'aprova só a cena 1')
+st, ap, _ = api('POST', f'/api/v1/projetos/{EPID}/storyboard-visual/aprovar', {}, SES)
+confere(ap['todas_aprovadas'] and ap['faltam'] == [], 'aprova todas')
+hs0 = {c['id']: c['hash'] for c in ap['cenas']}
+st, cr, _ = api('POST', f'/api/v1/projetos/{EPID}/storyboard-visual/corrigir', {'cena': sv['cenas'][1]['id'], 'mudancas': {'camera': 'afastar', 'planos': [{'plano': 'CU'}]}}, SES)
+confere(st == 200, f'corrige uma cena ({str(cr)[:80]})')
+confere(api('POST', f'/api/v1/projetos/{EPID}/storyboard-visual/corrigir', {'cena': sv['cenas'][1]['id'], 'mudancas': {'camera': 'voando'}}, SES)[0] == 400, 'câmera fora da lista é recusada')
+sv2 = api('GET', f'/api/v1/projetos/{EPID}/storyboard-visual', None, SES)[1]
+confere(sv2['cenas'][0]['status'] == 'aprovada' and sv2['cenas'][1]['status'] in ('mudou_depois_de_aprovar',) and not sv2['todas_aprovadas'], 'só a cena corrigida perdeu a aprovação')
+confere(sv2['cenas'][0]['hash'] == hs0[sv['cenas'][0]['id']] and sv2['cenas'][1]['hash'] != hs0[sv['cenas'][1]['id']], 'o hash só mudou na cena alterada')
+ec_ = esperar_job(cr['job'])
+confere(ec_['status'] == 'concluido' and (ec_.get('resultado') or {}).get('desenhadas') == 1, f'só a cena corrigida foi redesenhada ({ec_.get("resultado")})')
+sv3 = api('GET', f'/api/v1/projetos/{EPID}/storyboard-visual', None, SES)[1]
+confere(sv3['cenas'][1]['status'] == 'pronta_para_conferir' and sv3['cenas'][1]['quadros'] and sv3['cenas'][0]['status'] == 'aprovada', 'quadro novo da cena corrigida, a outra segue aprovada')
+st, jq2, _ = api('POST', f'/api/v1/projetos/{EPID}/storyboard-visual/quadros', {}, SES)
+e2 = esperar_job(jq2['job'])
+confere((e2.get('resultado') or {}).get('desenhadas') == 0, 'pedir de novo sem mudança não redesenha nada')
+sbv_ap = api('POST', f'/api/v1/projetos/{EPID}/storyboard-visual/aprovar', {}, SES)[1]
+confere(sbv_ap['todas_aprovadas'] and sbv_ap['aviso_final'], 'aprova a cena corrigida; o aviso lembra que o vídeo final continua com você')
+
 print('Clima e luz por cena')
 import estilos_codigo as ec2  # noqa: E402
 cv = ec2.validar_cena({'texto': 'x', 'clima': 'chuva', 'luz': 'noite'})

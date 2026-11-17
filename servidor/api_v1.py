@@ -22,6 +22,7 @@ import banco as db
 import emails
 import descricao as descricao_mod
 import diretor
+import storyboard
 import estilos_codigo as ec
 import exportacao
 import fila
@@ -506,6 +507,7 @@ def iniciar():
     fila.registrar('criativo.serie_completa', cri.job_serie_completa, 'leve')
     exportacao.iniciar()
     diretor.iniciar()
+    storyboard.iniciar()
     hardware.iniciar()
     try:
         skcat.sincronizar()
@@ -574,6 +576,17 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     if m and metodo == 'POST':
         d = corpo()
         return diretor.pedir_ab(m.group(1), int(m.group(2)), d.get('a') or [], d.get('b') or [])
+    m = re.fullmatch(r'/api/v1/projetos/(\w+)/storyboard-visual', caminho)
+    if m and metodo == 'GET':
+        return storyboard.estado(m.group(1))
+    m = re.fullmatch(r'/api/v1/projetos/(\w+)/storyboard-visual/(quadros|aprovar|corrigir)', caminho)
+    if m and metodo == 'POST':
+        d = corpo()
+        if m.group(2) == 'quadros':
+            return storyboard.pedir(m.group(1), d.get('cenas'))
+        if m.group(2) == 'aprovar':
+            return storyboard.aprovar(m.group(1), d.get('cenas'), quem)
+        return storyboard.corrigir(m.group(1), str(d.get('cena', '')), d.get('mudancas') or {}, quem)
     m = re.fullmatch(r'/api/v1/diretor/(\w{6,40})', caminho)
     if m and metodo == 'GET':
         return diretor.estado(m.group(1))

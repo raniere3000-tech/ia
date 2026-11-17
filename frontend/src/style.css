@@ -977,3 +977,14 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .estilo-detalhe{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px;background:#0f131e}
 .estilo-comps{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 10px;margin:6px 0}
 .estilo-demo{width:100%;max-height:320px;margin-top:8px;border-radius:10px;background:#000}
+.sb-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.sb-cena{border:1px solid var(--line);border-radius:14px;padding:10px;background:#0f131e;display:flex;flex-direction:column;gap:8px}
+.sb-cena.aprovada{border-color:#2f8f5b}
+.sb-cena.mudou_depois_de_aprovada,.sb-cena.mudou_depois_de_aprovar{border-color:#c98a1b}
+.sb-cena header{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.sb-quadros{display:flex;gap:6px;overflow-x:auto}
+.sb-quadros figure{margin:0;flex:0 0 auto}.sb-quadros img{height:150px;border-radius:8px;display:block}
+.sb-quadros figcaption{font-size:11px;opacity:.7}.sb-vazio{font-size:12px;opacity:.6;padding:30px 10px}
+.gp-eventos{display:grid;gap:4px;margin:6px 0;font-size:13px}.gp-destaque{border:1px solid var(--line);border-radius:14px;padding:10px;margin-top:10px;background:#0f131e}
+.gp-gancho{border:1px dashed var(--line);border-radius:10px;padding:8px;margin:6px 0}.gp-gancho.on{border-color:var(--brand2)}
+.modo-comp{display:grid;grid-template-columns:1fr 1fr;gap:10px}

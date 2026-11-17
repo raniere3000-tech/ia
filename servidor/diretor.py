@@ -259,7 +259,7 @@ def pedir_ab(pid: str, i: int, a: list, b: list) -> dict:
 
 def estado(jid: str) -> dict:
     j = fila.obter(jid)
-    if not j or j['tipo'] not in ('diretor.animatic', 'diretor.previa_ab'):
+    if not j or j['tipo'] not in ('diretor.animatic', 'diretor.previa_ab', 'storyboard.quadros', 'gameplay.analisar', 'gameplay.cortar', 'gameplay.comparar'):
         raise ErroDiretor(404, 'Trabalho não encontrado.')
     return {'id': j['id'], 'status': j['status'], 'etapa': j['etapa'], 'progresso': j['progresso'], 'erro': j['erro'],
             'resultado': json.loads(j['resultado']) if j.get('resultado') else None}

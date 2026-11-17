@@ -55,7 +55,7 @@ BRIEFING_PADRAO = {
     'tema': '', 'nicho': 'Curiosidades', 'publico': '', 'objetivo': '', 'idioma': 'pt-BR', 'tipo': 'curiosidades',
     'descricao': '', 'origem': 'manual', 'referencias': '', 'duracao_alvo': 45, 'formato': '9:16', 'cenas_qtd': 6,
     'estilo': 'documentario', 'paleta': [], 'voz': 'Puck', 'ritmo': 'agil', 'trilha': '', 'imagens': 'nenhuma',
-    'modo_aprovacao': 'assistido', 'prioridade': 0, 'orcamento_max': 2.0, 'max_tentativas': 3,
+    'modo_aprovacao': 'assistido', 'porta_storyboard': False, 'prioridade': 0, 'orcamento_max': 2.0, 'max_tentativas': 3,
     'destinos': {'redes': [], 'quando': 'proximo', 'titulo': '', 'legenda': ''}, 'temas': [],
 }
 
@@ -93,6 +93,7 @@ def limpar_briefing(d: dict) -> dict:
     b['ritmo'] = d.get('ritmo') if d.get('ritmo') in RITMOS else 'agil'
     b['imagens'] = d.get('imagens') if d.get('imagens') in ('nenhuma', 'gemini', 'busca') else 'nenhuma'
     b['modo_aprovacao'] = d.get('modo_aprovacao') if d.get('modo_aprovacao') in ('assistido', 'supervisionado') else 'assistido'
+    b['porta_storyboard'] = bool(d.get('porta_storyboard'))
     b['trilha'] = re.sub(r'[^a-f0-9]', '', str(d.get('trilha') or ''))[:16]
     b['paleta'] = [c for c in (d.get('paleta') or []) if re.fullmatch(r'#[0-9a-fA-F]{6}', str(c))][:3]
     b['temas'] = [str(t)[:200] for t in (d.get('temas') or []) if str(t).strip()][:30]
@@ -1270,6 +1271,13 @@ def etapa_render(ctx, pid, p, b):
         raise ErroProdutor('Falta o FFmpeg no servidor (Termux: pkg install ffmpeg).', True)
     if 0 <= rd.livre_mb(pj.pasta(pid)) < rd.MIN_LIVRE_MB:
         raise fila.Esperar(1800, f'Pouco espaço livre no celular (menos de {rd.MIN_LIVRE_MB} MB). Libere espaço; tento de novo em 30 min.')
+    import storyboard as sb
+    if sb.porta_ativa(p['dados']) and sb.pendentes(pid):           # 3ª porta: storyboard visual conferido antes do render HD
+        est = sb.estado(pid)
+        if any(c['status'] in ('sem_miniatura', 'mudou_depois_de_aprovar') and not c['quadros'] for c in est['cenas']):
+            sb.pedir(pid)
+        _status(pid, 'waiting_brief_approval')
+        raise fila.Esperar(0, 'Esperando você aprovar o storyboard visual (quadros de cada cena)', 'aguardando_aprovacao')
     _status(pid, 'rendering')
     W, H = ec.FORMATOS[b['formato']]
     cenas = p['dados']['cenas']

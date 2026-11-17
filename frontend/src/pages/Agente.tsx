@@ -1,3 +1,4 @@
+import GameplayNarrativa from '../components/GameplayNarrativa';
 import { ESTILOS } from '../lib/estilosVisuais';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bot, Scissors, Send, Square, Play, Search, Link2, Loader2, CheckCircle2, AlertTriangle, Trash2, Mail, Download, Eye, Plus, X, KeyRound, Clock, RefreshCw, ExternalLink, CalendarClock, ShieldCheck } from 'lucide-react';
@@ -210,6 +211,7 @@ export default function Agente(){
   const guardarChaves=(k:Partial<typeof chaves>)=>run(async()=>{ const r=await salvarChaves(settings,k); setChaves({gemini:'',gemini_pago:'',youtube:'',email_senha:'',pexels:'',pixabay:'',callmebot:''}); return r; },'Guardado no servidor.');
 
   return <div className="agente">
+    <GameplayNarrativa modelos={v.modelos}/>
     <section className="panel ag-topo">
       <div className={'ag-card '+(co.ligado?'on':'')}>
         <div className="label-row"><Scissors size={18}/><strong>Agente 1 · Cortes</strong><span className={'tag '+(co.ligado?'ok':'')}>{co.ligado?'Ligado':'Desligado'}</span></div>
@@ -301,6 +303,9 @@ export default function Agente(){
         </div>
         <label className="check mt"><input type="checkbox" checked={co.aprender} onChange={e=>salvar({cortes:{aprender:e.target.checked}})}/> Aprender sozinho: dar mais chance aos templates que rendem mais em cada rede</label>
         <p className="hint">No começo as chances são iguais. Nenhum template cai abaixo de 15%, para manter variedade. Veja os números na parte Desempenho.</p>
+        <span className="field-label mt">Modo de montagem dos cortes</span>
+        <div className="seg">{[['','Padrão'],['rapido','Rápido'],['caprichado','Caprichado']].map(([m,n])=><button key={m} className={(co.modo||'')===m?'on':''} onClick={()=>salvar({cortes:{modo:m}})}>{n}</button>)}</div>
+        <small className="hint">Rápido: menos trabalho (sem brilho, desfoque e zoom lento no estilo). Caprichado: compressão melhor e volume normalizado. Nenhum dos dois promete mais visualizações; o tempo só é estimado depois de o celular medir cortes feitos.</small>
         <span className="field-label mt">Estilos visuais (opcional)</span>
         <div className="chips">{ESTILOS.map(e=><button key={e.id} type="button" className={'chip '+((co.estilos||[]).includes(e.id)?'on':'')} aria-pressed={(co.estilos||[]).includes(e.id)} title={e.desc} onClick={()=>escolherEstilo(e.id)}>{e.nome}</button>)}</div>
         <small className="hint">{(co.estilos||[]).length?'Cada corte sorteia um destes estilos (o que o FFmpeg do celular não souber fazer fica de fora e o histórico avisa). Um template com estilo próprio sempre vale.':'Sem escolha, os cortes saem só com o estilo do template.'}</small>

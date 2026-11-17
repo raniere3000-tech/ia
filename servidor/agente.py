@@ -35,6 +35,8 @@ from pathlib import Path
 
 import cofre
 import modelos as mo
+import modo_render as mr
+import perfis as pf
 import visual_presets as vp
 import postagem as pg
 import hashlib
@@ -77,7 +79,7 @@ PADRAO = {
                      'gancho': True, 'gancho_pos': 'topo', 'tarja_topo': '', 'tarja_base': '',
                      'cor_tarja': '#111111', 'cor_tarja_texto': '#FFFFFF', 'qualidade': 1080},
         'variar': ['cor_destaque', 'gancho_pos', 'zoom'],
-        'modelos': [], 'estilos': [], 'aprender': True,
+        'modelos': [], 'estilos': [], 'modo': '', 'perfil': '', 'aprender': True,
     },
     'postagem': {
         'ligado': False, 'redes': ['youtube', 'instagram', 'facebook', 'tiktok', 'kwai'],
@@ -141,6 +143,8 @@ def _limpar_cfg(c: dict) -> dict:
     co['proibidos'] = [str(x).strip()[:60] for x in co['proibidos'] if str(x).strip()][:40]
     co['variar'] = [v for v in co['variar'] if v in VARIACOES][:3]
     co['modelos'] = [str(x)[:40] for x in dict.fromkeys(co['modelos']) if isinstance(x, str)][:mo.MAX_ATIVOS]
+    co['modo'] = mr.valido(co.get('modo', ''))
+    co['perfil'] = re.sub(r'\W', '', str(co.get('perfil', '')))[:12]
     co['estilos'] = [x for x in dict.fromkeys(co.get('estilos') or []) if x in vp.PRESETS][:6]
     co['idioma'] = co['idioma'].lower() if re.fullmatch(r'[A-Za-z]{2}', co['idioma']) else 'pt'
     co['regiao'] = co['regiao'].upper() if re.fullmatch(r'[A-Za-z]{2}', co['regiao']) else ''
@@ -1032,9 +1036,13 @@ def editar(video: Path, corte: dict, palavras: list, tpl: dict, destino: Path, p
     cmd = ['ffmpeg', '-nostdin', '-y', '-v', 'error', '-ss', f'{corte["ini"]:.2f}', '-t', f'{dur:.2f}', '-i', str(video)]
     if logo:
         cmd += ['-i', str(logo)]
-    cmd += ['-filter_complex', fc, '-map', '[v]', '-map', '0:a?', '-t', f'{dur:.2f}', '-c:v', 'libx264', '-preset', os.getenv('PRESET_X264', 'veryfast'),
-            '-crf', str(tpl.get('crf', 23)), '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-movflags', '+faststart', str(destino)]
+    af = ['-af', 'loudnorm=I=-16:TP=-1.5:LRA=11'] if tpl.get('loudnorm') else []
+    cmd += ['-filter_complex', fc, '-map', '[v]', '-map', '0:a?', '-t', f'{dur:.2f}', '-c:v', 'libx264', '-preset', tpl.get('x264_preset') or os.getenv('PRESET_X264', 'veryfast'),
+            '-crf', str(tpl.get('crf', 23)), '-pix_fmt', 'yuv420p', *af, '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-movflags', '+faststart', str(destino)]
+    t0 = time.time()
     r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    if r.returncode == 0 and tpl.get('modo'):
+        mr.registrar_tempo(tpl['modo'], time.time() - t0, dur)
     ass.unlink(missing_ok=True)
     if logo:
         logo.unlink(missing_ok=True)
@@ -1256,11 +1264,26 @@ def processar_video(v: dict, quantos: int) -> list:
         for i, c in enumerate(escolhidos):
             etapa(f'Editando o corte {i + 1} de {len(escolhidos)}', 62 + 34 * i / len(escolhidos))
             rnd = random.Random(f'{v["id"]}-{c["ini"]}-{time.time()}')
+            perfil = None
+            if co.get('perfil'):
+                try:
+                    perfil = pf.obter(co['perfil'])
+                except pf.ErroPerfil:
+                    raise ErroAgente('O perfil escolhido para o Agente 1 não existe mais. Escolha outro em Agente 1.')
             ativos = mo.ativos(co['modelos'])
+            if perfil and perfil['templates']:                 # o perfil manda nos templates: só os do canal
+                doperfil = [m for m in mo.biblioteca()['modelos'] if m['id'] in perfil['templates']]
+                ativos = doperfil or ativos
             mid = mo.sortear(estado()['pesos'], [m['id'] for m in ativos], cfg['postagem']['redes'], rnd)
             modelo = next(m for m in ativos if m['id'] == mid)
             tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
+            if perfil:
+                usadas.append(f'Perfil {perfil["nome"]}: ' + ('; '.join(pf.aplicar_ao_tpl(tpl, perfil, rnd)) or 'sem mudanças de identidade'))
             usadas += _sortear_estilo(tpl, co, rnd)
+            modo = co.get('modo') or (perfil or {}).get('modo_qualidade', '')
+            co = dict(co, modo=modo)
+            if modo:
+                usadas.append(f'Modo {mr.MODOS[modo]["nome"]}: ' + '; '.join(mr.aplicar(tpl, modo)))
             nota_cam = ajustar_camera(tpl, arq, c, pasta, memo_cam)
             if nota_cam and i == 0:
                 anotar(f'{v["titulo"][:50]}: {nota_cam}.')
@@ -1277,6 +1300,8 @@ def processar_video(v: dict, quantos: int) -> list:
                 if qa.get('erros') or not ajuste:
                     tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
                     tpl['estilo_visual'], tpl['estilo_forca'], tpl['estilo_off'], tpl['estilo_texto'] = estilo_ant
+                    if co.get('modo'):
+                        mr.aplicar(tpl, co['modo'])
                     ajustar_camera(tpl, arq, c, pasta, memo_cam)
                 else:
                     c.update(ajuste)
@@ -1289,6 +1314,10 @@ def processar_video(v: dict, quantos: int) -> list:
                      variacoes=usadas, fala=fonte, tamanho=(pg.VIDEOS / (vid + '.mp4')).stat().st_size, email=False,
                      tipo='agente', modelo=modelo['id'], modelo_nome=modelo['nome'], hash=_hash(pg.VIDEOS / (vid + '.mp4')),
                      legendado=tpl['legenda'] != 'nenhuma', qa=qa)
+            if perfil:
+                c.update(perfil=perfil['id'], perfil_nome=perfil['nome'], perfil_versao=perfil['versao'], redes=list(perfil['redes']))
+                if perfil['hashtags_base']:
+                    c['hashtags'] = list(dict.fromkeys([*(c.get('hashtags') or []), *perfil['hashtags_base']]))[:12]
             _mudar(lambda e, c=c: e['cortes'].append(c))
             criados.append(c)
         return criados
@@ -1580,7 +1609,12 @@ def agendar_corte(cid: str, liberado: bool = False, quem: str = 'site') -> dict:
     if not vaga:
         raise ErroAgente('Não há horário livre. Marque mais horários na parte Postagem.')
     legenda = c.get('legenda_post') or (c['titulo'] + '\n\n' + ' '.join(c['hashtags'])).strip()
-    p = pg.criar_post({'video': c['video'], 'redes': po['redes'], 'quando': vaga['quando'], 'titulo': c['titulo'], 'legenda': legenda,
+    redes = [r for r in (c.get('redes') or po['redes']) if r in pg.REDES]
+    if c.get('redes'):
+        sem = [r for r in redes if r not in po['redes']]
+        if sem:
+            raise ErroAgente('O perfil deste corte quer postar em ' + ', '.join(x.capitalize() for x in sem) + ', mas essa rede não está ligada em Postagem.')
+    p = pg.criar_post({'video': c['video'], 'redes': redes, 'quando': vaga['quando'], 'titulo': c['titulo'], 'legenda': legenda,
                        'youtube_privacidade': po['youtube_privacidade'], 'tiktok_modo': po['tiktok_modo'],
                        'modelo': c.get('modelo', ''), 'origem': 'agente-manual' if c.get('tipo') == 'manual' else 'agente', 'repetir': True,
                        'direitos': c.get('direitos') or _direitos_do_canal(c)})
@@ -1592,7 +1626,7 @@ def agendar_corte(cid: str, liberado: bool = False, quem: str = 'site') -> dict:
     _mudar(lambda e: [x.update(status='agendado', post=p['id'], quando=vaga['quando'], faixa=vaga['faixa'], espera=False,
                                **({'liberacao': lib} if lib else {})) for x in e['cortes'] if x['id'] == cid])
     quando = datetime.fromtimestamp(vaga['quando']).strftime('%d/%m às %H:%M')
-    nomes = ', '.join(r.capitalize() for r in po['redes'])
+    nomes = ', '.join(r.capitalize() for r in redes)
     anotar(f'"{c["titulo"][:60]}" agendado para {quando} em {nomes}.', 'ok')
     avisar('agendado', f'Post agendado para {quando}',
            f'Corte: {c["titulo"]}\nQuando: {quando}\nRedes: {nomes}\n\n'

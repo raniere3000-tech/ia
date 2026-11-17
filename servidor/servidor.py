@@ -25,6 +25,9 @@ import postagem as pg
 import agente as ag
 import modelos as mo
 import visual_presets as vp
+import gameplay_indexer as gpi
+import modo_render as mr
+import perfis as pf
 import banco as db
 import autenticacao as au
 import projetos as pj
@@ -512,7 +515,7 @@ class Handler(BaseHTTPRequestHandler):
             self.json(e.status, {'detail': str(e), **(getattr(e, 'extra', None) or {})})
         except apv.ErroAprovacao as e:
             self.json(e.status, {'detail': str(e)})
-        except (pg.ErroRede, ag.ErroAgente, mo.ErroModelo, vp.ErroEstilo, produtor.ErroProdutor, rd.ErroRender, ValueError, FileNotFoundError) as e:
+        except (pg.ErroRede, ag.ErroAgente, mo.ErroModelo, vp.ErroEstilo, gpi.ErroGameplay, pf.ErroPerfil, produtor.ErroProdutor, rd.ErroRender, ValueError, FileNotFoundError) as e:
             self.json(400, {'detail': str(e)})
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -542,6 +545,29 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == '/agente':
             self.token_ok()
             return self.json(200, ag.ver())
+        if caminho == '/perfis':
+            self.token_ok()
+            return self.json(200, {'perfis': pf.listar()})
+        mp = re.fullmatch(r'/perfis/(\w+)(?:/(resolvido|validar))?', caminho)
+        if mp:
+            self.token_ok()
+            if mp.group(2) == 'validar':
+                return self.json(200, {'problemas': pf.validar(mp.group(1), [m['id'] for m in mo.biblioteca()['modelos']], produtor.VOZES)})
+            if mp.group(2) == 'resolvido':
+                cfg = ag.config()
+                return self.json(200, pf.resolver(mp.group(1), pf.padrao_do_site(cfg['cortes'], cfg['postagem'])))
+            p = pf.obter(mp.group(1))
+            return self.json(200, p)
+        if caminho == '/agente/modos':
+            self.token_ok()
+            return self.json(200, {'modos': mr.resumo()})
+        if caminho == '/agente/gameplay':
+            self.token_ok()
+            return self.json(200, {'analises': gpi.listar(), 'historias': gpi.HISTORIAS})
+        mg = re.fullmatch(r'/agente/gameplay/(\w+)', caminho)
+        if mg:
+            self.token_ok()
+            return self.json(200, gpi.relatorio(mg.group(1)))
         if caminho == '/estilos-visuais':
             self.token_ok()
             return self.json(200, {'versao': vp.VERSAO, 'estilos': vp.listar(), 'componentes': vp.COMPONENTES})
@@ -655,6 +681,25 @@ def _rotas_agenda(self, caminho: str):
         return ag.acao_canal(d)
     if caminho == '/modelos':
         return mo.salvar(d)
+    if caminho == '/perfis':
+        return pf.salvar(d, str(d.get('id', '')))
+    mp = re.fullmatch(r'/perfis/(\w+)/(duplicar|restaurar|apagar)', caminho)
+    if mp:
+        if mp.group(2) == 'duplicar':
+            return pf.duplicar(mp.group(1))
+        if mp.group(2) == 'restaurar':
+            return pf.restaurar(mp.group(1), d.get('versao', 0))
+        pf.apagar(mp.group(1))
+        return {'ok': True}
+    if caminho == '/agente/gameplay/analisar':
+        return gpi.pedir_analise(d)
+    if caminho == '/agente/gameplay/comparar':
+        return gpi.pedir_comparacao(d)
+    if caminho == '/agente/gameplay/cortar':
+        return gpi.pedir_corte(d)
+    mg = re.fullmatch(r'/agente/gameplay/(\w+)/historia', caminho)
+    if mg:
+        return gpi.propor_de_novo(mg.group(1), str(d.get('historia', '')), bool(d.get('usar_ia', True)))
     if caminho == '/estilos-visuais/medir':
         return {'medido': vp.medir(str(d.get('id', ''))), 'estilos': vp.listar()}
     if caminho == '/agente/pesos':
@@ -771,6 +816,7 @@ def ligar_servicos():
     ag.ENFILEIRAR = _enfileirar_agente1
     ag.PENDENTES = lambda: (db.um("SELECT COUNT(*) AS n FROM jobs WHERE agente='agente1' AND status IN ('agendado','na_fila','rodando')") or {'n': 0})['n']
     produtor.iniciar()
+    gpi.iniciar()
     api_v1.iniciar()
     fila.iniciar()
     agendador.iniciar()
