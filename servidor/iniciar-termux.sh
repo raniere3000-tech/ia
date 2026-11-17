@@ -5,6 +5,7 @@
 #          bash iniciar-termux.sh sempre  -> liga sozinho quando o celular reinicia (precisa do app Termux:Boot)
 #          bash iniciar-termux.sh parear  -> gera um código de uso único (10 min) para conectar mais um aparelho
 #          bash iniciar-termux.sh diagnostico -> mede o celular (ficha + render de 5 s + prévia leve); não instala nada
+#          bash iniciar-termux.sh linkfixo TOKEN https://estudio.seudominio.com.br -> endereço que nunca muda (túnel com nome da Cloudflare)
 #          bash iniciar-termux.sh whatsapp 5511912345678 -> liga o seu WhatsApp (comandos e avisos na conversa com você mesmo)
 set -e
 cd "$(dirname "$0")"
@@ -34,6 +35,19 @@ if [ "$1" = "parear" ]; then
   URLA="$(cat .url_atual 2>/dev/null || true)"
   if [ -n "$URLA" ]; then echo "  Link para o aparelho novo: ${SITE}?servidor=${URLA}&canal=${CANAL}#par=${COD}"
   else echo "  O endereço do servidor ainda não saiu. Espere o túnel ligar e rode de novo, ou gere o link no site em Ajustes > Aparelhos."; fi
+  exit 0
+fi
+if [ "$1" = "linkfixo" ]; then
+  # Endereço fixo: crie o túnel no painel da Cloudflare (Zero Trust > Networks > Tunnels), aponte o seu
+  # endereço (ex.: estudio.seudominio.com.br) para http://localhost:8787 e cole aqui o token e o endereço.
+  if [ "$2" = "desligar" ]; then rm -f .tunel_token .url_fixa; echo "Voltou para o endereço que muda (trycloudflare)."; exit 0; fi
+  TK="$2"; UF="$(echo "$3" | sed 's#/*$##')"
+  case "$UF" in http*) ;; *) [ -n "$UF" ] && UF="https://$UF";; esac
+  if [ ${#TK} -lt 50 ] || ! echo "$UF" | grep -Eq '^https://[a-z0-9.-]+\.[a-z]{2,}$'; then
+    echo "Use:  bash iniciar-termux.sh linkfixo TOKEN_DO_TUNEL https://estudio.seudominio.com.br"; exit 1; fi
+  ( umask 077; printf '%s' "$TK" > .tunel_token; printf '%s' "$UF" > .url_fixa ); chmod 600 .tunel_token .url_fixa
+  echo "Endereço fixo salvo: $UF"
+  echo "Agora ligue:  bash iniciar-termux.sh link"
   exit 0
 fi
 # Ponte do WhatsApp Web: instala as dependências (uma vez, e de novo quando mudarem depois de um git pull).
@@ -135,8 +149,22 @@ if [ "$1" = "link" ]; then
   sleep 2
   while true; do
   # http2 (TCP) em vez de QUIC (UDP): muitas redes de celular e Wi-Fi bloqueiam UDP e o link dá "Erro 1033".
-  cloudflared tunnel --no-autoupdate --protocol ${TUNEL_PROTOCOLO:-http2} --url http://localhost:${PORTA:-8787} 2>&1 | tee -a "$HOME/cloudflared.log" | while read -r linha; do
-    URL=$(echo "$linha" | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' || true)
+  rm -f .tunel_avisado
+  if [ -s .tunel_token ] && [ -s .url_fixa ]; then
+    # Endereço FIXO (túnel com nome, no seu domínio da Cloudflare): sempre o mesmo link.
+    FIXA="$(cat .url_fixa)"
+    TUNEL_CMD="cloudflared tunnel --no-autoupdate --protocol ${TUNEL_PROTOCOLO:-http2} run --token $(cat .tunel_token)"
+  else
+    FIXA=""
+    TUNEL_CMD="cloudflared tunnel --no-autoupdate --protocol ${TUNEL_PROTOCOLO:-http2} --url http://localhost:${PORTA:-8787}"
+  fi
+  $TUNEL_CMD 2>&1 | tee -a "$HOME/cloudflared.log" | while read -r linha; do
+    if [ -n "$FIXA" ]; then
+      URL=""
+      if echo "$linha" | grep -q 'Registered tunnel connection' && [ ! -f .tunel_avisado ]; then touch .tunel_avisado; URL="$FIXA"; fi
+    else
+      URL=$(echo "$linha" | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' || true)
+    fi
     if [ -n "$URL" ]; then
       echo "$URL" > .url_atual
       sleep 3
