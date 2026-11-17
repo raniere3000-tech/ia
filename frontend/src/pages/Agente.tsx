@@ -1,3 +1,4 @@
+import { ESTILOS } from '../lib/estilosVisuais';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bot, Scissors, Send, Square, Play, Search, Link2, Loader2, CheckCircle2, AlertTriangle, Trash2, Mail, Download, Eye, Plus, X, KeyRound, Clock, RefreshCw, ExternalLink, CalendarClock, ShieldCheck } from 'lucide-react';
 import { useApp } from '../state';
@@ -203,6 +204,7 @@ export default function Agente(){
   if(!v.chaves.gemini&&!v.chaves.gemini_pago) faltas.push('Falta a chave do Gemini (parte Avisos e chaves).');
   if(!aprovados.length) faltas.push('Nenhum canal aprovado ainda (parte Cortes).');
   if(!em.para||!em.de||!v.chaves.email_senha) faltas.push('O e-mail de avisos não está completo (parte Avisos e chaves).');
+  const escolherEstilo=(id:string)=>{ const at=co.estilos||[]; const tem=at.includes(id); if(!tem&&at.length>=6){ toast('Escolha no máximo 6 estilos.','erro'); return; } salvar({cortes:{estilos:tem?at.filter(x=>x!==id):[...at,id]}}); };
   const variar=(k:string)=>{ const tem=co.variar.includes(k); if(!tem&&co.variar.length>=3){ toast('Escolha no máximo 3 elementos para variar.','erro'); return; } salvar({cortes:{variar:tem?co.variar.filter(x=>x!==k):[...co.variar,k]}}); };
   const addFaixas=()=>{ if(!/^\d\d:\d\d$/.test(hora)||!diasSel.length) return; salvar({postagem:{faixas:[...po.faixas,...diasSel.map(d=>({dia:d,hora}))]}}); };
   const guardarChaves=(k:Partial<typeof chaves>)=>run(async()=>{ const r=await salvarChaves(settings,k); setChaves({gemini:'',gemini_pago:'',youtube:'',email_senha:'',pexels:'',pixabay:'',callmebot:''}); return r; },'Guardado no servidor.');
@@ -299,6 +301,9 @@ export default function Agente(){
         </div>
         <label className="check mt"><input type="checkbox" checked={co.aprender} onChange={e=>salvar({cortes:{aprender:e.target.checked}})}/> Aprender sozinho: dar mais chance aos templates que rendem mais em cada rede</label>
         <p className="hint">No começo as chances são iguais. Nenhum template cai abaixo de 15%, para manter variedade. Veja os números na parte Desempenho.</p>
+        <span className="field-label mt">Estilos visuais (opcional)</span>
+        <div className="chips">{ESTILOS.map(e=><button key={e.id} type="button" className={'chip '+((co.estilos||[]).includes(e.id)?'on':'')} aria-pressed={(co.estilos||[]).includes(e.id)} title={e.desc} onClick={()=>escolherEstilo(e.id)}>{e.nome}</button>)}</div>
+        <small className="hint">{(co.estilos||[]).length?'Cada corte sorteia um destes estilos (o que o FFmpeg do celular não souber fazer fica de fora e o histórico avisa). Um template com estilo próprio sempre vale.':'Sem escolha, os cortes saem só com o estilo do template.'}</small>
         <span className="field-label mt">O que pode variar de um corte para outro (até 3)</span>
         <div className="chips">{Object.entries(v.opcoes.variacoes).map(([k,t])=><button key={k} type="button" className={'chip '+(co.variar.includes(k)?'on':'')} aria-pressed={co.variar.includes(k)} onClick={()=>variar(k)}>{t}</button>)}</div>
         <p className="hint">Além do template, o agente sorteia esses elementos em cada corte para os vídeos não saírem todos iguais.</p>

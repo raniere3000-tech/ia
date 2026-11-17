@@ -2,6 +2,7 @@
 import type { Clip, Formato, Tarja } from './analyze';
 import type { Cue, Preset } from './captions';
 import { TEMPLATE_PADRAO, type RenderOpts, type Regiao, type Saida, type Template, type Visual } from './render';
+import type { EstiloUso } from './estilosVisuais';
 import { store } from './store';
 import { cabAuth } from './api';
 
@@ -18,11 +19,13 @@ export type Modelo = {
   tarja:Tarja|null;
   cor:string; logo:string; logoPos:Template['logoPos']; moldura:boolean; credito:string;
   resolucao:1080|720; qualidade:Qualidade;
+  /** Estilo visual da biblioteca compartilhada (vazio = sem estilo). Modelos antigos não têm o campo. */
+  estiloVisual?:string; estiloForca?:number; estiloOff?:string[]; estiloTexto?:string;
   /** Cores da legenda já resolvidas, para o servidor montar igual sem conhecer os estilos do site. */
   leg?:{estilo:'destaque'|'simples'|'caixa'|'nenhuma';cor:string;corDestaque:string;maiusculas:boolean};
 };
 /** Cópia dos ajustes do template dentro de um corte. */
-export type VisualClip = Visual & {legendaPos:'baixo'|'meio'; marca:Template; resolucao:1080|720; qualidade:Qualidade};
+export type VisualClip = Visual & {legendaPos:'baixo'|'meio'; marca:Template; resolucao:1080|720; qualidade:Qualidade; estilo?:EstiloUso|null};
 export type Biblioteca = {atualizado:number; modelos:Modelo[]};
 
 export const LAYOUTS:[Layout,string,string][] = [
@@ -104,16 +107,18 @@ export async function sincronizar(cfg:Cfg,local:Biblioteca,presets:Preset[]):Pro
 
 // ---------------------------------------------------------------- aplicar nos cortes
 export const marcaDe=(m:Modelo):Template=>({ativo:!!(m.logo||m.credito.trim()||m.moldura),logo:m.logo,logoPos:m.logoPos,credito:m.credito,cor:m.cor,moldura:m.moldura});
-export const visualDe=(m:Modelo):VisualClip=>({layout:m.layout,zoom:m.zoom,posX:m.posX,posY:m.posY,jogo:{...m.jogo},camera:{...m.camera},divisao:m.divisao,gancho:m.gancho,ganchoPos:m.ganchoPos,legendaPos:m.legendaPos,marca:marcaDe(m),resolucao:m.resolucao,qualidade:m.qualidade});
+export const estiloDe=(m:Modelo):EstiloUso|null=>m.estiloVisual?{id:m.estiloVisual,forca:m.estiloForca??1,off:[...(m.estiloOff||[])],texto:m.estiloTexto||''}:null;
+export const visualDe=(m:Modelo):VisualClip=>({layout:m.layout,zoom:m.zoom,posX:m.posX,posY:m.posY,jogo:{...m.jogo},camera:{...m.camera},divisao:m.divisao,gancho:m.gancho,ganchoPos:m.ganchoPos,legendaPos:m.legendaPos,marca:marcaDe(m),resolucao:m.resolucao,qualidade:m.qualidade,estilo:estiloDe(m)});
 /** O que muda em um corte quando ele recebe um template. É uma cópia: ajustar o corte depois não altera o template. */
 export function aplicarModelo(m:Modelo):Partial<Clip>{
-  return {modelo:m.id,visual:visualDe(m),formato:m.formato,legenda:m.legenda,efeito:m.efeito,tarja:m.tarja?{...m.tarja}:null,semTemplate:false};
+  return {modelo:m.id,visual:visualDe(m),formato:m.formato,legenda:m.legenda,efeito:m.efeito,tarja:m.tarja?{...m.tarja}:null,semTemplate:false,estiloVisual:undefined};
 }
 export const semModelo=():Partial<Clip>=>({modelo:'',visual:null,semTemplate:true});
 /** Leva os ajustes feitos em um corte de volta para o template (só quando a pessoa pede). */
 export function modeloDoCorte(m:Modelo,c:Clip):Modelo{
   const v=c.visual;
   return {...m,formato:c.formato,legenda:c.legenda,efeito:EFEITOS_MODELO.some(([id])=>id===c.efeito)?c.efeito:m.efeito,tarja:c.tarja?{...c.tarja}:null,
+    estiloVisual:(c.estiloVisual!==undefined?c.estiloVisual:v?.estilo)?.id||'',estiloForca:(c.estiloVisual!==undefined?c.estiloVisual:v?.estilo)?.forca??1,estiloOff:[...((c.estiloVisual!==undefined?c.estiloVisual:v?.estilo)?.off||[])],
     ...(v?{layout:v.layout,zoom:v.zoom,posX:v.posX,posY:v.posY,jogo:{...v.jogo},camera:{...v.camera},divisao:v.divisao,gancho:v.gancho,ganchoPos:v.ganchoPos,legendaPos:v.legendaPos}:{})};
 }
 
@@ -126,7 +131,7 @@ export function optsDoClip(c:Clip,cues:Cue[],template:Template,presets:Preset[])
   let legenda=presets.find(p=>p.id===c.legenda)||null;
   if(legenda&&v) legenda={...legenda,position:v.legendaPos==='meio'?'center':legenda.position==='center'?'center-bottom':legenda.position};
   const marca=c.semTemplate?{...template,ativo:false}:v?v.marca:template;
-  return {legenda,efeito:c.efeito,cues,gancho:c.gancho_texto,accent:legenda?.highlightColor||marca.cor,template:marca,tarja:c.tarja,visual:v};
+  return {legenda,efeito:c.efeito,cues,gancho:c.gancho_texto,accent:legenda?.highlightColor||marca.cor,template:marca,tarja:c.tarja,visual:v,estilo:c.estiloVisual!==undefined?c.estiloVisual:(v?.estilo||null)};
 }
 export function saidaDoClip(c:Clip):Saida|null{
   const v=c.visual; if(!v) return null;

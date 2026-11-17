@@ -35,6 +35,7 @@ from pathlib import Path
 
 import cofre
 import modelos as mo
+import visual_presets as vp
 import postagem as pg
 import hashlib
 
@@ -76,7 +77,7 @@ PADRAO = {
                      'gancho': True, 'gancho_pos': 'topo', 'tarja_topo': '', 'tarja_base': '',
                      'cor_tarja': '#111111', 'cor_tarja_texto': '#FFFFFF', 'qualidade': 1080},
         'variar': ['cor_destaque', 'gancho_pos', 'zoom'],
-        'modelos': [], 'aprender': True,
+        'modelos': [], 'estilos': [], 'aprender': True,
     },
     'postagem': {
         'ligado': False, 'redes': ['youtube', 'instagram', 'facebook', 'tiktok', 'kwai'],
@@ -140,6 +141,7 @@ def _limpar_cfg(c: dict) -> dict:
     co['proibidos'] = [str(x).strip()[:60] for x in co['proibidos'] if str(x).strip()][:40]
     co['variar'] = [v for v in co['variar'] if v in VARIACOES][:3]
     co['modelos'] = [str(x)[:40] for x in dict.fromkeys(co['modelos']) if isinstance(x, str)][:mo.MAX_ATIVOS]
+    co['estilos'] = [x for x in dict.fromkeys(co.get('estilos') or []) if x in vp.PRESETS][:6]
     co['idioma'] = co['idioma'].lower() if re.fullmatch(r'[A-Za-z]{2}', co['idioma']) else 'pt'
     co['regiao'] = co['regiao'].upper() if re.fullmatch(r'[A-Za-z]{2}', co['regiao']) else ''
     co['por_semana'] = max(1, min(21, co['por_semana']))
@@ -819,6 +821,19 @@ def sortear(tpl: dict, variar: list, rnd: random.Random) -> tuple[dict, list]:
     return t, usadas
 
 
+def _sortear_estilo(tpl: dict, co: dict, rnd: random.Random) -> list:
+    """Agente 1 com vários estilos visuais: cada corte sorteia um dos escolhidos que o FFmpeg deste aparelho sabe fazer.
+    Se o template do corte já tem estilo próprio, ele vale. Devolve a nota para o histórico de variações."""
+    if tpl.get('estilo_visual') or not co.get('estilos'):
+        return []
+    ok = [e['id'] for e in vp.listar() if e['id'] in co['estilos'] and e['status'] != 'unavailable']
+    if not ok:
+        return ['Estilo visual: nenhum dos escolhidos funciona neste aparelho, saiu sem estilo']
+    pid = rnd.choice(ok)
+    tpl['estilo_visual'], tpl['estilo_forca'], tpl['estilo_off'], tpl['estilo_texto'] = pid, 1.0, [], ''
+    return [f'Estilo visual: {vp.PRESETS[pid]["nome"]}']
+
+
 def _dims(tpl: dict) -> tuple[int, int]:
     L, A = mo.FORMATOS.get(tpl.get('formato', '9:16'), (1080, 1920))
     if tpl.get('qualidade', 1080) < 1000:
@@ -916,6 +931,11 @@ def filtro_video(tpl: dict, L: int, A: int, dur: float, ass: Path, logo: Path | 
     if efeito == 'zoom-acao' and quadro != 'gameplay-streamer':
         # aproxima devagar até 18%, como na prévia do site
         etapas.append(f"scale=w='trunc({L}*(1+0.18*min(1,t/{max(1.0, dur):.2f}))/2)*2':h='trunc({A}*(1+0.18*min(1,t/{max(1.0, dur):.2f}))/2)*2':eval=frame,crop={L}:{A}")
+    estilo = ''
+    if tpl.get('estilo_visual'):         # estilo visual (cor, brilho, grão, moldura) entra depois do enquadramento e ANTES de tarjas e legenda
+        fc += ';[v0]' + ','.join(etapas) + '[v0a]'
+        fc += ';' + vp.grafo(tpl['estilo_visual'], L, A, '[v0a]', '[v0b]', float(tpl.get('estilo_forca', 1.0)), tuple(tpl.get('estilo_off') or ()), tpl.get('estilo_texto', ''))
+        estilo, etapas = '[v0b]', []
     if tem_topo:
         etapas.append(f'drawbox=x=0:y=0:w={L}:h={at}:color={cor}:t=fill')
     if tem_base:
@@ -925,7 +945,7 @@ def filtro_video(tpl: dict, L: int, A: int, dur: float, ass: Path, logo: Path | 
     m = min(L, A) * 0.04
     if tpl.get('moldura'):
         etapas.append(f"drawbox=x=0:y=0:w={L}:h={A}:color=0x{tpl.get('cor_marca', '#7758ef').lstrip('#')}:t={max(2, int(m * 0.6))}")
-    fc += ';[v0]' + ','.join(etapas) + '[v1]'
+    fc += f";{estilo or '[v0]'}" + ','.join(etapas or ['null']) + '[v1]'
     ultimo = 'v1'
     if logo:
         lw = par(min(L, A) * 0.16)
@@ -1240,10 +1260,12 @@ def processar_video(v: dict, quantos: int) -> list:
             mid = mo.sortear(estado()['pesos'], [m['id'] for m in ativos], cfg['postagem']['redes'], rnd)
             modelo = next(m for m in ativos if m['id'] == mid)
             tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
+            usadas += _sortear_estilo(tpl, co, rnd)
             nota_cam = ajustar_camera(tpl, arq, c, pasta, memo_cam)
             if nota_cam and i == 0:
                 anotar(f'{v["titulo"][:50]}: {nota_cam}.')
             vid = uuid.uuid4().hex[:12]
+            estilo_ant = (tpl.get('estilo_visual', ''), tpl.get('estilo_forca', 1.0), tpl.get('estilo_off', []), tpl.get('estilo_texto', ''))
             editar(arq, c, palavras, tpl, pg.VIDEOS / (vid + '.mp4'), pasta)
             qa = inspecionar_corte(pg.VIDEOS / (vid + '.mp4'), c, palavras, pasta)
             # Diretor de qualidade: corte reprovado é refeito (ajusta começo/fim ou troca o template) até aprovar ou acabar as tentativas
@@ -1254,6 +1276,7 @@ def processar_video(v: dict, quantos: int) -> list:
                 ajuste = ajustar_corte(c, palavras, qa, co, dur)
                 if qa.get('erros') or not ajuste:
                     tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
+                    tpl['estilo_visual'], tpl['estilo_forca'], tpl['estilo_off'], tpl['estilo_texto'] = estilo_ant
                     ajustar_camera(tpl, arq, c, pasta, memo_cam)
                 else:
                     c.update(ajuste)

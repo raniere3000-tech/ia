@@ -973,3 +973,7 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .mod-mini{margin:2px 0 0;padding-left:18px}.mod-confirma{display:flex;flex-direction:column;gap:6px}
 .bib-lista{display:flex;flex-wrap:wrap;gap:6px}
 .proj-lista .w100{flex-basis:100%;min-width:0}
+.estilo-visual{margin:10px 0}
+.estilo-detalhe{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px;background:#0f131e}
+.estilo-comps{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 10px;margin:6px 0}
+.estilo-demo{width:100%;max-height:320px;margin-top:8px;border-radius:10px;background:#000}

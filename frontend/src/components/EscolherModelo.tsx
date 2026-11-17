@@ -1,6 +1,7 @@
 import { LayoutTemplate, RotateCcw, Save } from 'lucide-react';
 import { useApp } from '../state';
 import type { Clip } from '../lib/analyze';
+import EstiloVisual from './EstiloVisual';
 import { LAYOUTS, aplicarModelo, modeloDoCorte, semModelo, type Layout, type VisualClip } from '../lib/modelos';
 
 /**
@@ -25,6 +26,7 @@ export default function EscolherModelo({clip,aplicar,ajustar,escopo}:{clip:Clip;
     setModelos(modelos.map(x=>x.id===m.id?modeloDoCorte(x,clip):x));
     toast(`Template "${m.nome}" atualizado com os ajustes deste corte.`,'ok');
   }
+  const estilo=clip.estiloVisual!==undefined?clip.estiloVisual:(v?.estilo??null);
   return <div className="escolher-modelo">
     <label><span className="label-row"><LayoutTemplate size={14}/> Selecionar template {escopo&&<small className="hint">{escopo}</small>}</span>
       <select value={valor} onChange={e=>escolher(e.target.value)} aria-label="Selecionar template">
@@ -33,6 +35,7 @@ export default function EscolherModelo({clip,aplicar,ajustar,escopo}:{clip:Clip;
         {modelos.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}
         {clip.modelo&&!m&&clip.visual&&<option value={clip.modelo}>Template apagado (ajustes mantidos)</option>}
       </select></label>
+    <EstiloVisual valor={estilo} onChange={e=>ajustar({estiloVisual:e})}/>
     {v&&<div className="modelo-ajustes">
       <span className="field-label">Ajustes só deste corte</span>
       <div className="small-grid">

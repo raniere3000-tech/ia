@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 import postagem as pg
+import visual_presets as vp
 
 ARQ = pg.DADOS / 'modelos.json'
 FORMATOS = {'9:16': (1080, 1920), '1:1': (1080, 1080), '16:9': (1920, 1080)}
@@ -102,6 +103,10 @@ def limpar(m: dict) -> dict:
         'gancho': bool(m.get('gancho', True)), 'ganchoPos': 'alto' if m.get('ganchoPos') == 'alto' else 'topo',
         'tarja': tarja, 'cor': _cor(m.get('cor'), '#7758ef'), 'logo': logo,
         'logoPos': m.get('logoPos') if m.get('logoPos') in POS_LOGO else 'top-right',
+        'estiloVisual': m.get('estiloVisual') if m.get('estiloVisual') in vp.PRESETS else '',
+        'estiloForca': round(_num(m.get('estiloForca'), 1.0, 0, 1), 2),
+        'estiloOff': [c for c in (m.get('estiloOff') if isinstance(m.get('estiloOff'), list) else []) if c in vp.COMPONENTES][:10],
+        'estiloTexto': str(m.get('estiloTexto', ''))[:30],
         'moldura': bool(m.get('moldura')), 'credito': str(m.get('credito', ''))[:40],
         'resolucao': 720 if _num(m.get('resolucao'), 1080, 360, 2160) < 1000 else 1080,
         'qualidade': m.get('qualidade') if m.get('qualidade') in QUALIDADES else 'media',
@@ -184,6 +189,7 @@ def tpl(m: dict) -> dict:
         'gancho': m['gancho'], 'gancho_pos': m['ganchoPos'],
         'tarja_topo_on': bool(tj.get('topo')), 'tarja_base_on': bool(tj.get('base')), 'tarja_topo': tj.get('textoTopo', ''), 'tarja_base': tj.get('textoBase', ''),
         'cor_tarja': tj.get('cor', '#111111'), 'cor_tarja_texto': tj.get('corTexto', '#FFFFFF'), 'tarja_alt': tj.get('altura', 12),
+        'estilo_visual': m.get('estiloVisual', ''), 'estilo_forca': m.get('estiloForca', 1.0), 'estilo_off': m.get('estiloOff', []), 'estilo_texto': m.get('estiloTexto', ''),
         'cor_marca': m['cor'], 'logo': m['logo'], 'logo_pos': m['logoPos'], 'moldura': m['moldura'], 'credito': m['credito'],
         'qualidade': m['resolucao'], 'crf': QUALIDADES[m['qualidade']],
     }

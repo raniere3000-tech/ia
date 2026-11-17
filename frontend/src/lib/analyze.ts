@@ -13,7 +13,7 @@ export type Clip = {
   legenda:string; efeito:string; formato:Formato; gancho_texto:string;
   /** Hashtags sugeridas para o post (com #, sem acento). */
   hashtags?:string[];
-  versao_de?:string; descartado?:boolean; thumb?:string; marca?:string; legendaOk?:boolean; dublado?:boolean; semTemplate?:boolean; tarja?:Tarja|null;
+  versao_de?:string; descartado?:boolean; thumb?:string; marca?:string; legendaOk?:boolean; dublado?:boolean; semTemplate?:boolean; estiloVisual?:import('./estilosVisuais').EstiloUso|null; tarja?:Tarja|null;
   /** Template aplicado (id na biblioteca) e a cópia dos ajustes dele neste corte. Mudar aqui não mexe no template salvo. */
   modelo?:string; visual?:import('./modelos').VisualClip|null;
   /** Vídeo próprio do corte (ex.: vários Shorts do Radar no mesmo lote). Sem isso, usa o vídeo do projeto. */

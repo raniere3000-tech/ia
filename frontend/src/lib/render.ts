@@ -2,6 +2,7 @@
 import { drawCaption, drawHook, FONT_STACK, type Cue, type Preset } from './captions';
 import { relogioFundo } from './gravador';
 import type { Formato, Tarja } from './analyze';
+import { desenharEstilo, type EstiloUso } from './estilosVisuais';
 import fixWebmDuration from 'fix-webm-duration';
 
 export const FPS = 30;
@@ -15,7 +16,7 @@ import { posicao, type Trilha } from './rosto';
 export type Regiao = {x:number;y:number;w:number;h:number};
 /** Composição vinda de um template: enquadramento, zoom e posição. Sem isso vale o comportamento antigo (pelo efeito). */
 export type Visual = {layout:'desfoque'|'cheio'|'gameplay-streamer'; zoom:number; posX:number; posY:number; jogo:Regiao; camera:Regiao; divisao:number; gancho:boolean; ganchoPos:'topo'|'alto'};
-export type RenderOpts = {legenda:Preset|null; efeito:string; cues:Cue[]; gancho:string; accent:string; template:Template; logoImg?:HTMLImageElement|null; rosto?:Trilha|null; tarja?:Tarja|null; visual?:Visual|null};
+export type RenderOpts = {legenda:Preset|null; efeito:string; cues:Cue[]; gancho:string; accent:string; template:Template; logoImg?:HTMLImageElement|null; rosto?:Trilha|null; tarja?:Tarja|null; visual?:Visual|null; estilo?:EstiloUso|null};
 /** Tamanho e peso do arquivo exportado. escala 1 = 1080p; 2/3 = 720p. */
 export type Saida = {escala:number; bitrate:number};
 
@@ -70,6 +71,7 @@ export function drawFrame(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,small:
     ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,0,W,H);
     const w=vw*fit*z, h=vh*fit*z; ctx.drawImage(v,(W-w)/2+dx,(H-h)/2+dy,w,h);
   }
+  desenharEstilo(ctx,o.estilo,W,H,t);   // estilo visual: depois do enquadramento, antes de tarjas, legenda e gancho (mesma ordem do servidor)
   const hTarja=o.tarja?drawTarjas(ctx,o.tarja,W,H):0;
   if(o.legenda){ const cue=o.cues.find(c=>t>=c.start&&t<c.end); if(cue) drawCaption(ctx,o.legenda,cue.text,t-cue.start,cue.end-cue.start,W,H); }
   if(!vis||vis.gancho) drawHook(ctx,o.gancho,o.accent,W,o.tarja?.topo?hTarja:0,vis?.ganchoPos==='alto'?H*0.14:0);

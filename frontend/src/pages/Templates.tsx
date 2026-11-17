@@ -3,7 +3,8 @@ import { Bot, Copy, Film, ImagePlus, LayoutTemplate, Plus, Server, Trash2, Check
 import { useApp, captionPresets } from '../state';
 import { drawFrame, loadImage, DIMS } from '../lib/render';
 import { TARJA_PADRAO, type Formato, type Tarja } from '../lib/analyze';
-import { EFEITOS_MODELO, LAYOUTS, QUALIDADES, marcaDe, novoModelo, visualDe, type Modelo, type Qualidade } from '../lib/modelos';
+import EstiloVisual from '../components/EstiloVisual';
+import { EFEITOS_MODELO, estiloDe, LAYOUTS, QUALIDADES, marcaDe, novoModelo, visualDe, type Modelo, type Qualidade } from '../lib/modelos';
 import { verAgente, salvarAgente } from '../lib/agente';
 import type { Regiao } from '../lib/render';
 import ModelagemIA from '../components/ModelagemIA';
@@ -36,7 +37,7 @@ export function PreviaModelo({m,video}:{m:Modelo;video?:HTMLVideoElement|null}){
     const marca=marcaDe(m); const logo=await loadImage(marca.logo); if(!vivo) return;
     let legenda=captionPresets.find(p=>p.id===m.legenda)||null;
     if(legenda) legenda={...legenda,position:m.legendaPos==='meio'?'center':legenda.position==='center'?'center-bottom':legenda.position};
-    drawFrame(cv.getContext('2d')!,video||quadroFalso(m),document.createElement('canvas'),1.2,10,{legenda,efeito:m.efeito,cues:[{start:0,end:4,text:'É assim que a legenda aparece'}],gancho:'Seu gancho aqui',accent:legenda?.highlightColor||m.cor,template:marca,logoImg:logo,tarja:m.tarja,visual:visualDe(m)},W,H);
+    drawFrame(cv.getContext('2d')!,video||quadroFalso(m),document.createElement('canvas'),1.2,10,{legenda,efeito:m.efeito,cues:[{start:0,end:4,text:'É assim que a legenda aparece'}],gancho:'Seu gancho aqui',accent:legenda?.highlightColor||m.cor,template:marca,logoImg:logo,tarja:m.tarja,visual:visualDe(m),estilo:estiloDe(m)},W,H);
   })(); return ()=>{ vivo=false; }; },[m,video,W,H]);
   return <canvas ref={ref} width={W} height={H} className={'preview-canvas f'+m.formato.replace(':','x')} aria-label={'Prévia do template '+m.nome}/>;
 }
@@ -88,6 +89,7 @@ function FormModelo({m,set}:{m:Modelo;set:(p:Partial<Modelo>)=>void}){
       <label>Estilo da legenda<select value={m.legenda} onChange={e=>set({legenda:e.target.value})}><option value="">Sem legenda</option>{captionPresets.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select></label>
       <label>Altura da legenda<select value={m.legendaPos} onChange={e=>set({legendaPos:e.target.value as Modelo['legendaPos']})}><option value="baixo">Embaixo</option><option value="meio">No meio</option></select></label>
     </div>
+    <EstiloVisual valor={estiloDe(m)} onChange={e=>set({estiloVisual:e?.id||'',estiloForca:e?.forca??1,estiloOff:e?.off||[],estiloTexto:e?.texto||''})}/>
     <label>Efeito ou transição<select value={m.efeito} onChange={e=>set({efeito:e.target.value})}>{EFEITOS_MODELO.map(([id,n])=><option key={id} value={id}>{n}</option>)}</select></label>
 
     <h3>Gancho e tarjas</h3>

@@ -24,6 +24,7 @@ import cofre
 import postagem as pg
 import agente as ag
 import modelos as mo
+import visual_presets as vp
 import banco as db
 import autenticacao as au
 import projetos as pj
@@ -511,7 +512,7 @@ class Handler(BaseHTTPRequestHandler):
             self.json(e.status, {'detail': str(e), **(getattr(e, 'extra', None) or {})})
         except apv.ErroAprovacao as e:
             self.json(e.status, {'detail': str(e)})
-        except (pg.ErroRede, ag.ErroAgente, mo.ErroModelo, produtor.ErroProdutor, rd.ErroRender, ValueError, FileNotFoundError) as e:
+        except (pg.ErroRede, ag.ErroAgente, mo.ErroModelo, vp.ErroEstilo, produtor.ErroProdutor, rd.ErroRender, ValueError, FileNotFoundError) as e:
             self.json(400, {'detail': str(e)})
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -541,6 +542,13 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == '/agente':
             self.token_ok()
             return self.json(200, ag.ver())
+        if caminho == '/estilos-visuais':
+            self.token_ok()
+            return self.json(200, {'versao': vp.VERSAO, 'estilos': vp.listar(), 'componentes': vp.COMPONENTES})
+        me = re.fullmatch(r'/estilos-visuais/(\w+)/demo', caminho)
+        if me:
+            self.token_ok()
+            return self.enviar_arquivo(vp.demo_pronta(me.group(1)), 'demo-' + me.group(1))
         if caminho == '/modelos':
             self.token_ok()
             return self.json(200, mo.biblioteca(ag.config()['cortes']['template']))
@@ -647,6 +655,8 @@ def _rotas_agenda(self, caminho: str):
         return ag.acao_canal(d)
     if caminho == '/modelos':
         return mo.salvar(d)
+    if caminho == '/estilos-visuais/medir':
+        return {'medido': vp.medir(str(d.get('id', ''))), 'estilos': vp.listar()}
     if caminho == '/agente/pesos':
         return ag.salvar_pesos(d)
     if caminho == '/agente/aprender':
