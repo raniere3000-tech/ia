@@ -14,7 +14,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import pino from 'pino';
-import makeWASocket, { useMultiFileAuthState, DisconnectReason, jidNormalizedUser, Browsers, fetchLatestWaWebVersion } from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, jidNormalizedUser, Browsers, fetchLatestWaWebVersion, normalizeMessageContent } from '@whiskeysockets/baileys';
+
+// a biblioteca de criptografia escreve as chaves na tela ("Closing session: SessionEntry ..."): esconde esse ruído
+for (const k of ['log', 'info', 'warn']) {
+  const orig = console[k].bind(console);
+  console[k] = (...a) => { if (typeof a[0] === 'string' && /^(Closing|Opening|Removing|Migrating|Session|Decrypted|Failed to decrypt|Bad MAC)/.test(a[0])) return; orig(...a); };
+}
 
 const DADOS = process.env.DADOS || path.join(os.homedir(), '.estudioclip');
 const AUTH = path.join(DADOS, 'whatsapp-sessao');
@@ -52,15 +58,17 @@ async function mandar(texto) {
 }
 
 function texto(msg) {
-  const m = msg.message || {};
-  return (m.conversation || m.extendedTextMessage?.text || m.ephemeralMessage?.message?.extendedTextMessage?.text || '').trim();
+  const m = normalizeMessageContent(msg.message) || {};
+  return (m.conversation || m.extendedTextMessage?.text || '').trim();
 }
+
+const usuario = (jid) => String(jid || '').split('@')[0].split(':')[0];   // "5511...:12@s.whatsapp.net" -> "5511..."
 
 function deMim(msg) {
   const k = msg.key || {};
   if (!k.fromMe) return false;                                    // só mensagens que VOCÊ escreveu
-  const chat = jidNormalizedUser(k.remoteJid || '');
-  return eu.has(chat);                                            // ...na conversa com você mesmo
+  // ...na conversa com você mesmo (o WhatsApp pode chamar essa conversa pelo número ou pelo "LID")
+  return [k.remoteJid, k.remoteJidAlt].some((j) => j && eu.has(usuario(j)));
 }
 
 // Tentativa de pareamento que não terminou deixa chaves pela metade: começa do zero.
@@ -95,7 +103,7 @@ async function ligar() {
     if (u.connection === 'open') {
       const id = sock.user?.id || '';
       const lid = sock.user?.lid || '';
-      eu = new Set([jidNormalizedUser(id), lid && jidNormalizedUser(lid)].filter(Boolean));
+      eu = new Set([usuario(id), usuario(lid)].filter(Boolean));
       minhaConversa = jidNormalizedUser(id);
       pronta = true;
       fs.writeFileSync(path.join(DADOS, 'whatsapp-ligado'), String(Date.now()));
@@ -124,9 +132,14 @@ async function ligar() {
     if (type !== 'notify' && type !== 'append') return;
     for (const msg of messages) {
       if (Date.now() / 1000 - Number(msg.messageTimestamp || 0) > 180) continue;   // não reprocessa mensagens antigas
-      if (!msg.key?.id || enviadas.has(msg.key.id) || !deMim(msg)) continue;
+      if (!msg.key?.id || enviadas.has(msg.key.id) || !msg.key.fromMe) continue;
       const t = texto(msg);
       if (!t || t.startsWith(ROBO.trim())) continue;
+      if (!deMim(msg)) {                                          // você escreveu para outra pessoa: não é comando
+        if (process.env.LOG_PONTE_DIAG) dizer(`ignorei mensagem sua na conversa ${usuario(msg.key.remoteJid).slice(-4)} (não é a conversa com você mesmo).`);
+        continue;
+      }
+      dizer(`comando recebido: "${t.slice(0, 40)}"`);
       try { await mandar(await chamarServidor(t)); }
       catch (e) { try { await mandar('Não consegui falar com o servidor: ' + e.message); } catch { /* desconectado */ } }
     }
