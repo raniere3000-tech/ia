@@ -20,7 +20,7 @@ import projetos as pj
 
 ARQ = pg.DADOS / 'comandos.json'
 VALIDADE = 600
-ACOES = {'pendentes', 'aprovar', 'corrigir', 'rejeitar', 'agendar_corte', 'descartar_corte', 'cortar_link', 'status', 'ajuda'}
+ACOES = {'pendentes', 'aprovar', 'corrigir', 'rejeitar', 'agendar_corte', 'descartar_corte', 'cortar_link', 'cortar_tema', 'status', 'ajuda'}
 PUBLICAM = {'aprovar', 'agendar_corte'}
 
 AJUDA = ('*Comandos do EstúdioClip* (escreva do seu jeito):\n'
@@ -30,6 +30,7 @@ AJUDA = ('*Comandos do EstúdioClip* (escreva do seu jeito):\n'
          '• *rejeitar VID-XXXXXX*\n'
          '• *agendar corte 2* / *descartar corte 2* (o número vem da lista de pendentes)\n'
          '• *cortar <link do YouTube>*: o Agente 1 corta esse vídeo\n'
+         '• *cortar sobre <tema>*: o Agente 1 procura um vídeo novo sobre o tema e corta\n'
          '• *status*: como está a fila\n'
          'O que publica pede um SIM para confirmar.')
 
@@ -116,6 +117,9 @@ def _regras(t: str) -> dict | None:
     m = re.search(r'https?://\S+', s)
     if m and re.search(r'\b(cort|corta|cortar|clip)', b):
         return {'acao': 'cortar_link', 'link': m.group(0)}
+    m = re.match(r'(?:cort\w*|busc\w*|procur\w*|ach\w*)\s+(?:um\s+|o\s+)?(?:v[ií]deos?\s+)?(?:sobre|de|do|da|com)\s+(.{3,80}?)(?:\s+(?:pra|para)\s+mim)?[.!]?$', b)
+    if m:
+        return {'acao': 'cortar_tema', 'tema': s[m.start(1):m.end(1)].strip()}
     ref = re.search(r'VID-([A-Z0-9]{6})\b', s.upper())
     rf = ('VID-' + ref.group(1)) if ref else ''
     resto = re.split(r'VID-[A-Z0-9]{6}[\s:,.-]*', s, maxsplit=1, flags=re.I)
@@ -140,7 +144,7 @@ def _ia(t: str) -> dict:
     cs = [{'n': i + 1, 'titulo': c['titulo'][:80]} for i, c in enumerate(_cortes_pendentes()[:10])]
     pedido = ('Você traduz a mensagem do dono de um estúdio de vídeos em UMA ação. Ações possíveis: '
               'pendentes, status, ajuda, aprovar (campo ref), corrigir (ref e texto com o que mudar), rejeitar (ref e texto), '
-              'agendar_corte (n), descartar_corte (n), cortar_link (link). Se a mensagem não pedir nenhuma delas, use "nada" e '
+              'agendar_corte (n), descartar_corte (n), cortar_link (link), cortar_tema (tema). Se a mensagem não pedir nenhuma delas, use "nada" e '
               'explique em "resposta" (curta, português simples). Nunca invente ref, n ou link que não estejam na mensagem ou nas listas.\n'
               f'Vídeos esperando aprovação: {json.dumps(vs, ensure_ascii=False)}\nCortes esperando aprovação: {json.dumps(cs, ensure_ascii=False)}\n'
               f'Mensagem: {t[:800]}\nResponda só JSON: {{"acao": "...", "ref": "", "n": 0, "texto": "", "link": "", "resposta": ""}}')
@@ -199,6 +203,10 @@ def executar(p: dict, por: str, confirmado: bool = False) -> str:
         link = str(p.get('link') or '')
         ag.rodar_agora('link', link)
         return 'Certo! Mandei o Agente 1 cortar esse vídeo. Aviso quando os cortes passarem pelo diretor de qualidade.'
+    if a == 'cortar_tema':
+        tema = str(p.get('tema') or '').strip()
+        ag.rodar_agora('tema', tema)
+        return f'Certo! O Agente 1 vai procurar um vídeo novo sobre "{tema[:60]}", cortar e passar pelo diretor de qualidade. Aviso quando estiver pronto.'
     if a in ('aprovar', 'corrigir', 'rejeitar'):
         v = _video(str(p.get('ref') or ''))
         if a == 'corrigir':

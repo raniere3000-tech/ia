@@ -67,7 +67,7 @@ PALETA_TARJA = ['#111111', '#1B2A49', '#3A0F3F', '#0F3D2E', '#4A1D1D']
 
 PADRAO = {
     'cortes': {
-        'ligado': False, 'nichos': ['Games'], 'proibidos': ['conteúdo adulto', 'discurso de ódio', 'menores de idade'],
+        'ligado': False, 'nichos': ['Games'], 'temas': [], 'temas_outros': False, 'proibidos': ['conteúdo adulto', 'discurso de ódio', 'menores de idade'],
         'min_views': 500000, 'idioma': 'pt', 'regiao': 'BR',
         'por_semana': 6, 'por_video': 2, 'dur_min': 60, 'dur_max': 65, 'dur_v': 0, 'nota_min': 60,
         'video_min': 4, 'video_max': 120, 'dias_video': 14, 'hora_ini': 0, 'hora_fim': 24,
@@ -136,6 +136,7 @@ def config() -> dict:
 def _limpar_cfg(c: dict) -> dict:
     co, po = c['cortes'], c['postagem']
     co['nichos'] = [str(x).strip()[:40] for x in co['nichos'] if str(x).strip()][:8]
+    co['temas'] = [str(x).strip()[:60] for x in co['temas'] if str(x).strip()][:10]
     co['proibidos'] = [str(x).strip()[:60] for x in co['proibidos'] if str(x).strip()][:40]
     co['variar'] = [v for v in co['variar'] if v in VARIACOES][:3]
     co['modelos'] = [str(x)[:40] for x in dict.fromkeys(co['modelos']) if isinstance(x, str)][:mo.MAX_ATIVOS]
@@ -516,26 +517,67 @@ def acao_canal(d: dict) -> dict:
     return ver()
 
 
-def proximo_video() -> dict | None:
-    """Vídeo novo mais visto entre os canais aprovados, ainda não usado."""
+def _casa_tema(titulo: str, temas: list) -> str:
+    """Qual dos temas aparece no título (todas as palavras do tema, sem acento e sem maiúsculas). '' = nenhum."""
+    t = _norm(titulo)
+    for tema in temas:
+        palavras = [w for w in re.findall(r'\w+', _norm(tema)) if len(w) > 2]
+        if palavras and all(w in t for w in palavras):
+            return tema
+    return ''
+
+
+def proximo_video(tema: str = '') -> dict | None:
+    """Vídeo novo mais visto, ainda não usado. Sem tema: entre os canais aprovados. Com os temas da configuração (ou um tema
+    pedido na hora): só vídeos que falam do tema. Tema pedido na hora, ou 'também outros canais' ligado, busca no YouTube todo;
+    o corte de canal não aprovado fica sem origem registrada e só posta com a sua liberação especial."""
     co = config()['cortes']
     e = estado()
+    temas = [tema] if tema else co['temas']
+    buscar_fora = bool(tema) or (bool(temas) and co['temas_outros'])
     aprovados = [c for c in e['canais'] if c['status'] == 'aprovado' and c.get('motivo') in MOTIVOS]
-    if not aprovados:
+    if not aprovados and not buscar_fora:
         return None
     ids = []
     for c in aprovados:
         try:
-            j = yt('playlistItems', part='contentDetails', playlistId='UU' + c['id'][2:], maxResults=12)
+            j = yt('playlistItems', part='contentDetails', playlistId='UU' + c['id'][2:], maxResults=12 if not temas else 30)
         except ErroAgente as err:
             anotar(f'Não consegui listar os vídeos de {c["nome"]}: {err}', 'erro')
             continue
         ids += [it['contentDetails']['videoId'] for it in j.get('items', []) if it.get('contentDetails', {}).get('videoId')]
+    if buscar_fora:
+        desde = (datetime.utcnow() - timedelta(days=co['dias_video'])).strftime('%Y-%m-%dT%H:%M:%SZ')
+        for tm in temas[:3]:
+            etapa(f'Procurando vídeos sobre: {tm}')
+            filtro = {'relevanceLanguage': co['idioma']}
+            if co['regiao']:
+                filtro['regionCode'] = co['regiao']
+            try:
+                for dur in ('medium', 'long'):
+                    j = yt('search', part='snippet', q=tm, type='video', order='viewCount', publishedAfter=desde, maxResults=25, videoDuration=dur, **filtro)
+                    ids += [it['id']['videoId'] for it in j.get('items', []) if it.get('id', {}).get('videoId')]
+            except ErroAgente as err:
+                anotar(f'Não consegui procurar "{tm}": {err}', 'erro')
     ids = [i for i in dict.fromkeys(ids) if i not in e['vistos']]
     limite = (datetime.utcnow() - timedelta(days=co['dias_video'])).strftime('%Y-%m-%dT%H:%M:%SZ')
-    bons = [v for v in _detalhes(ids).values()
-            if co['video_min'] * 60 <= v['dur'] <= co['video_max'] * 60 and v['publicado'] >= limite]
-    return max(bons, key=lambda v: v['views']) if bons else None
+    ok_canais = {c['id'] for c in aprovados}
+    bons = []
+    for v in _detalhes(ids).values():
+        if not (co['video_min'] * 60 <= v['dur'] <= co['video_max'] * 60 and v['publicado'] >= limite):
+            continue
+        if v['idioma'] and v['idioma'] != co['idioma'] and v['canal'] not in ok_canais:
+            continue
+        if temas:
+            casou = _casa_tema(v['titulo'], temas)
+            if not casou and v['canal'] not in ok_canais:
+                casou = tema or ''            # veio da busca do YouTube pelo tema
+            if not casou:
+                continue
+            v['tema'] = casou
+        v['fora_aprovados'] = v['canal'] not in ok_canais
+        bons.append(v)
+    return max(bons, key=lambda v: (not v['fora_aprovados'], v['views'])) if bons else None
 
 
 # ---------------------------------------------------------------- fala: legenda do YouTube ou IA
@@ -1240,7 +1282,7 @@ def _marcar_visto(vid: str, resultado: str):
     _mudar(f)
 
 
-def trabalhar_cortes(forcar: bool = False, link: str = '') -> str:
+def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '') -> str:
     """Um passo do agente de cortes: no máximo um vídeo por vez."""
     co = config()['cortes']
     if link:
@@ -1251,7 +1293,10 @@ def trabalhar_cortes(forcar: bool = False, link: str = '') -> str:
         falta = co['por_semana'] - cortes_da_semana()
         if falta <= 0 and not forcar:
             return 'A meta de cortes desta semana já foi cumprida.'
-        v = proximo_video()
+        v = proximo_video(tema)
+        if not v and (tema or co['temas']):
+            return (f'Não achei vídeo novo sobre "{tema}".' if tema else 'Não achei vídeo novo sobre os seus temas (' + ', '.join(co['temas'][:4]) + ').') + \
+                   ('' if tema or co['temas_outros'] else ' Só procurei nos canais aprovados: ligue "Procurar também em outros canais" para buscar no YouTube todo.')
         if not v:
             return 'Nenhum vídeo novo nos canais aprovados.' if any(c['status'] == 'aprovado' for c in estado()['canais']) else 'Nenhum canal aprovado ainda. Aprove canais na aba Agente.'
         v['url'] = os.getenv('URL_VIDEO_TESTE') or 'https://www.youtube.com/watch?v=' + v['id']
@@ -1843,11 +1888,13 @@ ENFILEIRAR = None        # ligado pelo servidor: pedidos manuais entram na fila 
 
 
 def rodar_agora(oque: str, link: str = '') -> dict:
-    if not shutil.which('ffmpeg') and oque in ('cortar', 'link'):
+    if not shutil.which('ffmpeg') and oque in ('cortar', 'link', 'tema'):
         raise ErroAgente('Falta o FFmpeg no servidor (Termux: pkg install ffmpeg).')
     if oque == 'link' and not re.match(r'https?://', link):
         raise ErroAgente('Cole o link do vídeo.')
-    if oque not in ('buscar', 'cortar', 'link', 'postar'):
+    if oque == 'tema' and len(link.strip()) < 3:
+        raise ErroAgente('Diga o tema do vídeo. Ex.: cortar sobre Elden Ring.')
+    if oque not in ('buscar', 'cortar', 'link', 'postar', 'tema'):
         raise ErroAgente('Pedido desconhecido.')
     if ENFILEIRAR:
         return ENFILEIRAR(oque, link)
@@ -1857,6 +1904,8 @@ def rodar_agora(oque: str, link: str = '') -> dict:
         _em_fundo('Busca de canais', buscar_canais)
     elif oque == 'cortar':
         _em_fundo('Agente de cortes', trabalhar_cortes, True)
+    elif oque == 'tema':
+        _em_fundo('Corte por tema', trabalhar_cortes, True, '', link.strip()[:80])
     elif oque == 'link':
         if not re.match(r'https?://', link):
             raise ErroAgente('Cole o link do vídeo.')

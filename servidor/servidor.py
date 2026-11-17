@@ -715,8 +715,8 @@ Handler.TOKEN = TOKEN
 def _job_agente1(ctx):
     """Pedido manual do agente de cortes, agora pela fila (antes era recusado quando estava ocupado)."""
     oque, link = ctx.dados.get('oque', ''), ctx.dados.get('link', '')
-    ctx.progresso(5, {'buscar': 'Buscando canais', 'cortar': 'Fazendo cortes', 'link': 'Cortando o link', 'postar': 'Agendando cortes'}.get(oque, oque))
-    nome = {'buscar': 'Busca de canais', 'cortar': 'Agente de cortes', 'link': 'Corte do link', 'postar': 'Agente de postagem'}.get(oque, oque)
+    ctx.progresso(5, {'buscar': 'Buscando canais', 'cortar': 'Fazendo cortes', 'link': 'Cortando o link', 'tema': 'Procurando vídeo pelo tema', 'postar': 'Agendando cortes'}.get(oque, oque))
+    nome = {'buscar': 'Busca de canais', 'cortar': 'Agente de cortes', 'link': 'Corte do link', 'tema': 'Corte por tema', 'postar': 'Agente de postagem'}.get(oque, oque)
     try:
         if oque == 'buscar':
             ag.buscar_canais()
@@ -724,6 +724,8 @@ def _job_agente1(ctx):
             ag.trabalhar_cortes(True)
         elif oque == 'link':
             ag.trabalhar_cortes(True, link)
+        elif oque == 'tema':
+            ag.trabalhar_cortes(True, '', link)
         elif oque == 'postar':
             ag.trabalhar_postagem()
     except (ag.ErroAgente, pg.ErroRede) as e:
@@ -740,9 +742,9 @@ def _enfileirar_agente1(oque: str, link: str = '') -> dict:
                json.dumps({'oque': oque, 'link': link}, ensure_ascii=False))
     if ja:
         return {'ok': True, 'job': ja['id'], 'fila': True, 'ja_na_fila': True}
-    pesado = oque in ('cortar', 'link')
+    pesado = oque in ('cortar', 'link', 'tema')
     j = fila.enfileirar('agente1.' + ('pesado' if pesado else 'leve'), agente='agente1', dados={'oque': oque, 'link': link},
-                        recurso='pesado' if pesado else 'leve', titulo={'buscar': 'Buscar canais', 'cortar': 'Fazer cortes', 'link': 'Cortar link',
+                        recurso='pesado' if pesado else 'leve', titulo={'buscar': 'Buscar canais', 'cortar': 'Fazer cortes', 'link': 'Cortar link', 'tema': 'Cortar por tema',
                                                                         'postar': 'Agendar cortes prontos'}.get(oque, oque),
                         max_tentativas=1)
     return {'ok': True, 'job': j['id'], 'fila': True, 'ocupado': ag.OCUPADO.locked()}

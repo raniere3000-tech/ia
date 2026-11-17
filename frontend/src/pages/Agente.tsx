@@ -176,7 +176,7 @@ export default function Agente(){
   const PARTES:Parte[]=['cortes','postagem','agente3','desempenho','avisos','fila'];
   const [v,setV]=useState<VisaoAgente|null>(null); const [erro,setErro]=useState(''); const [parte,setParte]=useState<Parte>(()=>PARTES.includes(rotaExtra as Parte)?rotaExtra as Parte:'cortes');
   useEffect(()=>{ if(PARTES.includes(rotaExtra as Parte)) setParte(rotaExtra as Parte); },[rotaExtra]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const [link,setLink]=useState(''); const [canalLink,setCanalLink]=useState(''); const [canalMotivo,setCanalMotivo]=useState('');
+  const [link,setLink]=useState(''); const [tema,setTema]=useState(''); const [canalLink,setCanalLink]=useState(''); const [canalMotivo,setCanalMotivo]=useState('');
   const [chaves,setChaves]=useState({gemini:'',gemini_pago:'',youtube:'',email_senha:'',pexels:'',pixabay:'',callmebot:''}); const [hora,setHora]=useState('18:00'); const [diasSel,setDiasSel]=useState<number[]>([0,1,2,3,4,5]);
   const vivo=useRef(true);
   useEffect(()=>{ vivo.current=true; return ()=>{ vivo.current=false; }; },[]);
@@ -253,6 +253,13 @@ export default function Agente(){
       </section>
       <section className="panel">
         <h3>O que procurar</h3>
+        <div className="mt"><b>Temas específicos</b>
+          <p className="hint">Quer vídeos só sobre um assunto? Escreva o tema (ex.: <i>Elden Ring</i>, <i>futebol</i>). Com temas, o agente só corta vídeos que falam deles, em vez de pegar o mais visto de qualquer assunto.</p>
+          <Lista titulo="" escolhidos={co.temas||[]} sugestoes={[]} mudar={l=>salvar({cortes:{temas:l}})} placeholder="Escreva um tema e toque em adicionar"/>
+          <label className="check mt"><input type="checkbox" checked={!!co.temas_outros} onChange={e=>salvar({cortes:{temas_outros:e.target.checked}})}/> Procurar também em outros canais do YouTube (não só nos aprovados)</label>
+          <p className="hint">Vídeo de canal que você não aprovou fica sem origem registrada: ele passa pelo diretor de qualidade, mas só posta depois da sua liberação especial.</p>
+          <div className="ag-add"><input value={tema} onChange={e=>setTema(e.target.value)} placeholder="Cortar agora um vídeo sobre... (só desta vez)"/><button className="subtle sm" disabled={ocupado||tema.trim().length<3} onClick={()=>run(async()=>{ await rodarAgente(settings,'tema',tema.trim()); setTema(''); setParte('fila'); },'Procurando um vídeo sobre esse tema. O resultado aparece na fila.')}><Search size={14}/> Procurar e cortar</button></div>
+        </div>
         <Lista titulo="Nichos" escolhidos={co.nichos} sugestoes={v.opcoes.nichos} mudar={l=>salvar({cortes:{nichos:l}})} placeholder="Outro nicho"/>
         <div className="ag-grade">
           <label>Idioma dos canais<select value={co.idioma} onChange={e=>salvar({cortes:{idioma:e.target.value}})}>{Object.entries(v.opcoes.idiomas||{pt:'Português'}).map(([k,t])=><option key={k} value={k}>{t}</option>)}</select></label>
