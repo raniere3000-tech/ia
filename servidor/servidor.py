@@ -667,7 +667,7 @@ def _rotas_agenda(self, caminho: str):
     if caminho == '/agente/email/teste':
         ag.enviar_email('Teste de aviso', 'Se você recebeu este e-mail, os avisos do agente estão funcionando.')
         return {'ok': True}
-    m = re.fullmatch(r'/agente/cortes/(\w+)/(descartar|agendar|email)', caminho)
+    m = re.fullmatch(r'/agente/cortes/(\w+)/(descartar|agendar|liberar|email)', caminho)
     if m:
         return ag.acao_corte(*m.groups())
     if caminho == '/contas/codigo':

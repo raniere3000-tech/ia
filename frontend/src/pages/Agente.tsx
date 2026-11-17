@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bot, Scissors, Send, Square, Play, Search, Link2, Loader2, CheckCircle2, AlertTriangle, Trash2, Mail, Download, Eye, Plus, X, KeyRound, Clock, RefreshCw, ExternalLink, CalendarClock } from 'lucide-react';
+import { Bot, Scissors, Send, Square, Play, Search, Link2, Loader2, CheckCircle2, AlertTriangle, Trash2, Mail, Download, Eye, Plus, X, KeyRound, Clock, RefreshCw, ExternalLink, CalendarClock, ShieldCheck } from 'lucide-react';
 import { useApp } from '../state';
 import { REDES } from '../lib/agenda';
 import { useServidor } from '../components/Servidor2';
@@ -82,7 +82,7 @@ function CanalLinha({c,fazer}:{c:Canal;fazer:(d:Parameters<typeof acaoCanal>[1])
   </li>;
 }
 
-function CorteLinha({c,fazer}:{c:CorteAgente;fazer:(acao:'descartar'|'agendar'|'email')=>void}){
+function CorteLinha({c,fazer}:{c:CorteAgente;fazer:(acao:'descartar'|'agendar'|'liberar'|'email')=>void}){
   const {settings,toast}=useApp();
   const [url,setUrl]=useState(''); const [busy,setBusy]=useState(false);
   useEffect(()=>()=>{ if(url) URL.revokeObjectURL(url); },[url]);
@@ -102,7 +102,8 @@ function CorteLinha({c,fazer}:{c:CorteAgente;fazer:(acao:'descartar'|'agendar'|'
       <small>{c.tipo==='manual'?'Enviado da edição manual':<>{Math.round(c.fim-c.ini)} s · de “{c.origem_titulo}” ({c.canal_nome})</>} · feito {quando(c.criado)}{c.quando&&c.status!=='pronto'?` · post ${quando(c.quando)}`:''}{typeof c.views==='number'?` · ${num(c.views)} visualizações no YouTube`:''}</small>
       {c.hashtags.length>0&&<small className="muted">{c.hashtags.join(' ')}</small>}
       {c.motivo&&<small className="muted">Por que este trecho: {c.motivo}</small>}
-      {c.conferencia?.bloqueios.map(b=><p key={b} className="hint bad"><AlertTriangle size={13}/> Não pode ser publicado: {b}</p>)}
+      {c.conferencia?.bloqueios.map(b=><p key={b} className="hint bad"><AlertTriangle size={13}/> {c.conferencia?.liberaveis?.includes(b)?'Restrição (você pode liberar): ':'Não pode ser publicado: '}{b}</p>)}
+      {c.liberacao&&<p className="hint warn"><ShieldCheck size={13}/> Liberado por você apesar de: {c.liberacao.restricoes.join(' · ')}</p>}
       {c.conferencia?.avisos.map(b=><p key={b} className="hint warn"><AlertTriangle size={13}/> {b}</p>)}
       {c.metricas&&Object.entries(c.metricas).filter(([,m])=>m.views!==null||m.curtidas!==null).map(([r,m])=><small key={r} className="muted">{r}: {m.views!==null?`${num(m.views)} visualizações`:''}{m.curtidas!==null?` · ${num(m.curtidas)} curtidas · ${num(m.comentarios||0)} comentários`:''}</small>)}
       {c.qa?.diretor&&(c.qa.diretor.veredito==='aprovado'?<p className="hint ok">Diretor de qualidade aprovou{c.qa.diretor.tentativas>0?` depois de refazer ${c.qa.diretor.tentativas} vez(es)`:''}.</p>:<p className="hint bad"><AlertTriangle size={13}/> Diretor de qualidade reprovou mesmo depois de refazer {c.qa.diretor.tentativas} vez(es): {c.qa.diretor.motivos.join(' · ')}. Este corte não vai para você nem para as redes.</p>)}
@@ -112,7 +113,8 @@ function CorteLinha({c,fazer}:{c:CorteAgente;fazer:(acao:'descartar'|'agendar'|'
     {c.video&&<div className="ag-canal-acoes">
       {!url&&<button className="subtle sm" disabled={busy} onClick={()=>trazer(false)}>{busy?<Loader2 size={14} className="spin"/>:<Eye size={14}/>} Ver</button>}
       <button className="subtle sm" disabled={busy} onClick={()=>trazer(true)}><Download size={14}/> Baixar</button>
-      {c.status==='pronto'&&<button className="primary sm" disabled={!!c.conferencia?.bloqueios.length} onClick={()=>fazer('agendar')}><CalendarClock size={14}/> Aprovar e agendar</button>}
+      {c.status==='pronto'&&!c.conferencia?.bloqueios.length&&<button className="primary sm" onClick={()=>fazer('agendar')}><CalendarClock size={14}/> Aprovar e agendar</button>}
+      {c.status==='pronto'&&!!c.conferencia?.bloqueios.length&&(c.conferencia.liberavel?<button className="primary sm" onClick={()=>fazer('liberar')}><ShieldCheck size={14}/> Liberar e agendar mesmo assim</button>:<button className="primary sm" disabled><CalendarClock size={14}/> Aprovar e agendar</button>)}
       <button className="subtle sm" onClick={()=>fazer('email')}><Mail size={14}/> E-mail</button>
       {c.status!=='descartado'&&c.status!=='postado'&&<button className="link-btn" onClick={()=>fazer('descartar')}><Trash2 size={13}/> Descartar</button>}
     </div>}
@@ -453,7 +455,7 @@ export default function Agente(){
     {parte==='fila'&&<>
       <section className="panel">
         <h3>Cortes feitos pelo agente</h3>
-        {v.cortes.length?<ul className="ag-cortes">{v.cortes.map(x=><CorteLinha key={x.id} c={x} fazer={a=>{ if(a==='descartar'&&!confirm('Descartar este corte? O arquivo é apagado do servidor.')) return; run(()=>acaoCorte(settings,x.id,a),a==='email'?'E-mail enviado.':a==='agendar'?'Corte aprovado por você e agendado.':'Corte descartado.'); }}/>)}</ul>:<div className="empty"><strong>Nenhum corte ainda</strong><p>Aprove um canal e toque em Cortar agora, ou cole o link de um vídeo na parte Cortes.</p></div>}
+        {v.cortes.length?<ul className="ag-cortes">{v.cortes.map(x=><CorteLinha key={x.id} c={x} fazer={a=>{ if(a==='descartar'&&!confirm('Descartar este corte? O arquivo é apagado do servidor.')) return; if(a==='liberar'&&!confirm('Liberar e agendar mesmo com estas restrições?\n\n'+(x.conferencia?.liberaveis||[]).join('\n')+'\n\nA decisão e a responsabilidade são suas. Fica registrado no corte e no post.')) return; run(()=>acaoCorte(settings,x.id,a),a==='email'?'E-mail enviado.':a==='agendar'?'Corte aprovado por você e agendado.':a==='liberar'?'Corte liberado por você (com as restrições registradas) e agendado.':'Corte descartado.'); }}/>)}</ul>:<div className="empty"><strong>Nenhum corte ainda</strong><p>Aprove um canal e toque em Cortar agora, ou cole o link de um vídeo na parte Cortes.</p></div>}
       </section>
       <section className="panel">
         <h3>Histórico</h3>

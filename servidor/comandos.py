@@ -20,8 +20,8 @@ import projetos as pj
 
 ARQ = pg.DADOS / 'comandos.json'
 VALIDADE = 600
-ACOES = {'pendentes', 'aprovar', 'corrigir', 'rejeitar', 'agendar_corte', 'descartar_corte', 'cortar_link', 'cortar_tema', 'status', 'ajuda'}
-PUBLICAM = {'aprovar', 'agendar_corte'}
+ACOES = {'pendentes', 'aprovar', 'corrigir', 'rejeitar', 'agendar_corte', 'descartar_corte', 'cortar_link', 'cortar_tema', 'liberar_corte', 'status', 'ajuda'}
+PUBLICAM = {'aprovar', 'agendar_corte', 'liberar_corte'}
 
 AJUDA = ('*Comandos do EstúdioClip* (escreva do seu jeito):\n'
          '• *pendentes*: o que espera a sua aprovação\n'
@@ -29,6 +29,7 @@ AJUDA = ('*Comandos do EstúdioClip* (escreva do seu jeito):\n'
          '• *corrigir VID-XXXXXX o que mudar*: pede correção, o vídeo é refeito\n'
          '• *rejeitar VID-XXXXXX*\n'
          '• *agendar corte 2* / *descartar corte 2* (o número vem da lista de pendentes)\n'
+         '• *liberar corte 2*: agenda mesmo com restrições de direitos (você assume)\n'
          '• *cortar <link do YouTube>*: o Agente 1 corta esse vídeo\n'
          '• *cortar sobre <tema>*: o Agente 1 procura um vídeo novo sobre o tema e corta\n'
          '• *status*: como está a fila\n'
@@ -130,6 +131,9 @@ def _regras(t: str) -> dict | None:
         return {'acao': 'corrigir', 'ref': rf, 'texto': resto}
     if re.match(r'(rejeit|recus|reprov)', b) and rf:
         return {'acao': 'rejeitar', 'ref': rf, 'texto': resto}
+    m = re.match(r'(?:libera\w*|for[cç]a\w*)(?:\s+e\s+(?:agend|post)\w*)?\s+(?:o\s+)?corte\s*(\d+)', b)
+    if m:
+        return {'acao': 'liberar_corte', 'n': int(m.group(1))}
     m = re.match(r'(agend|aprov|post)\w*\s+(?:o\s+)?corte\s*(\d+)', b)
     if m:
         return {'acao': 'agendar_corte', 'n': int(m.group(2))}
@@ -144,7 +148,7 @@ def _ia(t: str) -> dict:
     cs = [{'n': i + 1, 'titulo': c['titulo'][:80]} for i, c in enumerate(_cortes_pendentes()[:10])]
     pedido = ('Você traduz a mensagem do dono de um estúdio de vídeos em UMA ação. Ações possíveis: '
               'pendentes, status, ajuda, aprovar (campo ref), corrigir (ref e texto com o que mudar), rejeitar (ref e texto), '
-              'agendar_corte (n), descartar_corte (n), cortar_link (link), cortar_tema (tema). Se a mensagem não pedir nenhuma delas, use "nada" e '
+              'agendar_corte (n), liberar_corte (n; agendar mesmo com restrições), descartar_corte (n), cortar_link (link), cortar_tema (tema). Se a mensagem não pedir nenhuma delas, use "nada" e '
               'explique em "resposta" (curta, português simples). Nunca invente ref, n ou link que não estejam na mensagem ou nas listas.\n'
               f'Vídeos esperando aprovação: {json.dumps(vs, ensure_ascii=False)}\nCortes esperando aprovação: {json.dumps(cs, ensure_ascii=False)}\n'
               f'Mensagem: {t[:800]}\nResponda só JSON: {{"acao": "...", "ref": "", "n": 0, "texto": "", "link": "", "resposta": ""}}')
@@ -186,6 +190,8 @@ def _guardar(por: str, pedido: dict | None):
 def _descrever(p: dict) -> str:
     if p['acao'] == 'aprovar':
         return f'dar a aprovação final ao {p["ref"]} "{p["titulo"][:60]}" e mandar para o agente de postagem'
+    if p['acao'] == 'liberar_corte':
+        return f'LIBERAR e agendar o corte {p["n"]} "{p["titulo"][:60]}" mesmo com estas restrições: ' + ' '.join(p.get('restricoes') or [])[:400]
     return f'aprovar e agendar o corte {p["n"]} "{p["titulo"][:60]}" nas redes'
 
 
@@ -226,6 +232,15 @@ def executar(p: dict, por: str, confirmado: bool = False) -> str:
         quando = r.get('quando')
         return (f'✅ {v["ref"]} aprovado por você e enviado ao agente de postagem'
                 + (f' ({len(r.get("posts") or [])} post(s) na fila).' if r.get('posts') else '.') + (f' Quando: {quando}.' if quando else ''))
+    if a == 'liberar_corte':
+        c = _corte_n(p.get('n'))
+        conf = ag.conferir(c)
+        if not conf['bloqueios']:
+            return f'O corte {p["n"]} não tem restrição. Use: agendar corte {p["n"]}.'
+        if not conf['liberavel']:
+            return 'Esse corte tem problema técnico ou já saiu igual, e isso não dá para liberar: ' + ' '.join(conf['bloqueios'])[:300]
+        _guardar(por, {'acao': 'liberar_corte', 'n': p.get('n'), 'id': c['id'], 'titulo': c['titulo'], 'restricoes': conf['liberaveis']})
+        return f'Confirma {_descrever({"acao": "liberar_corte", "n": p.get("n"), "titulo": c["titulo"], "restricoes": conf["liberaveis"]})}? A responsabilidade é sua. Responda *SIM* em até 10 minutos.'
     if a in ('agendar_corte', 'descartar_corte'):
         c = _corte_n(p.get('n'))
         if a == 'descartar_corte':
@@ -254,6 +269,12 @@ def responder(texto: str, por: str) -> str:
             if not p:
                 return 'Não há nada esperando confirmação (o pedido vale 10 minutos). Mande o comando de novo.'
             _guardar(por, None)
+            if p['acao'] == 'liberar_corte':
+                c = next((x for x in ag.estado()['cortes'] if x['id'] == p['id'] and x['status'] == 'pronto'), None)
+                if not c:
+                    return 'Esse corte não está mais esperando aprovação.'
+                ag.acao_corte(c['id'], 'liberar')
+                return f'✅ Corte "{c["titulo"][:60]}" liberado por você (com as restrições registradas) e agendado.'
             if p['acao'] == 'agendar_corte':
                 c = next((x for x in ag.estado()['cortes'] if x['id'] == p['id'] and x['status'] == 'pronto'), None)
                 if not c:

@@ -1426,17 +1426,20 @@ def conferir(c: dict, e: dict | None = None) -> dict:
     não substitui a autorização do dono do conteúdo nem a análise de cada rede.
     """
     e = e or estado()
-    bloq, avisos = [], []
+    bloq, avisos, livres = [], [], []     # livres: bloqueios de direitos/repetição que VOCÊ pode liberar (os técnicos nunca)
     if c.get('tipo') == 'manual':
         if (c.get('direitos') or {}).get('origem') not in MOTIVOS:
             bloq.append('Falta dizer de quem é o vídeo: seu, autorizado pelo dono ou de canal com regra pública de cortes.')
+            livres.append(bloq[-1])
     else:
         canal = next((x for x in e['canais'] if x['id'] == c.get('canal')), None)
         if c.get('canal') and (not canal or canal['status'] != 'aprovado' or canal.get('motivo') not in MOTIVOS):
             bloq.append('O canal de origem não está mais na sua lista de aprovados.')
+            livres.append(bloq[-1])
         elif canal:
             if canal.get('comercial') is False:
                 bloq.append(f'O canal {canal["nome"]} está marcado como sem permissão para uso comercial.')
+                livres.append(bloq[-1])
             elif canal.get('comercial') is None:
                 avisos.append(f'Você ainda não informou se {canal["nome"]} permite uso comercial (monetização).')
             if canal.get('restricoes'):
@@ -1455,6 +1458,7 @@ def conferir(c: dict, e: dict | None = None) -> dict:
                 comum = min(c['fim'], x['fim']) - max(c['ini'], x['ini'])
                 if comum / dur > 0.5:
                     bloq.append(f'Mais da metade deste trecho já saiu em "{x["titulo"][:50]}".')
+                    livres.append(bloq[-1])
                     break
     if c.get('video') and not list(pg.VIDEOS.glob(c['video'] + '.*')):
         bloq.append('O arquivo deste corte não está mais no servidor.')
@@ -1465,7 +1469,8 @@ def conferir(c: dict, e: dict | None = None) -> dict:
         avisos.append('Sem legenda e sem gancho: as redes podem tratar como conteúdo reaproveitado e não monetizar.')
     if c.get('tipo') != 'manual' and (canal := next((x for x in e['canais'] if x['id'] == c.get('canal')), None)) and canal.get('motivo') != 'meu':
         avisos.append('Conteúdo de terceiros: a monetização depende das regras de cada rede para vídeos reaproveitados.')
-    return {'bloqueios': bloq, 'avisos': avisos}
+    duro = [b for b in bloq if b not in livres]
+    return {'bloqueios': bloq, 'avisos': avisos, 'liberaveis': livres, 'liberavel': bool(bloq) and not duro}
 
 
 def receber_manual(d: dict) -> dict:
@@ -1535,7 +1540,8 @@ def escolher_vaga(po: dict, por_semana: int) -> dict | None:
     return None
 
 
-def agendar_corte(cid: str) -> dict:
+def agendar_corte(cid: str, liberado: bool = False, quem: str = 'site') -> dict:
+    """liberado=True: você decidiu agendar mesmo com restrições de direitos/repetição (as técnicas continuam barrando)."""
     cfg = config()
     po = cfg['postagem']
     c = next((x for x in estado()['cortes'] if x['id'] == cid), None)
@@ -1543,9 +1549,10 @@ def agendar_corte(cid: str) -> dict:
         raise ErroAgente('Este corte não está na fila de prontos.')
     if not po['redes']:
         raise ErroAgente('Escolha pelo menos uma rede na parte Postagem.')
-    problemas = conferir(c)['bloqueios']
-    if problemas:
-        raise ErroAgente('Não agendei: ' + ' '.join(problemas))
+    conf = conferir(c)
+    problemas = conf['bloqueios']
+    if problemas and not (liberado and conf['liberavel']):
+        raise ErroAgente('Não agendei: ' + ' '.join(problemas) + ('' if not conf['liberavel'] else ' Se quiser mesmo assim, use "Liberar e agendar".'))
     vaga = escolher_vaga(po, cfg['cortes']['por_semana'])
     if not vaga:
         raise ErroAgente('Não há horário livre. Marque mais horários na parte Postagem.')
@@ -1554,7 +1561,13 @@ def agendar_corte(cid: str) -> dict:
                        'youtube_privacidade': po['youtube_privacidade'], 'tiktok_modo': po['tiktok_modo'],
                        'modelo': c.get('modelo', ''), 'origem': 'agente-manual' if c.get('tipo') == 'manual' else 'agente', 'repetir': True,
                        'direitos': c.get('direitos') or _direitos_do_canal(c)})
-    _mudar(lambda e: [x.update(status='agendado', post=p['id'], quando=vaga['quando'], faixa=vaga['faixa'], espera=False) for x in e['cortes'] if x['id'] == cid])
+    lib = {'t': time.time(), 'quem': quem, 'restricoes': problemas[:6]} if problemas else None
+    if lib:         # liberação especial: fica no corte e no relatório do post, presa ao arquivo
+        pg._mudar(p['id'], lambda q: (q.update(liberacao={'itens': ['direitos'], 't': pg.agora(), 'quem': str(quem)[:60], 'hash': q.get('hash') or ''}),
+                                      [pg._anotar(q, r, 'liberado', 'Liberação especial dada por você apesar de: ' + ' '.join(problemas)[:200]) for r in q['redes']]))
+        anotar(f'Você liberou "{c["titulo"][:50]}" mesmo com restrições: ' + ' '.join(problemas)[:200], 'info')
+    _mudar(lambda e: [x.update(status='agendado', post=p['id'], quando=vaga['quando'], faixa=vaga['faixa'], espera=False,
+                               **({'liberacao': lib} if lib else {})) for x in e['cortes'] if x['id'] == cid])
     quando = datetime.fromtimestamp(vaga['quando']).strftime('%d/%m às %H:%M')
     nomes = ', '.join(r.capitalize() for r in po['redes'])
     anotar(f'"{c["titulo"][:60]}" agendado para {quando} em {nomes}.', 'ok')
@@ -1934,6 +1947,11 @@ def acao_corte(cid: str, acao: str) -> dict:
             raise ErroAgente('O diretor de qualidade reprovou este corte: ' + ' '.join((c.get('qa') or {}).get('diretor', {}).get('motivos') or [])[:300])
         _mudar(lambda e: [x.update(aprovado_voce=time.time()) for x in e['cortes'] if x['id'] == cid])
         agendar_corte(cid)
+    elif acao == 'liberar':           # aprovar e agendar MESMO com restrições de direitos/repetição (liberação especial)
+        if c['status'] == 'reprovado':
+            raise ErroAgente('O diretor de qualidade reprovou este corte: ' + ' '.join((c.get('qa') or {}).get('diretor', {}).get('motivos') or [])[:300])
+        _mudar(lambda e: [x.update(aprovado_voce=time.time()) for x in e['cortes'] if x['id'] == cid])
+        agendar_corte(cid, liberado=True)
     elif acao == 'email':
         if not email_corte(c):
             raise ErroAgente('Não consegui enviar. Veja o motivo no histórico e confira a parte Avisos.')

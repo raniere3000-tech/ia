@@ -15,7 +15,7 @@ export type ConfigAgente = {
 export type Uso='gratis'|'paga';
 export type Canal = {id:string;nome:string;status:'sugerido'|'aprovado'|'recusado';motivo:string;nicho:string;media:number;videos:number;inscritos:number;exemplo:string;comercial?:boolean|null;restricoes?:string;origem_aut?:string;ficha?:FichaCanal};
 export type FichaCanal={fonte:string;buscado_em:number;filtros:Record<string,string|number>;videos:{titulo:string;url:string;views:number;publicado:string}[];medido:{media_views:number;videos_na_semana:number;maior_views:number};estimado:{views_por_dia_do_melhor:number|null};nao_verificado:string[];justificativa:string;risco:string};
-export type CorteAgente = {id:string;video:string;titulo:string;gancho:string;hashtags:string[];motivo:string;nota:number;ini:number;fim:number;criado:number;status:'pronto'|'reprovado'|'agendado'|'postado'|'descartado';aprovado_voce?:number;qa?:{diretor?:{veredito:string;motivos:string[];tentativas:number;t?:number}}&Record<string,unknown>;post:string;quando?:number;origem:string;origem_titulo:string;canal_nome:string;variacoes:string[];fala:string;tamanho:number;email:boolean;links?:Record<string,string>;erros?:Record<string,string>;views?:number|null;tipo?:'agente'|'manual';modelo?:string;modelo_nome?:string;espera?:boolean;conferencia?:{bloqueios:string[];avisos:string[]}|null;metricas?:Record<string,Medida>};
+export type CorteAgente = {id:string;video:string;titulo:string;gancho:string;hashtags:string[];motivo:string;nota:number;ini:number;fim:number;criado:number;status:'pronto'|'reprovado'|'agendado'|'postado'|'descartado';aprovado_voce?:number;qa?:{diretor?:{veredito:string;motivos:string[];tentativas:number;t?:number}}&Record<string,unknown>;post:string;quando?:number;origem:string;origem_titulo:string;canal_nome:string;variacoes:string[];fala:string;tamanho:number;email:boolean;links?:Record<string,string>;erros?:Record<string,string>;views?:number|null;tipo?:'agente'|'manual';modelo?:string;modelo_nome?:string;espera?:boolean;conferencia?:{bloqueios:string[];avisos:string[];liberaveis?:string[];liberavel?:boolean}|null;liberacao?:{t:number;restricoes:string[]};metricas?:Record<string,Medida>};
 export type Medida = {views:number|null;curtidas:number|null;comentarios:number|null};
 export type SomaRede = {n:number;views:number;com_views:number;curtidas:number;comentarios:number;com_eng:number};
 export type Desempenho = {
@@ -59,7 +59,7 @@ export const enviarCorteManual=(c:Cfg,d:CorteManual)=>chamar<{id:string;corte:Co
 export const pararAgente=(c:Cfg)=>chamar(c,'POST','/agente/parar',{});
 export const testarWhatsapp=(c:Cfg)=>chamar<{ok:boolean}>(c,'POST','/agente/whatsapp/teste',{});
 export const testarEmail=(c:Cfg)=>chamar<{ok:boolean}>(c,'POST','/agente/email/teste',{});
-export const acaoCorte=(c:Cfg,id:string,acao:'descartar'|'agendar'|'email')=>chamar(c,'POST',`/agente/cortes/${id}/${acao}`,{});
+export const acaoCorte=(c:Cfg,id:string,acao:'descartar'|'agendar'|'liberar'|'email')=>chamar(c,'POST',`/agente/cortes/${id}/${acao}`,{});
 /** Traz o arquivo do corte para o navegador (para ver ou baixar). */
 export async function videoDoCorte(c:Cfg,id:string):Promise<Blob>{
   const h:Record<string,string>={}; Object.assign(h,cabAuth(c.servidorToken));
