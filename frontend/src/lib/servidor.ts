@@ -22,25 +22,26 @@ export async function testarServidor(url:string,token:string):Promise<Saude>{
 }
 
 /** Pede ao servidor para baixar o link e devolve o vídeo como arquivo, com progresso de 0 a 100. */
-export async function baixarPeloServidor(url:string,token:string,link:string,onPct:(pct:number,etapa:string)=>void,sinal?:{cancelado:boolean}):Promise<File>{
+/** Com `faixa`, o servidor baixa só esse pedaço (vídeo longo); o arquivo começa em `inicio` segundos do vídeo original. */
+export async function baixarPeloServidor(url:string,token:string,link:string,onPct:(pct:number,etapa:string)=>void,sinal?:{cancelado:boolean},faixa?:{de:number;ate:number}):Promise<{arquivo:File;inicio:number}>{
   const b=base(url);
-  const {id}=await (await pedir(b+'/baixar',{method:'POST',headers:headers(token),body:JSON.stringify({url:link})})).json();
-  onPct(0,'Baixando o vídeo');
-  let titulo='video';
+  const {id}=await (await pedir(b+'/baixar',{method:'POST',headers:headers(token),body:JSON.stringify({url:link,...(faixa||{})})})).json();
+  onPct(0,faixa?'Baixando só o pedaço com os trechos':'Baixando o vídeo');
+  let titulo='video'; let inicio=0;
   for(;;){
     await new Promise(r=>setTimeout(r,1000));
     if(sinal?.cancelado) throw new Error('Cancelado.');
     const s=await (await pedir(`${b}/baixar/${id}`,{headers:headers(token)})).json();
     if(s.status==='erro') throw new Error(s.erro||'O servidor não conseguiu baixar o vídeo.');
-    if(s.status==='pronto'){ titulo=s.titulo||titulo; break; }
-    onPct(Math.min(99,s.pct||0),'Baixando o vídeo');
+    if(s.status==='pronto'){ titulo=s.titulo||titulo; inicio=Number(s.inicio)||0; break; }
+    onPct(Math.min(99,s.pct||0),faixa?'Baixando só o pedaço com os trechos':'Baixando o vídeo');
   }
   onPct(100,'Trazendo o vídeo para o navegador');
   const r=await pedir(`${b}/baixar/${id}/arquivo`,{headers:headers(token)});
   const blob=await r.blob();
   const tipo=blob.type||'video/mp4'; const ext=tipo.includes('webm')?'webm':'mp4';
   const nome=(titulo.replace(/[\\/:*?"<>|]+/g,'').trim().slice(0,80)||'video')+'.'+ext;
-  return new File([blob],nome,{type:tipo});
+  return {arquivo:new File([blob],nome,{type:tipo}),inicio};
 }
 
 /** Guarda no servidor os cookies do YouTube (arquivo cookies.txt), para quando o YouTube pede login. */

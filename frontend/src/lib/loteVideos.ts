@@ -25,7 +25,7 @@ export async function baixarLote(s:Settings,itens:ItemLote[],onStatus:(txt:strin
     const it=itens[i]; const pre=`Vídeo ${i+1} de ${itens.length}`;
     if(sinal.cancelado) break;
     try{
-      const file=await baixarPeloServidor(s.servidor,s.servidorToken,it.link,(p,e)=>onStatus(`${pre}: ${e}`,Math.round((i+p/100)/itens.length*100)),sinal);
+      const {arquivo:file}=await baixarPeloServidor(s.servidor,s.servidorToken,it.link,(p,e)=>onStatus(`${pre}: ${e}`,Math.round((i+p/100)/itens.length*100)),sinal);
       const url=URL.createObjectURL(file);
       const info=await videoInfo(url);
       const [thumb]=await captureFrames(url,[Math.min(Math.max(0,info.duration-0.1),1.5)],320).catch(()=>[] as string[]);

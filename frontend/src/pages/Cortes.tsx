@@ -76,7 +76,10 @@ function OriginalSobreAssunto({nome,trecho}:{nome:string;trecho:string}){
 }
 
 export default function Cortes(){
-  const {settings,toast,projeto,setProjeto,template,marcas,go}=useApp();
+  const {settings,toast,projeto,setProjeto,template,marcas:marcasLink,go}=useApp();
+  /** O servidor pode ter baixado só um pedaço do vídeo do link: os trechos marcados no link são deslocados para o tempo do arquivo. */
+  const offLink=useRef(0);
+  const marcas=useMemo(()=>marcasLink.map(m=>({...m,inicio:m.inicio-offLink.current,fim:m.fim-offLink.current})).filter(m=>m.fim>0),[marcasLink,projeto.file]); // eslint-disable-line react-hooks/exhaustive-deps
   const [usarMarcas,setUsarMarcas]=useState(true);
   const [direitos,setD]=useState(()=>store.get('studio_direitos')==='1');
   const setDireitos=(v:boolean)=>{ setD(v); store.set('studio_direitos',v?'1':''); };
@@ -117,8 +120,9 @@ export default function Cortes(){
   const recSupport=formatoSuportado();
 
   /** iniciar=true quando veio do botão "Baixar e começar" (link): já gera os cortes com as opções escolhidas. */
-  async function escolherArquivo(orig:File|null,iniciar=false){
+  async function escolherArquivo(orig:File|null,iniciar=false,inicioLink=0){
     if(!orig) return;
+    offLink.current=inicioLink;
     if(!orig.type.startsWith('video/') && !/\.(mp4|mov|mkv|webm|m4v)$/i.test(orig.name)){ toast('Escolha um arquivo de vídeo (MP4, MOV, WEBM).','erro'); return; }
     // No celular, a permissão de ler o arquivo escolhido pode acabar antes de tocar em Gerar cortes.
     // Por isso guardamos uma cópia do vídeo na memória logo ao escolher.
@@ -487,7 +491,7 @@ export default function Cortes(){
 
     <Passo n={2} id="video" titulo={projeto.file?'Vídeo':'Envie o vídeo'} resumo={projeto.file?`${projeto.nome}${projeto.duracao?' • '+tm(projeto.duracao):''}`:'Link do YouTube ou arquivo'} aberto={aberto==='video'} feito={!!projeto.file&&job.status!=='rodando'} manter onToggle={()=>tocar('video')}>
      {!projeto.file?<>
-      <LinkStudio onUpload={()=>fileInput.current?.click()} onArquivo={f=>escolherArquivo(f,true)} direitos={direitos} opcoes={{min:faixa[0],max:faixa[1],limite,tema,pedido:prompt,acao:modelo==='acao'}}/>
+      <LinkStudio onUpload={()=>fileInput.current?.click()} onArquivo={(f,inicio)=>escolherArquivo(f,true,inicio||0)} direitos={direitos} opcoes={{min:faixa[0],max:faixa[1],limite,tema,pedido:prompt,acao:modelo==='acao'}}/>
    <section className={'panel dropzone '+(drag?'drag':'')} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);escolherArquivo(e.dataTransfer.files?.[0]||null)}} onClick={()=>fileInput.current?.click()} role="button" tabIndex={0}>
     <span className="drop-icon"><Upload size={30}/></span>
     <h2>{lendo?<><Loader2 size={18} className="spin"/> Preparando o vídeo...</>:marcas.length?`Envie o arquivo deste vídeo para cortar os ${marcas.length} trechos marcados`:'Arraste o vídeo aqui ou clique para escolher'}</h2>

@@ -23,7 +23,7 @@ function loadYT(){
 }
 
 /** Abre o vídeo do link dentro do estúdio: assistir, marcar início/fim e guardar os trechos. */
-export default function LinkStudio({onUpload,onArquivo,direitos,opcoes}:{onUpload:()=>void;onArquivo:(f:File)=>void;direitos:boolean;opcoes:{min:number;max:number;limite:number;tema:string;pedido:string;acao:boolean}}){
+export default function LinkStudio({onUpload,onArquivo,direitos,opcoes}:{onUpload:()=>void;onArquivo:(f:File,inicio?:number)=>void;direitos:boolean;opcoes:{min:number;max:number;limite:number;tema:string;pedido:string;acao:boolean}}){
   const {linkRef,setLinkRef,marcas,setMarcas,toast,settings,go}=useApp();
   const [dl,setDl]=useState<{pct:number;etapa:string}|null>(null); const [bot,setBot]=useState(''); const sinal=useRef<{cancelado:boolean}|null>(null);
   const [campo,setCampo]=useState(linkRef);
@@ -70,9 +70,12 @@ export default function LinkStudio({onUpload,onArquivo,direitos,opcoes}:{onUploa
     if(sinal.current) return;
     const s={cancelado:false}; sinal.current=s; setDl({pct:0,etapa:'Pedindo o vídeo ao servidor'});
     try{
-      const f=await baixarPeloServidor(settings.servidor,settings.servidorToken,link,(pct,etapa)=>{ if(!s.cancelado) setDl({pct,etapa}); },s);
+      // Com trechos marcados, baixa só do primeiro ao último (com 5 s de folga): vídeo de horas não precisa vir inteiro.
+      const faixa=marcas.length?{de:Math.max(0,Math.floor(Math.min(...marcas.map(m=>m.inicio))-5)),ate:Math.ceil(Math.max(...marcas.map(m=>m.fim))+5)}:undefined;
+      const {arquivo,inicio}=await baixarPeloServidor(settings.servidor,settings.servidorToken,link,(pct,etapa)=>{ if(!s.cancelado) setDl({pct,etapa}); },s,faixa);
       if(s.cancelado) return;
-      setDl(null); sinal.current=null; aoChegar.current(f);
+      if(inicio>0) toast(`Baixei só o pedaço de ${tm(inicio)} a ${tm(faixa!.ate)}, onde estão os trechos marcados.`,'info');
+      setDl(null); sinal.current=null; aoChegar.current(arquivo,inicio);
     }catch(e){ const msg=e instanceof Error?e.message:String(e); if(!s.cancelado){ toast(msg,'erro'); if(msg.includes('robô')) setBot(msg); if(msg.includes('falar com o servidor')) setSrv('fora'); } setDl(null); sinal.current=null; }
   }
   const cancelar=()=>{ if(sinal.current) sinal.current.cancelado=true; sinal.current=null; setDl(null); };

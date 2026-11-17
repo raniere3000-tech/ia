@@ -162,7 +162,22 @@ def salvar_cookies(corpo: bytes | None) -> dict:
     return {'ok': True, 'cookies': True, 'linhas': len(linhas)}
 
 
-def baixar(jid: str, url: str):
+def faixa_pedida(d: dict) -> tuple[float, float] | None:
+    """Trecho do vídeo a baixar (em segundos), quando o site já marcou os cortes: assim um vídeo longo não precisa vir inteiro."""
+    try:
+        de, ate = float(d.get('de')), float(d.get('ate'))
+    except (TypeError, ValueError):
+        return None
+    de = max(0.0, de)
+    if ate - de < 1:
+        raise Erro(400, 'Trecho inválido para baixar.')
+    if ate - de > MAX_MIN * 60:
+        raise Erro(400, f'Os trechos marcados ocupam {int((ate - de) // 60)} minutos do vídeo; o servidor baixa até {int(MAX_MIN)} minutos de uma vez. '
+                        'Marque trechos mais próximos uns dos outros ou baixe em duas vezes.')
+    return de, ate
+
+
+def baixar(jid: str, url: str, faixa: tuple[float, float] | None = None):
     import yt_dlp
     j = JOBS[jid]
     pasta = PASTA / jid
@@ -191,8 +206,17 @@ def baixar(jid: str, url: str):
         'js_runtimes': js_runtimes(),
     }
     ff = ffmpeg_path()
+    if faixa:
+        # só o pedaço com os trechos marcados: o limite de duração vale para o pedaço, não para o vídeo inteiro
+        opts['download_ranges'] = yt_dlp.utils.download_range_func(None, [faixa])
+        opts['force_keyframes_at_cuts'] = True
+        opts['match_filter'] = yt_dlp.utils.match_filter_func('!is_live')
+        j['inicio'] = faixa[0]
     if ff:
         opts['ffmpeg_location'] = ff
+    elif faixa:
+        j.update(status='erro', erro='Para baixar só um trecho de vídeo longo o servidor precisa do FFmpeg. No Termux rode: pkg install -y ffmpeg')
+        return
     else:
         # Sem FFmpeg não dá para juntar vídeo e áudio separados: o vídeo viria MUDO.
         # Então pede só arquivos que já trazem vídeo e som juntos.
@@ -220,7 +244,7 @@ def baixar(jid: str, url: str):
         arquivos = [a for a in arquivos if a.suffix in ('.mp4', '.webm', '.mkv', '.mov') and not re.search(r'\.f\d+$', a.stem)] or \
                    [a for a in arquivos if a.suffix in ('.mp4', '.webm', '.mkv', '.mov')]
         if not arquivos:
-            longo = (info.get('duration') or 0) > MAX_MIN * 60
+            longo = not faixa and (info.get('duration') or 0) > MAX_MIN * 60
             raise RuntimeError('does not pass filter' if longo else 'arquivo não encontrado depois do download')
         (pasta / 'cookies.tmp').unlink(missing_ok=True)
         j.update(status='pronto', pct=100, arquivo=str(arquivos[0]), titulo=info.get('title') or 'video',
@@ -516,7 +540,7 @@ class Handler(BaseHTTPRequestHandler):
         if not arquivo:
             if not j:
                 raise Erro(404, 'Download não encontrado (o servidor reiniciou?). Tente de novo.')
-            return self.json(200, {k: j.get(k) for k in ('status', 'pct', 'erro', 'titulo', 'duracao', 'tamanho')})
+            return self.json(200, {k: j.get(k) for k in ('status', 'pct', 'erro', 'titulo', 'duracao', 'tamanho', 'inicio')})
         if not j or j.get('status') != 'pronto':
             raise Erro(404, 'Arquivo ainda não está pronto.')
         caminho_arq = Path(j['arquivo'])
@@ -569,15 +593,17 @@ class Handler(BaseHTTPRequestHandler):
                 raise Erro(400, str(e))
         self.token_ok()
         try:
-            url = str(json.loads(self.corpo or b'{}').get('url', '')).strip()
-        except ValueError:
+            pedido = json.loads(self.corpo or b'{}')
+            url = str(pedido.get('url', '')).strip()
+        except (ValueError, AttributeError):
             raise Erro(400, 'Pedido inválido.')
+        faixa = faixa_pedida(pedido)
         if not (YT.match(url) or TT.match(url) or (QUALQUER_URL and url.startswith('http'))):
             raise Erro(400, 'Envie um link do YouTube ou do TikTok.')
         limpar_antigos()
         jid = uuid.uuid4().hex[:12]
         JOBS[jid] = {'status': 'baixando', 'pct': 0, 'criado': time.time(), 'url': url}
-        threading.Thread(target=baixar, args=(jid, url), daemon=True).start()
+        threading.Thread(target=baixar, args=(jid, url, faixa), daemon=True).start()
         self.json(200, {'id': jid})
 
 
