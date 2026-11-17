@@ -118,6 +118,17 @@ ESQUEMA = [
     CREATE INDEX IF NOT EXISTS criativo_assets_hash ON criativo_assets (hash);
     CREATE INDEX IF NOT EXISTS criativo_propostas_atual ON criativo_propostas (atualizado);
     """,
+    # 6: aprendizado dos agentes (números das redes guardados sem edição, pesos com versão e testes A/B; só acrescenta)
+    """
+    CREATE TABLE IF NOT EXISTS aprendizado_importacoes (id TEXT PRIMARY KEY, nome TEXT, formato TEXT, sha256 TEXT, linhas INTEGER, recusadas INTEGER, t REAL);
+    CREATE TABLE IF NOT EXISTS aprendizado_snapshots (id TEXT PRIMARY KEY, t REAL NOT NULL, fonte TEXT NOT NULL, rede TEXT NOT NULL, periodo_ini REAL, periodo_fim REAL,
+        item TEXT, variaveis TEXT NOT NULL, metricas TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, importacao_id TEXT);
+    CREATE INDEX IF NOT EXISTS aprendizado_snapshots_rede ON aprendizado_snapshots (rede, fonte);
+    CREATE TABLE IF NOT EXISTS aprendizado_pesos (versao INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL, variavel TEXT NOT NULL, pesos_json TEXT NOT NULL,
+        base_json TEXT, motivo TEXT, ativo INTEGER NOT NULL DEFAULT 1, anterior INTEGER);
+    CREATE TABLE IF NOT EXISTS aprendizado_experimentos (id TEXT PRIMARY KEY, nome TEXT NOT NULL, variavel TEXT NOT NULL, a TEXT NOT NULL, b TEXT NOT NULL,
+        fixos_json TEXT NOT NULL, min_amostras INTEGER NOT NULL, status TEXT NOT NULL, criado REAL, encerrado REAL, resultado_json TEXT);
+    """,
 ]
 
 

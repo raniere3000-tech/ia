@@ -3,7 +3,7 @@ import { api, type CfgSrv } from './api';
 
 export type QuadroSB={asset:string;t:number;plano:string;personagem:string;angulo:string};
 export type CenaSB={id:string;n:number;titulo:string;hash:string;quadros:QuadroSB[];quadros_desatualizados:boolean;status:'aprovada'|'pronta_para_conferir'|'mudou_depois_de_aprovar'|'sem_miniatura';ja_aprovada_antes?:boolean;camera:string;duracao:number|null;personagem:string;estilo:string;aprovada_por:string};
-export type EstadoSB={ativa:boolean;cenas:CenaSB[];todas_aprovadas:boolean;versao:string;faltam:number[];aviso_final:string};
+export type EstadoSB={ativa:boolean;cenas:CenaSB[];todas_aprovadas:boolean;versao:string;faltam:number[];aviso_final:string;boas_praticas?:string[]};
 export const lerStoryboard=(cfg:CfgSrv,pid:string)=>api<EstadoSB>(cfg,'GET',`/api/v1/projetos/${pid}/storyboard-visual`);
 export const gerarQuadros=(cfg:CfgSrv,pid:string,cenas?:string[])=>api<{job:string;status:string}>(cfg,'POST',`/api/v1/projetos/${pid}/storyboard-visual/quadros`,{cenas});
 export const aprovarQuadros=(cfg:CfgSrv,pid:string,cenas?:string[])=>api<EstadoSB>(cfg,'POST',`/api/v1/projetos/${pid}/storyboard-visual/aprovar`,{cenas});
@@ -44,7 +44,7 @@ export type ItemConf={item:string;estado:'ok'|'aviso'|'erro'|'nao_verificado';de
 export type Pacote={corte:string;titulo:string;titulos_sugeridos:string[];descricao:string;descricao_editada:boolean;link_original:string;capas:{indice:number;t:number;bytes:number}[];capa_escolhida:number;redes:string[];
   fatos:{largura:number;altura:number;codec_video:string;codec_audio:string;duracao:number;tamanho_mb:number;tem_audio:boolean};
   conformidade:Record<string,{nome:string;manual:boolean;itens:ItemConf[];pode_aprovar:boolean;erros:string[]}>;comentario_fixado:{texto:string;aviso:string};direitos:{origem?:string;nota?:string};
-  aprovado_agora:boolean;tudo_ok:boolean;aviso_limites:string;hash:string};
+  aprovado_agora:boolean;tudo_ok:boolean;aviso_limites:string;hash:string;boas_praticas?:string[]};
 export const lerPacote=(cfg:CfgSrv,corte:string)=>api<Pacote>(cfg,'GET',`/agente/cortes/${corte}/pacote`);
 export const montarPacote=(cfg:CfgSrv,corte:string,redes?:string[])=>api<Pacote>(cfg,'POST',`/agente/cortes/${corte}/pacote/montar`,{redes});
 export const editarPacote=(cfg:CfgSrv,corte:string,d:{titulo?:string;descricao?:string;capa?:number;redes?:string[]})=>api<Pacote>(cfg,'POST',`/agente/cortes/${corte}/pacote/editar`,d);

@@ -157,12 +157,15 @@ def ideias(d: dict) -> dict:
     if radar:
         prompt += ('\nTítulos que estão em alta no YouTube neste nicho (use SÓ como termômetro de interesse; '
                    'interesse no YouTube não prova que o assunto é popular fora dele): ' + json.dumps(radar[:15], ensure_ascii=False))
-    usadas_radar = []
+    usadas_radar, usadas_viral = [], []
     try:
         from skills import roteador
         apoio, usadas_radar = roteador.orientacao('radar.temas', origem='radar')
         if apoio:
             prompt += '\n' + apoio
+        apoio_v, usadas_viral = roteador.orientacao('radar.viralidade', origem='radar')
+        if apoio_v:
+            prompt += '\n' + apoio_v
     except ImportError:
         pass
     j = ag.gemini([{'text': prompt}], uso='roteiro')
@@ -179,11 +182,14 @@ def ideias(d: dict) -> dict:
             ideia['ficha']['skills'] = usadas_radar
         out.append(ideia)
     out = out[:qtd]
-    if out and usadas_radar:   # só conta como "utilizada" depois que a ficha de oportunidade existe de verdade
+    if out and (usadas_radar or usadas_viral):   # só conta como "utilizada" depois que a ficha de oportunidade existe de verdade
         try:
             from skills import roteador
-            roteador.concluir(usadas_radar, 'radar.temas', artefato='fichas:' + ','.join(x['ficha']['id'] for x in out)[:110],
+            roteador.concluir(usadas_radar or [], 'radar.temas', artefato='fichas:' + ','.join(x['ficha']['id'] for x in out)[:110],
                               saida=f'{len(out)} fichas de oportunidade ({sum(len(x["fontes"]) for x in out)} fontes para conferir)')
+            if usadas_viral:
+                roteador.concluir(usadas_viral, 'radar.viralidade', artefato='fichas:' + ','.join(x['ficha']['id'] for x in out)[:110],
+                                  saida=f'{len(out)} fichas lidas com o olhar de "por que viralizou" (nada copiado)')
         except Exception as e:  # noqa: BLE001
             print('produtor: registro das skills do radar', e)
     try:
@@ -391,6 +397,7 @@ def apoio_skills(b: dict, pid: str = '', jid: str = '', extras: list | None = No
     extras_perfis = {'documentario': ['agente3.storyboard'], 'animado2d': ['agente3.storyboard', 'agente3.personagem', 'agente3.dialogo'],
                      'animado3d': ['agente3.storyboard', 'agente3.personagem', 'agente3.dialogo'], 'motion_graphics': ['agente3.motion'],
                      'papel_recortado': ['agente3.papel']}.get(est, ['agente3.codigo2d'])
+    extras_perfis = ['agente3.ganchos', *extras_perfis]      # ganchos: vale para todos os estilos
     for perfil in extras_perfis:
         t2, u2 = roteador.orientacao(perfil, job_id=jid, projeto_id=pid, origem=origem)
         u2 = [u for u in u2 if u not in usadas]

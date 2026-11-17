@@ -55,7 +55,7 @@ def confere(c, nome):
 
 db.migrar()
 rel = cat.instalar()
-confere(len(rel['instaladas']) == 118 and not rel['falhas'], '118 definições instaladas (arquivos simulados, hash conferido)')
+confere(len(rel['instaladas']) == 133 and not rel['falhas'], '133 definições instaladas (arquivos simulados, hash conferido)')
 
 PEDIDOS = []
 

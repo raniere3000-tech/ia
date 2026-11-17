@@ -30,4 +30,4 @@ export const desfazerPerfil=(cfg:CfgSrv,id:string)=>api<PerfilSkills>(cfg,'POST'
 export const pontaAPonta=(cfg:CfgSrv)=>api<{consumidores:Consumidor[]}>(cfg,'GET','/api/v1/skills/ponta-a-ponta');
 export const desfazerLote=(cfg:CfgSrv)=>api<{voltaram:string[];ficaram:{id:string;motivo:string}[]}>(cfg,'POST','/api/v1/skills/desfazer-lote',{});
 
-export const NOME_AGENTE:Record<string,string>={agente1:'Agente 1',agente2:'Agente 2',agente3:'Agente 3',radar:'Radar',editor:'Editor do site',qualidade:'Qualidade',desenvolvimento:'Desenvolvimento',infra:'Servidor'};
+export const NOME_AGENTE:Record<string,string>={agente1:'Agente 1',agente2:'Agente 2',agente3:'Agente 3',radar:'Radar',editor:'Editor do site',qualidade:'Qualidade',canal:'Perfil de canal',aprendizado:'Aprendizado',criativo:'Modelagem com IA',desenvolvimento:'Desenvolvimento',infra:'Servidor'};

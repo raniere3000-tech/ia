@@ -54,6 +54,7 @@ export default function StoryboardVisual({pid}:{pid:string}){
         <button className="primary sm" disabled={!!trab||c.status==='aprovada'||!c.quadros.length} onClick={()=>aprovar([c.id])}>Aprovar esta</button>
       </div>
     </article>)}</div>
+    {(s.boas_praticas||[]).length>0&&<details><summary>Boas práticas para conferir (das skills; não decidem nada)</summary><ul className="skill-regras">{(s.boas_praticas||[]).map((b,i)=><li key={i}>{b}</li>)}</ul></details>}
     <small className="hint">{s.aviso_final} A aprovação vale para a versão atual de cada cena: mudou algo, ela pede de novo.</small>
   </section>;
 }

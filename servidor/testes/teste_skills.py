@@ -277,7 +277,7 @@ confere('wide shots' in tx and not any(w in tx.lower() for w in ('token', 'passw
         'skill com prompt malicioso: só a regra útil passa')
 
 real = json.loads((Path(__file__).parents[1] / 'skills' / 'manifesto.json').read_text())
-confere(len(real['skills']) == 118 and all(not sg.item_manifesto_valido(s) for s in real['skills']), 'manifesto real: 118 skills, todas fixadas com hash')
+confere(len(real['skills']) == 133 and all(not sg.item_manifesto_valido(s) for s in real['skills']), 'manifesto real: 133 skills (118 + 15), todas fixadas com hash')
 ids = {s['id'] for s in real['skills']}
 confere(all(s in ids for p in rot.PERFIS.values() for s in p[3]), 'todas as skills dos perfis existem no manifesto')
 print('falhas:', falhas)

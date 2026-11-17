@@ -1,7 +1,7 @@
 {
- "versao": 1,
- "gerado": "2026-11-16",
- "fonte": "Anexo A do documento de melhorias (V12 diferencial)",
+ "versao": 2,
+ "gerado": "2026-11-17",
+ "fonte": "Anexo A do documento de melhorias (V12 diferencial) + 15 skills do documento de 17/11 (melhorias, estilos e skills)",
  "hosts": [
   "raw.githubusercontent.com"
  ],
@@ -2183,6 +2183,315 @@
    "modalidade": "guia",
    "prioridade": "P2",
    "gatilho": "análise de referências"
+  },
+  {
+   "id": "yt-script",
+   "repo": "Jakeschincariol/youtube-agent-skill",
+   "caminho": "skills/yt-script/SKILL.md",
+   "commit": "a2feb2104981a375ffd4f87ee04f4f5344ac43c6",
+   "sha256": "23fe2c4c52b4dbdae03295d71a8bdede254a94b3d6b0da83b025e8b622020366",
+   "tamanho": 2685,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "A3/ganchos",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Roteiro",
+   "tipo": "producao",
+   "modalidade": "runtime-auditar",
+   "prioridade": "P1",
+   "gatilho": "escrever gancho e roteiro de vídeo",
+   "nota": "traz scripts próprios (não instalados nem executados aqui): só as regras do texto são usadas"
+  },
+  {
+   "id": "yt-viral",
+   "repo": "Jakeschincariol/youtube-agent-skill",
+   "caminho": "skills/yt-viral/SKILL.md",
+   "commit": "a2feb2104981a375ffd4f87ee04f4f5344ac43c6",
+   "sha256": "2dae2b23919464450e66dde15eaa0fd6d82dac4ca5c6c553d8bf2d604d38bdb4",
+   "tamanho": 1748,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "Radar/viralidade",
+   "agentes": [
+    "radar",
+    "agente1"
+   ],
+   "categoria": "Radar",
+   "tipo": "producao",
+   "modalidade": "runtime-auditar",
+   "prioridade": "P1",
+   "gatilho": "achar o que está funcionando no nicho",
+   "nota": "traz scripts próprios (não instalados nem executados aqui): só as regras do texto são usadas; o texto quase não tem regras em lista"
+  },
+  {
+   "id": "yt-package",
+   "repo": "Jakeschincariol/youtube-agent-skill",
+   "caminho": "skills/yt-package/SKILL.md",
+   "commit": "a2feb2104981a375ffd4f87ee04f4f5344ac43c6",
+   "sha256": "0347a791664ff5d05eda87b2535e34ef8177c9e9b5e5c077c2f8113942108506",
+   "tamanho": 2303,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "A2/pacote",
+   "agentes": [
+    "agente2"
+   ],
+   "categoria": "Pacote",
+   "tipo": "producao",
+   "modalidade": "runtime-auditar",
+   "prioridade": "P2",
+   "gatilho": "título e capa",
+   "nota": "traz scripts próprios (não instalados nem executados aqui): só as regras do texto são usadas"
+  },
+  {
+   "id": "yt-edit",
+   "repo": "Jakeschincariol/youtube-agent-skill",
+   "caminho": "skills/yt-edit/SKILL.md",
+   "commit": "a2feb2104981a375ffd4f87ee04f4f5344ac43c6",
+   "sha256": "b9f83e8b972e91a4abb5e0f4f9fc4b5cde9e8727609ce1213b0e583718cd8aeb",
+   "tamanho": 1639,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "A1/edição",
+   "agentes": [
+    "agente1",
+    "editor"
+   ],
+   "categoria": "Editor",
+   "tipo": "producao",
+   "modalidade": "runtime-auditar",
+   "prioridade": "P2",
+   "gatilho": "cortar tempo morto",
+   "nota": "traz scripts próprios (não instalados nem executados aqui): só as regras do texto são usadas"
+  },
+  {
+   "id": "yt-retention",
+   "repo": "Jakeschincariol/youtube-agent-skill",
+   "caminho": "skills/yt-retention/SKILL.md",
+   "commit": "a2feb2104981a375ffd4f87ee04f4f5344ac43c6",
+   "sha256": "2777dd1f8f9ea04174bf13c9dc0132be907fb3852380376db359bcf786ba4f8e",
+   "tamanho": 1696,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "Aprendizado/retenção",
+   "agentes": [
+    "agente3",
+    "qualidade"
+   ],
+   "categoria": "Aprendizado",
+   "tipo": "producao",
+   "modalidade": "runtime-auditar",
+   "prioridade": "P2",
+   "gatilho": "ler curva de retenção",
+   "nota": "traz scripts próprios (não instalados nem executados aqui): só as regras do texto são usadas"
+  },
+  {
+   "id": "video-highlight-skill",
+   "repo": "inhai-wiki/video-highlight-skill",
+   "caminho": "SKILL.md",
+   "commit": "35a81e11c02c90289cbca3ca2e9f641e4c050b9d",
+   "sha256": "663d508289ac9e986dec76c361e11f82bf1590854355a5017e5c8c50fcf284e1",
+   "tamanho": 7327,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "A1/gameplay",
+   "agentes": [
+    "agente1"
+   ],
+   "categoria": "Gameplay",
+   "tipo": "producao",
+   "modalidade": "runtime-auditar",
+   "prioridade": "P1",
+   "gatilho": "achar melhores momentos em vídeo longo",
+   "nota": "precisa da pasta scripts/ do autor para rodar o fluxo dele; não é instalada nem executada, só as regras do texto"
+  },
+  {
+   "id": "viral-reverse-engineering",
+   "repo": "social-media-skills/skills",
+   "caminho": "skills/viral-reverse-engineering/SKILL.md",
+   "commit": "f28cef2b7067ec64e79c9d85421c022c06659e03",
+   "sha256": "b85e454b838d2bcf0119609164e7e774b5124f1f2608bf077682f4819ab497c6",
+   "tamanho": 7604,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "Radar/viralidade",
+   "agentes": [
+    "radar",
+    "agente1"
+   ],
+   "categoria": "Radar",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "desmontar por que um vídeo viralizou",
+   "nota": "o texto cita um serviço externo de agendamento; as linhas que o citam são descartadas e só regras gerais entram"
+  },
+  {
+   "id": "scripting-and-storyboarding",
+   "repo": "social-media-skills/skills",
+   "caminho": "skills/scripting-and-storyboarding/SKILL.md",
+   "commit": "f28cef2b7067ec64e79c9d85421c022c06659e03",
+   "sha256": "30de1a740651159e37781372ee771fec72515322550f6c84a130dbe0d90b33f9",
+   "tamanho": 8516,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "Diretor/storyboard",
+   "agentes": [
+    "agente3"
+   ],
+   "categoria": "Diretor",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "roteiro e storyboard em papel",
+   "nota": "o texto cita um serviço externo de agendamento; as linhas que o citam são descartadas e só regras gerais entram"
+  },
+  {
+   "id": "design-and-templates",
+   "repo": "social-media-skills/skills",
+   "caminho": "skills/design-and-templates/SKILL.md",
+   "commit": "f28cef2b7067ec64e79c9d85421c022c06659e03",
+   "sha256": "e6b17c5dce9678f7f4adc1c98ced844dfbb996dec7ac210e3204d85fdd090daa",
+   "tamanho": 6658,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "Site/estilos",
+   "agentes": [
+    "editor"
+   ],
+   "categoria": "Estilos",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "modelos e identidade visual",
+   "nota": "o texto cita um serviço externo de agendamento; as linhas que o citam são descartadas e só regras gerais entram"
+  },
+  {
+   "id": "brand-profile",
+   "repo": "social-media-skills/skills",
+   "caminho": "skills/brand-profile/SKILL.md",
+   "commit": "f28cef2b7067ec64e79c9d85421c022c06659e03",
+   "sha256": "eda0c8869866a503bdb1693e7392339af164dbfb96331f4fe0a7c7b1773ab68d",
+   "tamanho": 10236,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "Canal/perfil",
+   "agentes": [
+    "radar",
+    "agente3",
+    "editor"
+   ],
+   "categoria": "Canal",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "identidade do canal",
+   "nota": "o texto cita um serviço externo de agendamento; as linhas que o citam são descartadas e só regras gerais entram"
+  },
+  {
+   "id": "content-pillars",
+   "repo": "social-media-skills/skills",
+   "caminho": "skills/content-pillars/SKILL.md",
+   "commit": "f28cef2b7067ec64e79c9d85421c022c06659e03",
+   "sha256": "579955cd7a6f6c6a4a1ff94be28bf5a7ada8946a0c5d6d005e8258f1a0a06f9b",
+   "tamanho": 7095,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "Canal/pautas",
+   "agentes": [
+    "radar",
+    "editor"
+   ],
+   "categoria": "Canal",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "pilares de conteúdo",
+   "nota": "o texto cita um serviço externo de agendamento; as linhas que o citam são descartadas e só regras gerais entram"
+  },
+  {
+   "id": "voice-builder",
+   "repo": "social-media-skills/skills",
+   "caminho": "skills/voice-builder/SKILL.md",
+   "commit": "f28cef2b7067ec64e79c9d85421c022c06659e03",
+   "sha256": "92a2712212c37c62ee96126597be0b77f437ac32461bcd3185b38492b5d92347",
+   "tamanho": 7703,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "Canal/voz",
+   "agentes": [
+    "agente3",
+    "editor"
+   ],
+   "categoria": "Canal",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P2",
+   "gatilho": "voz e jeito de escrever do canal",
+   "nota": "o texto cita um serviço externo de agendamento; as linhas que o citam são descartadas e só regras gerais entram"
+  },
+  {
+   "id": "video-packaging",
+   "repo": "meshcode-ai/skills-video",
+   "caminho": "video-packaging/SKILL.md",
+   "commit": "e6a7e82b11d40041ca7423ab1a346e416f08138a",
+   "sha256": "479bc17e809a4b2f270fad7199d48485ff209c535ad68b7fd644442411a79f75",
+   "tamanho": 2508,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "A2/pacote",
+   "agentes": [
+    "agente2"
+   ],
+   "categoria": "Pacote",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "título, descrição, hashtags e capa"
+  },
+  {
+   "id": "analytics-and-reporting",
+   "repo": "social-media-skills/skills",
+   "caminho": "skills/analytics-and-reporting/SKILL.md",
+   "commit": "f28cef2b7067ec64e79c9d85421c022c06659e03",
+   "sha256": "f9122a88cead0f156935de940148b1bd236a6e8f3f6dcf680979d491c533bc25",
+   "tamanho": 6646,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "Aprendizado/métricas",
+   "agentes": [
+    "agente2",
+    "agente3"
+   ],
+   "categoria": "Aprendizado",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "ler métricas e relatar",
+   "nota": "o texto cita um serviço externo de agendamento; as linhas que o citam são descartadas e só regras gerais entram"
+  },
+  {
+   "id": "experimentation-and-ab-testing",
+   "repo": "social-media-skills/skills",
+   "caminho": "skills/experimentation-and-ab-testing/SKILL.md",
+   "commit": "f28cef2b7067ec64e79c9d85421c022c06659e03",
+   "sha256": "58e81295c7dffe5cedbb317b11b3e656cd6050721c8e228cde1e49e0a639a936",
+   "tamanho": 5886,
+   "licenca": "MIT",
+   "licenca_fonte": "LICENSE (MIT) do repositório, lido no commit fixado",
+   "uso": "Aprendizado/teste A-B",
+   "agentes": [
+    "agente2",
+    "agente3"
+   ],
+   "categoria": "Aprendizado",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "testar uma variável por vez",
+   "nota": "o texto cita um serviço externo de agendamento; as linhas que o citam são descartadas e só regras gerais entram"
   }
  ]
 }

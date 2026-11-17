@@ -41,6 +41,7 @@ export default function PacotePublicacao({corte,onClose}:{corte:string;onClose:(
       <span className="field-label mt">Comentário fixado (para copiar)</span>
       <div className="row-gap left"><small className="grow">{p.comentario_fixado.texto}</small><button className="subtle sm" onClick={()=>{ navigator.clipboard?.writeText(p.comentario_fixado.texto); toast('Copiado.','ok'); }}><Copy size={13}/> Copiar</button></div>
       <small className="hint">{p.comentario_fixado.aviso}</small>
+      {(p.boas_praticas||[]).length>0&&<details><summary>Boas práticas para conferir (das skills; não decidem nada)</summary><ul className="skill-regras">{(p.boas_praticas||[]).map((b,i)=><li key={i}>{b}</li>)}</ul></details>}
       <div className="row-gap left mt"><button className="primary" disabled={!!busy||p.aprovado_agora} onClick={()=>rodar('aprovar',()=>aprovarPacote(cfg,corte),'Pacote aprovado. O Agente 2 vai usar exatamente este texto e este arquivo.')}>{busy==='aprovar'?<Loader2 size={15} className="spin"/>:<CheckCheck size={15}/>} Aprovar este pacote</button></div>
     </div>}
   </Modal>;

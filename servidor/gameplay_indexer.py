@@ -234,6 +234,13 @@ def ganchos_por_ia(dest: dict, eventos: dict, historia: str) -> list:
               'Escreva 3 ganchos diferentes. REGRAS: cada gancho só pode se apoiar em eventos desta lista (cite os ids em "eventos"); '
               'NÃO invente o que aconteceu no jogo, nomes, placares ou resultados; "primeiro_quadro_t" é um tempo em segundos dentro da janela. '
               'Responda JSON: {"ganchos":[{"abertura_falada":"...","texto_na_tela":"até 6 palavras","primeiro_quadro_t":0,"eventos":["e1"],"justificativa":"..."}]}')
+    try:
+        from skills import roteador
+        apoio, _u = roteador.orientacao('agente1.gameplay', origem='gameplay', registrar_carga=False)
+        if apoio:
+            prompt += '\n' + apoio
+    except Exception:  # noqa: BLE001  (sem skill, o pedido segue igual)
+        pass
     r = ag.gemini([{'text': prompt}], tempo=120, uso='gameplay')
     if isinstance(r, list):
         r = {'ganchos': r}
@@ -301,6 +308,13 @@ def analisar_arquivo(video: Path, palavras: list, *, fonte: str, direitos: dict,
     for d in ds:
         pr = propor_ganchos(d, lt['eventos'], historia, usar_ia)
         d['ganchos'], d['ganchos_origem'], d['ganchos_aviso'] = pr['ganchos'], pr['origem'], pr['aviso']
+    if any(d.get('ganchos_origem') == 'ia' for d in ds):          # só conta como usada se a IA recebeu o texto e voltou com ganchos válidos
+        try:
+            from skills import roteador
+            roteador.concluir(roteador.selecionar('agente1.gameplay')['usar'], 'agente1.gameplay', artefato='gameplay:' + gid, origem='gameplay',
+                              saida=f'{len(ds)} destaques com ganchos ligados a eventos medidos')
+        except Exception:  # noqa: BLE001
+            pass
     rel = {'id': gid, 'criado': time.time(), 'titulo': titulo[:150], 'historia': historia, 'historias': HISTORIAS,
            'fonte': fonte[:300], 'direitos': {'origem': direitos['origem'], 'nota': str(direitos.get('nota', ''))[:300]},
            'duracao': round(dur, 2), 'arquivo': str(video), 'analise': 'parcial' if parcial else 'completa',

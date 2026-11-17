@@ -53,6 +53,22 @@ PERFIS = {
                             'cenas propostas → roteiro conferido pelo Agente 3'),
     'criativo.tendencias': ('criativo', 'tendências', 'Modelagem com IA: leitura das tendências', ['social-evidence-research', 'reference-media-analysis'],
                             'referências medidas → características gerais (nada copiado)'),
+    # Stage E (17/11): perfis das 15 skills novas
+    'agente1.gameplay': ('agente1', 'gameplay', 'Agente 1: melhores momentos de gameplay', ['video-highlight-skill', 'yt-edit', 'viral-reverse-engineering'],
+                         'prompt dos ganchos da análise de gameplay → ganchos que citam só eventos medidos'),
+    'radar.viralidade': ('radar', 'viralidade', 'Radar: por que um vídeo viralizou', ['yt-viral', 'viral-reverse-engineering', 'content-pillars'],
+                         'prompt de ideias do Radar → ficha de oportunidade (nada copiado)'),
+    'agente3.ganchos': ('agente3', 'ganchos', 'Agente 3: ganchos do roteiro', ['yt-script', 'short-drama-hook-engineering'], 'prompt do roteiro do Agente 3 (todos os estilos)'),
+    'diretor.storyboard_visual': ('agente3', 'storyboard visual', 'Diretor: storyboard visual', ['scripting-and-storyboarding', 'storyboard-shot-design'],
+                                  'lista de boas práticas para você conferir ao aprovar os quadros'),
+    'site.estilos_cortes': ('editor', 'estilos dos cortes', 'Site: estilos visuais dos cortes', ['design-and-templates', 'ffmpeg-media-finishing'],
+                            'só consulta (ainda sem uso automático)'),
+    'perfil.canal': ('canal', 'perfil do canal', 'Perfil de canal: identidade, pilares e voz', ['brand-profile', 'content-pillars', 'voice-builder'],
+                     'só consulta (ainda sem uso automático)'),
+    'agente2.pacote': ('agente2', 'pacote', 'Agente 2: pacote de publicação', ['video-packaging', 'media-qc-delivery'],
+                       'lista de boas práticas no pacote (título, descrição, capa) para você conferir'),
+    'agentes.aprendizado': ('aprendizado', 'aprendizado', 'Aprendizado dos agentes: ler métricas e testar', ['analytics-and-reporting', 'yt-retention', 'experimentation-and-ab-testing'],
+                            'painel Aprendizado dos agentes: cuidados ao ler números e testar uma coisa por vez'),
     'dev.fable': ('desenvolvimento', 'desenvolvimento', 'Desenvolvimento do site (React)', ['react-best-practices', 'web-design-guidelines',
                   'test-driven-development', 'verification-before-completion'], 'só consulta'),
 }
@@ -82,6 +98,15 @@ CONFIG = {
     'criativo.cenario': {'gatilhos': ['cenario', 'ambiente']},
     'criativo.storyboard': {'gatilhos': ['cenas', 'storyboard']},
     'criativo.tendencias': {'gatilhos': ['tendencia', 'em alta'], 'fallback': 'Sem leitura de apoio: as referências entram só como características gerais.'},
+    'agente1.gameplay': {'gatilhos': ['gameplay', 'melhores momentos', 'highlight', 'jogo']},
+    'radar.viralidade': {'gatilhos': ['viral', 'viralizou', 'nicho', 'em alta']},
+    'agente3.ganchos': {'gatilhos': ['gancho', 'abertura', 'primeiros segundos']},
+    'diretor.storyboard_visual': {'gatilhos': ['storyboard visual', 'quadros', 'miniaturas'], 'custo_max': 2000},
+    'site.estilos_cortes': {'gatilhos': ['estilo', 'estilos', 'visual']},
+    'perfil.canal': {'gatilhos': ['perfil', 'canal', 'identidade', 'voz da marca']},
+    'agente2.pacote': {'gatilhos': ['pacote', 'capa', 'descricao', 'titulo'], 'custo_max': 1500,
+                       'fallback': 'O pacote é montado igual (título, descrição fixa, capa, redes e conferências do servidor).'},
+    'agentes.aprendizado': {'gatilhos': ['aprendizado', 'metricas', 'retencao', 'teste a/b', 'experimento']},
     'dev.fable': {'gatilhos': ['react', 'site', 'frontend'], 'custo_max': 3000},
 }
 # em que decisão cada skill entra (produto esperado do K3): aparece no registro de uso
@@ -94,6 +119,11 @@ DECISOES = {
     'scene-blocking-and-staging': 'posição dos personagens', 'continuity-editing-axis-match': 'eixo e continuidade', '2d-character-rig-animation': 'poses e juntas',
     'animation-basics': 'movimento', 'performance-direction': 'atuação e expressões', 'character-design-continuity': 'identidade do personagem',
     'sound-design-foley': 'efeitos sonoros', 'audio-mixing-mastering': 'volume e mixagem', 'dialogue-performance-blocking': 'falas',
+    'video-highlight-skill': 'momentos do gameplay', 'yt-edit': 'tempo morto e cortes', 'viral-reverse-engineering': 'o que fez o vídeo viralizar',
+    'yt-viral': 'o que funciona no nicho', 'content-pillars': 'pilares de conteúdo', 'yt-script': 'gancho e retenção do roteiro',
+    'scripting-and-storyboarding': 'roteiro e storyboard em papel', 'design-and-templates': 'estilo e identidade visual', 'brand-profile': 'identidade do canal',
+    'voice-builder': 'voz do canal', 'video-packaging': 'título, descrição e capa', 'analytics-and-reporting': 'leitura das métricas',
+    'yt-retention': 'curva de retenção', 'experimentation-and-ab-testing': 'teste de uma variável por vez',
     'generated-media-qa': 'defeitos do vídeo gerado', 'agentic-eval': 'critério de avaliação', 'qc-skill': 'checagem técnica',
 }
 LIMITE_MAX = 6
@@ -363,6 +393,25 @@ def concluir(usadas: list, pid: str, *, artefato: str, saida: str, projeto_id: s
                   artefato=artefato, decisao=DECISOES.get(sid, PERFIS.get(pid, ('', ''))[1]))
         n += 1
     return n
+
+
+def lista_para_voce(pid: str, artefato: str, saida: str, *, projeto_id: str = '', origem: str = '', quantas: int = 5) -> list[str]:
+    """Para perfis que NÃO vão num pedido à IA: as regras viram uma lista de boas práticas para a PESSOA conferir. Registra o uso real
+    (skill utilizada, versão e artefato). Nunca decide nada sozinha e nunca falha."""
+    try:
+        sel = selecionar(pid)
+        linhas = []
+        for sid in sel['usar']:
+            _d, rg = cat.regras(sid) or ('', [])
+            linhas += [f'[{sid}] {x}' for x in rg[:2]]
+        if sel['usar']:
+            concluir(sel['usar'], pid, artefato=artefato, saida=saida, projeto_id=projeto_id, origem=origem or pid.split('.')[0])
+        else:
+            _fallback(pid, origem or pid, '', projeto_id, sel)
+        return linhas[:quantas]
+    except Exception as e:  # noqa: BLE001
+        db.evento('skills', 'skill_erro', 'perfil:' + pid, {'erro': str(e)[:200]})
+        return []
 
 
 def registrar(sid: str, *, origem: str, job_id: str = '', projeto_id: str = '', resultado: str = '', custo: float | None = None,

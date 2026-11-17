@@ -180,6 +180,11 @@ def montar(c: dict, redes_padrao: list | None = None, redes: list | None = None)
          'aprovado': None, 'aviso_limites': AVISO_LIMITES}
     p['conformidade'] = conformidade(p, fatos)
     p['hash'] = hash_do_pacote(p)
+    try:      # boas práticas de pacote para VOCÊ conferir (não entram no hash e nunca aprovam nada)
+        from skills import roteador
+        p['boas_praticas'] = roteador.lista_para_voce('agente2.pacote', f'pacote:{c["id"]}:{p["hash"][:12]}', 'pacote montado: ' + titulo[:60], origem='agente2')
+    except Exception:  # noqa: BLE001
+        p['boas_praticas'] = []
     _gravar(p)
     return resumo(p)
 

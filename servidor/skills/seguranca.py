@@ -23,7 +23,7 @@ _PERIGO = re.compile(
     r'ignore (all |any |the )?(previous|prior|above)|disregard|system prompt|you are now|jailbreak|'
     r'api[ _-]?key|token|password|senha|secret|credential|cookie|\.env\b|'
     r'\b(curl|wget|sudo|chmod|rm -rf|pip install|npm (i|install)|npx|bash|sh -c|powershell|eval\(|exec\(|subprocess|os\.system)\b|'
-    r'https?://|<script|base64', re.I)
+    r'https?://|<script|base64|woopsocial|\bpython3?\b|\.py\b|scripts?/', re.I)
 _ITEM = re.compile(r'^\s{0,3}(?:[-*+]|\d{1,2}[.)])\s+(.*\S)\s*$')
 _TITULO = re.compile(r'^\s{0,3}#{1,4}\s+(.*\S)')
 _BOM = re.compile(r'rule|principle|guideline|checklist|goal|avoid|do not|don\'t|failure|best|must|pattern|logic|qualit|tips?\b|template', re.I)
@@ -73,11 +73,25 @@ def _frontmatter(t: str) -> tuple[dict, str]:
     m = re.match(r'\s*---\n(.*?)\n---\n?', t, re.S)
     if not m:
         return {}, t
-    meta = {}
+    meta, chave, bloco = {}, '', []
+
+    def fechar():
+        if chave and bloco:
+            meta[chave] = ' '.join(x.strip() for x in bloco if x.strip())
     for linha in m.group(1).splitlines():
         k = re.match(r'(\w+):\s*(.*)$', linha)
-        if k and k.group(2).strip():
-            meta[k.group(1).lower()] = k.group(2).strip().strip('"\'')
+        if k and not linha.startswith((' ', '\t')):
+            fechar()
+            chave, bloco = k.group(1).lower(), []
+            v = k.group(2).strip()
+            if v in ('>', '>-', '|', '|-', '>+', '|+'):
+                continue                                  # texto em várias linhas: as linhas seguintes completam
+            if v:
+                meta[chave] = v.strip('"\'')
+            chave = ''
+        elif chave:
+            bloco.append(linha)
+    fechar()
     return meta, t[m.end():]
 
 

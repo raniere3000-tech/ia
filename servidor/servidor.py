@@ -28,6 +28,7 @@ import visual_presets as vp
 import gameplay_indexer as gpi
 import modo_render as mr
 import perfis as pf
+import aprendizado as apz
 import publish_package as pub
 import banco as db
 import autenticacao as au
@@ -428,7 +429,7 @@ class Handler(BaseHTTPRequestHandler):
         if rota.startswith('/api/v1/'):
             limite = api_v1.limite_corpo(metodo, rota)
         else:
-            limite = 40 * 1024 * 1024 if rota == '/video' else 5 * 1024 * 1024 if rota == '/cookies' else 12 * 1024 * 1024 if rota == '/modelos' else 100000
+            limite = 40 * 1024 * 1024 if rota == '/video' else 5 * 1024 * 1024 if rota == '/cookies' else 12 * 1024 * 1024 if rota == '/modelos' else 1_300_000 if rota == '/agente/aprendizado/importar' else 100000
         self.corpo = self.rfile.read(n) if 0 < n <= limite else b''
         if n > limite:
             self.close_connection = True
@@ -516,6 +517,8 @@ class Handler(BaseHTTPRequestHandler):
             self.json(e.status, {'detail': str(e), **(getattr(e, 'extra', None) or {})})
         except apv.ErroAprovacao as e:
             self.json(e.status, {'detail': str(e)})
+        except apz.ErroAprendizado as e:
+            self.json(e.codigo, {'detail': str(e)})
         except (pg.ErroRede, ag.ErroAgente, mo.ErroModelo, vp.ErroEstilo, gpi.ErroGameplay, pf.ErroPerfil, pub.ErroPacote, produtor.ErroProdutor, rd.ErroRender, ValueError, FileNotFoundError) as e:
             self.json(400, {'detail': str(e)})
         except (BrokenPipeError, ConnectionResetError):
@@ -568,6 +571,9 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == '/agente/modos':
             self.token_ok()
             return self.json(200, {'modos': mr.resumo()})
+        if caminho == '/agente/aprendizado':
+            self.token_ok()
+            return self.json(200, apz.painel())
         if caminho == '/agente/gameplay':
             self.token_ok()
             return self.json(200, {'analises': gpi.listar(), 'historias': gpi.HISTORIAS})
@@ -708,6 +714,21 @@ def _rotas_agenda(self, caminho: str):
             return pf.restaurar(mp.group(1), d.get('versao', 0))
         pf.apagar(mp.group(1))
         return {'ok': True}
+    if caminho == '/agente/aprendizado/importar':
+        return apz.importar(str(d.get('nome', '')), str(d.get('formato', '')), d.get('conteudo'))
+    if caminho == '/agente/aprendizado/capturar':
+        ag.aprender(ajustar=False)
+        return {**apz.capturar(), 'painel': apz.painel()}
+    if caminho == '/agente/aprendizado/apagar':
+        return apz.apagar(d)
+    if caminho == '/agente/aprendizado/aplicar':
+        return apz.aplicar(str(d.get('variavel', '')))
+    if caminho == '/agente/aprendizado/desfazer':
+        return apz.desfazer(str(d.get('variavel', '')))
+    if caminho == '/agente/aprendizado/experimento':
+        return apz.criar_experimento(d)
+    if caminho == '/agente/aprendizado/experimento/encerrar':
+        return apz.encerrar_experimento(str(d.get('id', '')))
     if caminho == '/agente/gameplay/analisar':
         return gpi.pedir_analise(d)
     if caminho == '/agente/gameplay/comparar':

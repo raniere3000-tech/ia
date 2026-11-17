@@ -1,6 +1,7 @@
 import PacotePublicacao from '../components/PacotePublicacao';
 import Perfis from '../components/Perfis';
 import GameplayNarrativa from '../components/GameplayNarrativa';
+import Aprendizado from '../components/Aprendizado';
 import { ESTILOS } from '../lib/estilosVisuais';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bot, Scissors, Send, Square, Play, Search, Link2, Loader2, CheckCircle2, AlertTriangle, Trash2, Mail, Download, Eye, Plus, X, KeyRound, Clock, RefreshCw, ExternalLink, CalendarClock, ShieldCheck, Package } from 'lucide-react';
@@ -344,6 +345,7 @@ export default function Agente(){
     </>}
 
     {parte==='desempenho'&&<>
+      <Aprendizado/>
       <section className="panel">
         <h3>Templates: uso e resultado</h3>
         <p className="hint">Conta os cortes dos agentes e os que você mandou da edição manual. Os números das redes são lidos dois dias depois de cada post. {de.medidos} medição(ões) até agora.</p>

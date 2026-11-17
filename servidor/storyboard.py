@@ -68,7 +68,7 @@ def estado(pid: str) -> dict:
                       'estilo': c.get('estilo') or (d.get('briefing') or {}).get('estilo', ''), 'aprovada_por': a.get('por') if ok else ''})
     ok = bool(cenas) and all(x['status'] == 'aprovada' for x in cenas)
     return {'ativa': porta_ativa(d), 'cenas': cenas, 'todas_aprovadas': ok, 'versao': hash_geral(d),
-            'faltam': [x['n'] for x in cenas if x['status'] != 'aprovada'], 'aviso_final': 'Aprovar o storyboard não publica nada: o vídeo final ainda precisa da sua aprovação.'}
+            'faltam': [x['n'] for x in cenas if x['status'] != 'aprovada'], 'boas_praticas': sb.get('boas_praticas') or [], 'aviso_final': 'Aprovar o storyboard não publica nada: o vídeo final ainda precisa da sua aprovação.'}
 
 
 def pendentes(pid: str) -> list:
@@ -118,6 +118,13 @@ def job_quadros(ctx):
         novo = {'hash': h, 'frames': frames, 'criado': time.time(), 'duracao': round(dur, 2)}
         pj.mudar_dados(pid, lambda dd, _p, cid=cid, novo=novo: dd.setdefault('storyboard', {}).setdefault('quadros', {}).__setitem__(cid, novo))
         feitos += 1
+    try:      # boas práticas para VOCÊ conferir ao aprovar os quadros (nada é decidido por elas)
+        from skills import roteador
+        dica = roteador.lista_para_voce('diretor.storyboard_visual', f'quadros:{pid}:{hash_geral(pj.obter(pid)["dados"])}',
+                                        f'{feitos + reaproveitados} cenas com miniaturas', projeto_id=pid, origem='diretor')
+        pj.mudar_dados(pid, lambda dd, _p: dd.setdefault('storyboard', {}).__setitem__('boas_praticas', dica))
+    except Exception:  # noqa: BLE001
+        pass
     return {'resultado': {'desenhadas': feitos, 'reaproveitadas': reaproveitados}, 'etapa': 'Quadros prontos'}
 
 

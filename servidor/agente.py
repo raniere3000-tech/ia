@@ -834,7 +834,11 @@ def _sortear_estilo(tpl: dict, co: dict, rnd: random.Random) -> list:
     ok = [e['id'] for e in vp.listar() if e['id'] in co['estilos'] and e['status'] != 'unavailable']
     if not ok:
         return ['Estilo visual: nenhum dos escolhidos funciona neste aparelho, saiu sem estilo']
-    pid = rnd.choice(ok)
+    try:
+        import aprendizado as apr
+        pid = apr.sortear_estilo(ok, rnd)            # pesos aprendidos ou teste A/B ativo; sem nada, é o sorteio igual de sempre
+    except Exception:  # noqa: BLE001
+        pid = rnd.choice(ok)
     tpl['estilo_visual'], tpl['estilo_forca'], tpl['estilo_off'], tpl['estilo_texto'] = pid, 1.0, [], ''
     return [f'Estilo visual: {vp.PRESETS[pid]["nome"]}']
 
@@ -1314,7 +1318,7 @@ def processar_video(v: dict, quantos: int) -> list:
                      origem=v['id'], origem_titulo=v['titulo'][:150], canal=v.get('canal', ''), canal_nome=v.get('canal_nome', ''),
                      variacoes=usadas, fala=fonte, tamanho=(pg.VIDEOS / (vid + '.mp4')).stat().st_size, email=False,
                      tipo='agente', modelo=modelo['id'], modelo_nome=modelo['nome'], hash=_hash(pg.VIDEOS / (vid + '.mp4')),
-                     legendado=tpl['legenda'] != 'nenhuma', qa=qa)
+                     legendado=tpl['legenda'] != 'nenhuma', qa=qa, estilo_visual=tpl.get('estilo_visual', ''), formato=tpl.get('formato', ''))
             if perfil:
                 c.update(perfil=perfil['id'], perfil_nome=perfil['nome'], perfil_versao=perfil['versao'], redes=list(perfil['redes']))
                 if perfil['hashtags_base']:
@@ -1792,6 +1796,12 @@ def aprender(ajustar: bool = True):
             pg._mudar(p['id'], lambda q, md=medida: q.update(medido=True, metricas=md))
         except pg.ErroRede:
             pass
+    if pend or soltos:
+        try:
+            import aprendizado as apr
+            apr.capturar()                  # guarda o retrato dos números lidos agora (sem editar depois)
+        except Exception as e:  # noqa: BLE001
+            print('agente: retratos do aprendizado', e)
     if ajustar and (pend or soltos) and config()['cortes']['aprender']:
         ajustar_pesos()
 
