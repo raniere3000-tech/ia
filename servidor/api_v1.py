@@ -378,6 +378,9 @@ def _criativo(metodo: str, caminho: str, q: dict, corpo, quem: str, sid: str) ->
     if rota == ('POST', '/api/v1/criativo/usar-no-projeto'):
         d = corpo()
         return cri.usar_no_projeto(str(d.get('projeto_id') or ''), d, quem)
+    if rota == ('POST', '/api/v1/criativo/serie-completa'):
+        _limite_ia(sid)
+        return cri.pedir_serie_completa(corpo(), quem)
     if rota == ('POST', '/api/v1/criativo/transformar-em-serie'):
         return cri.transformar_em_serie(str(corpo().get('projeto_id') or ''), quem)
     m = re.fullmatch(r'/api/v1/criativo/propostas/(\w+)(?:/(salvar-modelo|aplicar|previa|duplicar))?', caminho)
@@ -500,6 +503,7 @@ def iniciar():
     fila.registrar('estilo.demo', job_demo, 'pesado')
     fila.registrar('skills.instalar', job_skills, 'leve')
     fila.registrar('personagem.pose', job_pose, 'pesado')
+    fila.registrar('criativo.serie_completa', cri.job_serie_completa, 'leve')
     exportacao.iniciar()
     diretor.iniciar()
     hardware.iniciar()

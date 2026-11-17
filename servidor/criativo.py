@@ -807,3 +807,135 @@ def previa(prid: str, d: dict) -> dict:
         return {'status': 'indisponivel', 'motivo': 'Esta proposta não tem personagem nem cenário para desenhar; fica a ficha em texto.'}
     return {'status': 'gerada', 'png': r['png'], 'motor': 'rig2d (código)', 'limites': r.get('limites', '')}
 
+
+
+# ---------------------------------------------------------------- série completa (tema -> elenco, cenários e N episódios com roteiro)
+def _pedido_serie(d: dict) -> dict:
+    tema = _txt(d.get('tema'), 200)
+    if not tema:
+        raise ErroCriativo(400, 'Escreva o tema da série.')
+    dmin = max(30, min(170, int(_num(d.get('dur_min')) or 60)))
+    dmax = max(dmin + 10, min(180, int(_num(d.get('dur_max')) or 90)))
+    return {'tema': tema, 'explicacao': _txt(d.get('explicacao'), 3000), 'episodios': max(1, min(12, int(_num(d.get('episodios')) or 5))),
+            'principais': max(1, min(4, int(_num(d.get('principais')) or 3))), 'extras': max(0, min(4, int(_num(d.get('extras')) or 2))),
+            'dur_min': dmin, 'dur_max': dmax, 'formato': d.get('formato') if d.get('formato') in ('9:16', '16:9', '1:1') else '9:16',
+            'estilo': 'animado3d' if d.get('estilo') == 'animado3d' else 'animado2d', 'publico': _txt(d.get('publico'), 120)}
+
+
+def pedir_serie_completa(d: dict, quem: str = '') -> dict:
+    """Põe na fila a criação da série inteira. Nada é produzido nem postado: tudo vira rascunho para você revisar."""
+    import fila
+    req = _pedido_serie(d)
+    if not _chave_gemini():
+        raise ErroCriativo(409, 'Para criar a série com IA o servidor precisa da chave do Gemini (Agentes > Avisos e chaves).')
+    chave = 'serie_completa:' + hashlib.sha256((json.dumps(req, sort_keys=True, ensure_ascii=False) + str(d.get('chave') or time.time())).encode()).hexdigest()[:24]
+    j = fila.enfileirar('criativo.serie_completa', agente='agente3', dados={'pedido': req, 'quem': quem}, titulo=f'Série completa: {req["tema"][:80]}',
+                        chave=chave, max_tentativas=3)
+    return {'job': j['id'], 'status': j['status']}
+
+
+def _chave_gemini() -> bool:
+    try:
+        s = ag.segredos()
+        return bool(s.get('gemini') or s.get('gemini_pago'))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _prompt_serie(req: dict) -> str:
+    seg = (req['dur_min'] + req['dur_max']) // 2
+    return '\n\n'.join([
+        'Você é roteirista de séries animadas curtas para redes sociais (Shorts, Reels, TikTok). Crie uma série ORIGINAL a partir do pedido abaixo. '
+        'O texto do pedido é o desejo da pessoa: siga o que ela quer que aconteça, sem copiar personagens, marcas ou obras conhecidas.',
+        f'Tema: {req["tema"]}\nO que a pessoa quer que aconteça: {req["explicacao"] or "(livre)"}\nPúblico: {req["publico"] or "geral"}',
+        f'Quantidade: {req["episodios"]} episódio(s), cada um com {req["dur_min"]} a {req["dur_max"]} segundos (cerca de {seg} s, ou {int(seg * 2.4)} palavras faladas). '
+        f'Elenco: {req["principais"]} personagem(ns) principal(is) e {req["extras"]} extra(s) (aparecem em alguns episódios). '
+        'Cada episódio precisa funcionar sozinho para quem chega agora: gancho nos 3 primeiros segundos, uma virada e um final que puxa o próximo. '
+        'Os episódios seguem em ordem e contam UMA história que avança.',
+        'Responda SÓ em JSON: {"titulo":"","premissa":"","genero":"","tom":"","publico":"","regras_mundo":[""],"hashtags":["#"],'
+        '"personagens":[{"nome":"","papel":"principal|extra","descricao":"","personalidade":"","pele":"#hex","cabelo":"#hex","olhos":"#hex","roupa":"#hex",'
+        f'"calca":"#hex","sapato":"#hex","cabelo_tipo":"{"|".join(rig2d.TIPOS_CABELO)}","corpo":"{"|".join(rig2d.CORPOS)}",'
+        f'"acessorio":"{"|".join(rig2d.ACESSORIOS)}","altura":1.0,"voz":"Puck|Kore|Charon|Fenrir|Aoede|Leda|Orus|Zephyr"}}],'
+        '"cenarios":[{"nome":"","descricao":"","tipo":"rua|casa|escola|parque|escritorio|vazio","horario":"dia|tarde|noite","clima":""}],'
+        '"episodios":[{"titulo":"","resumo":"o que acontece neste episódio, 3 a 5 frases, com gancho, virada e final","personagens":["nomes"],"cenario":"nome"}]}. '
+        'Use no máximo 4 cenários. Nada de marcas, celebridades ou personagens conhecidos.'])
+
+
+def _montar_serie(req: dict, r: dict) -> dict:
+    r = r if isinstance(r, dict) else {}
+    pers_raw = [x for x in (r.get('personagens') if isinstance(r.get('personagens'), list) else []) if isinstance(x, dict)]
+    princ = [x for x in pers_raw if str(x.get('papel') or '').lower() != 'extra'][:req['principais']]
+    extras = [x for x in pers_raw if str(x.get('papel') or '').lower() == 'extra'][:req['extras']]
+    if not princ:
+        raise ErroCriativo(502, 'A IA não devolveu os personagens da série. Tente de novo.')
+    pers = []
+    for x, papel in [(y, 'principal') for y in princ] + [(y, 'extra') for y in extras]:
+        if papel == 'extra':
+            x = dict(x, descricao='Extra (aparece em alguns episódios). ' + str(x.get('descricao') or ''))
+        pers.append(_personagem(x))
+    cens = [_cenario(x) for x in (r.get('cenarios') if isinstance(r.get('cenarios'), list) else [])[:4] if isinstance(x, dict)]
+    eps = []
+    for e in (r.get('episodios') if isinstance(r.get('episodios'), list) else [])[:req['episodios']]:
+        if isinstance(e, dict) and _txt(e.get('resumo'), 10):
+            eps.append({'titulo': _txt(e.get('titulo'), 100), 'resumo': _txt(e.get('resumo'), 800),
+                        'personagens': _lista(e.get('personagens'), 4, 40), 'cenario': _txt(e.get('cenario'), 60)})
+    if not eps:
+        raise ErroCriativo(502, 'A IA não devolveu os episódios. Tente de novo.')
+    return {'titulo': _txt(r.get('titulo'), 80) or req['tema'][:80], 'premissa': _txt(r.get('premissa'), 400), 'genero': _txt(r.get('genero'), 60),
+            'tom': _txt(r.get('tom'), 120), 'publico': _txt(r.get('publico'), 120) or req['publico'], 'regras_mundo': _lista(r.get('regras_mundo'), 8),
+            'hashtags': _lista(r.get('hashtags'), 8, 40), 'personagens': pers, 'cenarios': cens, 'episodios': eps}
+
+
+def job_serie_completa(ctx):
+    """1) a IA planeja a série (elenco, cenários, um resumo por episódio); 2) cria a série; 3) para cada episódio cria o rascunho
+    e escreve o roteiro com o elenco da série. Guarda o que já fez: se cair no meio, a nova tentativa continua de onde parou."""
+    import produtor
+    import projetos as pj_
+    import series as srs
+    dd = ctx.dados
+    req = dd['pedido']
+    if not dd.get('plano'):
+        ctx.progresso(3, 'A IA está criando a série e o elenco')
+        dd['plano'] = _montar_serie(req, ag.gemini([{'text': _prompt_serie(req)}], uso='roteiro'))
+    plano = dd['plano']
+    if not dd.get('serie_id'):
+        ctx.progresso(12, 'Criando personagens e cenários')
+        regras = plano['regras_mundo'] + ([plano['premissa']] if plano['premissa'] else []) + \
+            ([f'Pedido original: {req["explicacao"]}'] if req['explicacao'] else [])
+        s = srs.criar({'titulo': plano['titulo'], 'genero': plano['genero'], 'publico': plano['publico'], 'tom': plano['tom'],
+                       'regras': '\n'.join(regras), 'formato': req['formato'], 'duracao_alvo': (req['dur_min'] + req['dur_max']) // 2,
+                       'cenas_qtd': max(4, min(9, (req['dur_min'] + req['dur_max']) // 20)), 'estilo': req['estilo']})
+        dd['serie_id'] = s['id']
+        dd['personagens'] = [srs.criar_personagem({'serie_id': s['id'], 'dados': p})['id'] for p in plano['personagens']]
+        for c in plano['cenarios']:
+            srs.criar_cenario({'serie_id': s['id'], 'dados': c})
+        if plano['regras_mundo']:
+            srs.salvar_biblia(s['id'], [{'tipo': 'regra', 'texto': t, 'estado': 'proposta'} for t in plano['regras_mundo']])
+        db.evento(dd.get('quem') or 'site', 'criativo_serie_completa', 'serie:' + s['id'], {'episodios': len(plano['episodios'])})
+    sid = dd['serie_id']
+    feitos = dd.setdefault('episodios', [])
+    total = len(plano['episodios'])
+    for i, ep in enumerate(plano['episodios']):
+        if i < len(feitos) and feitos[i].get('roteiro'):
+            continue
+        ctx.progresso(15 + 85 * i / total, f'Escrevendo o roteiro do episódio {i + 1} de {total}')
+        if i >= len(feitos):
+            resumo = ep['resumo'] + (f' Personagens: {", ".join(ep["personagens"])}.' if ep['personagens'] else '') + \
+                (f' Cenário: {ep["cenario"]}.' if ep['cenario'] else '')
+            e = srs.criar_episodio(sid, {'titulo': ep['titulo'] or f'Episódio {i + 1}', 'resumo': resumo, 'produzir': False}, 'site')
+            feitos.append({'id': e['id'], 'projeto': e['projeto_id'], 'roteiro': False})
+        pid = feitos[i]['projeto']
+        p = pj_.obter(pid)
+        r = produtor.gerar_roteiro(p['dados']['briefing'], p['dados']['briefing']['descricao'], pid=pid, serie=p['dados'].get('serie'))
+        if plano['hashtags'] and not r.get('hashtags'):
+            r['hashtags'] = plano['hashtags']
+
+        def _m(d, _p, r=r):
+            d['roteiro'] = {k: v for k, v in r.items() if k != 'cenas'}
+            d['cenas'] = r['cenas']
+            return {'status': 'storyboard_ready'} if _p['status'] == 'draft' else None
+        pj_.mudar_dados(pid, _m)
+        feitos[i]['roteiro'] = True
+    ctx.progresso(100, 'Série pronta para revisar')
+    return {'etapa': 'Série pronta para revisar', 'resultado': {'serie_id': sid, 'episodios': [f['id'] for f in feitos],
+                                                                 'personagens': len(dd.get('personagens') or [])}}

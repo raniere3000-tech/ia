@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Loader2, Users, Map, BookOpen, Clapperboard, CheckCircle2, Eye, ArrowLeft, Save, Trash2, Bone, Mic, Play, Pause } from 'lucide-react';
+import { Plus, Loader2, Sparkles, Users, Map, BookOpen, Clapperboard, CheckCircle2, Eye, ArrowLeft, Save, Trash2, Bone, Mic, Play, Pause } from 'lucide-react';
 import { useApp } from '../state';
 import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/Servidor2';
 import { VOZES } from '../lib/dublagem';
 import { listarSeries, criarSerie, obterSerie, criarPersonagem, salvarPersonagem, folhaPersonagem, previaPersonagem, criarCenario, previaCenario,
-  salvarBiblia, criarEpisodio, trazerMudancas, criarTemporada, lerRig, pedirPose, lerJob, visemasDoAudio, nomePose, CABELOS, CORPOS, ACESSORIOS, TIPOS_CENARIO, HORARIOS,
+  salvarBiblia, criarEpisodio, pedirSerieCompleta, trazerMudancas, criarTemporada, lerRig, pedirPose, lerJob, visemasDoAudio, nomePose, CABELOS, CORPOS, ACESSORIOS, TIPOS_CENARIO, HORARIOS,
   type Personagem, type Serie, type EntradaBiblia, type Rig, type PedidoPose, type Visemas } from '../lib/series';
 import { enviarArquivo } from '../lib/api';
+import { store } from '../lib/store';
 import ModelagemIA from '../components/ModelagemIA';
 
 const NOVO_P:Personagem['dados']={nome:'',descricao:'',pele:'#e8b98f',cabelo:'#3b2a1a',olhos:'#2b1d0e',roupa:'#3a86ff',calca:'#1d3557',sapato:'#222222',cabelo_tipo:'curto',corpo:'medio',acessorio:'nenhum',altura:1,voz:'Puck'};
@@ -247,6 +248,51 @@ function Episodios({s,recarregar}:{s:Serie;recarregar:()=>void}){
   </section>;
 }
 
+const CHAVE_SC='studio_serie_completa_job';
+/** Série inteira de uma vez: a IA cria elenco (principais e extras), cenários e os episódios já com roteiro.
+ *  Roda na fila do servidor (pode fechar a tela); tudo vira rascunho para revisar, nada é produzido nem postado. */
+function SerieCompleta({abrir}:{abrir:(id:string)=>void}){
+  const {toast}=useApp(); const cfg=useCfg();
+  const [f,setF]=useState({tema:'',explicacao:'',episodios:5,principais:3,extras:2,dur_min:60,dur_max:90,formato:'9:16',estilo:'animado2d' as 'animado2d'|'animado3d',publico:''});
+  const [job,setJob]=useState(()=>store.get(CHAVE_SC)||''); const [st,setSt]=useState<{pct:number;etapa:string;erro?:string}|null>(null); const [busy,setBusy]=useState(false);
+  useEffect(()=>{ if(!job) return; let vivo=true; let t=0;
+    const ver=async()=>{ try{ const j=await lerJob(cfg,job); if(!vivo) return;
+        if(j.status==='concluido'){ store.del(CHAVE_SC); setJob(''); setSt(null); const sid=String((j.resultado||{}).serie_id||''); toast('Série pronta: personagens, cenários e roteiros dos episódios criados. Revise antes de produzir.','ok'); if(sid) abrir(sid); return; }
+        if(['falhou','cancelado','erro'].includes(j.status)){ store.del(CHAVE_SC); setJob(''); setSt({pct:0,etapa:'',erro:j.erro||'Não deu para criar a série.'}); return; }
+        setSt({pct:j.progresso||0,etapa:j.etapa||'Na fila',erro:j.erro&&j.status!=='rodando'?j.erro:undefined}); t=window.setTimeout(ver,3000); }
+      catch(e){ if(vivo){ setSt(x=>({pct:x?.pct||0,etapa:x?.etapa||'',erro:erroTexto(e)})); t=window.setTimeout(ver,8000); } } };
+    ver(); return ()=>{ vivo=false; window.clearTimeout(t); }; },[job,cfg]); // eslint-disable-line react-hooks/exhaustive-deps
+  const n=(k:keyof typeof f,min:number,max:number)=>(e:React.ChangeEvent<HTMLInputElement>)=>setF({...f,[k]:Math.max(min,Math.min(max,Number(e.target.value)||min))});
+  const criar=async()=>{ setBusy(true);
+    try{ const r=await pedirSerieCompleta(cfg,{...f,chave:Date.now().toString(36)}); store.set(CHAVE_SC,r.job); setJob(r.job); setSt({pct:0,etapa:'Na fila'}); }
+    catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(false); } };
+  return <section className="panel">
+    <div className="section-head"><h2><Sparkles size={17}/> Série completa com IA</h2></div>
+    <p className="hint">Escreva o tema e o que você quer que aconteça. A IA cria a série, os personagens (principais e extras), os cenários e o roteiro de cada episódio. Tudo fica como rascunho: você revisa e só depois manda produzir.</p>
+    {job?<div className="dl-box"><div className="row"><Loader2 size={16} className="spin"/><span><b>{st?.etapa||'Na fila'}</b> {st&&st.pct>0?`${Math.round(st.pct)}%`:''}</span></div>
+       <div className="progress"><span style={{width:`${Math.max(3,Math.min(100,st?.pct||0))}%`}}/></div>
+       {st?.erro&&<p className="hint warn">{st.erro} O servidor tenta de novo sozinho e continua de onde parou.</p>}
+       <p className="hint">Pode sair desta tela: a série continua sendo criada no servidor.</p></div>
+    :<>
+      <label>Tema da série<input value={f.tema} maxLength={200} onChange={e=>setF({...f,tema:e.target.value})} placeholder="Ex.: três amigos que protegem o bairro de um mistério"/></label>
+      <label>O que você quer que aconteça<textarea rows={5} value={f.explicacao} maxLength={3000} onChange={e=>setF({...f,explicacao:e.target.value})} placeholder="Ex.: no começo eles acham um mapa; no meio um deles é sequestrado; no fim descobrem que o padeiro era o vilão. Tom engraçado, para crianças."/></label>
+      <div className="small-grid">
+        <label>Episódios<input type="number" min={1} max={12} value={f.episodios} onChange={n('episodios',1,12)}/></label>
+        <label>Personagens principais<input type="number" min={1} max={4} value={f.principais} onChange={n('principais',1,4)}/></label>
+        <label>Personagens extras<input type="number" min={0} max={4} value={f.extras} onChange={n('extras',0,4)}/></label>
+        <label>Cada episódio: de (segundos)<input type="number" min={30} max={170} value={f.dur_min} onChange={n('dur_min',30,170)}/></label>
+        <label>até (segundos)<input type="number" min={40} max={180} value={f.dur_max} onChange={n('dur_max',40,180)}/></label>
+        <label>Público<input value={f.publico} onChange={e=>setF({...f,publico:e.target.value})} placeholder="Ex.: crianças de 8 a 12 anos"/></label>
+        <label>Formato<select value={f.formato} onChange={e=>setF({...f,formato:e.target.value})}><option value="9:16">Vertical (Shorts, Reels, TikTok)</option><option value="16:9">Deitado (YouTube)</option><option value="1:1">Quadrado</option></select></label>
+        <label>Visual<select value={f.estilo} onChange={e=>setF({...f,estilo:e.target.value as 'animado2d'|'animado3d'})}><option value="animado2d">Desenho 2D (mais rápido)</option><option value="animado3d">3D de blocos (beta, bem mais lento)</option></select></label>
+      </div>
+      {st?.erro&&<p className="hint bad">{st.erro}</p>}
+      <p className="hint">Usa a chave do Gemini do servidor: uma chamada para a série e uma para cada episódio ({f.episodios+1} no total).</p>
+      <button className="primary mt" disabled={busy||!f.tema.trim()||f.dur_max<=f.dur_min} onClick={criar}>{busy?<Loader2 size={15} className="spin"/>:<Sparkles size={15}/>} Criar a série inteira</button>
+    </>}
+  </section>;
+}
+
 export default function Series(){
   const {settings,toast,rotaExtra:extra,go}=useApp(); const cfg=useCfg();
   const lista=useServidor(listarSeries,0,[settings.servidorSessao]);
@@ -268,6 +314,7 @@ export default function Series(){
     </>;
   }
   return <>
+    <SerieCompleta abrir={id=>go('series',id,'criar')}/>
     <section className="panel">
       <div className="section-head"><h2>Nova série</h2></div>
       <p className="hint">Uma série tem elenco fixo, cenários e uma história que continua. Cada episódio vira um vídeo do Agente 3 com os mesmos personagens.</p>

@@ -35,6 +35,8 @@ export type Rig={rig_id:string;versao:number;aprovado:boolean;biblioteca:{rig_id
 export const lerRig=(cfg:CfgSrv,id:string)=>api<Rig>(cfg,'GET',`/api/v1/personagens/${id}/rig`);
 export type PedidoPose={pose:string;objeto:string;expressao:string};
 export const pedirPose=(cfg:CfgSrv,id:string,d:PedidoPose)=>api<{png?:string;job?:string;status?:string;etapa?:string;erro?:string}>(cfg,'POST',`/api/v1/personagens/${id}/pose`,d);
+export type PedidoSerieCompleta={tema:string;explicacao:string;episodios:number;principais:number;extras:number;dur_min:number;dur_max:number;formato:string;estilo:'animado2d'|'animado3d';publico:string;chave:string};
+export const pedirSerieCompleta=(cfg:CfgSrv,d:PedidoSerieCompleta)=>api<{job:string;status:string}>(cfg,'POST','/api/v1/criativo/serie-completa',d);
 export const lerJob=(cfg:CfgSrv,id:string)=>api<Job&{resultado?:Record<string,unknown>|null}>(cfg,'GET','/api/v1/fila/'+id);
 export type Visemas={dur:number;passo:number;niveis:number[];modo:string;formas:string[];limites:string};
 export const visemasDoAudio=(cfg:CfgSrv,asset:string,texto:string)=>api<Visemas>(cfg,'POST','/api/v1/personagens/visemas',{asset,texto});
