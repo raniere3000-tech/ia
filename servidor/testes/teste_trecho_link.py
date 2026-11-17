@@ -71,7 +71,12 @@ o = pedidos[-1]
 confere('download_ranges' not in o and 'inicio' not in sv.JOBS['b'], 'sem trechos: baixa inteiro')
 confere(o['match_filter']({'duration': 19648, 'is_live': False}) is not None, 'sem trechos: vídeo de 5 h continua barrado pelo limite')
 
-sv.ffmpeg_path = lambda: None
+sv.ffmpeg_path = lambda: None          # FFmpeg do Termux: está no PATH (yt-dlp acha sozinho)
+sv.shutil.which = lambda n: '/data/data/com.termux/files/usr/bin/ffmpeg' if n == 'ffmpeg' else None
+sv.JOBS['t'] = {'status': 'baixando', 'pct': 0}
+sv.baixar('t', 'https://www.youtube.com/watch?v=abc', f)
+confere(sv.JOBS['t']['status'] == 'pronto' and 'download_ranges' in pedidos[-1], 'FFmpeg instalado pelo pkg (no PATH) é reconhecido')
+sv.shutil.which = lambda n: None
 sv.JOBS['c'] = {'status': 'baixando', 'pct': 0}
 sv.baixar('c', 'https://www.youtube.com/watch?v=abc', f)
 confere(sv.JOBS['c']['status'] == 'erro' and 'FFmpeg' in sv.JOBS['c']['erro'], 'sem FFmpeg: explica o que instalar')

@@ -212,12 +212,13 @@ def baixar(jid: str, url: str, faixa: tuple[float, float] | None = None):
         opts['force_keyframes_at_cuts'] = True
         opts['match_filter'] = yt_dlp.utils.match_filter_func('!is_live')
         j['inicio'] = faixa[0]
+    tem_ffmpeg = bool(ff or shutil.which('ffmpeg'))   # ffmpeg_path() devolve None quando o FFmpeg já está no PATH (o do Termux)
     if ff:
         opts['ffmpeg_location'] = ff
-    elif faixa:
+    if not tem_ffmpeg and faixa:
         j.update(status='erro', erro='Para baixar só um trecho de vídeo longo o servidor precisa do FFmpeg. No Termux rode: pkg install -y ffmpeg')
         return
-    else:
+    if not tem_ffmpeg:
         # Sem FFmpeg não dá para juntar vídeo e áudio separados: o vídeo viria MUDO.
         # Então pede só arquivos que já trazem vídeo e som juntos.
         opts['format'] = f'b[height<={ALTURA}][ext=mp4][acodec!=none]/b[acodec!=none][vcodec!=none]/b'
