@@ -5,6 +5,7 @@ import { useServidor } from './Servidor2';
 import { verAgente, type VisaoAgente } from '../lib/agente';
 import { lerFila, pendentes, listarProjetos, type Job } from '../lib/api';
 import { lerEsteira } from '../lib/esteira';
+import { situacaoA1 } from '../lib/automacao';
 
 const ATIVOS=['rodando','na_fila','agendado','aguardando_tentativa'];
 const FAZENDO3:Record<string,string>={researching:'Escolhendo o assunto',narrating:'Narrando',generating_assets:'Buscando as imagens',rendering:'Montando o vídeo',assembling:'Juntando as cenas',validating:'Conferindo o vídeo'};
@@ -43,6 +44,8 @@ export default function PainelAgentes({titulo=true}:{titulo?:boolean}){
   const pend=useServidor(pendentes,20);
   const proj=useServidor(c=>listarProjetos(c,'agente3'),30);
   const est=useServidor(c=>lerEsteira(c),30);
+  const a1=useServidor(c=>situacaoA1(c).catch(()=>null),30);
+  const motivoA1=a1.dados&&!a1.dados.trabalhando&&a1.dados.motivo?a1.dados.motivo.split('. ')[0].slice(0,110):'';
   const jobs:Job[]=fila.dados?.jobs||[];
   const ativos=(a:string)=>jobs.filter(j=>j.agente===a&&ATIVOS.includes(j.status));
   const cortes=(v?.cortes||[]).filter(c=>c.status!=='descartado');
@@ -54,9 +57,9 @@ export default function PainelAgentes({titulo=true}:{titulo?:boolean}){
   const prontos3=(proj.dados?.projetos||[]).filter(p=>['ready_for_review','approved','queued_to_publish','posted'].includes(p.status)).length;
   const linhas:Linha[]=[
     {n:'Agente 1',nome:'Cortes',Icon:Scissors,ligado:co?co.ligado:null,ocupado:!!v?.atual.ocupado,
-     agora:!v?'Lendo...':v.atual.ocupado?(v.atual.etapa||'Trabalhando'):co?.ligado?'Esperando a próxima busca':'Parado',
+     agora:!v?'Lendo...':v.atual.ocupado?(v.atual.etapa||'Trabalhando'):motivoA1||(co?.ligado?'Esperando a próxima busca':'Parado'),
      numeros:[[j1.length+(v?.atual.ocupado&&!j1.some(j=>j.status==='rodando')?1:0),'na fila'],[v?.semana??0,'nesta semana'],[cortes.filter(c=>c.status==='pronto').length,'prontos']],
-     ir:()=>go('agente','fila','radar')},
+     ir:()=>go('agente','fila','automacao')},
     {n:'Agente 2',nome:'Postagem',Icon:Send,ligado:po?po.ligado:null,ocupado:false,
      agora:agendados[0]?`Próximo post ${new Date((agendados[0].quando||0)*1000).toLocaleString('pt-BR',{weekday:'short',hour:'2-digit',minute:'2-digit'})}`:po?.ligado?'Nada agendado agora':'Parado',
      numeros:[[agendados.length,'agendados'],[cortes.filter(c=>c.status==='postado').length,'publicados'],[cortes.filter(c=>c.erros&&Object.keys(c.erros).length).length,'com erro']],
@@ -65,7 +68,7 @@ export default function PainelAgentes({titulo=true}:{titulo?:boolean}){
      agora:rodando3[0]?`${rodando3[0].titulo?.slice(0,40)||'Vídeo'}: ${rodando3[0].etapa||FAZENDO3.rendering}`:j3.length?'Vídeos esperando a vez na fila':'Parado',
      numeros:[[j3.length,'na fila'],[esperando3,'esperando você'],[prontos3,'prontos']],
      alerta:esperando3?`${esperando3} para você aprovar`:undefined,
-     ir:()=>go('agente','agente3','radar')},
+     ir:()=>go('agente','agente3','automacao')},
   ];
   const e=est.dados;
   if(e){
@@ -76,10 +79,10 @@ export default function PainelAgentes({titulo=true}:{titulo?:boolean}){
       {n:'Agente 4',nome:'Diretor de qualidade',Icon:Gauge,ligado:e.ligado,ocupado:n('final_qa_pending','creative_qa_pending')>0,
        agora:!e.ligado?'Esteira desligada':n('final_qa_pending','creative_qa_pending')?'Conferindo vídeo':'Esperando vídeo',
        numeros:[[n('final_approved','awaiting_human_publish_approval','published'),'aprovados'],[n('manual_review_required'),'esperando você'],[notas.length?Math.round(notas.reduce((a,b)=>a+b,0)/notas.length):0,'nota média']],
-       alerta:n('manual_review_required')?`${n('manual_review_required')} precisam da sua revisão`:undefined,ir:()=>go('agente','esteira','radar')},
+       alerta:n('manual_review_required')?`${n('manual_review_required')} precisam da sua revisão`:undefined,ir:()=>go('agente','esteira','automacao')},
       {n:'Agente 5',nome:'Editor de IA',Icon:Clapperboard,ligado:e.ligado,ocupado:n('rendering','editing')>0,
        agora:!e.ligado?'Esteira desligada':n('rendering','editing')?'Editando':n('edit_correction_pending')?'Corrigindo o que o diretor pediu':'Esperando corte',
-       numeros:[[n('rendering','editing','edit_queued'),'editando'],[n('edit_correction_pending'),'corrigindo'],[ex.length,'no total']],ir:()=>go('agente','esteira','radar')});
+       numeros:[[n('rendering','editing','edit_queued'),'editando'],[n('edit_correction_pending'),'corrigindo'],[ex.length,'no total']],ir:()=>go('agente','esteira','automacao')});
   }
   return <section className="panel resumo-agentes">
     {titulo&&<div className="section-head"><h2><Bot size={18}/> Seus agentes</h2>{(fila.carregando)&&<Loader2 size={14} className="spin"/>}</div>}

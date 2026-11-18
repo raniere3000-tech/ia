@@ -30,7 +30,7 @@ from pathlib import Path
 TMP = Path(tempfile.mkdtemp(prefix='ec-aceite-'))
 os.environ.update(DADOS=str(TMP / 'dados'), BANCO_ARQ=str(TMP / 'dados' / 'studio.sqlite'), CHAVE_MESTRA_ARQ=str(TMP / 'chave'),
                   TOKEN='senha-de-teste-123', FILA_INTERVALO='0.3', ESPERA_INICIAL_AGENTE='99999', BACKUP_DIARIO='0',
-                  INTERVALO_AGENDA='2', INTERVALO_AGENDA2='600', INTERVALO_CENTRAL_INICIO='1', INTERVALO_CENTRAL='2', PIPELINE_V2='1')
+                  INTERVALO_AGENDA='2', INTERVALO_AGENDA2='600', CENTRAL_SEM_ACORDAR='1', INTERVALO_CENTRAL_INICIO='1', INTERVALO_CENTRAL='2', PIPELINE_V2='1')
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 ok_n = falhas = 0

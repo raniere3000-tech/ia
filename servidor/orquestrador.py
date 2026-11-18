@@ -121,8 +121,26 @@ def salvar(d: dict, versao=None, quem: str = 'site') -> dict:
         db.kv_gravar('automacao', novo)
     if novo['estado'] != atual['estado']:
         evento('central', 'estado', novo['estado'], f'De "{atual["estado"]}" para "{novo["estado"]}" por {quem}.')
+        if novo['estado'] == 'ativa':
+            _acordar_agentes()
     db.evento(quem, 'automacao_config', 'automacao', {k: novo[k] for k in ('estado', 'modo', 'cortes', 'linhas', 'editor')})
     return novo
+
+
+def _acordar_agentes():
+    """Ligou ou retomou: não espera o relógio (até 2 min do Agente 1 e 5 min da central) para a primeira decisão."""
+    def rodar():
+        try:
+            import agente as ag
+            ag.passo()
+        except Exception as e:  # noqa: BLE001
+            print('central: acordar agente 1', e)
+        try:
+            ciclo()
+        except Exception as e:  # noqa: BLE001
+            print('central: primeiro ciclo', e)
+    if os.getenv('CENTRAL_SEM_ACORDAR') != '1':
+        threading.Thread(target=rodar, daemon=True).start()
 
 
 def ativa() -> bool:
@@ -273,6 +291,73 @@ def decisao_cortes() -> dict | None:
     d['fontes'] = cfg['cortes']['fontes_rodada']
     _lembrar(m, 'cortes', d, est)
     return d
+
+
+def situacao_agente1() -> dict:
+    """O que o Agente 1 está fazendo AGORA e, se está parado, o motivo exato (a mesma ordem de checagens de agente.passo).
+    Não grava nada: serve para a tela não mostrar só "esperando" sem explicar."""
+    import agente as ag
+    from datetime import datetime
+    cfg = config()
+    co = ag.config()['cortes']
+    out = {'trabalhando': False, 'etapa': '', 'bloqueio': '', 'motivo': '', 'decisao': None, 'pode_comecar': False,
+           'ultimas': [x for x in ag.estado().get('log', [])[-6:]][::-1]}
+    if ag.OCUPADO.locked():
+        out.update(trabalhando=True, etapa=ag.ATUAL.get('etapa') or 'Trabalhando', motivo='Trabalhando agora: ' + (ag.ATUAL.get('etapa') or 'um trabalho pesado'))
+        return out
+    if not co['ligado']:
+        out.update(bloqueio='agente_desligado', motivo='O Agente 1 está desligado. Ligue em Agentes > Configurar agentes > Agente 1.')
+        return out
+    hora = datetime.now().hour
+    dentro = co['hora_ini'] <= hora < co['hora_fim'] if co['hora_ini'] < co['hora_fim'] else (hora >= co['hora_ini'] or hora < co['hora_fim'])
+    if not dentro:
+        out.update(bloqueio='fora_do_horario', motivo=f'Fora do horário de trabalho que você escolheu ({co["hora_ini"]}h às {co["hora_fim"]}h). Agora são {hora}h.')
+        return out
+    seg = ag.segredos()
+    if not seg['youtube']:
+        out.update(bloqueio='sem_chave', motivo='Falta a chave do YouTube no servidor (Agentes > Configurar agentes > Chaves).')
+        return out
+    if not (seg['gemini'] or seg['gemini_pago']):
+        out.update(bloqueio='sem_chave', motivo='Falta a chave do Gemini no servidor (Agentes > Configurar agentes > Chaves).')
+        return out
+    if cfg['estado'] == 'desligada':
+        out.update(bloqueio='central_desligada', motivo='A Central está desligada: o Agente 1 segue a meta de cortes por semana, não o estoque.')
+        return out
+    if cfg['estado'] == 'pausada':
+        out.update(bloqueio='central_pausada', motivo='A Central está pausada por você.')
+        return out
+    if not cfg['cortes']['controle_estoque'] or cfg['cortes']['frequencia'] == 'agenda':
+        out.update(bloqueio='sem_estoque', motivo='O controle pelo estoque está desligado (Agentes > "Quando trabalhar"): vale a meta da semana.')
+        return out
+    marcas = ag.estado()['marcas']
+    est = estoque_cortes()
+    agora = time.time()
+    d = decidir_cortes(cfg, est, bool(_mem()['repondo'].get('cortes')), agora, marcas.get('tentativa', 0), marcas.get('busca', 0))
+    if cfg['cortes']['frequencia'] == 'hibrido' and d['acao'] == 'nada':
+        d = meta_semanal(d, ag.cortes_da_semana(), co['por_semana'], cfg, agora, marcas.get('tentativa', 0))
+    out.update(decisao=d, motivo=d['motivo'], pode_comecar=d['acao'] in ('esperar', 'cortar', 'buscar_canais'))
+    if d['acao'] in ('cortar', 'buscar_canais'):
+        out['motivo'] += f' Começa na próxima volta do relógio (até {int(float(os.getenv("INTERVALO_AGENTE", "120")) // 60) or 1} min).'
+    return out
+
+
+def comecar_agente1(quem: str = 'site') -> dict:
+    """Botão "Começar agora": pula só o intervalo entre rodadas (pedido seu). Horário, chaves e a regra do estoque continuam valendo."""
+    import agente as ag
+    s = situacao_agente1()
+    if s['trabalhando']:
+        return s
+    if s['bloqueio']:
+        raise ErroAutomacao(s['motivo'], 409)
+    d = s['decisao']
+    if d['acao'] == 'nada':
+        raise ErroAutomacao('O estoque já está bom: ' + d['motivo'], 409)
+    if d['acao'] == 'esperar':
+        ag._mudar(lambda e: e['marcas'].update(tentativa=0))
+    evento('agente1', 'comecar_agora', 'pedido', f'Você pediu para começar agora ({quem}).')
+    threading.Thread(target=ag.passo, daemon=True).start()
+    time.sleep(0.5)
+    return situacao_agente1()
 
 
 def meta_semanal(d: dict, feitos: int, meta: int, cfg: dict, agora: float, ultima_rodada: float) -> dict:
@@ -444,8 +529,16 @@ def resumo() -> dict:
         'config': cfg, 'nomes_modo': NOMES_MODO, 'presets': PRESETS, 'esteira_ligada': pl.ligado(),
         'indicadores': {'estoque_cortes': ec.get('disponiveis', 0), 'estoque_linhas': sum(x['estoque']['livres'] for x in linhas),
                         'rodando': rodando, 'na_fila': na_fila, 'revisao_manual': revisao, 'esperando_voce': espera_voce, 'falhas_24h': falhas},
-        'proximas': proximas, 'estoque_cortes': ec, 'linhas': linhas, 'eventos': eventos(15),
+        'proximas': proximas, 'estoque_cortes': ec, 'linhas': linhas, 'eventos': eventos(15), 'agente1': _situacao_segura(),
     }
+
+
+def _situacao_segura() -> dict:
+    try:
+        return situacao_agente1()
+    except Exception as e:  # noqa: BLE001
+        return {'trabalhando': False, 'etapa': '', 'bloqueio': 'erro', 'motivo': f'Não consegui ler o Agente 1: {str(e)[:160]}', 'decisao': None,
+                'pode_comecar': False, 'ultimas': []}
 
 
 def sugestoes() -> list:

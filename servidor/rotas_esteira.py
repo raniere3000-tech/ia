@@ -103,6 +103,10 @@ def _automacao(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
         return oq.pausar(quem)
     if rota == ('POST', '/api/v1/automacao/retomar'):
         return oq.retomar(quem)
+    if rota == ('GET', '/api/v1/automacao/agente1'):
+        return oq.situacao_agente1()
+    if rota == ('POST', '/api/v1/automacao/agente1/comecar'):
+        return oq.comecar_agente1(quem)
     if rota == ('GET', '/api/v1/automacao/estoque'):
         return {'cortes': oq.estoque_cortes(), 'linhas': [lc.estoque(r['id']) for r in lc.db.todos("SELECT id FROM linhas_conteudo WHERE estado<>'apagada'")]}
     if rota == ('GET', '/api/v1/automacao/eventos'):

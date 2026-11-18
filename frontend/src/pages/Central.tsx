@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, BookOpen, CalendarClock, CheckCircle2, FlaskConical, History, Layers, Loader2, Lock, Pause, Play, Plus, Power, RefreshCw, ShieldCheck, Sparkles, Trash2, Wand2, Workflow, Wrench } from 'lucide-react';
+import { AlertTriangle, BookOpen, Scissors, CalendarClock, CheckCircle2, FlaskConical, History, Layers, Loader2, Lock, Pause, Play, Plus, Power, RefreshCw, ShieldCheck, Sparkles, Trash2, Wand2, Workflow, Wrench } from 'lucide-react';
 import { useApp } from '../state';
 import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
 import Esteira from '../components/Esteira';
 import ProgramacaoDiaria from '../components/ProgramacaoDiaria';
 import { catalogo, type Catalogo } from '../lib/api';
 import { lerCapacidades } from '../lib/esteira';
-import { aplicarSugestoes, apagarLinha, apagarItemBiblioteca, criarItemBiblioteca, criarLinha, ligarFerramenta, listarBiblioteca, listarFerramentas, mudarItemBiblioteca, sugerirLinha, testarFerramenta, type ItemBiblioteca, type Sugestao_Linha, escreverPautas, eventosCentral, iniciarLote, mudarLinha, mudarPauta, obterLinha, pausarCentral, planejarPautas,
+import { aplicarSugestoes, comecarA1, apagarLinha, apagarItemBiblioteca, criarItemBiblioteca, criarLinha, ligarFerramenta, listarBiblioteca, listarFerramentas, mudarItemBiblioteca, sugerirLinha, testarFerramenta, type ItemBiblioteca, type Sugestao_Linha, escreverPautas, eventosCentral, iniciarLote, mudarLinha, mudarPauta, obterLinha, pausarCentral, planejarPautas,
   resumoCentral, retomarCentral, salvarCentral, simularCentral, sugestoesCentral, type ConfigCentral, type ConfigLinha, type Linha, type Simulacao } from '../lib/automacao';
 
 type Aba='geral'|'agentes'|'linhas'|'calendario'|'qualidade'|'historico';
-const ABAS:[Aba,string][]=[['geral','Visão geral'],['agentes','Agentes'],['linhas','Linhas de conteúdo'],['calendario','Calendário'],['qualidade','Qualidade e revisões'],['historico','Histórico e skills']];
+const ABAS:[Aba,string][]=[['geral','Visão geral'],['agentes','Estoque e regras'],['linhas','Linhas de conteúdo'],['calendario','Calendário'],['qualidade','Qualidade e revisões'],['historico','Histórico e skills']];
 const ESTADO_NOME={desligada:'Desligada',ativa:'Ligada',pausada:'Pausada'};
 const ACAO:Record<string,string>={nada:'Parado',esperar:'Esperando o intervalo',cortar:'Cortar',buscar_canais:'Procurar canais',planejar:'Planejar pautas e produzir',lote:'Começar lote',meta_semanal:'Meta semanal'};
 const AGENTE:Record<string,string>={agente1:'Agente 1',agente2:'Agente 2',agente3:'Agente 3',central:'Central'};
@@ -21,8 +21,9 @@ export default function Central(){
   const {rotaExtra,go}=useApp(); const cfg=useCfg();
   const [aba,setAba]=useState<Aba>((ABAS.find(a=>a[0]===rotaExtra)?.[0])||'geral');
   const r=useServidor(c=>resumoCentral(c),30);
+  useEffect(()=>{ const a=ABAS.find(x=>x[0]===rotaExtra)?.[0]; if(a) setAba(a); },[rotaExtra]);
   if(!cfg.servidor) return <section className="panel"><p className="hint">Conecte o servidor do celular em Ajustes para usar a Central de Automação.</p></section>;
-  const trocar=(a:Aba)=>{ setAba(a); go('central',a); };
+  const trocar=(a:Aba)=>{ setAba(a); go('central',a,'automacao'); };
   return <div className="central">
     <div className="ag-abas" role="tablist">{ABAS.map(([k,t])=><button key={k} role="tab" aria-selected={aba===k} className={aba===k?'active':''} onClick={()=>trocar(k)}>{t}</button>)}</div>
     {r.erro&&<p className="hint bad"><AlertTriangle size={13}/> {r.erro}</p>}
@@ -36,7 +37,7 @@ export default function Central(){
 }
 
 function Geral({r}:{r:ReturnType<typeof useServidor<import('../lib/automacao').ResumoCentral>>}){
-  const {toast}=useApp(); const cfg=useCfg();
+  const {toast,go}=useApp(); const cfg=useCfg();
   const [sim,setSim]=useState<Simulacao|null>(null); const [busy,setBusy]=useState(false);
   const sug=useServidor(c=>sugestoesCentral(c),0);
   const x=r.dados;
@@ -63,6 +64,14 @@ function Geral({r}:{r:ReturnType<typeof useServidor<import('../lib/automacao').R
         <div className={'es-ag'+(i.falhas_24h?' bad':'')}><b>{i.falhas_24h}</b><span>falhas em 24 h</span><small>trabalhos e horários</small></div>
       </div>
     </section>
+    {x.agente1&&<section className={'panel a1-agora'+(x.agente1.bloqueio?' bloqueado':'')}>
+      <h3>{x.agente1.trabalhando?<Loader2 size={16} className="spin"/>:<Scissors size={16}/>} Agente 1 agora</h3>
+      <p className="a1-motivo">{x.agente1.motivo}</p>
+      {x.agente1.decisao&&<p className="hint">Estoque que conta: cortes <b>prontos, sem horário{x.esteira_ligada?' e com certificado do diretor':''}</b>. Agora: {x.estoque_cortes.disponiveis} de {x.config.cortes.alvo} (mínimo {x.config.cortes.minimo}).</p>}
+      {(x.agente1.bloqueio==='agente_desligado'||x.agente1.bloqueio==='fora_do_horario'||x.agente1.bloqueio==='sem_chave')&&<button className="subtle sm" onClick={()=>go('agente','','automacao')}>Abrir a configuração do Agente 1</button>}
+      {x.agente1.pode_comecar&&!x.agente1.trabalhando&&<button className="primary sm" disabled={busy} onClick={()=>fazer(()=>comecarA1(cfg),'Pedido enviado: o Agente 1 começou.')}><Play size={14}/> Começar agora</button>}
+      {x.agente1.ultimas.length>0&&<details className="mt"><summary className="hint">O que ele fez por último</summary><ul className="rq-lista">{x.agente1.ultimas.map((l,i)=><li key={i} className={l.tipo==='erro'?'bad':''}><small className="muted">{quando(l.t)}</small> {l.texto}</li>)}</ul></details>}
+    </section>}
     {sim&&<section className="panel">
       <h3><FlaskConical size={16}/> O que a automação faria agora</h3>
       <p className="hint">Com os seus números reais. A simulação não grava nada e não chama nenhum agente.</p>
@@ -116,7 +125,7 @@ function Agentes({conf,est,esteira,salvo}:{conf:ConfigCentral;est:import('../lib
       <button className="primary sm" disabled={busy} onClick={()=>salvar({cortes:c})}>Salvar</button>
       <p className="hint">Agora: <b>{est.disponiveis}</b> corte(s) aprovado(s) sem horário, {est.reservados} agendado(s). A programação pede cerca de <b>{est.demanda_dia}</b> vídeo(s) por dia ({est.demanda_fonte})
         {est.cobertura_dias!=null&&<> : o estoque cobre <b>{est.cobertura_dias}</b> dia(s)</>}. Taxa de aprovação do diretor: {Math.round(est.taxa_aprovacao*100)}%{est.taxa_estimada?' (estimativa: menos de 5 cortes julgados)':` (últimos ${est.taxa_amostra} cortes)`}.</p>
-      <p className="hint">Ligar e desligar o Agente 1, os canais e o horário de trabalho continuam em <button className="link-btn" onClick={()=>go('agente')}>Agentes 1, 2 e 3</button>.</p>
+      <p className="hint">Ligar e desligar o Agente 1, os canais e o horário de trabalho continuam em <button className="link-btn" onClick={()=>go('agente','','automacao')}>Configurar Agentes 1, 2 e 3</button>.</p>
     </section>
     <section className="panel">
       <h3>Agente 3 · Linhas de conteúdo</h3>

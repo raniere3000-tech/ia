@@ -1033,3 +1033,5 @@ button.sm:not(.primary):not(.subtle):not(.link-btn):not(.icon-btn){display:inlin
 .central .mudancas{font-size:12px;margin:6px 0;padding-left:18px}
 .central-atalho{margin-bottom:20px;width:100%}.central-atalho b{display:inline-flex;align-items:center;gap:8px}
 .central-atalho{background:var(--brand-soft);border-color:#4a3f7a;color:#d4c6ff}
+.a1-agora{border-color:#4a3f7a}.a1-agora.bloqueado{border-color:#6a5a2c;background:linear-gradient(0deg,var(--panel),#1d1a10)}
+.a1-agora h3{display:flex;align-items:center;gap:8px}.a1-motivo{font-size:14px;line-height:1.6;color:#e6e8f0;margin:6px 0}

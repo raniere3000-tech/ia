@@ -42,7 +42,8 @@ type AreaNav={id:string;nome:string;curto:string;Icon:typeof Home;abas:Tab[];ext
 const AREAS_NAV:AreaNav[] = [
   {id:'inicio',nome:'Início',curto:'Início',Icon:Home,abas:['inicio']},
   {id:'criar',nome:'Criar vídeos',curto:'Criar',Icon:Clapperboard,abas:['ia','automatico','series','video','manual','projetos','vozes','galeria','templates','estilos']},
-  {id:'radar',nome:'Radar e cortes',curto:'Radar',Icon:Search,abas:['central','radar','cortes','agente']},
+  {id:'automacao',nome:'Automação e agentes',curto:'Agentes',Icon:Workflow,abas:['central','agente'],extras:[['central','Central'],['agente','Configurar agentes']]},
+  {id:'radar',nome:'Radar e cortes',curto:'Radar',Icon:Search,abas:['radar','cortes']},
   {id:'fila',nome:'Fila e aprovações',curto:'Fila',Icon:ListChecks,abas:['fila','revisar']},
   {id:'posts',nome:'Publicações',curto:'Posts',Icon:Send,abas:['agendar','agente'],extras:[['agente','Agente 2 (postagem)']]},
 ];
