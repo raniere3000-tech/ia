@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CalendarClock, Copy, Eye, Loader2, Plus, Save, Trash2, X } from 'lucide-react';
+import { AlertTriangle, CalendarClock, Copy, Eye, Loader2, MoveRight, Plus, Save, Trash2, X } from 'lucide-react';
+import { moverSlot } from '../lib/automacao';
 import { useApp } from '../state';
 import { apagarAgenda, cancelarSlot, criarAgenda, listarAgendas, listarSlots, metricasAgenda, mudarAgenda, previaAgenda, type Agenda, type ConfigAgenda, type Modo, type Previa, type Slot } from '../lib/esteira';
 import { useCfg, useServidor, erroTexto } from './Servidor2';
@@ -40,9 +41,9 @@ function Editor({base,id,version,fechar,salvo}:{base:ConfigAgenda;id?:string;ver
       <label className="check"><input type="checkbox" checked={!!hs} onChange={e=>setDia(k,e.target.checked?(c.weekly_rules['0']||['12:00']).slice():null)}/> {n}</label>
       {hs&&<div className="pd-horas">{hs.map((h,j)=><span key={j} className="pd-hora">
         <input type="time" value={h} aria-label={`${n} horário ${j+1}`} onChange={e=>setDia(k,hs.map((x,q)=>q===j?e.target.value:x))}/>
-        <button className="icon sm" aria-label="Tirar horário" onClick={()=>setDia(k,hs.filter((_,q)=>q!==j))}><X size={12}/></button></span>)}
-        <button className="sm" onClick={()=>setDia(k,[...hs,'20:00'])}><Plus size={12}/> horário</button>
-        <button className="sm" title="Copiar estes horários para todos os dias marcados" onClick={()=>setC(x=>({...x,weekly_rules:Object.fromEntries(Object.keys(x.weekly_rules).map(q=>[q,hs.slice()]))}))}><Copy size={12}/> igual nos outros</button>
+        <button className="icon-btn" aria-label="Tirar horário" onClick={()=>setDia(k,hs.filter((_,q)=>q!==j))}><X size={12}/></button></span>)}
+        <button className="subtle sm" onClick={()=>setDia(k,[...hs,'20:00'])}><Plus size={12}/> horário</button>
+        <button className="subtle sm" title="Copiar estes horários para todos os dias marcados" onClick={()=>setC(x=>({...x,weekly_rules:Object.fromEntries(Object.keys(x.weekly_rules).map(q=>[q,hs.slice()]))}))}><Copy size={12}/> igual nos outros</button>
       </div>}
     </div>; })}</div>}
     {!usaFixos&&<div className="pd-dias">{DIAS.map((n,i)=>{ const k=String(i); return <label key={k} className="check"><input type="checkbox" checked={!!dia(k)} onChange={e=>setDia(k,e.target.checked?[]:null)}/> {n}</label>; })}</div>}
@@ -58,8 +59,8 @@ function Editor({base,id,version,fechar,salvo}:{base:ConfigAgenda;id?:string;ver
     </div>
     <div className="pd-exc"><b>Datas especiais</b>
       {Object.entries(c.exceptions).map(([d,v])=><span key={d} className="tag">{new Date(d+'T12:00').toLocaleDateString('pt-BR')}: {v==='pausado'?'sem posts':(v as string[]).join(', ')}
-        <button className="icon sm" aria-label="Tirar data" onClick={()=>setC(x=>{ const e={...x.exceptions}; delete e[d]; return {...x,exceptions:e}; })}><X size={11}/></button></span>)}
-      <span className="row"><input type="date" value={exc} onChange={e=>setExc(e.target.value)}/><button className="sm" disabled={!exc} onClick={()=>{ set({exceptions:{...c.exceptions,[exc]:'pausado'}}); setExc(''); }}>Pausar esta data</button></span>
+        <button className="icon-btn" aria-label="Tirar data" onClick={()=>setC(x=>{ const e={...x.exceptions}; delete e[d]; return {...x,exceptions:e}; })}><X size={11}/></button></span>)}
+      <span className="row"><input type="date" value={exc} onChange={e=>setExc(e.target.value)}/><button className="subtle sm" disabled={!exc} onClick={()=>{ set({exceptions:{...c.exceptions,[exc]:'pausado'}}); setExc(''); }}>Pausar esta data</button></span>
     </div>
     <label className="check"><input type="checkbox" checked={c.enabled} onChange={e=>set({enabled:e.target.checked})}/> Programação ligada</label>
     {erro&&<p className="hint bad"><AlertTriangle size={13}/> {erro}</p>}
@@ -67,7 +68,7 @@ function Editor({base,id,version,fechar,salvo}:{base:ConfigAgenda;id?:string;ver
       {pv.avisos.map(a=><p key={a} className="hint"><AlertTriangle size={12}/> {a}</p>)}
       <ul>{pv.dias.map(d=><li key={d.data}><b>{d.dia} {new Date(d.data+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}</b>{' '}
         {d.excecao==='pausado'?<span className="muted">pausado</span>:d.horarios.length?d.horarios.map(h=><span key={h.hora} className={'tag'+(h.tipo==='flexivel'?' flex':'')}>{h.hora}</span>):<span className="muted">sem posts</span>}</li>)}</ul></div>}
-    <div className="row"><button className="primary sm" disabled={busy||!!erro} onClick={salvar}><Save size={14}/> Guardar</button><button className="sm" onClick={fechar}>Fechar</button></div>
+    <div className="row"><button className="primary sm" disabled={busy||!!erro} onClick={salvar}><Save size={14}/> Guardar</button><button className="subtle sm" onClick={fechar}>Fechar</button></div>
   </div>;
 }
 
@@ -78,6 +79,7 @@ export default function ProgramacaoDiaria(){
   const sl=useServidor(c=>listarSlots(c),30);
   const mt=useServidor(c=>metricasAgenda(c,new Date().toLocaleDateString('sv-SE')),60);
   const [ed,setEd]=useState<{base:ConfigAgenda;id?:string;version?:number}|null>(null);
+  const [mov,setMov]=useState<{id:string;data:string;hora:string}|null>(null);
   const porDia=useMemo(()=>{ const m:Record<string,Slot[]>={}; for(const s of sl.dados?.slots||[]) (m[s.data_local]=m[s.data_local]||[]).push(s); return Object.entries(m).slice(0,8); },[sl.dados]);
   if(!cfg.servidor) return null;
   const recarregar=()=>{ ags.recarregar(); sl.recarregar(); mt.recarregar(); };
@@ -91,16 +93,21 @@ export default function ProgramacaoDiaria(){
       <b>{m.publicados}/{m.meta}</b><span>{nomeRede(r)} hoje</span><small>{m.agendados} agendado(s) · {m.livres} vazio(s){m.falhas?` · ${m.falhas} erro(s)`:''} · {mt.dados?.disponiveis[r]??0} aprovado(s) esperando</small></div>)}</div>}
     <ul className="pd-agendas">{(ags.dados?.agendas||[]).map(a=><li key={a.id}>
       <b>{a.nome_rede}</b> <span className={'tag '+(a.enabled?'ok':'')}>{a.enabled?'ligada':'desligada'}</span> <span className="muted">{MODOS.find(m=>m[0]===a.mode)?.[1]} · {a.meta_semana} post(s) por semana</span>
-      <span className="row"><button className="sm" onClick={()=>setEd({base:a as Agenda,id:a.id,version:a.version})}>Editar</button>
-        <button className="icon sm" aria-label="Apagar programação" onClick={async()=>{ if(!confirm('Apagar esta programação? Os horários vazios somem; os posts já agendados continuam.')) return; try{ await apagarAgenda(cfg,a.id); recarregar(); }catch(e){ toast(erroTexto(e),'erro'); } }}><Trash2 size={13}/></button></span>
+      <span className="row"><button className="subtle sm" onClick={()=>setEd({base:a as Agenda,id:a.id,version:a.version})}>Editar</button>
+        <button className="icon-btn" aria-label="Apagar programação" onClick={async()=>{ if(!confirm('Apagar esta programação? Os horários vazios somem; os posts já agendados continuam.')) return; try{ await apagarAgenda(cfg,a.id); recarregar(); }catch(e){ toast(erroTexto(e),'erro'); } }}><Trash2 size={13}/></button></span>
     </li>)}</ul>
-    {!ed&&<button className="sm" onClick={()=>setEd({base:{...NOVA,platform:REDES.map(r=>r[0]).find(r=>!(ags.dados?.agendas||[]).some(a=>a.platform===r))||'youtube'}})}><Plus size={14}/> Programar uma rede</button>}
+    {!ed&&<button className="subtle sm" onClick={()=>setEd({base:{...NOVA,platform:REDES.map(r=>r[0]).find(r=>!(ags.dados?.agendas||[]).some(a=>a.platform===r))||'youtube'}})}><Plus size={14}/> Programar uma rede</button>}
     {ed&&<Editor base={ed.base} id={ed.id} version={ed.version} fechar={()=>setEd(null)} salvo={recarregar}/>}
     {porDia.length>0&&<><h3>Próximos horários</h3>
       <div className="pd-calendario">{porDia.map(([d,ss])=><div key={d} className="pd-cal-dia"><b>{new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})}</b>
         <ul>{ss.map(s=><li key={s.id} className={'pd-slot '+s.estado}><span>{s.hora_local}</span> <span>{nomeRede(s.rede)}</span> <span className="tag">{ESTADO[s.estado]||s.estado}</span>
+          {s.titulo&&<><br/><small>🎬 {s.titulo}</small></>}
           {s.motivo&&s.estado!=='agendado'&&<small className="muted"> {s.motivo}</small>}
-          {['vazio','agendado','reservado','aguardando_aprovacao'].includes(s.estado)&&s.quando_utc*1000>Date.now()&&<button className="icon sm" aria-label="Cancelar este horário" onClick={async()=>{
+          {mov?.id===s.id&&<span className="row"><input type="date" value={mov.data} onChange={e=>setMov({...mov,data:e.target.value})} style={{width:150}}/><input type="time" value={mov.hora} onChange={e=>setMov({...mov,hora:e.target.value})} style={{width:110}}/>
+            <button className="primary sm" onClick={async()=>{ try{ await moverSlot(cfg,s.id,mov.data,mov.hora); toast('Horário mudado (só este dia).','ok'); setMov(null); recarregar(); }catch(e){ toast(erroTexto(e),'erro'); } }}>Mudar</button>
+            <button className="subtle sm" onClick={()=>setMov(null)}>Cancelar</button></span>}
+          {['vazio','agendado','reservado','aguardando_aprovacao'].includes(s.estado)&&s.quando_utc*1000>Date.now()&&mov?.id!==s.id&&<button className="icon-btn" aria-label="Mudar este horário" title="Mudar só este horário" onClick={()=>setMov({id:s.id,data:s.data_local,hora:s.hora_local})}><MoveRight size={12}/></button>}
+          {['vazio','agendado','reservado','aguardando_aprovacao'].includes(s.estado)&&s.quando_utc*1000>Date.now()&&<button className="icon-btn" aria-label="Cancelar este horário" onClick={async()=>{
             if(!confirm('Cancelar este horário? Se tiver vídeo, ele volta para a fila de prontos.')) return; try{ await cancelarSlot(cfg,s.id); recarregar(); }catch(e){ toast(erroTexto(e),'erro'); } }}><X size={12}/></button>}
         </li>)}</ul></div>)}</div></>}
   </section>;

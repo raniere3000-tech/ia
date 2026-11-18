@@ -79,14 +79,28 @@ Legenda:
 
 Hoje falta a parte "a partir de uma descrição". Também falta um teste que faça o caminho inteiro de uma vez: 6 renders reais, diretor, aprovação e calendário.
 
-## O que vou fazer agora (em partes testáveis)
+## O que foi feito (18/11)
 
-1. **Linha a partir de descrição:** a IA preenche os campos e você confere antes de salvar. Os campos com cadeado não mudam. A linha também ganha os horários dela.
-2. **Checagem de fatos:** a afirmação só vira "conferida" se o trecho citado estiver de verdade no texto da fonte. Afirmação de alto risco sem confirmação vai para você.
-3. **Biblioteca Criativa:** modelos de roteiro, pacotes visuais e perfis de narração, com versões e cadeados. A linha guarda a versão usada.
-4. **Agente 2:** prioridade por linha e mudar um horário de lugar.
-5. **Agente 1:** modo por estoque, agenda ou híbrido, e máximo de fontes por rodada.
-6. **Orçamento da linha:** por dia, usando os gastos que o produtor já registra.
-7. **Agente 5 e diretor:** modo supervisionado e comparação antes e depois.
-8. **Ferramentas externas:** ficha de cada uma e teste de funcionamento. Adaptador opcional do Auto-Editor, com o FFmpeg como alternativa.
-9. **Teste de aceite completo:** linha de 6 vídeos, renders reais, diretor, calendário, sem duplicar. Depois, fotos da tela.
+Todos os 9 itens abaixo foram feitos, cada um com teste.
+
+1. **Linha a partir de descrição.** A IA monta a proposta e a tela mostra campo por campo. Nada é gravado antes de você salvar. Campos com cadeado não mudam, e estilo beta ou indisponível vira aviso. A linha tem horários e dias próprios, que entram na programação diária de cada rede.
+2. **Checagem de fatos.** A IA cita um trecho e o servidor procura esse trecho no texto baixado da fonte. Afirmação de saúde, dinheiro ou lei sem confirmação vai para você. O que não foi confirmado entra no roteiro como "não apresentar como fato".
+3. **Biblioteca Criativa.** Tem modelos de roteiro, pacotes visuais e perfis de narração. Cada mudança vira uma versão nova, e os campos podem ter cadeado. O episódio guarda a versão que usou.
+4. **Agente 2.** A prioridade de 1 a 5 da linha decide quem ocupa o horário. Você pode mudar um horário só naquele dia: o post vai junto e o intervalo mínimo é respeitado. Cada horário mostra o nome do vídeo.
+5. **Agente 1.** Pode trabalhar pelo estoque, pela meta da semana ou pelos dois. Também dá para escolher quantas fontes ler por rodada, de 1 a 5.
+6. **Orçamento da linha.** Tem um limite por dia, calculado com o custo estimado das últimas 24 h, e um limite por vídeo.
+7. **Editor e diretor.** O editor tem três modos: automático, supervisionado (você dá o ok final) e manual. Cada relatório mostra a diferença de nota para a avaliação anterior.
+8. **Ferramentas externas.** Cada ferramenta tem uma ficha com licença, sistema, custo e alternativa. Só liga com a licença conferida por você e o teste passando neste aparelho. O adaptador do Auto-Editor é opcional e **não foi testado com o programa de verdade**, porque a instalação não foi permitida neste ambiente. Sem ele, o FFmpeg continua sendo usado.
+9. **Teste de aceite** (`testes/teste_aceite_linha6.py`, 44 ok). O teste usa o servidor HTTP de verdade e simula o Gemini.
+   - Descrição → proposta → linha salva com 3 horários em 2 redes.
+   - 6 pautas e lote de 6.
+   - 6 MP4 diferentes renderizados pelo FFmpeg, cada um com nota e certificado do diretor para o SHA exato.
+   - Aprovação automática da linha.
+   - 12 horários ocupados, 6 vídeos em 2 redes, sem repetir vídeo na mesma rede.
+   - Nada publicado.
+
+**Correção pedida:** os botões da Central estavam sem cor (apareciam em branco). Agora todos têm o estilo normal, e há uma regra de segurança no CSS.
+
+**Mudança de comportamento:** a publicação automática de uma linha agora vale mesmo com a Central desligada. Ela ainda exige o certificado do diretor, e não vale com a Central pausada. Depois de uma aprovação, o Agente 2 confere os horários na hora, sem esperar os 3 minutos do relógio.
+
+**Não testado no celular.** O Gemini, o YouTube e as redes de verdade também não foram usados no teste.

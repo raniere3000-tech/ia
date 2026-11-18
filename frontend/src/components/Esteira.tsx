@@ -13,10 +13,12 @@ const ach=(a:Achado)=>({cat:a.category||a.categoria||'',sev:a.severity||a.severi
 const NOME_ALVO:Record<string,string>={agent5:'Editor',agent3:'Agente 3',pessoa:'Você'};
 
 /** Relatório do diretor: nota, partes da nota, bloqueios e o que cada um precisa corrigir (com o instante no vídeo). */
-export function RelatorioQualidade({r}:{r:Relatorio}){
+export function RelatorioQualidade({r,antes}:{r:Relatorio;antes?:Relatorio}){
+  const dif=antes?r.score-antes.score:null;
   return <div className="rq">
     <div className="rq-topo">
       <span className={'rq-nota '+(r.passed?'ok':'bad')}>{r.score}<small>/100</small></span>
+      {dif!=null&&<span className={'tag '+(dif>0?'ok':dif<0?'bad':'')} title="Diferença para a avaliação anterior">{dif>0?'+':''}{dif} desde a anterior</span>}
       <div><b>{MOD[r.modalidade]||r.modalidade}</b> · {r.passed?'aprovado':'reprovado'}
         {r.attempts_limit!=null&&<span className="muted"> · correções usadas {r.attempts_used||0} de {r.attempts_limit}</span>}
         <br/><small className="muted">Regra fixa: nota 70 ou mais e nenhum bloqueio · {r.evaluator_version} · {new Date(r.created_at*1000).toLocaleString('pt-BR')}</small></div>
@@ -46,14 +48,14 @@ function Detalhe({id,fechar}:{id:string;fechar:()=>void}){
   if(!x) return <p className="hint"><Loader2 size={13} className="spin"/> Lendo...</p>;
   return <div className="es-detalhe">
     <div className="es-contadores">{Object.entries(x.etapas).map(([m,s])=><span key={m} className="tag">{MOD[m]||m}: {s.avaliacoes} avaliação(ões), {s.correcoes} de {s.limite} correções · {s.estado}</span>)}</div>
-    {x.relatorios.length?[...x.relatorios].reverse().map(r=><RelatorioQualidade key={r.id} r={r}/>):<p className="hint">O diretor ainda não conferiu.</p>}
+    {x.relatorios.length?x.relatorios.map((r,i)=><RelatorioQualidade key={r.id} r={r} antes={i>0&&x.relatorios[i-1].modalidade===r.modalidade?x.relatorios[i-1]:undefined}/>).reverse():<p className="hint">O diretor ainda não conferiu.</p>}
     {x.planos.length>0&&<details><summary>Planos de edição ({x.planos.length} versão(ões))</summary><ul className="rq-lista">{x.planos.map(p=><li key={p.versao}>
       v{p.versao}: {p.motivo||'—'} {p.arquivo_sha&&<code>{p.arquivo_sha.slice(0,10)}</code>}</li>)}</ul></details>}
     {x.estado==='manual_review_required'&&<div className="es-manual">
       <p><AlertTriangle size={14}/> A esteira parou e precisa de você. Você pode liberar um vídeo com nota baixa (fica registrado), mas <b>não</b> dá para liberar bloqueio de direitos, arquivo quebrado, áudio faltando ou outro bloqueio técnico.</p>
       <input value={motivo} onChange={e=>setMotivo(e.target.value)} placeholder="Motivo da sua decisão (obrigatório)"/>
       <div className="row"><button className="primary sm" disabled={busy||motivo.trim().length<5} onClick={()=>decidir('aprovar')}><ShieldCheck size={14}/> Liberar</button>
-        <button className="sm" disabled={busy||motivo.trim().length<5} onClick={()=>decidir('cancelar')}><XCircle size={14}/> Cancelar</button></div>
+        <button className="subtle sm" disabled={busy||motivo.trim().length<5} onClick={()=>decidir('cancelar')}><XCircle size={14}/> Cancelar</button></div>
     </div>}
     <button className="link-btn" onClick={fechar}>Fechar</button>
   </div>;

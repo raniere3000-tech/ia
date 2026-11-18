@@ -58,7 +58,8 @@ A Central fica em **Radar e cortes > Central de Automação** (endereço `#centr
 ## Limites honestos
 
 - **Celular:** não foi testado no celular.
-- **Fontes:** a conferência só vê se a página abre. Ela não lê o texto.
+- **Fontes:** a conferência procura o trecho citado no texto da página baixada (só https, até 1,5 MB). Uma página que precisa de JavaScript para mostrar o texto fica como "não verificado".
+- **Auto-Editor:** o adaptador existe, mas não foi testado com o programa instalado. Sem ele, o FFmpeg mede as pausas.
 - **Calendário:** o vídeo de uma linha só entra no calendário com a esteira ligada, porque é a esteira que dá o certificado.
 - **Gemini:** o planejamento de pautas usa o Gemini do servidor e conta na cota dele.
 
@@ -67,4 +68,5 @@ A Central fica em **Radar e cortes > Central de Automação** (endereço `#centr
 ```
 cd servidor
 PYTHONPATH=. python3 testes/teste_central_automacao.py
+python3 testes/teste_aceite_linha6.py     # 6 vídeos de verdade até o calendário (cerca de 2 min)
 ```

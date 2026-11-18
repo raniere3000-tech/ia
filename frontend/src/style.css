@@ -1021,3 +1021,15 @@ details.recolhido[open]>summary{margin-bottom:10px}
 .pd-cal-dia{border:1px solid var(--line);border-radius:12px;padding:8px 10px}.pd-cal-dia ul{list-style:none;padding:0;margin:6px 0 0;display:grid;gap:4px}
 .pd-slot{font-size:12.5px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}.pd-slot.publicado .tag{color:var(--ok)}.pd-slot.erro .tag,.pd-slot.perdido .tag{color:var(--bad)}
 @media (max-width:640px){.rq-parte{grid-template-columns:1fr 60px}.rq-parte .barra{grid-column:1/-1;order:3}.pd-agendas .row{margin-left:0}}
+/* Rede de segurança: botão pequeno sem cor definida ganha o visual "subtle" (antes ficava em branco) */
+button.sm:not(.primary):not(.subtle):not(.link-btn):not(.icon-btn){display:inline-flex;align-items:center;justify-content:center;gap:6px;background:#232738;color:#d1d5e2;border:1px solid #2e3346;font-weight:800;white-space:nowrap}
+.icon-btn.on{background:var(--brand-soft);color:var(--brand2);border-color:#4a3f7a}
+.central .icon-btn{width:30px;height:30px}
+.central .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}
+.central .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:10px 0}
+.central label.check{flex-direction:row;align-items:center;font-weight:500}
+.central textarea{width:100%;background:#0d111b;color:#dce0ec;border:1px solid var(--line2);border-radius:10px;padding:11px 13px;font:inherit;font-size:13.5px}
+.central .conf{margin:4px 0 0 0;padding-left:16px;font-size:11.5px}.central .conf li{margin:2px 0}
+.central .mudancas{font-size:12px;margin:6px 0;padding-left:18px}
+.central-atalho{margin-bottom:20px;width:100%}.central-atalho b{display:inline-flex;align-items:center;gap:8px}
+.central-atalho{background:var(--brand-soft);border-color:#4a3f7a;color:#d4c6ff}

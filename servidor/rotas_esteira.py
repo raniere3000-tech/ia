@@ -233,7 +233,9 @@ def _tratar(metodo: str, caminho: str, q: dict, corpo, quem: str, cab) -> dict:
         if metodo == 'DELETE':
             return ag2.desativar(aid, quem)
     if rota == ('GET', '/api/v1/agent2/slots'):
-        return {'slots': ag2.slots(_f(_q(q, 'from')), _f(_q(q, 'to')), _q(q, 'platform'), _q(q, 'account_id')), 'agora': time.time()}
+        cache: dict = {}
+        ss = ag2.slots(_f(_q(q, 'from')), _f(_q(q, 'to')), _q(q, 'platform'), _q(q, 'account_id'))
+        return {'slots': [{**s, 'titulo': ag2.rotulo_ref(s.get('ref'), cache)} for s in ss], 'agora': time.time()}
     m = re.fullmatch(r'/api/v1/agent2/slots/(\w{6,20})', caminho)
     if m and metodo == 'PATCH':
         return _mudar_slot(m.group(1), corpo(), quem)

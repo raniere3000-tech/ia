@@ -36,7 +36,7 @@ export type Agenda={id:string;version:number;account_id:string;platform:string;t
   max_delay_minutes:number;selection_policy:'oldest_approved'|'best_score';exceptions:Record<string,'pausado'|string[]>;meta_semana?:number;nome_rede?:string};
 export type ConfigAgenda=Omit<Agenda,'id'|'version'|'meta_semana'|'nome_rede'>;
 export type Previa={config:Agenda;total:number;por_rede:Record<string,number>;avisos:string[];dias:{data:string;dia:string;excecao:string;horarios:{hora:string;tipo:string;utc:number;offset:string}[]}[]};
-export type Slot={id:string;agenda:string;conta:string;rede:string;data_local:string;hora_local:string;quando_utc:number;tipo:string;estado:string;ref:string|null;post:string|null;motivo:string|null};
+export type Slot={id:string;agenda:string;conta:string;rede:string;data_local:string;hora_local:string;quando_utc:number;tipo:string;estado:string;ref:string|null;post:string|null;motivo:string|null;titulo?:string};
 export type Metricas={data:string;por_rede:Record<string,{meta:number;publicados:number;agendados:number;livres:number;falhas:number;perdidos:number}>;disponiveis:Record<string,number>};
 
 export const listarAgendas=(c:CfgSrv)=>api<{agendas:Agenda[];redes:Record<string,string>;dias:string[];esteira:boolean}>(c,'GET','/api/v1/agent2/schedules');

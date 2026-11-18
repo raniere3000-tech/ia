@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import threading
 import time
@@ -372,6 +373,25 @@ def mover_slot(sid: str, data_local: str, hora_local: str, quem: str = 'site') -
     return db.um('SELECT * FROM posting_slots WHERE id=?', sid)
 
 
+def rotulo_ref(ref: str | None, cache: dict | None = None) -> str:
+    """Nome do vídeo que ocupa o horário (para a tela). Vazio se não achar."""
+    if not ref:
+        return ''
+    try:
+        if ref.startswith('p:'):
+            r = db.um('SELECT titulo FROM projetos WHERE id=?', ref[2:])
+            return (r or {}).get('titulo') or ''
+        if cache is None:
+            cache = {}
+        if 'cortes' not in cache:
+            import agente as ag
+            cache['cortes'] = {c['id']: c for c in ag.estado()['cortes']}
+        c = cache['cortes'].get(ref) or {}
+        return str(c.get('titulo') or c.get('nome') or '')[:120]
+    except Exception:  # noqa: BLE001
+        return ''
+
+
 def slots(de: float | None = None, ate: float | None = None, rede: str = '', conta: str = '') -> list:
     de = de if de is not None else time.time() - 86400
     ate = ate if ate is not None else time.time() + HORIZONTE * 86400
@@ -599,6 +619,12 @@ def metricas(data_local: str = '', rede: str = '', conta: str = '') -> dict:
 
 
 _relogio = {'on': False}
+_acordar = threading.Event()
+
+
+def acordar():
+    """Chegou vídeo aprovado: roda o ciclo agora em vez de esperar o relógio (não fura nenhuma regra, só adianta a conferência)."""
+    _acordar.set()
 
 
 def iniciar():
@@ -612,5 +638,6 @@ def iniciar():
                 ciclo()
             except Exception as e:  # noqa: BLE001
                 print('agenda do Agente 2:', e)
-            time.sleep(180)
+            _acordar.wait(float(os.getenv('INTERVALO_AGENDA2', '180')))
+            _acordar.clear()
     threading.Thread(target=laco, daemon=True, name='agenda-agente2').start()

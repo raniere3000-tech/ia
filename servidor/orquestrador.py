@@ -9,6 +9,7 @@ e só vídeo com certificado do diretor para o arquivo atual.
 As "sugestões" desta tela são regras simples sobre os seus números, não opinião de IA.
 """
 import json
+import os
 import math
 import threading
 import time
@@ -358,13 +359,15 @@ def _produzir_linha(lid: str, d: dict, ia=None, produzir=None):
 
 def ciclo(ia=None, produzir=None, em_fundo: bool = True) -> dict:
     """Roda no relógio (a cada poucos minutos). Pausada ou desligada: não faz nada."""
+    import linhas_conteudo as lc
     cfg = config()
     if cfg['estado'] != 'ativa':
-        return {'ativa': False}
+        # Publicação automática é escolha da própria linha: vale com a central desligada (só nunca quando pausada).
+        # Continua exigindo o certificado do diretor para o arquivo exato.
+        return {'ativa': False, 'aprovados_auto': lc.aprovar_automaticos() if cfg['estado'] == 'desligada' else 0}
     if not _LOCK.acquire(blocking=False):
         return {'ocupado': True}
     try:
-        import linhas_conteudo as lc
         res = {'ativa': True, 'aprovados_auto': lc.aprovar_automaticos(), 'lotes': []}
         agora = time.time()
         m = _mem()
@@ -494,11 +497,11 @@ def iniciar():
     _relogio['on'] = True
 
     def laco():
-        time.sleep(30)
+        time.sleep(float(os.getenv('INTERVALO_CENTRAL_INICIO', '30')))
         while True:
             try:
                 ciclo()
             except Exception as e:  # noqa: BLE001
                 print('central de automação:', e)
-            time.sleep(300)
+            time.sleep(float(os.getenv('INTERVALO_CENTRAL', '300')))
     threading.Thread(target=laco, daemon=True).start()

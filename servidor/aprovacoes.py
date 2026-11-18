@@ -273,6 +273,9 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
         return {'status': 'queued_to_publish' if posts else 'approved'}
     pj.mudar_dados(pid, f)
     db.evento(por or origem, 'video_aprovado', 'projeto:' + pid, {'sha': render_sha, 'origem': origem, 'redes': ok, 'quando': quando})
+    if (p.get('dados') or {}).get('linha'):
+        import agenda_postagem as ag2
+        ag2.acordar()          # vídeo de linha aprovado: a programação diária confere já
     return {'ok': True, 'aprovacao': db.um('SELECT * FROM aprovacoes WHERE id=?', aid), 'posts': posts, 'quando': quando}
 
 

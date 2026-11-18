@@ -227,7 +227,7 @@ oq.ciclo(ia=lambda p: {'pautas': bichos}, produzir=lambda pid, ch: feitos.append
 check(feitos == [], 'chegou no alvo (4): para de produzir')
 oq.pausar('teste')
 db.kv_gravar('automacao_mem', dict(oq._mem(), ultimo={}))
-check(oq.ciclo(em_fundo=False) == {'ativa': False}, 'pausada: o ciclo não faz nada')
+check(oq.ciclo(em_fundo=False) == {'ativa': False, 'aprovados_auto': 0}, 'pausada: o ciclo não faz nada')
 oq.retomar('teste')
 
 print('9. Vídeo aprovado da linha entra na programação diária (1 vídeo, 2 redes)')

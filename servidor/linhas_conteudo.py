@@ -619,6 +619,9 @@ def aprovar_automaticos(quem: str = 'automação') -> int:
                 n += 1
             except apv.ErroAprovacao as e:
                 db.evento('automacao', 'aprovacao_automatica_falhou', 'projeto:' + p['id'], {'erro': str(e)[:200]})
+    if n:
+        import agenda_postagem as ag2
+        ag2.acordar()          # os horários vazios recebem o vídeo já, sem esperar o relógio do Agente 2
     return n
 
 
