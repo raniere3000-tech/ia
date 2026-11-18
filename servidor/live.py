@@ -29,6 +29,7 @@ PADRAO = {'bloco_min': 5, 'cortes_por_bloco': 1, 'nota_min': 70, 'max_horas': 4,
           'redes': [], 'postar': True}
 MOTIVOS = ('meu', 'autorizado', 'regra')
 ESPERA_ERRO = 30      # segundos entre tentativas de reabrir a live
+SEM_DADOS = 90        # segundos sem o arquivo crescer = a live parou de mandar vídeo
 
 
 class ErroLive(Exception):
@@ -269,33 +270,53 @@ def _gravar(lid: str):
             break
         existentes = _blocos_no_disco(lid)
         prox = (max(_num(a) for a in existentes) + 1) if existentes else 1
+        arq = pasta / f'b{prox:05d}.ts'
+        dur = int(min(lv['cfg']['bloco_min'] * 60, restante))
         urls = info.get('urls') or [info['url']]
         entradas = [x for u in urls[:2] for x in ('-i', u)]
         mapas = ['-map', '0:v:0', '-map', '1:a:0'] if len(urls) > 1 else ['-map', '0:v:0?', '-map', '0:a:0?']
-        cmd = ['ffmpeg', '-nostdin', '-v', 'error', '-y', *entradas, *mapas, '-c', 'copy',
-               '-t', str(int(restante)), '-f', 'segment', '-segment_time', str(lv['cfg']['bloco_min'] * 60),
-               '-segment_start_number', str(prox), '-reset_timestamps', '1', str(pasta / 'b%05d.ts')]
+        # Um FFmpeg por bloco, com duração fixa: o arquivo fecha sozinho no fim do bloco (cortar uma live em pedaços
+        # dentro de um FFmpeg só não fechava nunca com a live do YouTube) e o link da live é renovado a cada bloco.
+        cmd = ['ffmpeg', '-nostdin', '-v', 'error', '-y', *entradas, *mapas, '-c', 'copy', '-t', str(dur), '-f', 'mpegts', str(arq)]
+        log = pasta / 'ffmpeg.log'
         t0 = time.time()
-        p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        with open(log, 'wb') as fe:          # nunca em PIPE: com muito aviso o cano enche e o FFmpeg trava
+            p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=fe)
         PROC[lid] = p
+        _mudar_live(lid, lambda x: x.update(gravando_bloco=prox, gravando_desde=t0))
+        tam, mudou, motivo = 0, time.time(), ''
         while p.poll() is None:
-            for a in _blocos_no_disco(lid)[:-1]:        # o último ainda está sendo gravado
-                _registrar_bloco(lid, a)
+            time.sleep(3)
             if obter(lid)['estado'] != 'gravando':
                 p.terminate()
-            time.sleep(3)
-        err = (p.stderr.read() or b'').decode(errors='replace')[-300:] if p.stderr else ''
-        PROC.pop(lid, None)
-        for a in _blocos_no_disco(lid):                  # o FFmpeg parou: todos os blocos estão fechados
-            _registrar_bloco(lid, a)
-        if time.time() - t0 < 20:
-            erros += 1
-            if erros >= 3:
-                _terminar(lid, 'A gravação parou várias vezes seguidas.', erro=err)
                 break
-            time.sleep(ESPERA_ERRO)
-        else:
-            erros = 0           # o link da live vence de tempos em tempos: reabre e continua no próximo bloco
+            t = arq.stat().st_size if arq.exists() else 0
+            if t != tam:
+                tam, mudou = t, time.time()
+            if time.time() - mudou > SEM_DADOS:
+                motivo = f'A live parou de mandar vídeo por {SEM_DADOS} s.'
+                p.kill()
+                break
+            if time.time() - t0 > dur + 180:
+                p.terminate()                 # passou muito do tempo do bloco: fecha o arquivo assim mesmo
+                break
+        try:
+            p.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            p.kill()
+        PROC.pop(lid, None)
+        err = log.read_text(errors='replace')[-300:].strip() if log.exists() else ''
+        if arq.exists() and arq.stat().st_size > 200_000:
+            _registrar_bloco(lid, arq)
+            erros = 0
+            continue
+        arq.unlink(missing_ok=True)
+        erros += 1
+        _anotar(lid, f'O bloco {prox} não gravou (tentativa {erros} de 3). ' + (motivo or err[-160:] or 'O FFmpeg não recebeu vídeo.'), 'erro')
+        if erros >= 3:
+            _terminar(lid, 'A gravação falhou 3 vezes seguidas.', erro=(motivo or err or 'sem vídeo')[-200:])
+            break
+        time.sleep(ESPERA_ERRO)
     if obter(lid)['estado'] == 'terminando':
         _terminar(lid, obter(lid).get('motivo_fim') or 'Gravação parada.')
 

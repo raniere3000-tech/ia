@@ -67,7 +67,7 @@ estado_live = {'ao_vivo': True, 'chamadas': 0}
 
 def pegar(link):
     estado_live['chamadas'] += 1
-    no_ar = estado_live['ao_vivo'] and estado_live['chamadas'] <= 2      # comecar + 1ª gravação; a abertura seguinte: a live acabou
+    no_ar = estado_live['ao_vivo'] and estado_live['chamadas'] <= 4      # comecar + 1ª gravação; a abertura seguinte: a live acabou
     return {'url': str(FONTE), 'titulo': 'Live de teste', 'id': 'LIVE1234567', 'canal': 'UCx', 'canal_nome': 'Canal X', 'ao_vivo': no_ar}
 
 
@@ -174,7 +174,7 @@ check(not any(x['ref'] == c4['id'] for x in a2.elegiveis('youtube')), 'enquanto 
 print('5. Tela e parar')
 v = rota('GET', '/api/v1/live')
 vl = next(x for x in v['lives'] if x['id'] == lid)
-check(v['esteira'] and len(vl['cortes']) == 6 and len(vl['blocos']) == 4, 'a tela mostra blocos e cortes da live')
+check(v['esteira'] and len(vl['cortes']) == 8 and len(vl['blocos']) == 4, 'a tela mostra blocos e cortes da live')
 estado_live.update(ao_vivo=True, chamadas=0)
 lv._mudar(lambda d: d['lives'].append(dict(vl, id='parar1', estado='gravando', blocos=[], cortes=None, inicio=time.time())))
 check(rota('POST', '/api/v1/live/parar1/parar')['estado'] == 'terminando', 'parar: termina o bloco atual')
@@ -198,6 +198,24 @@ ag.rodada_estoque(3, 3)
 check(not rodou, 'rodada de estoque em andamento para antes do próximo vídeo')
 check(db.um("SELECT prioridade FROM jobs WHERE tipo='live.bloco' LIMIT 1")['prioridade'] == 100, 'bloco da Live entra na fila com prioridade alta')
 check('ocupando' in lv.ver(), 'a tela diz o que está ocupando o celular')
+
+print('7. Live que para de mandar vídeo')
+import socket  # noqa: E402
+import threading  # noqa: E402
+srv = socket.socket(); srv.bind(('127.0.0.1', 0)); srv.listen(5)
+presos = []
+threading.Thread(target=lambda: [presos.append(srv.accept()) for _ in range(5)], daemon=True).start()     # aceita e nunca responde
+lv.SEM_DADOS = 4
+lv.PEGAR = lambda link: {'url': f'http://127.0.0.1:{srv.getsockname()[1]}/v.ts', 'titulo': 'Muda', 'id': 'MUDA', 'canal': '', 'canal_nome': '', 'ao_vivo': True}
+db.executar("UPDATE jobs SET status='concluido' WHERE tipo='live.bloco'")
+lv._mudar(lambda d: [x.update(estado='terminada') for x in d['lives']])
+m = lv.comecar({'link': 'https://youtube.com/live/muda', 'origem': 'meu', 'redes': ['youtube']})
+t0 = time.time()
+while lv.obter(m['id'])['estado'] == 'gravando' and time.time() - t0 < 90:
+    time.sleep(1)
+mm = lv.obter(m['id'])
+check(mm['estado'] in ('erro', 'terminada') and 'falhou 3 vezes' in (mm.get('motivo_fim') or ''), 'sem vídeo chegando: tenta 3 vezes e avisa, em vez de ficar "gravando" para sempre')
+check(any('parou de mandar vídeo' in x['texto'] for x in mm['log']), 'o motivo aparece no histórico da live')
 
 print(f'\n{ok} ok, {falhas} falha(s)')
 sys.exit(1 if falhas else 0)
