@@ -16,7 +16,7 @@ export default function Live(){
   const [link,setLink]=useState(''); const [origem,setOrigem]=useState(''); const [c,setC]=useState<CfgLive|null>(null); const [busy,setBusy]=useState(false);
   useEffect(()=>{ if(r.dados&&!c) setC(r.dados.config); },[r.dados,c]);
   if(!cfg.servidor) return <section className="panel"><p className="hint">Conecte o servidor do celular em Ajustes para usar a parte Live.</p></section>;
-  if(!r.dados||!c) return <section className="panel">{r.erro?<p className="hint bad">{r.erro}</p>:<p className="muted"><Loader2 size={14} className="spin"/> Carregando…</p>}</section>;
+  if(!r.dados||!c) return <section className="panel">{r.erro?<p className="hint bad">{/rota não encontrada/i.test(r.erro)?<>O servidor do celular ainda está na versão antiga, sem a parte Live. No Termux rode: <code>cd ~/ia &amp;&amp; git pull</code> e depois <code>cd servidor &amp;&amp; bash iniciar-termux.sh link</code>.</>:r.erro}</p>:<p className="muted"><Loader2 size={14} className="spin"/> Carregando…</p>}</section>;
   const d=r.dados; const ativa=d.lives.find(x=>x.id===d.ativa);
   const mudar=(p:Partial<CfgLive>)=>setC({...c,...p});
   async function fazer(f:()=>Promise<unknown>,msg:string){ setBusy(true); try{ await f(); toast(msg,'ok'); await r.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(false); } }
