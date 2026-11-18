@@ -144,8 +144,8 @@ class Ctx:
 
 
 r1 = lv.job_bloco(Ctx({'live': lid, 'n': 1}))
-check(chamadas[0]['quantos'] == 2 and chamadas[0]['ajustes'] == {'nota_min': 70} and chamadas[0]['v']['id'] == 'LIVE1234567-live1',
-      'o Agente 1 corta o bloco já gravado, com a nota mínima da live (70)')
+check(chamadas[0]['quantos'] == 2 and chamadas[0]['ajustes'] == {'nota_min': 60, 'sem_fala': True} and chamadas[0]['v']['id'] == 'LIVE1234567-live1',
+      'o Agente 1 corta o bloco já gravado, com a nota da live (60) e aceitando momento sem fala')
 cs = [c for c in ag.estado()['cortes'] if c.get('live') == lid]
 apr = next(c for c in cs if c['status'] == 'agendado')
 p = next(x for x in pg.posts() if x['id'] == apr['post'])
@@ -216,6 +216,32 @@ while lv.obter(m['id'])['estado'] == 'gravando' and time.time() - t0 < 90:
 mm = lv.obter(m['id'])
 check(mm['estado'] in ('erro', 'terminada') and 'falhou 3 vezes' in (mm.get('motivo_fim') or ''), 'sem vídeo chegando: tenta 3 vezes e avisa, em vez de ficar "gravando" para sempre')
 check(any('parou de mandar vídeo' in x['texto'] for x in mm['log']), 'o motivo aparece no histórico da live')
+
+print('8. Gameplay sem fala e bloco com o relógio da transmissão')
+G = TMP / 'gameplay.mp4'
+# 3 min: fundo baixo, 3 explosões de som (40 s, 95 s, 150 s) e troca de cena aos 95 s
+som = "aevalsrc='0.02*sin(2*PI*220*t)+if(between(mod(t\\,1000)\\,40\\,41.5)+between(t\\,95\\,97)+between(t\\,150\\,151)\\,0.9*sin(2*PI*90*t)\\,0)':s=16000:d=180"
+subprocess.run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=320x180:d=95:r=10', '-f', 'lavfi', '-i', 'color=c=yellow:s=320x180:d=85:r=10',
+                '-f', 'lavfi', '-i', som, '-filter_complex', '[0:v][1:v]concat=n=2:v=1:a=0[v]', '-map', '[v]', '-map', '2:a', '-c:v', 'libx264', '-preset', 'ultrafast',
+                '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(G)], check=True)
+ag.gemini = lambda partes, **k: {'titulo': 'Explosão no meio da missão', 'gancho': 'OLHA ISSO', 'hashtags': ['#gta6', 'gameplay'], 'descricao': 'Um carro pegando fogo.'}
+co = dict(ag.config()['cortes'], nota_min=60)
+pasta8 = TMP / 'p8'
+pasta8.mkdir()
+esc = ag.escolher_sem_fala(G, 180.0, [], 3, co, 'GTA 6 LIVE', pasta8)
+check(len(esc) >= 2, f'sem fala: achou {len(esc)} momento(s) pelos picos de som e troca de cena')
+check(all(co['dur_min'] - 1 <= c['fim'] - c['ini'] <= co['dur_max'] + 0.5 for c in esc), 'cada momento vira um corte de 60 a 65 s')
+check(any(c['ini'] < 95 < c['fim'] for c in esc), 'o momento com explosão e troca de cena (95 s) está entre os escolhidos')
+check(all(c['sem_legenda'] and c['titulo'] == 'Explosão no meio da missão' and c['hashtags'] == ['#gta6', '#gameplay'] for c in esc),
+      'título, gancho e hashtags da IA olhando o quadro; sem legenda (não há fala)')
+check(all(min(a['fim'], b['fim']) - max(a['ini'], b['ini']) <= 0.3 * 60 for i, a in enumerate(esc) for b in esc[i + 1:]), 'os cortes não se repetem')
+TS = TMP / 'relogio.ts'
+subprocess.run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', str(G), '-t', '70', '-c', 'copy', '-output_ts_offset', '36000', '-f', 'mpegts', str(TS)], check=True)
+mp4 = lv._remux(TS)
+check(mp4.suffix == '.mp4' and abs(ag.duracao(mp4) - 70) < 3, f'bloco com o relógio da transmissão vira MP4 com a duração certa ({ag.duracao(mp4):.0f} s)')
+check(lv.config()['cortes_por_bloco'] == 3 and lv.config()['nota_min'] == 60, 'padrão novo: até 3 cortes por bloco, nota 60')
+lv._mudar(lambda d: d.update(config={'cortes_por_bloco': 1, 'nota_min': 70}))
+check(lv.config()['cortes_por_bloco'] == 3 and lv.config()['nota_min'] == 60, 'configuração antiga (1 corte, nota 70) é atualizada')
 
 print(f'\n{ok} ok, {falhas} falha(s)')
 sys.exit(1 if falhas else 0)

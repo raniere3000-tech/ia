@@ -793,6 +793,87 @@ def validar(achados: list, frs: list, co: dict) -> list:
     return limpos
 
 
+# ---------------------------------------------------------------- momentos sem fala (gameplay, live de jogo)
+def _cenas_leves(video: Path, limite: float = 0.35) -> list:
+    """Trocas de cena com a imagem pequena e poucos quadros por segundo: leve para o celular num bloco de 10 min em 1080p."""
+    r = subprocess.run(['ffmpeg', '-nostdin', '-v', 'info', '-i', str(video), '-an', '-vf', f"fps=3,scale=240:-2,select='gt(scene,{limite})',showinfo",
+                        '-f', 'null', '-'], capture_output=True, text=True, timeout=1800)
+    out = []
+    for m in re.finditer(r'pts_time:([\d.]+)', r.stderr):
+        t = float(m.group(1))
+        if not out or t - out[-1] > 0.8:
+            out.append(round(t, 2))
+    return out
+
+
+def _textos_do_momento(arq: Path, t: float, titulo: str, co: dict, pasta: Path) -> dict:
+    """A IA olha UM quadro do momento e escreve título, gancho e hashtags só com o que aparece na imagem."""
+    q = pasta / f'q{int(t * 10)}.jpg'
+    subprocess.run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-ss', f'{t:.2f}', '-i', str(arq), '-frames:v', '1', '-vf', 'scale=640:-2', '-q:v', '5', str(q)],
+                   capture_output=True)
+    if not q.exists() or q.stat().st_size < 800:
+        return {}
+    try:
+        r = gemini([{'text': f'Esta imagem é de um momento forte (o som subiu e/ou a cena mudou) de uma live de jogo: "{titulo[:120]}". '
+                             f'Escreva em {IDIOMAS.get(co["idioma"], "português").lower()}: "titulo" (até 70 letras, chamativo), "gancho" (até 6 palavras, '
+                             'texto que aparece no topo do vídeo), "hashtags" (3 a 5) e "descricao" (uma frase com o que aparece na imagem). '
+                             'Use só o que dá para ver na imagem e o título da live. Não invente resultado, placar, nome ou o que aconteceu antes ou depois. '
+                             'Responda JSON: {"titulo": "...", "gancho": "...", "hashtags": ["#..."], "descricao": "..."}'},
+                    {'inlineData': {'mimeType': 'image/jpeg', 'data': base64.b64encode(q.read_bytes()).decode()}}], tempo=90, uso='cortes')
+    except (ErroAgente, pg.ErroRede):
+        return {}
+    finally:
+        q.unlink(missing_ok=True)
+    if isinstance(r, list):
+        r = r[0] if r else {}
+    return r if isinstance(r, dict) else {}
+
+
+def escolher_sem_fala(arq: Path, dur: float, palavras: list, quantos: int, co: dict, titulo: str, pasta: Path) -> list:
+    """Escolhe os momentos pelo que dá para MEDIR no vídeo: picos de som (tiro, explosão, grito), trocas de cena e falas fortes.
+    Cada momento vira um corte de dur_min a dur_max segundos, com o pico perto de 2/3 do corte."""
+    import gameplay_indexer as gi
+    niveis = gi.picos_de_audio(arq)
+    ev = [{'tipo': 'pico_de_audio', 't': round(p['t'], 2), 'fim': round(p['fim'], 2), 'confianca': round(min(0.95, 0.5 + p['acima_da_media_db'] / 40), 2)}
+          for p in gi._picos(niveis)]
+    ev += [{'tipo': 'mudanca_de_cena', 't': t, 'fim': t, 'confianca': 0.7} for t in _cenas_leves(arq)]
+    ev += [{'tipo': 'fala_forte', 't': f['t'], 'fim': f['fim'], 'confianca': round(min(0.9, 0.5 + 0.12 * f['forca']), 2)}
+           for f in gi._falas(palavras) if f['forca'] >= 1]
+    ev.sort(key=lambda e: (e['t'], e['tipo']))
+    for i, e in enumerate(ev):
+        e['id'] = f'e{i + 1}'
+    lo, hi = float(co['dur_min']), float(co['dur_max'])
+    ds = gi.destaques(ev, dur, min_s=lo, max_s=hi, antes=lo * 0.6, depois=lo * 0.35)
+    cands = []
+    for d in sorted(ds, key=lambda d: -d['score']):
+        ini, fim = d['ini'], d['fim']
+        if fim - ini < lo:                       # perto do fim do bloco: puxa o começo para trás
+            ini = max(0.0, fim - lo)
+            fim = min(dur, ini + lo)
+        if fim - ini < lo - 1:
+            continue
+        nota = int(min(95, 55 + d['score'] * 6))
+        if nota < co['nota_min']:
+            continue
+        if any(min(fim, o['fim']) - max(ini, o['ini']) > 0.3 * (fim - ini) for o in cands):
+            continue
+        cands.append({'ini': round(ini, 2), 'fim': round(fim, 2), 'nota': nota, 'motivo': d['porque'], 'pico': d['ini'] + (d['fim'] - d['ini']) * 0.6})
+        if len(cands) >= quantos:
+            break
+    out = []
+    for i, c in enumerate(cands):
+        etapa(f'IA olhando o momento {i + 1} de {len(cands)}', 45 + 15 * i / max(1, len(cands)))
+        tx = _textos_do_momento(arq, c['pico'], titulo, co, pasta)
+        tags = [re.sub(r'[^\w#]', '', str(h)) for h in (tx.get('hashtags') or []) if isinstance(h, str)]
+        tags = [h if h.startswith('#') else '#' + h for h in tags if len(h) > 1][:6]
+        out.append({'ini': c['ini'], 'fim': c['fim'], 'nota': c['nota'],
+                    'titulo': _sem_link(str(tx.get('titulo') or ''))[:90] or f'{titulo[:60]}: o momento mais intenso',
+                    'gancho': _sem_link(str(tx.get('gancho') or ''))[:60] or 'OLHA ESSE MOMENTO', 'hashtags': tags or ['#gameplay', '#live'],
+                    'motivo': c['motivo'] + (f' Na imagem: {str(tx.get("descricao"))[:120]}' if tx.get('descricao') else ''),
+                    'texto': '', 'sem_legenda': True})
+    return out
+
+
 # ---------------------------------------------------------------- edição do corte (FFmpeg + legenda ASS)
 def _ass_cor(hexa: str) -> str:
     h = hexa.lstrip('#')
@@ -1266,9 +1347,17 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
         if len(palavras) < 40:
             fonte = 'IA'
             palavras = transcrever_ia(arq, dur, pasta, co['idioma'])
-        if len(palavras) < 40:
+        if len(palavras) < 40 and co.get('sem_fala'):
+            # gameplay / live de jogo: sem fala, os momentos vêm do que dá para medir (picos de som e trocas de cena)
+            etapa(f'Procurando momentos de ação (som e imagem): {v["titulo"][:50]}', 40)
+            fonte = 'som e imagem'
+            escolhidos = escolher_sem_fala(arq, dur, palavras, quantos, co, v['titulo'], pasta)
+            if not escolhidos:
+                raise ErroAgente(f'Quase não há fala e nenhum momento de ação passou da nota mínima ({co["nota_min"]}) neste trecho.')
+        elif len(palavras) < 40:
             raise ErroAgente('Quase não há fala neste vídeo; sem fala não dá para escolher cortes.')
-        escolhidos = escolher(frases(palavras), v['titulo'], quantos, co)
+        else:
+            escolhidos = escolher(frases(palavras), v['titulo'], quantos, co)
         if not escolhidos:
             raise ErroAgente('Nenhum trecho passou nas suas regras (pontuação mínima, duração e assuntos proibidos).')
         criados = []
@@ -1289,6 +1378,8 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             mid = mo.sortear(estado()['pesos'], [m['id'] for m in ativos], cfg['postagem']['redes'], rnd)
             modelo = next(m for m in ativos if m['id'] == mid)
             tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
+            if c.get('sem_legenda'):
+                tpl['legenda'] = 'nenhuma'          # momento sem fala: não há o que legendar
             if perfil:
                 usadas.append(f'Perfil {perfil["nome"]}: ' + ('; '.join(pf.aplicar_ao_tpl(tpl, perfil, rnd)) or 'sem mudanças de identidade'))
             usadas += _sortear_estilo(tpl, co, rnd)
@@ -1319,6 +1410,8 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
                 ajuste = ajustar_corte(c, palavras, qa, co, dur)
                 if qa.get('erros') or not ajuste:
                     tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
+                    if c.get('sem_legenda'):
+                        tpl['legenda'] = 'nenhuma'
                     tpl['estilo_visual'], tpl['estilo_forca'], tpl['estilo_off'], tpl['estilo_texto'] = estilo_ant
                     if co.get('modo'):
                         mr.aplicar(tpl, co['modo'])

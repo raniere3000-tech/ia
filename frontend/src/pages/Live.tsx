@@ -35,7 +35,7 @@ export default function Live(){
       <label className="check"><input type="checkbox" checked={c.postar} onChange={e=>mudar({postar:e.target.checked})}/> Postar sozinho assim que o diretor aprovar</label>
       <details><summary>Mais opções</summary><div className="live-grid">
         {num('bloco_min','Tamanho do bloco (min)',3,20,'Menor = posta mais rápido. Maior = acha momentos melhores.')}
-        {num('cortes_por_bloco','Cortes por bloco',1,3,'No máximo, por bloco.')}
+        {num('cortes_por_bloco','Cortes por bloco',1,5,'No máximo, por bloco. Em jogo sem fala, os momentos vêm dos picos de som e das trocas de cena.')}
         {num('nota_min','Nota mínima do momento',40,95,'Só os momentos com nota alta viram corte.')}
         {num('max_posts','Máximo de posts nesta live',1,30,'Os aprovados a mais vão para o estoque normal.')}
         {num('intervalo_min','Intervalo entre posts (min)',0,240,'0 = posta na hora.')}

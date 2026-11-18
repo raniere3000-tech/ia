@@ -25,7 +25,7 @@ PASTA = pg.DADOS / 'live_blocos'
 LOCK = threading.RLock()
 PEGAR = None          # ligado pelo servidor: link -> {'url', 'titulo', 'id', 'canal', 'canal_nome', 'ao_vivo'}
 PROC: dict = {}       # live -> processo do FFmpeg gravando
-PADRAO = {'bloco_min': 5, 'cortes_por_bloco': 1, 'nota_min': 70, 'max_horas': 4, 'max_posts': 6, 'intervalo_min': 0,
+PADRAO = {'v': 2, 'bloco_min': 5, 'cortes_por_bloco': 3, 'nota_min': 60, 'max_horas': 4, 'max_posts': 6, 'intervalo_min': 0,
           'redes': [], 'postar': True}
 MOTIVOS = ('meu', 'autorizado', 'regra')
 ESPERA_ERRO = 30      # segundos entre tentativas de reabrir a live
@@ -57,12 +57,16 @@ def _mudar(f):
 
 
 def config() -> dict:
-    return {**PADRAO, **_ler()['config']}
+    salvo = _ler()['config']
+    c = {**PADRAO, **salvo}
+    if salvo and int(salvo.get('v') or 0) < 2:          # 18/11: 1 corte por bloco e nota 70 davam corte de menos
+        c.update(v=2, cortes_por_bloco=max(3, int(c.get('cortes_por_bloco') or 1)), nota_min=min(60, int(c.get('nota_min') or 60)))
+    return c
 
 
 def _limpar_cfg(d: dict) -> dict:
     c = config()
-    for k, (lo, hi) in {'bloco_min': (3, 20), 'cortes_por_bloco': (1, 3), 'nota_min': (40, 95), 'max_horas': (1, 12),
+    for k, (lo, hi) in {'bloco_min': (3, 20), 'cortes_por_bloco': (1, 5), 'nota_min': (40, 95), 'max_horas': (1, 12),
                         'max_posts': (1, 30), 'intervalo_min': (0, 240)}.items():
         if k in d:
             try:
@@ -343,6 +347,18 @@ def _terminar(lid: str, motivo: str, erro: str = ''):
         print('live: aviso', e)
 
 
+def _remux(ts: Path) -> Path:
+    """O pedaço gravado da live vem com os horários da transmissão (às vezes horas lá na frente): copiado para MP4 com o relógio
+    zerado, a duração lida fica certa e os cortes caem no lugar. Sem recodificar (leve). Se falhar, segue com o original."""
+    mp4 = ts.with_suffix('.mp4')
+    r = subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-fflags', '+genpts', '-i', str(ts), '-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy',
+                        '-avoid_negative_ts', 'make_zero', '-movflags', '+faststart', str(mp4)], capture_output=True)
+    if r.returncode == 0 and mp4.exists() and mp4.stat().st_size > 100_000:
+        return mp4
+    mp4.unlink(missing_ok=True)
+    return ts
+
+
 # ---------------------------------------------------------------- cada bloco: melhores momentos -> editor/diretor -> posta
 def job_bloco(ctx):
     import agente as ag
@@ -361,21 +377,26 @@ def job_bloco(ctx):
     marcar(estado='cortando')
     ctx.progresso(5, f'Live: achando os melhores momentos do bloco {n}')
     cfg = lv['cfg']
+    bruto = arq
     try:
+        arq = _remux(bruto)
         dur = ag.duracao(arq)
         if dur < 45:
-            marcar(estado='feito', msg='Bloco curto demais para um corte.')
+            marcar(estado='feito', msg=f'Bloco curto demais para um corte ({int(dur)} s).')
+            for x in {bruto, arq}:
+                x.unlink(missing_ok=True)
             return {'etapa': 'Bloco curto'}
         v = {'id': f'{lv["video_id"]}-live{n}', 'url': lv['link'], 'titulo': f'{lv["titulo"]} (live, bloco {n})', 'canal': lv['canal'],
              'canal_nome': lv['canal_nome']}
         criados = ag.processar_video(v, cfg['cortes_por_bloco'], baixado=(arq, {'title': lv['titulo'], 'duration': dur}, None),
                                      extra={'live': lid, 'live_bloco': n, 'live_fila': bool(cfg['postar']), 'direitos': lv['direitos'],
                                             'live_ini': b['ini']},
-                                     ajustes={'nota_min': cfg['nota_min']})
+                                     ajustes={'nota_min': cfg['nota_min'], 'sem_fala': True})
     except ag.ErroAgente as e:
         marcar(estado='feito', msg=str(e)[:200])
         _anotar(lid, f'Bloco {n}: sem corte ({e}).')
-        arq.unlink(missing_ok=True)
+        for x in {bruto, arq}:
+            x.unlink(missing_ok=True)
         return {'etapa': 'Sem corte neste bloco'}
     except Exception as e:  # noqa: BLE001
         marcar(estado='erro', msg=str(e)[:200])
@@ -385,7 +406,8 @@ def job_bloco(ctx):
         ag.etapa('')
     ok = [c for c in criados if c['status'] == 'pronto']
     marcar(estado='feito', cortes=[c['id'] for c in criados], msg=f'{len(criados)} corte(s), {len(ok)} aprovado(s) pelo diretor.')
-    arq.unlink(missing_ok=True)
+    for x in {bruto, arq}:
+        x.unlink(missing_ok=True)
     postados = postar_aprovados(lid)
     _anotar(lid, f'Bloco {n}: {len(criados)} corte(s), {len(ok)} aprovado(s), {postados} enviado(s) para postar.', 'ok' if ok else 'info')
     return {'etapa': f'{len(ok)} aprovado(s), {postados} postando', 'resultado': {'cortes': len(criados), 'aprovados': len(ok), 'postando': postados}}
