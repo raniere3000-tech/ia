@@ -244,7 +244,10 @@ def _gravar(lid: str):
             break
         existentes = _blocos_no_disco(lid)
         prox = (max(_num(a) for a in existentes) + 1) if existentes else 1
-        cmd = ['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', info['url'], '-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy',
+        urls = info.get('urls') or [info['url']]
+        entradas = [x for u in urls[:2] for x in ('-i', u)]
+        mapas = ['-map', '0:v:0', '-map', '1:a:0'] if len(urls) > 1 else ['-map', '0:v:0?', '-map', '0:a:0?']
+        cmd = ['ffmpeg', '-nostdin', '-v', 'error', '-y', *entradas, *mapas, '-c', 'copy',
                '-t', str(int(restante)), '-f', 'segment', '-segment_time', str(lv['cfg']['bloco_min'] * 60),
                '-segment_start_number', str(prox), '-reset_timestamps', '1', str(pasta / 'b%05d.ts')]
         t0 = time.time()

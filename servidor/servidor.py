@@ -122,6 +122,7 @@ def js_runtimes() -> dict:
 
 
 def erro_amigavel(msg: str) -> str:
+    msg = re.sub(r'\x1b\[[0-9;]*m', '', msg)        # tira as cores do terminal
     m = msg.lower()
     if 'sign in to confirm' in m or 'not a bot' in m:
         if COOKIES.exists():
@@ -135,6 +136,9 @@ def erro_amigavel(msg: str) -> str:
         return 'Este vídeo é só para membros do canal.'
     if 'does not pass filter' in m or 'duration' in m and 'filter' in m:
         return f'O vídeo passa de {int(MAX_MIN)} minutos, o limite do servidor.'
+    if 'requested format' in m or 'format is not available' in m:
+        return ('O YouTube não liberou nenhum formato de vídeo para o servidor (pode ser a versão do yt-dlp). '
+                'No Termux rode: pip install -U yt-dlp e tente de novo.')
     if 'live event will begin' in m or 'is live' in m:
         return 'Live ainda em andamento. Espere terminar para cortar.'
     if 'video unavailable' in m:
@@ -349,27 +353,49 @@ ag.BAIXAR = baixar_para_agente
 
 
 def url_da_live(link: str) -> dict:
-    """Parte Live: abre a live (sem baixar) e devolve o endereço do vídeo ao vivo para o FFmpeg gravar."""
+    """Parte Live: abre a live (sem baixar) e devolve os endereços do vídeo ao vivo para o FFmpeg gravar.
+    O YouTube muda os formatos de live com frequência: tenta vídeo+áudio juntos, depois separados, e depois outros
+    "aplicativos" do YouTube (TV, Safari, celular), com e sem os seus cookies."""
     import yt_dlp
     if not (YT.match(link) or (QUALQUER_URL and link.startswith('http'))):
         raise ag.ErroAgente('A parte Live grava só links do YouTube.')
-    pasta = PASTA / ('live-' + uuid.uuid4().hex[:6])
-    pasta.mkdir(parents=True, exist_ok=True)
-    opts = {'format': f'b[height<={ALTURA}][acodec!=none][vcodec!=none]/b[acodec!=none][vcodec!=none]/b', 'noplaylist': True, 'quiet': True,
-            'no_warnings': True, 'js_runtimes': js_runtimes()}
-    ck = cookies_para(pasta)
-    if ck:
-        opts['cookiefile'] = ck
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(link, download=False)
-    except Exception as e:  # noqa: BLE001
-        raise ag.ErroAgente(erro_amigavel(str(e)))
-    finally:
-        shutil.rmtree(pasta, ignore_errors=True)
-    url = info.get('url') or next((f.get('url') for f in reversed(info.get('requested_formats') or []) if f.get('url')), '')
-    return {'url': url, 'titulo': info.get('title') or 'Live', 'id': info.get('id') or '', 'canal': info.get('channel_id') or '',
-            'canal_nome': info.get('channel') or info.get('uploader') or '', 'ao_vivo': bool(info.get('is_live')) and bool(url)}
+    fmt = (f'b[height<={ALTURA}][acodec!=none][vcodec!=none]/bv*[height<={ALTURA}]+ba/'
+           'b[acodec!=none][vcodec!=none]/bv*+ba/b/bv*')
+    base = {'format': fmt, 'noplaylist': True, 'quiet': True, 'no_warnings': True, 'no_color': True, 'js_runtimes': js_runtimes()}
+    tentativas = [{}, {'extractor_args': {'youtube': {'player_client': ['tv', 'web_safari', 'mweb']}}},
+                  {'extractor_args': {'youtube': {'player_client': ['ios', 'android', 'tv_simply']}}}, {'sem_cookies': True}]
+    ultimo = ''
+    info = None
+    for extra in tentativas:
+        pasta = PASTA / ('live-' + uuid.uuid4().hex[:6])
+        pasta.mkdir(parents=True, exist_ok=True)
+        opts = dict(base, **{k: v for k, v in extra.items() if k != 'sem_cookies'})
+        ck = None if extra.get('sem_cookies') else cookies_para(pasta)
+        if ck:
+            opts['cookiefile'] = ck
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(link, download=False)
+            if info and (info.get('url') or info.get('requested_formats')):
+                break
+            ultimo = 'O YouTube não mandou nenhum formato de vídeo desta live.'
+            info = None
+        except Exception as e:  # noqa: BLE001
+            ultimo = str(e)
+            m = ultimo.lower()
+            if not any(x in m for x in ('requested format', 'format is not available', 'sign in to confirm', 'not a bot', 'no video formats', 'http error 403')):
+                break          # erro que outro modo não resolve (vídeo privado, sem internet...)
+        finally:
+            shutil.rmtree(pasta, ignore_errors=True)
+    if not info:
+        raise ag.ErroAgente(erro_amigavel(ultimo))
+    if info.get('requested_formats'):            # vídeo e áudio separados: o FFmpeg junta os dois na gravação
+        urls = [f['url'] for f in info['requested_formats'] if f.get('url')]
+    else:
+        urls = [info['url']] if info.get('url') else []
+    return {'url': urls[0] if urls else '', 'urls': urls, 'titulo': info.get('title') or 'Live', 'id': info.get('id') or '',
+            'canal': info.get('channel_id') or '', 'canal_nome': info.get('channel') or info.get('uploader') or '',
+            'ao_vivo': bool(info.get('is_live')) and bool(urls)}
 
 
 class Handler(BaseHTTPRequestHandler):
