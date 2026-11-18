@@ -107,6 +107,31 @@ def ativa() -> dict | None:
     return next((x for x in _ler()['lives'] if x['estado'] in ('gravando', 'terminando')), None)
 
 
+def pendente() -> bool:
+    """A Live tem bloco esperando ou sendo cortado: o Agente 1 automático (Central) espera, a Live vem primeiro."""
+    try:          # vale o que está de fato na fila (um bloco cancelado à mão não segura o Agente 1 para sempre)
+        import banco as db
+        return bool(db.um("SELECT id FROM jobs WHERE tipo='live.bloco' AND status IN ('agendado','na_fila','rodando','aguardando_tentativa') "
+                          "AND pausado=0 AND cancelar=0 LIMIT 1"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _ocupando() -> str:
+    """O que está usando a vez do trabalho pesado agora (para a tela explicar a espera)."""
+    try:
+        import agente as ag
+        import banco as db
+        j = db.um("SELECT titulo FROM jobs WHERE status='rodando' AND recurso='pesado' LIMIT 1")
+        if j:
+            return j['titulo'] or 'outro trabalho'
+        if ag.OCUPADO.locked():
+            return 'Agente 1: ' + (ag.ATUAL.get('etapa') or 'cortes')
+    except Exception:  # noqa: BLE001
+        pass
+    return ''
+
+
 def ver() -> dict:
     d = _ler()
     lives = sorted(d['lives'], key=lambda x: -x.get('inicio', 0))[:10]
@@ -119,7 +144,7 @@ def ver() -> dict:
         lv['cortes'] = [{'id': c['id'], 'titulo': c.get('titulo', ''), 'status': c['status'], 'nota': (c.get('qa') or {}).get('nota'),
                          'post': c.get('post', ''), 'quando': c.get('quando'), 'links': c.get('links') or {}}
                         for c in cortes.values() if c['live'] == lv['id']]
-    return {'config': config(), 'lives': lives, 'ativa': (ativa() or {}).get('id', ''), 'esteira': _esteira()}
+    return {'config': config(), 'lives': lives, 'ativa': (ativa() or {}).get('id', ''), 'esteira': _esteira(), 'ocupando': _ocupando()}
 
 
 def _esteira() -> bool:
@@ -210,7 +235,7 @@ def _registrar_bloco(lid: str, arq: Path):
     _mudar_live(lid, lambda x: x['blocos'].append({'n': n, 'arquivo': str(arq), 'estado': 'na_fila', 'ini': ini, 'cortes': [], 'msg': '', 't': time.time()}))
     try:
         import fila
-        fila.enfileirar('live.bloco', agente='agente1', dados={'live': lid, 'n': n}, recurso='pesado', prioridade=5,
+        fila.enfileirar('live.bloco', agente='agente1', dados={'live': lid, 'n': n}, recurso='pesado', prioridade=100,
                         titulo=f'Live: bloco {n} de "{lv["titulo"][:40]}"', chave=f'live:{lid}:{n}', max_tentativas=1)
     except Exception as e:  # noqa: BLE001
         _mudar_live(lid, lambda x: [b.update(estado='erro', msg=str(e)[:200]) for b in x['blocos'] if b['n'] == n])

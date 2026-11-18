@@ -24,7 +24,7 @@ export default function Live(){
     <input type="number" min={min} max={max} value={c[k] as number} onChange={e=>mudar({[k]:Number(e.target.value)} as Partial<CfgLive>)}/><small className="muted">{dica}</small></label>;
   return <div className="live-pagina">
     {!d.esteira&&<section className="panel bloqueado"><p className="hint bad">Ligue a esteira dos 5 agentes (editor e diretor) na Central &gt; Qualidade e revisões. Sem ela nada da live é postado.</p></section>}
-    {ativa?<LiveAtiva lv={ativa} busy={busy} parar={()=>{ if(window.confirm('Parar a gravação? Os blocos já gravados ainda viram cortes.')) fazer(()=>pararLive(cfg,ativa.id),'Gravação parada.'); }}/>
+    {ativa?<LiveAtiva lv={ativa} busy={busy} ocupando={d.ocupando} parar={()=>{ if(window.confirm('Parar a gravação? Os blocos já gravados ainda viram cortes.')) fazer(()=>pararLive(cfg,ativa.id),'Gravação parada.'); }}/>
     :<section className="panel">
       <h3><Radio size={16}/> Gravar uma live</h3>
       <p className="hint">O celular grava a live em blocos. Quando um bloco fecha, o Agente 1 acha os melhores momentos, o editor e o diretor conferem, e o que for aprovado <b>posta na hora</b>, sem esperar a programação. Reprovado não sai.</p>
@@ -50,7 +50,7 @@ export default function Live(){
   </div>;
 }
 
-function LiveAtiva({lv,busy,parar}:{lv:TLive;busy:boolean;parar?:()=>void}){
+function LiveAtiva({lv,busy,parar,ocupando}:{lv:TLive;busy:boolean;parar?:()=>void;ocupando?:string}){
   const [e,classe]=ESTADO[lv.estado]||[lv.estado,''];
   const aprovados=lv.cortes.filter(c=>['pronto','agendado','postado'].includes(c.status)).length;
   return <section className={'panel'+(lv.estado==='gravando'?' a1-agora':'')}>
@@ -62,6 +62,7 @@ function LiveAtiva({lv,busy,parar}:{lv:TLive;busy:boolean;parar?:()=>void}){
       <div className="es-ag"><b>{aprovados}</b><span>aprovados pelo diretor</span></div>
       <div className="es-ag"><b>{lv.postados}/{lv.cfg.max_posts}</b><span>enviados para postar</span></div>
     </div>
+    {lv.blocos.some(b=>b.estado==='na_fila')&&!lv.blocos.some(b=>b.estado==='cortando')&&ocupando&&<p className="hint warn">Os blocos esperam a vez: o celular está terminando "{ocupando}". Assim que acabar, a Live vem primeiro (o Agente 1 automático espera).</p>}
     {lv.blocos.length>0&&<ul className="rq-lista">{lv.blocos.slice(-6).reverse().map(b=><li key={b.n}><span className={'tag '+(b.estado==='cortando'?'ok':b.estado==='erro'?'bad':'')}>{BLOCO[b.estado]||b.estado}</span> <Scissors size={12}/> Bloco {b.n}{b.msg?<> · <small className="muted">{b.msg}</small></>:null}</li>)}</ul>}
     {lv.cortes.length>0&&<ul className="rq-lista">{lv.cortes.slice(-8).reverse().map(c=><li key={c.id}><Send size={12}/> {c.titulo} <span className={'tag '+(c.status==='reprovado'?'bad':c.status==='postado'||c.status==='agendado'?'ok':'')}>{
       c.status==='agendado'?(c.quando&&c.quando>Date.now()/1000?`posta às ${hora(c.quando)}`:'postando'):c.status==='postado'?'postado':c.status==='reprovado'?'reprovado pelo diretor':c.status==='pronto'?'no estoque':c.status}</span>

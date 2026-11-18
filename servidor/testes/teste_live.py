@@ -182,5 +182,22 @@ lv._gravar('parar1')
 check(lv.obter('parar1')['estado'] == 'terminada', 'e encerra a gravação')
 check(rota('POST', '/api/v1/live/parar1/parar')['estado'] == 'terminada', 'parar de novo não faz nada')
 
+print('6. A Live vem primeiro')
+db.executar("UPDATE jobs SET status='concluido' WHERE tipo='live.bloco'")
+check(not lv.pendente(), 'sem bloco na fila: o Agente 1 segue normal')
+lv._registrar_bloco(lid, lv.PASTA / lid / 'b00009.ts')
+check(lv.pendente(), 'bloco na fila: a Live tem trabalho esperando')
+chamou = []
+ag._em_fundo = lambda nome, f, *a: chamou.append(nome)
+ag.salvar_config({'cortes': {'ligado': True}})
+ag.passo()
+check(not chamou, 'com bloco da Live esperando, o Agente 1 automático não começa outra rodada')
+rodou = []
+ag.trabalhar_cortes = lambda **k: rodou.append(1) or ''
+ag.rodada_estoque(3, 3)
+check(not rodou, 'rodada de estoque em andamento para antes do próximo vídeo')
+check(db.um("SELECT prioridade FROM jobs WHERE tipo='live.bloco' LIMIT 1")['prioridade'] == 100, 'bloco da Live entra na fila com prioridade alta')
+check('ocupando' in lv.ver(), 'a tela diz o que está ocupando o celular')
+
 print(f'\n{ok} ok, {falhas} falha(s)')
 sys.exit(1 if falhas else 0)

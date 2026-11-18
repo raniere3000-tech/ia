@@ -1521,10 +1521,21 @@ def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '', limit
     return f'{len(criados)} corte(s) pronto(s).'
 
 
+def _live_esperando() -> bool:
+    try:
+        import live
+        return live.pendente()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def rodada_estoque(quantos: int, fontes: int = 1) -> str:
     """Central de Automação: até `fontes` vídeos-fonte nesta rodada, parando quando já cortou o que o estoque pedia."""
     feitos, msgs = 0, []
     for _ in range(max(1, min(int(fontes), 5))):
+        if _live_esperando():
+            anotar('Parei a rodada de estoque: a Live tem bloco esperando para virar corte (a Live vem primeiro).', 'info')
+            break
         antes = len(estado()['cortes'])
         msgs.append(trabalhar_cortes(limite=max(1, quantos - feitos)))
         novos = len(estado()['cortes']) - antes
@@ -2492,6 +2503,8 @@ def passo():
             relatorio_semana()
     if not co['ligado'] or OCUPADO.locked():
         return
+    if _live_esperando():
+        return                 # a Live vem primeiro: o celular fica livre para os blocos dela
     hora = datetime.now().hour
     dentro = co['hora_ini'] <= hora < co['hora_fim'] if co['hora_ini'] < co['hora_fim'] else (hora >= co['hora_ini'] or hora < co['hora_fim'])
     if not dentro:
