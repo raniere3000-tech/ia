@@ -1294,11 +1294,19 @@ def processar_video(v: dict, quantos: int) -> list:
                 anotar(f'{v["titulo"][:50]}: {nota_cam}.')
             vid = uuid.uuid4().hex[:12]
             estilo_ant = (tpl.get('estilo_visual', ''), tpl.get('estilo_forca', 1.0), tpl.get('estilo_off', []), tpl.get('estilo_texto', ''))
-            editar(arq, c, palavras, tpl, pg.VIDEOS / (vid + '.mp4'), pasta)
-            qa = inspecionar_corte(pg.VIDEOS / (vid + '.mp4'), c, palavras, pasta)
+            cid = uuid.uuid4().hex[:10]
+            if _esteira_ligada():
+                # Esteira dos 5 agentes: Agente 5 (editor) faz o plano e o vídeo; Agente 4 (diretor) dá nota 0-100; até 5 correções; certificado no arquivo
+                etapa(f'Editor e diretor trabalhando no corte {i + 1} de {len(escolhidos)}', 62 + 34 * i / len(escolhidos))
+                qa, vd, run = corte_pela_esteira(arq, c, palavras, tpl, vid, cid, pasta, dur, v, co)
+                refeito = qa['diretor']['tentativas']
+            else:
+                qa, vd, run, refeito = None, None, None, 0
+            if qa is None:
+                editar(arq, c, palavras, tpl, pg.VIDEOS / (vid + '.mp4'), pasta)
+                qa = inspecionar_corte(pg.VIDEOS / (vid + '.mp4'), c, palavras, pasta)
             # Diretor de qualidade: corte reprovado é refeito (ajusta começo/fim ou troca o template) até aprovar ou acabar as tentativas
-            refeito = 0
-            while not veredito_corte(qa)['aprovado'] and refeito < MAX_REFAZER_CORTE:
+            while vd is None and not veredito_corte(qa)['aprovado'] and refeito < MAX_REFAZER_CORTE:
                 refeito += 1
                 etapa(f'Diretor de qualidade mandou refazer o corte {i + 1} (tentativa {refeito} de {MAX_REFAZER_CORTE})', 62 + 34 * i / len(escolhidos))
                 ajuste = ajustar_corte(c, palavras, qa, co, dur)
@@ -1312,9 +1320,12 @@ def processar_video(v: dict, quantos: int) -> list:
                     c.update(ajuste)
                 editar(arq, c, palavras, tpl, pg.VIDEOS / (vid + '.mp4'), pasta)
                 qa = inspecionar_corte(pg.VIDEOS / (vid + '.mp4'), c, palavras, pasta)
-            vd = veredito_corte(qa)
-            qa['diretor'] = {'veredito': 'aprovado' if vd['aprovado'] else 'reprovado', 'motivos': vd['motivos'], 'tentativas': refeito, 't': time.time()}
-            c.update(id=uuid.uuid4().hex[:10], chave=secrets.token_urlsafe(18), video=vid, criado=time.time(), status='pronto' if vd['aprovado'] else 'reprovado', post='',
+            if vd is None:
+                vd = veredito_corte(qa)
+                qa['diretor'] = {'veredito': 'aprovado' if vd['aprovado'] else 'reprovado', 'motivos': vd['motivos'], 'tentativas': refeito, 't': time.time()}
+            if run:
+                c['esteira'] = run
+            c.update(id=cid, chave=secrets.token_urlsafe(18), video=vid, criado=time.time(), status='pronto' if vd['aprovado'] else 'reprovado', post='',
                      origem=v['id'], origem_titulo=v['titulo'][:150], canal=v.get('canal', ''), canal_nome=v.get('canal_nome', ''),
                      variacoes=usadas, fala=fonte, tamanho=(pg.VIDEOS / (vid + '.mp4')).stat().st_size, email=False,
                      tipo='agente', modelo=modelo['id'], modelo_nome=modelo['nome'], hash=_hash(pg.VIDEOS / (vid + '.mp4')),
@@ -1328,6 +1339,115 @@ def processar_video(v: dict, quantos: int) -> list:
         return criados
     finally:
         shutil.rmtree(pasta, ignore_errors=True)
+
+
+# ---------------------------------------------------------------- esteira dos 5 agentes (Agente 1 -> 5 -> 4 -> 2)
+def _esteira_ligada() -> bool:
+    try:
+        import pipeline as pl
+        return pl.ligado()
+    except Exception:  # noqa: BLE001 - banco sem a migração: segue o fluxo antigo
+        return False
+
+
+def _contexto_diretor(plano: dict, palavras: list, tpl: dict, co: dict, tema: str, direitos_ok: bool = True) -> dict:
+    import editor_ia as ed
+    import inteligencia_viral as iv
+    pal = ed.palavras_saida(plano, palavras)
+    cap = ed._efeito(plano, 'caption')
+    fins = fins_de_frase(palavras)
+    ult = [p for p in palavras if plano['clips'][-1]['in_ms'] / 1000 <= p[0] < plano['clips'][-1]['out_ms'] / 1000]
+    return {'aspecto': plano['target_aspect_ratio'], 'palavras': pal, 'legenda_esperada': tpl.get('legenda', 'nenhuma') != 'nenhuma',
+            'legenda_aplicada': bool(cap and cap.get('ligado', 1)), 'legenda_tamanho': cap.get('tamanho') if cap else None,
+            'legenda_altura': cap.get('altura') if cap else None, 'template_id': plano.get('template_id'), 'template_esperado': True,
+            'dur_min': max(5, co.get('dur_min', 0) - 2) if co.get('dur_min') else None, 'dur_max': co.get('dur_max', 0) + 6 if co.get('dur_max') else None,
+            'direitos_ok': direitos_ok, 'fim_de_frase': (ult[-1][1] in fins) if (fins is not None and ult) else None,
+            'referencias': iv.para_diretor(tema)}
+
+
+def _qa_da_esteira(res: dict, run: str) -> tuple[dict, dict]:
+    rel = res['relatorio'] or {}
+    motivos = [b['evidence'] for b in rel.get('blocking_findings') or []] + [f['evidence'] for f in rel.get('findings') or [] if f['severity'] in ('alta', 'media')]
+    aprovado = res['resultado'] == 'aprovado'
+    if not aprovado and res['resultado'] == 'revisao_manual':
+        motivos.insert(0, (res.get('decisao') or {}).get('motivo') or 'Precisa da sua revisão.')
+    qa = {'ok': not rel.get('blocking_findings'), 'erros': [b['evidence'] for b in rel.get('blocking_findings') or []][:6], 'avisos': (rel.get('avisos') or [])[:6],
+          'nota': rel.get('score'), 'relatorio': rel.get('id'),
+          'diretor': {'veredito': 'aprovado' if aprovado else 'reprovado', 'motivos': motivos[:6], 'tentativas': (res.get('decisao') or {}).get('correcoes_usadas', 0),
+                      'nota': rel.get('score'), 'esteira': run, 'certificado': res.get('certificado'), 't': time.time()}}
+    return qa, {'aprovado': aprovado, 'motivos': motivos[:6]}
+
+
+def corte_pela_esteira(arq: Path, c: dict, palavras: list, tpl: dict, vid: str, cid: str, pasta: Path, dur: float, v: dict, co: dict) -> tuple:
+    import editor_ia as ed
+    import pipeline as pl
+    run = pl.criar('corte', cid, (c.get('titulo') or v.get('titulo') or 'corte')[:120], chave=f'corte:{v.get("id", "")}:{c["ini"]:.2f}:{vid}',
+                   estado='cuts_selected', dados={'video': vid, 'origem': v.get('id', '')})
+    plano = ed.plano_do_corte(c, tpl, dur)
+    destino = pg.VIDEOS / (vid + '.mp4')
+    res = ed.rodar(run['id'], cid, plano, lambda p: ed.executar_corte(p, arq, c, palavras, tpl, destino, pasta),
+                   lambda p: _contexto_diretor(p, palavras, tpl, co, v.get('nicho') or v.get('titulo', '')), dur_fonte=dur)
+    final = res['plano'] or plano
+    c['ini'], c['fim'] = final['clips'][0]['in_ms'] / 1000, final['clips'][-1]['out_ms'] / 1000
+    c['dur'] = round(ed.duracao_saida(final), 1)
+    qa, vd = _qa_da_esteira(res, run['id'])
+    return qa, vd, run['id']
+
+
+def job_esteira_recebido(ctx):
+    """Corte manual do site ou vídeo importado: Agente 5 confere/ajusta, Agente 4 dá a nota. Pesado (FFmpeg)."""
+    import editor_ia as ed
+    import pipeline as pl
+    cid = ctx.dados['corte']
+    c = next((x for x in estado()['cortes'] if x['id'] == cid), None)
+    if not c:
+        return {'etapa': 'O corte foi apagado.'}
+    arq = pg.video_path(c['video'])
+    fonte = TRABALHO / 'esteira' / f'{c["video"]}-fonte{arq.suffix}'
+    fonte.parent.mkdir(parents=True, exist_ok=True)
+    if not fonte.exists():
+        shutil.copyfile(arq, fonte)
+    dur = duracao(fonte)
+    run = pl.criar('manual' if c.get('tipo') == 'manual' else 'importado', cid, c.get('titulo', '')[:120], chave=f'recebido:{cid}',
+                   dados={'video': c['video']})
+    inicial = ed.plano_importado(dur, (c.get('formato') or '9:16'), c.get('modelo', ''))
+    h0 = __import__('contratos').hash_plano(inicial)
+    dr = c.get('direitos') or {}
+    ctx.progresso(10, 'Diretor conferindo o vídeo')
+    res = ed.rodar(run['id'], cid, inicial, lambda p: ed.executar_importado(p, fonte, arq, h0),
+                   lambda p: {'aspecto': p['target_aspect_ratio'], 'sem_audio_ok': False, 'direitos_ok': dr.get('origem') in MOTIVOS,
+                              'direitos_motivo': 'Diga de quem é o vídeo antes de postar.', 'template_esperado': bool(c.get('modelo')),
+                              'template_id': c.get('modelo') or '', 'referencias': {}}, dur_fonte=dur,
+                   avisar=lambda t: ctx.progresso(None, t))
+    qa, vd = _qa_da_esteira(res, run['id'])
+
+    def f(e):
+        for x in e['cortes']:
+            if x['id'] == cid:
+                x.update(qa=qa, esteira=run['id'], hash=_hash(arq), tamanho=arq.stat().st_size, status='pronto' if vd['aprovado'] else 'reprovado')
+    _mudar(f)
+    if res['resultado'] == 'aprovado':
+        fonte.unlink(missing_ok=True)
+        if c.get('espera_fila'):
+            try:
+                agendar_corte(cid)
+            except (ErroAgente, pg.ErroRede) as err:
+                anotar(f'"{c["titulo"][:50]}" foi aprovado, mas ficou sem horário: {err}', 'erro')
+    anotar(f'Diretor: "{c.get("titulo", "")[:50]}" ' + (f'aprovado com nota {qa["nota"]}.' if vd['aprovado'] else 'precisa da sua revisão: ' + '; '.join(vd['motivos'][:2])),
+           'ok' if vd['aprovado'] else 'erro')
+    return {'etapa': 'Aprovado pelo diretor' if vd['aprovado'] else 'Precisa da sua revisão', 'resultado': {'run': run['id'], 'nota': qa['nota']}}
+
+
+def esteira_decidiu(ref: str, aprovado: bool):
+    """Você aprovou (ou cancelou) na revisão manual da esteira: o corte acompanha."""
+    def f(e):
+        for x in e['cortes']:
+            if x['id'] == ref and x['status'] in ('reprovado', 'pronto'):
+                x['status'] = 'pronto' if aprovado else 'reprovado'
+                x.setdefault('qa', {}).setdefault('diretor', {})['veredito'] = 'aprovado' if aprovado else 'reprovado'
+                if aprovado:
+                    x['qa']['diretor']['manual'] = True
+    _mudar(f)
 
 
 def _marcar_visto(vid: str, resultado: str):
@@ -1559,9 +1679,18 @@ def receber_manual(d: dict) -> dict:
          'hash': _hash(arq), 'direitos': direitos, 'espera': destino == 'pronto'}
     if any(x.get('hash') == c['hash'] and x['status'] != 'descartado' for x in estado()['cortes']):
         raise ErroAgente('Este mesmo vídeo já está na fila do agente.')
+    esteira = _esteira_ligada()
+    if esteira:
+        c['qa'] = {'diretor': {'veredito': 'conferindo', 'motivos': [], 'tentativas': 0, 't': time.time()}}
     _mudar(lambda e: e['cortes'].append(c))
+    if esteira:
+        import fila
+        fila.enfileirar('esteira.recebido', agente='agent5', dados={'corte': c['id']}, recurso='pesado', titulo='Diretor: ' + c['titulo'][:60],
+                        chave='esteira:' + c['id'])
     anotar(f'Corte manual recebido: "{c["titulo"][:60]}" ({"na fila de postagem" if destino == "fila" else "guardado como pronto"}).', 'ok')
-    if destino == 'fila':
+    if destino == 'fila' and esteira:
+        _mudar(lambda e: [x.update(espera_fila=True) for x in e['cortes'] if x['id'] == c['id']])
+    elif destino == 'fila':
         try:
             agendar_corte(c['id'])
         except (ErroAgente, pg.ErroRede) as err:

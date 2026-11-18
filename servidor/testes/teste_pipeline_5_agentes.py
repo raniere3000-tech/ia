@@ -173,6 +173,24 @@ try:
 except Exception as ex:  # noqa: BLE001
     check(False, f'executar_corte: {ex}')
 
+print('10. Corte do Agente 1 inteiro pela esteira (corte_pela_esteira)')
+try:
+    import postagem as pg
+    pal = [(0.6 + i * 0.5, 0.95 + i * 0.5, f'palavra{i}') for i in range(13)]
+    tplx = ag.mo.tpl(ag.mo.ativos(ag.config()['cortes']['modelos'])[0])
+    pasta2 = TMP / 'trab2'
+    pasta2.mkdir()
+    cx = {'ini': 0.4, 'fim': 7.6, 'gancho': '', 'titulo': 'teste'}
+    qa, vd, run = ag.corte_pela_esteira(bom, cx, pal, tplx, 'vidx', 'cortex', pasta2, 8.0, {'id': 'yt1', 'titulo': 'tema'}, {'dur_min': 5, 'dur_max': 10})
+    check(qa['diretor']['esteira'] == run and qa['nota'] is not None, f'corte avaliado pelo diretor (nota {qa["nota"]}, {qa["diretor"]["veredito"]})')
+    check(vd['aprovado'] == (pl.obter(run)['estado'] == 'final_approved'), 'veredito do corte bate com o estado da esteira')
+    if vd['aprovado']:
+        check(pl.portao_postagem(pg.VIDEOS / 'vidx.mp4')['ok'], 'certificado preso ao arquivo do corte')
+except Exception as ex:  # noqa: BLE001
+    import traceback
+    traceback.print_exc()
+    check(False, f'corte_pela_esteira: {ex}')
+
 shutil.rmtree(TMP, ignore_errors=True)
 print(f'\n{ok} ok, {falhas} falhas')
 sys.exit(1 if falhas else 0)

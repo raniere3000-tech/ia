@@ -2,6 +2,8 @@ import PacotePublicacao from '../components/PacotePublicacao';
 import Perfis from '../components/Perfis';
 import GameplayNarrativa from '../components/GameplayNarrativa';
 import Aprendizado from '../components/Aprendizado';
+import Esteira from '../components/Esteira';
+import ProgramacaoDiaria from '../components/ProgramacaoDiaria';
 import { ESTILOS } from '../lib/estilosVisuais';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bot, Scissors, Send, Square, Play, Search, Link2, Loader2, CheckCircle2, AlertTriangle, Trash2, Mail, Download, Eye, Plus, X, KeyRound, Clock, RefreshCw, ExternalLink, CalendarClock, ShieldCheck, Package } from 'lucide-react';
@@ -11,7 +13,7 @@ import { useServidor } from '../components/Servidor2';
 import { lerFila, pendentes, listarProjetos, catalogo, horaTexto } from '../lib/api';
 import { verAgente, salvarAgente, salvarChaves, acaoCanal, rodarAgente, pararAgente, testarEmail, testarWhatsapp, acaoCorte, videoDoCorte, salvarPesos, aprenderAgora, DIAS, MOTIVOS, type VisaoAgente, type ConfigAgente, type Uso, type Canal, type CorteAgente } from '../lib/agente';
 
-type Parte = 'cortes'|'postagem'|'agente3'|'desempenho'|'avisos'|'fila';
+type Parte = 'cortes'|'postagem'|'programacao'|'agente3'|'esteira'|'desempenho'|'avisos'|'fila';
 const num=(n:number)=>n.toLocaleString('pt-BR');
 const tempo=(s:number)=>s<60?`${s} s`:`${Math.floor(s/60)} min${s%60?` e ${s%60} s`:''}`;
 const quando=(ts:number)=>new Date(ts*1000).toLocaleString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
@@ -182,7 +184,7 @@ function Agente3Aba(){
 
 export default function Agente(){
   const {settings,toast,go,rotaExtra}=useApp();
-  const PARTES:Parte[]=['cortes','postagem','agente3','desempenho','avisos','fila'];
+  const PARTES:Parte[]=['cortes','postagem','programacao','agente3','esteira','desempenho','avisos','fila'];
   const [v,setV]=useState<VisaoAgente|null>(null); const [erro,setErro]=useState(''); const [parte,setParte]=useState<Parte>(()=>PARTES.includes(rotaExtra as Parte)?rotaExtra as Parte:'cortes');
   useEffect(()=>{ if(PARTES.includes(rotaExtra as Parte)) setParte(rotaExtra as Parte); },[rotaExtra]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [link,setLink]=useState(''); const [tema,setTema]=useState(''); const [canalLink,setCanalLink]=useState(''); const [canalMotivo,setCanalMotivo]=useState('');
@@ -247,9 +249,11 @@ export default function Agente(){
       {erro&&<p className="hint bad"><AlertTriangle size={13}/> {erro}</p>}
     </section>
 
-    <div className="ag-abas" role="tablist">{([['cortes','1 · Cortes'],['postagem','2 · Postagem'],['agente3','3 · Vídeos com IA'],['desempenho','Desempenho'],['avisos','Avisos e chaves'],['fila',`Cortes feitos e histórico${v.cortes.length?` (${v.cortes.length})`:''}`]] as [Parte,string][]).map(([k,t])=><button key={k} role="tab" aria-selected={parte===k} className={parte===k?'active':''} onClick={()=>setParte(k)}>{t}</button>)}</div>
+    <div className="ag-abas" role="tablist">{([['cortes','1 · Cortes'],['postagem','2 · Postagem'],['programacao','2 · Programação diária'],['agente3','3 · Vídeos com IA'],['esteira','4 e 5 · Diretor e editor'],['desempenho','Desempenho'],['avisos','Avisos e chaves'],['fila',`Cortes feitos e histórico${v.cortes.length?` (${v.cortes.length})`:''}`]] as [Parte,string][]).map(([k,t])=><button key={k} role="tab" aria-selected={parte===k} className={parte===k?'active':''} onClick={()=>setParte(k)}>{t}</button>)}</div>
 
     {parte==='agente3'&&<Agente3Aba/>}
+    {parte==='esteira'&&<Esteira/>}
+    {parte==='programacao'&&<ProgramacaoDiaria/>}
 
     {parte==='cortes'&&<>
       <section className="panel">

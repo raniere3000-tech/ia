@@ -1406,8 +1406,133 @@ def etapa_final(ctx, pid, p, b):
     return decisao_do_diretor(ctx, pid, b, render, sha, versao, conf)
 
 
+def _esteira_ligada() -> bool:
+    try:
+        import pipeline as pl
+        return pl.ligado()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _hash_cenas(cenas: list) -> str:
+    return hashlib.sha256(json.dumps(cenas, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+
+
+def decisao_pela_esteira(ctx, pid: str, b: dict, render: dict, sha: str, versao: int, conf: dict) -> dict:
+    """Esteira dos 5 agentes ligada: o diretor (Agente 4) dá duas notas de 0 a 100 com contadores separados de 5 correções:
+    1) cenas e roteiro (creative_preedit) -> o Agente 3 refaz só as cenas apontadas;
+    2) arquivo final exportado (final_release) -> certificado preso ao SHA-256; problema técnico -> monta de novo.
+    Aprovado vai para a sua aprovação; esgotou as correções -> precisa da sua revisão (nada passa por cima de bloqueio)."""
+    import diretor_qualidade as dq
+    import pipeline as pl
+    p = pj.obter(pid)
+    run = pl.criar('agente3', pid, p['titulo'][:120], chave=f'agente3:{pid}:{ctx.id}', estado='creative_qa_pending')
+    rid = run['id']
+    cenas = p['dados'].get('cenas') or []
+    dados_run = pl.obter(rid)['dados']
+    hist = list((p['dados'].get('diretor') or {}).get('historico') or [])[-19:]
+
+    def parar(motivo: str, rel: dict | None, modalidade: str):
+        msg = 'Precisa da sua revisão: ' + motivo[:300] + ' Ajuste as cenas apontadas e mande produzir de novo.'
+
+        def rep(d, _p):
+            d['diretor'] = {'veredito': 'reprovado', 'sha': sha, 'motivos': [motivo[:300]] + [f['evidence'] for f in (rel or {}).get('blocking_findings') or []][:5],
+                            'tentativas': pl.etapa(rid, modalidade)['correcoes'], 'ciclo': ctx.id, 'esteira': rid, 'nota': (rel or {}).get('score'),
+                            'historico': hist + [{'t': time.time(), 'sha': sha, 'versao': versao, 'veredito': 'reprovado', 'motivos': [motivo[:200]]}]}
+            d['render_reprovado'] = render
+            d.setdefault('producao', {})['erro'] = msg
+            return {'status': 'failed'}
+        pj.mudar_dados(pid, rep)
+        pl.mover(rid, 'manual_review_required', agente='pessoa', etapa=motivo[:200])
+        return {'resultado': {'render': None, 'diretor': 'revisao_manual', 'esteira': rid}, 'etapa': 'Precisa da sua revisão'}
+
+    def refazer(alvo: dict, rel: dict, modalidade: str, dec: dict):
+        if not _refazer_pelo_diretor(pid, alvo, b):
+            motivo = 'O Agente 3 não tem mais o que mudar nas cenas apontadas.'
+            pl.encerrar_etapa(rid, modalidade, 'revisao_manual', motivo)
+            return parar(motivo, rel, modalidade)
+        n = dec['correcoes_usadas'] + 1
+
+        def r_(d, _p):
+            d['diretor'] = {'veredito': 'refazendo', 'sha': sha, 'motivos': [f['evidence'] for f in rel['blocking_findings'] + rel['findings']][:6],
+                            'tentativas': n, 'ciclo': ctx.id, 'esteira': rid, 'nota': rel['score'],
+                            'historico': hist + [{'t': time.time(), 'sha': sha, 'versao': versao, 'veredito': 'reprovado', 'nota': rel['score']}]}
+            d['render_reprovado'] = render
+            return {'status': 'rendering'}
+        pj.mudar_dados(pid, r_)
+        nome = 'cenas' if modalidade == 'creative_preedit' else 'vídeo final'
+        pl.mover(rid, 'creative_correction_pending' if modalidade == 'creative_preedit' else 'edit_correction_pending', agente='agent3',
+                 etapa=f'Correção {n} de {ct_max()} ({nome}): nota {rel["score"]}')
+        return {'proxima': True, 'recurso': 'leve', 'etapa': f'Diretor mandou corrigir {nome} ({n} de {ct_max()}), nota {rel["score"]}', 'refazer': True}
+
+    # 1) cenas e roteiro
+    if pl.etapa(rid, 'creative_preedit')['estado'] != 'aprovado':
+        pl.mover(rid, 'creative_qa_pending', agente='agent4', etapa='Diretor conferindo as cenas')
+        problemas = [x for x in ((p['dados'].get('qualidade') or {}).get('problemas') or []) if x.get('status') != 'resolvido']
+        sem_lic = _sem_licenca(cenas)
+        rel = dq.avaliar_criativo(cenas, b, p['dados'].get('roteiro') or {}, {'alertas': problemas, 'sem_licenca': sem_lic})
+        h = _hash_cenas(cenas)
+        dec = pl.registrar_avaliacao(rid, 'creative_preedit', rel, mudou=h != dados_run.get('hash_cenas'))
+        pl.mover(rid, 'creative_qa_pending', dados={'hash_cenas': h})
+        rel['attempts_used'], rel['attempts_limit'] = dec['correcoes_usadas'], ct_max()
+        rel = pl.guardar_relatorio(rid, 'creative_preedit', pid, sha, rel)
+        if dec['decisao'] == 'revisao_manual':
+            return parar(dec['motivo'], rel, 'creative_preedit')
+        if dec['decisao'] == 'corrigir':
+            alvo = dq.cenas_para_refazer(rel)
+            return refazer({'cenas': alvo, 'motivos': [], 'tecnico': not alvo}, rel, 'creative_preedit', dec)
+        pl.mover(rid, 'creative_approved', agente='agent5', etapa=f'Cenas aprovadas com nota {rel["score"]}')
+    # 2) arquivo final
+    arq = Path((db.um('SELECT arquivo FROM renders WHERE id=?', render['id']) or {}).get('arquivo') or '')
+    pl.mover(rid, 'final_qa_pending', agente='agent4', etapa='Diretor conferindo o vídeo', arquivo=str(arq), sha=sha)
+    sem_lic = _sem_licenca(cenas)
+    rel = dq.avaliar_final(arq, {'aspecto': b.get('formato') or '9:16', 'sha': sha, 'direitos_ok': not sem_lic,
+                                 'direitos_motivo': 'Há imagem sem licença registrada nas cenas: ' + ', '.join(map(str, sem_lic))[:120] if sem_lic else '',
+                                 'template_esperado': False, 'sem_audio_ok': False})
+    dec = pl.registrar_avaliacao(rid, 'final_release', rel, mudou=sha != dados_run.get('ultimo_sha'))
+    pl.mover(rid, 'final_qa_pending', dados={'ultimo_sha': sha})
+    rel['attempts_used'], rel['attempts_limit'] = dec['correcoes_usadas'], ct_max()
+    rel = pl.guardar_relatorio(rid, 'final_release', pid, sha, rel)
+    if dec['decisao'] == 'revisao_manual':
+        return parar(dec['motivo'], rel, 'final_release')
+    if dec['decisao'] == 'corrigir':
+        if any(f.get('target_agent') == 'pessoa' for f in rel['blocking_findings']):
+            motivo = next(f['evidence'] for f in rel['blocking_findings'] if f.get('target_agent') == 'pessoa')
+            pl.encerrar_etapa(rid, 'final_release', 'revisao_manual', motivo)
+            return parar(motivo, rel, 'final_release')
+        return refazer({'cenas': [], 'motivos': [], 'tecnico': True}, rel, 'final_release', dec)
+    cert = pl.emitir_certificado(pid, sha, rel, run=rid, revisao=versao)
+    pl.mover(rid, 'awaiting_human_publish_approval', agente='pessoa', etapa=f'Aprovado pelo diretor com nota {rel["score"]}: falta a sua aprovação',
+             dados={'certificado': cert['id']})
+
+    def f(d, _p):
+        d['render'] = render
+        d.setdefault('renders', []).append({k: render[k] for k in ('id', 'sha', 'versao', 'duracao', 'criado')})
+        d['revisao'] = {'status': 'pendente', 'historico': d.get('revisao', {}).get('historico', [])}
+        d['diretor'] = {'veredito': 'aprovado', 'sha': sha, 'motivos': [], 'tentativas': dec['correcoes_usadas'], 'ciclo': ctx.id, 'esteira': rid,
+                        'nota': rel['score'], 'certificado': cert['id'], 'relatorio': rel['id'],
+                        'historico': hist + [{'t': time.time(), 'sha': sha, 'versao': versao, 'veredito': 'aprovado', 'nota': rel['score']}], 't': time.time()}
+        d.pop('render_reprovado', None)
+        return {'status': 'ready_for_review'}
+    pj.mudar_dados(pid, f)
+    db.evento('agente3', 'render_pronto', 'projeto:' + pid, {'sha': sha, 'versao': versao, 'avisos': conf['avisos'], 'diretor': 'aprovado', 'nota': rel['score']})
+    return {'proxima': True, 'recurso': 'leve', 'etapa': 'Avisando por e-mail'}
+
+
+def _sem_licenca(cenas: list) -> list:
+    """Cenas com foto de banco de imagens sem o crédito/licença registrado (bloqueio de direitos)."""
+    return [c.get('id') for c in cenas if (c.get('imagem') or {}).get('fonte') in ('pexels', 'pixabay', 'wikimedia') and not (c.get('imagem') or {}).get('credito')]
+
+
+def ct_max() -> int:
+    import contratos as ct
+    return ct.MAX_CORRECOES
+
+
 def decisao_do_diretor(ctx, pid: str, b: dict, render: dict, sha: str, versao: int, conf: dict) -> dict:
     """Depois do vídeo montado: aprovado vai para você; reprovado é refeito (ou, sem mais o que tentar, para com o motivo)."""
+    if _esteira_ligada():
+        return decisao_pela_esteira(ctx, pid, b, render, sha, versao, conf)
     # Diretor de qualidade: só manda para a sua aprovação o que ele aprovou; o que reprovar é refeito (até QA_MAX_REFAZER vezes)
     vd = qd.veredito(pj.obter(pid)['dados'].get('qualidade'))
     dir0 = pj.obter(pid)['dados'].get('diretor') or {}

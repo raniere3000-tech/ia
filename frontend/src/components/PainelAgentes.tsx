@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Scissors, Send, Bot, Loader2, ArrowRight, AlertTriangle } from 'lucide-react';
+import { Scissors, Send, Bot, Loader2, ArrowRight, AlertTriangle, Gauge, Clapperboard } from 'lucide-react';
 import { useApp } from '../state';
 import { useServidor } from './Servidor2';
 import { verAgente, type VisaoAgente } from '../lib/agente';
 import { lerFila, pendentes, listarProjetos, type Job } from '../lib/api';
+import { lerEsteira } from '../lib/esteira';
 
 const ATIVOS=['rodando','na_fila','agendado','aguardando_tentativa'];
 const FAZENDO3:Record<string,string>={researching:'Escolhendo o assunto',narrating:'Narrando',generating_assets:'Buscando as imagens',rendering:'Montando o vídeo',assembling:'Juntando as cenas',validating:'Conferindo o vídeo'};
@@ -34,13 +35,14 @@ function Cartao({l}:{l:Linha}){
   </button>;
 }
 
-/** Resumo curto dos três agentes: o que cada um faz agora e quantos processos tem. Tocar abre o agente. */
+/** Resumo curto dos agentes (4 e 5 aparecem quando o servidor tem a esteira): o que cada um faz agora e quantos processos tem. Tocar abre o agente. */
 export default function PainelAgentes({titulo=true}:{titulo?:boolean}){
   const {go}=useApp();
   const {v,erro}=useVisaoAgente();
   const fila=useServidor(c=>lerFila(c),15);
   const pend=useServidor(pendentes,20);
   const proj=useServidor(c=>listarProjetos(c,'agente3'),30);
+  const est=useServidor(c=>lerEsteira(c),30);
   const jobs:Job[]=fila.dados?.jobs||[];
   const ativos=(a:string)=>jobs.filter(j=>j.agente===a&&ATIVOS.includes(j.status));
   const cortes=(v?.cortes||[]).filter(c=>c.status!=='descartado');
@@ -65,6 +67,20 @@ export default function PainelAgentes({titulo=true}:{titulo?:boolean}){
      alerta:esperando3?`${esperando3} para você aprovar`:undefined,
      ir:()=>go('agente','agente3','radar')},
   ];
+  const e=est.dados;
+  if(e){
+    const ex=e.execucoes, cont=e.contagem;
+    const n=(...k:string[])=>k.reduce((a,x)=>a+(cont[x]||0),0);
+    const notas=ex.filter(x=>x.nota!=null).slice(0,10).map(x=>x.nota as number);
+    linhas.push(
+      {n:'Agente 4',nome:'Diretor de qualidade',Icon:Gauge,ligado:e.ligado,ocupado:n('final_qa_pending','creative_qa_pending')>0,
+       agora:!e.ligado?'Esteira desligada':n('final_qa_pending','creative_qa_pending')?'Conferindo vídeo':'Esperando vídeo',
+       numeros:[[n('final_approved','awaiting_human_publish_approval','published'),'aprovados'],[n('manual_review_required'),'esperando você'],[notas.length?Math.round(notas.reduce((a,b)=>a+b,0)/notas.length):0,'nota média']],
+       alerta:n('manual_review_required')?`${n('manual_review_required')} precisam da sua revisão`:undefined,ir:()=>go('agente','esteira','radar')},
+      {n:'Agente 5',nome:'Editor de IA',Icon:Clapperboard,ligado:e.ligado,ocupado:n('rendering','editing')>0,
+       agora:!e.ligado?'Esteira desligada':n('rendering','editing')?'Editando':n('edit_correction_pending')?'Corrigindo o que o diretor pediu':'Esperando corte',
+       numeros:[[n('rendering','editing','edit_queued'),'editando'],[n('edit_correction_pending'),'corrigindo'],[ex.length,'no total']],ir:()=>go('agente','esteira','radar')});
+  }
   return <section className="panel resumo-agentes">
     {titulo&&<div className="section-head"><h2><Bot size={18}/> Seus agentes</h2>{(fila.carregando)&&<Loader2 size={14} className="spin"/>}</div>}
     {(erro||fila.erro)&&<p className="hint bad"><AlertTriangle size={14}/> {erro||fila.erro}</p>}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Download, ShieldCheck, RefreshCw, RotateCcw, Loader2, ExternalLink, ChevronDown } from 'lucide-react';
 import { useApp } from '../state';
 import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
+import { lerCapacidades, type Capacidade } from '../lib/esteira';
 import { listarSkills, lerPerfis, salvarPerfil, instalarSkills, conferirSkills, procurarAtualizacoes, acaoSkill, obterSkill, historicoSkills, NOME_AGENTE,
   desfazerPerfil, pontaAPonta, desfazerLote,
   type Skill, type PerfilSkills } from '../lib/skills';
@@ -119,9 +120,28 @@ export function SkillsCard(){
         <ul className="diag">{pap.dados.consumidores.map(c=><li key={c.id}><b>{c.nome}</b>{' '}
           {c.ultimo?<>{quando(c.ultimo)}: {c.saida} <span className="muted">({c.skills.map(s=>`${s.id} → ${s.decisao}`).join('; ')})</span></>:<span className="muted">ainda não usou skill em nada produzido</span>}
           {c.fallback&&(!c.ultimo||c.fallback.t>c.ultimo)&&<span className="muted"> • última vez sem skill: {c.fallback.motivo}</span>}</li>)}</ul></>}
+      <Capacidades/>
       {hist.dados&&hist.dados.historico.length>0&&<details className="mt"><summary>Registro de uso (só quando virou algo de verdade)</summary>
         <ul className="skill-regras">{hist.dados.historico.slice(0,30).map(h=><li key={h.id}>{quando(h.t)} • {h.skill_id} (versão {h.versao||'?'}) • {h.decisao||h.origem} • {h.resultado}{h.artefato?` • ${h.artefato}`:''}</li>)}</ul></details>}
      </>}
     </div>
   </section>;
+}
+
+const TAG_CAP:Record<string,string>={ok:'ok',ausente:'',sem_chave:'warn',nao_adotado:''};
+const NOME_CAP:Record<string,string>={ok:'Funcionando',ausente:'Não está no celular',sem_chave:'Falta a chave',nao_adotado:'Não adotado'};
+
+/** Ferramentas que os agentes 4 e 5 podem usar neste servidor: só detectadas, nada é instalado sozinho. */
+function Capacidades(){
+  const cfg=useCfg();
+  const cap=useServidor(c=>lerCapacidades(c),0,[]);
+  const [conf,setConf]=useState(false);
+  if(cap.erro) return null;
+  return <><div className="field-label mt">Ferramentas dos agentes 4 e 5 neste servidor</div>
+    {cap.dados&&<p className="hint">{cap.dados.regra}</p>}
+    <ul className="diag">{(cap.dados?.capacidades||[]).map((x:Capacidade)=><li key={x.id}><b>{x.nome}</b> <span className={'tag '+(TAG_CAP[x.estado]??'')}>{NOME_CAP[x.estado]||x.estado}</span>
+      {x.versao&&<span className="muted"> {x.versao}</span>}<br/><small className="muted">{x.uso}{x.detalhe?` ${x.detalhe}`:''}</small>
+      {x.fonte&&<> <a className="help-link" href={x.fonte} target="_blank" rel="noreferrer">fonte <ExternalLink size={10}/></a></>}</li>)}</ul>
+    <button className="subtle sm" disabled={conf} onClick={async()=>{ setConf(true); try{ cap.setDados(await lerCapacidades(cfg,true)); }catch{ /* o erro aparece na próxima leitura */ }finally{ setConf(false); } }}>{conf?<Loader2 size={13} className="spin"/>:<RefreshCw size={13}/>} Conferir de novo</button>
+  </>;
 }

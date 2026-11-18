@@ -306,3 +306,66 @@ def rodar(rid: str, ref: str, plano: dict, render, contexto, *, dur_fonte: float
                  etapa=f'Correção {dec["correcoes_usadas"] + 1} de {ct.MAX_CORRECOES}: ' + ' '.join(feitas)[:150])
         avisar(f'Editor corrigindo ({dec["correcoes_usadas"] + 1} de {ct.MAX_CORRECOES})')
         plano = novo
+
+
+# ---------------------------------------------------------------- vídeo que já chega editado (corte manual do site ou vídeo importado)
+def plano_importado(dur: float, aspecto: str = '9:16', template_id: str = '') -> dict:
+    """Plano "não mexer": o vídeo inteiro, sem efeito. O editor só age se o diretor pedir."""
+    return ct.validar_plano({'clips': [{'source': 'principal', 'in_ms': 0, 'out_ms': int(dur * 1000)}], 'effects': [{'tipo': 'reframe', 'modo': 'manter'}],
+                             'target_aspect_ratio': aspecto if aspecto in ct.ASPECTOS else '9:16', 'template_id': template_id,
+                             'edit_reason': 'Vídeo recebido pronto: conferir antes de mexer.'}, dur)
+
+
+def executar_importado(plano: dict, fonte: Path, destino: Path, inicial_hash: str = '') -> Path:
+    """Plano igual ao inicial: o arquivo segue como veio (mesmo SHA). Senão: trechos, enquadramento, fade e volume, sempre 30 fps."""
+    import shutil
+    if inicial_hash and ct.hash_plano(plano) == inicial_hash:
+        if fonte.resolve() != destino.resolve():
+            shutil.copyfile(fonte, destino)
+        return destino
+    L, A = ct.ASPECTOS[plano['target_aspect_ratio']]
+    rf = (_efeito(plano, 'reframe') or {}).get('modo', 'manter')
+    if rf == 'centro':
+        quadro = f'scale={L}:{A}:force_original_aspect_ratio=increase,crop={L}:{A},setsar=1'
+    elif rf == 'desfocado':
+        quadro = (f'split=2[fa][fb];[fa]scale={L // 4}:{A // 4}:force_original_aspect_ratio=increase,crop={L // 4}:{A // 4},boxblur=6:2,scale={L}:{A},setsar=1[fu];'
+                  f'[fb]scale={L}:{A}:force_original_aspect_ratio=decrease,setsar=1[ff];[fu][ff]overlay=(W-w)/2:(H-h)/2')
+    else:
+        quadro = f'scale={L}:{A}:force_original_aspect_ratio=decrease,pad={L}:{A}:(ow-iw)/2:(oh-ih)/2,setsar=1'
+    partes = [(c['in_ms'] / 1000, c['out_ms'] / 1000) for c in plano['clips']]
+    total = sum(b - a for a, b in partes)
+    audio = tem_audio(fonte)
+    fc = []
+    for i, (a, b) in enumerate(partes):
+        fc.append(f'[0:v]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS[v{i}]')
+        if audio:
+            fc.append(f'[0:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS[a{i}]')
+    n = len(partes)
+    fc.append(''.join(f'[v{i}]' + (f'[a{i}]' if audio else '') for i in range(n)) + f'concat=n={n}:v=1:a={1 if audio else 0}[vc]' + ('[ac]' if audio else ''))
+    vf = [quadro, 'fps=30']
+    af = []
+    fade = _efeito(plano, 'fade')
+    if fade:
+        e, s = fade.get('entrada_ms', 0) / 1000, fade.get('saida_ms', 0) / 1000
+        if e > 0:
+            vf.append(f'fade=t=in:st=0:d={e:.3f}')
+            af.append(f'afade=t=in:st=0:d={e:.3f}')
+        if s > 0:
+            vf.append(f'fade=t=out:st={max(0.0, total - s):.3f}:d={s:.3f}')
+            af.append(f'afade=t=out:st={max(0.0, total - s):.3f}:d={s:.3f}')
+    ln = _efeito(plano, 'loudnorm')
+    if ln:
+        af.append(f'loudnorm=I={ln["alvo_lufs"]:.1f}:TP=-1.5:LRA=11')
+    fc.append('[vc]' + ','.join(vf) + '[v]')
+    if audio:
+        fc.append('[ac]' + (','.join(af) if af else 'anull') + '[a]')
+    tmp = destino.with_name(destino.stem + '-novo.mp4')
+    cmd = ['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', str(fonte), '-filter_complex', ';'.join(fc), '-map', '[v]', *(['-map', '[a]'] if audio else []),
+           '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p', '-r', '30',
+           *(['-c:a', 'aac', '-b:a', '128k', '-ar', '44100'] if audio else []), '-movflags', '+faststart', str(tmp)]
+    r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    if r.returncode != 0 or not tmp.exists() or tmp.stat().st_size < 2000:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError('O editor não conseguiu montar o vídeo: ' + (r.stderr.strip()[-300:] or 'erro desconhecido'))
+    tmp.replace(destino)
+    return destino

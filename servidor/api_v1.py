@@ -31,6 +31,7 @@ import postagem as pg
 import produtor
 import projetos as pj
 import renderizador as rd
+import rotas_esteira
 import series as srs
 from skills import catalogo as skcat
 from skills import roteador as skrot
@@ -505,6 +506,9 @@ def iniciar():
     fila.registrar('skills.instalar', job_skills, 'leve')
     fila.registrar('personagem.pose', job_pose, 'pesado')
     fila.registrar('criativo.serie_completa', cri.job_serie_completa, 'leve')
+    import agente as _ag
+    fila.registrar('esteira.recebido', _ag.job_esteira_recebido, 'pesado')
+    rotas_esteira.ag2.iniciar()
     exportacao.iniciar()
     diretor.iniciar()
     storyboard.iniciar()
@@ -879,6 +883,12 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     # ---- núcleo criativo (Modelagem com IA, biblioteca compartilhada e tendências)
     if caminho.startswith('/api/v1/criativo/'):
         return _criativo(metodo, caminho, q, corpo, quem, sid)
+    # ---- esteira dos 5 agentes, diretor de qualidade, capacidades, referências virais e programação diária do Agente 2
+    if caminho.startswith(rotas_esteira.PREFIXOS):
+        try:
+            return rotas_esteira.tratar(metodo, caminho, q, corpo, quem, {'If-Match': h.headers.get('If-Match') if getattr(h, 'headers', None) else None})
+        except rotas_esteira.ErroRota as e:
+            raise pj.ErroProjeto(e.status, str(e))
     # ---- biblioteca de skills (só texto de orientação; nada é executado)
     if caminho.startswith('/api/v1/skills'):
         try:

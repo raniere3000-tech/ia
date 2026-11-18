@@ -184,6 +184,10 @@ def descricao(p: dict, dest: dict | None = None) -> dict:
 def diretor_ok(p: dict, sha: str) -> dict:
     """O diretor de qualidade aprovou ESTE arquivo? Vídeos feitos antes do diretor existir são julgados pelo laudo guardado."""
     import qualidade as qd
+    import pipeline as pl
+    if pl.ligado():          # esteira ligada: vale o certificado assinado do diretor para ESTE arquivo
+        c = pl.certificado(sha)
+        return {'aprovado': bool(c), 'motivos': [] if c else ['Este arquivo não tem o certificado do diretor de qualidade (nota 70 sem bloqueios).']}
     d = p['dados'].get('diretor') or {}
     if d.get('sha') == sha and d.get('veredito') in ('aprovado', 'reprovado'):
         return {'aprovado': d['veredito'] == 'aprovado', 'motivos': d.get('motivos') or []}
@@ -234,6 +238,12 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
         return {'ok': True, 'repetido': True, 'aprovacao': ja, 'posts': db.todos('SELECT * FROM publicacoes WHERE aprovacao=?', ja['id'] if ja else '')}
     # invalida códigos de e-mail ainda abertos (a decisão já foi tomada)
     db.executar('UPDATE desafios SET usado=? WHERE projeto=? AND usado IS NULL', agora, pid)
+    try:        # esteira: a execução deste arquivo passa para a fila de postagem do Agente 2
+        import pipeline as pl
+        for x in db.todos("SELECT id FROM pipeline_runs WHERE ref=? AND sha256=? AND estado='awaiting_human_publish_approval'", pid, render_sha):
+            pl.mover(x['id'], 'publish_queued', agente='agent2', etapa=f'Aprovado por você ({origem})')
+    except Exception as e:  # noqa: BLE001 - a aprovação vale mesmo se o painel da esteira não atualizar
+        print('aprovacoes: esteira', e)
     posts = []
     if ok:
         vid = render_sha[:12]

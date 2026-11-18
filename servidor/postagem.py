@@ -813,6 +813,9 @@ def conferencia(p: dict, rede: str) -> list[dict]:
             item('certificado', pp['ok'], pp['detalhe'])
     except Exception as e:  # noqa: BLE001  (sem conseguir conferir, não sai)
         item('certificado', False, f'Não consegui conferir a aprovação do diretor: {str(e)[:120]}')
+    ag2 = p.get('agenda') or {}
+    if ag2.get('ate') and ag2.get('politica') != 'publish_when_online' and agora() > ag2['ate'] and not p['redes'].get(rede, {}).get('tentativas'):
+        item('horario', False, 'O horário da programação diária já passou (servidor estava desligado): não posto atrasado.')
     if p.get('hash'):
         igual = assinatura(p['video']) in ('', p['hash'])
         item('versao', igual, 'É o mesmo arquivo que foi agendado.' if igual else 'O arquivo mudou depois de agendado (não é a versão que você aprovou). Agende de novo.')
