@@ -1459,9 +1459,11 @@ def _marcar_visto(vid: str, resultado: str):
     _mudar(f)
 
 
-def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '') -> str:
-    """Um passo do agente de cortes: no máximo um vídeo por vez."""
+def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '', limite: int = 0) -> str:
+    """Um passo do agente de cortes: no máximo um vídeo por vez. limite > 0: quem manda é o estoque da Central de Automação."""
     co = config()['cortes']
+    if limite > 0 and not link:
+        forcar = True
     if link:
         m = re.search(r'(?:v=|youtu\.be/|shorts/|live/)([\w-]{11})', link)
         v = {'id': m.group(1) if m else 'x' + uuid.uuid4().hex[:10], 'url': link, 'titulo': '', 'canal': '', 'canal_nome': 'link enviado por você'}
@@ -1477,7 +1479,7 @@ def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '') -> st
         if not v:
             return 'Nenhum vídeo novo nos canais aprovados.' if any(c['status'] == 'aprovado' for c in estado()['canais']) else 'Nenhum canal aprovado ainda. Aprove canais na aba Agente.'
         v['url'] = os.getenv('URL_VIDEO_TESTE') or 'https://www.youtube.com/watch?v=' + v['id']
-        quantos = max(1, min(co['por_video'], falta if falta > 0 else co['por_video']))
+        quantos = max(1, min(co['por_video'], limite if limite > 0 else (falta if falta > 0 else co['por_video'])))
     try:
         criados = processar_video(v, quantos)
     except (ErroAgente, pg.ErroRede) as e:
@@ -2218,6 +2220,20 @@ def passo():
         return
     s = segredos()
     if not s['youtube'] or not (s['gemini'] or s['gemini_pago']):
+        return
+    try:            # Central de Automação ligada: o estoque decide (None = regra antiga da meta semanal)
+        import orquestrador as oq
+        dec = oq.decisao_cortes()
+    except Exception as e:  # noqa: BLE001
+        print('agente: central de automação', e)
+        dec = None
+    if dec is not None:
+        if dec['acao'] == 'buscar_canais':
+            _mudar(lambda e: e['marcas'].update(busca=time.time()))
+            _em_fundo('Busca de canais', buscar_canais)
+        elif dec['acao'] == 'cortar':
+            _mudar(lambda e: e['marcas'].update(tentativa=time.time()))
+            _em_fundo('Agente de cortes', lambda q=dec['quantos']: trabalhar_cortes(limite=q))
         return
     if time.time() - m.get('busca', 0) > 86400:
         _em_fundo('Busca de canais', buscar_canais)

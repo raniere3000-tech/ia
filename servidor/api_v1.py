@@ -509,6 +509,7 @@ def iniciar():
     import agente as _ag
     fila.registrar('esteira.recebido', _ag.job_esteira_recebido, 'pesado')
     rotas_esteira.ag2.iniciar()
+    rotas_esteira.oq.iniciar()
     exportacao.iniciar()
     diretor.iniciar()
     storyboard.iniciar()

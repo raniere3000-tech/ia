@@ -388,7 +388,12 @@ def elegiveis(rede: str) -> list:
         conf = ag.conferir(c)
         if conf['bloqueios']:
             continue
-        out.append({'corte': c, 'sha': sha, 'nota': cert['nota'], 'criado': c.get('criado', 0)})
+        out.append({'tipo': 'corte', 'corte': c, 'ref': c['id'], 'sha': sha, 'nota': cert['nota'], 'criado': c.get('criado', 0)})
+    try:        # vídeos das linhas de conteúdo do Agente 3 (aprovados por você ou pela publicação automática da linha)
+        import linhas_conteudo as lc
+        out += lc.ativos_para(rede)
+    except Exception as e:  # noqa: BLE001
+        print('agenda: linhas de conteúdo', e)
     return out
 
 
@@ -401,11 +406,13 @@ def _reservar(s: dict, cfg: dict) -> str:
         return 'vazio'
     cand.sort(key=(lambda x: x['criado']) if cfg['selection_policy'] == 'oldest_approved' else (lambda x: (-x['nota'], x['criado'])))
     esc = cand[0]
-    c = esc['corte']
     # trava o slot ANTES de criar o post: só um trabalhador ganha
-    n = db.executar("UPDATE posting_slots SET estado='reservado', ref=?, sha256=?, atualizado=? WHERE id=? AND estado='vazio'", c['id'], esc['sha'], time.time(), s['id'])
+    n = db.executar("UPDATE posting_slots SET estado='reservado', ref=?, sha256=?, atualizado=? WHERE id=? AND estado='vazio'", esc['ref'], esc['sha'], time.time(), s['id'])
     if not n:
         return 'ocupado'
+    if esc.get('tipo') == 'agente3':
+        return _reservar_agente3(s, cfg, esc)
+    c = esc['corte']
     try:
         legenda = c.get('legenda_post') or (c['titulo'] + '\n\n' + ' '.join(c.get('hashtags') or [])).strip()
         po = ag.config()['postagem']
@@ -428,6 +435,56 @@ def _reservar(s: dict, cfg: dict) -> str:
     return 'agendado'
 
 
+def _reservar_agente3(s: dict, cfg: dict, esc: dict) -> str:
+    """Vídeo de uma linha do Agente 3: mesmo arquivo aprovado, um post por rede. A chave sha:rede impede postar duas vezes na mesma rede."""
+    import shutil
+    import uuid
+    import aprovacoes as apv
+    import descricao as ds
+    import postagem as pg
+    p, sha = esc['projeto'], esc['sha']
+    try:
+        if db.um('SELECT id FROM publicacoes WHERE chave=?', f'{sha}:{s["rede"]}'):
+            raise ValueError('Este vídeo já foi entregue a esta rede.')
+        r = apv._render_atual(p)
+        if not r or r['sha'] != sha:
+            raise ValueError('O arquivo aprovado mudou ou sumiu.')
+        apr = db.um("SELECT id FROM aprovacoes WHERE projeto=? AND render_sha=? AND decisao='aprovado' ORDER BY criado DESC", p['id'], sha)
+        if not apr:
+            raise ValueError('Vídeo sem aprovação.')
+        vid = sha[:12]
+        destino = pg.VIDEOS / f'{vid}.mp4'
+        if not destino.exists():
+            tmp = pg.VIDEOS / f'{vid}.copia.tmp'
+            shutil.copy(r['arquivo'], tmp)
+            tmp.replace(destino)
+        dest = dict(p['dados']['briefing'].get('destinos') or {})
+        dsc = apv.descricao(p, dest)
+        titulo = ds.titulo_limpo(((p['dados'].get('roteiro') or {}).get('titulo')) or p['titulo'])[:100]
+        post = pg.criar_post({'video': vid, 'redes': [s['rede']], 'quando': s['quando_utc'], 'titulo': titulo, 'legenda': dsc['legenda'],
+                              'origem': 'agente3', 'direitos': {'origem': 'meu', 'nota': 'Vídeo original do Agente 3 (linha de conteúdo)'},
+                              'projeto': p['id'], 'render_sha': sha, 'creditos': dsc['exigidos']})
+        limite = s['quando_utc'] + (cfg['max_delay_minutes'] if cfg['missed_slot_policy'] == 'publish_when_online' else TOLERANCIA_MIN) * 60
+        pg._mudar(post['id'], lambda q: q.update(agenda={'slot': s['id'], 'politica': cfg['missed_slot_policy'], 'ate': limite}))
+        db.executar('INSERT OR IGNORE INTO publicacoes (id, aprovacao, render_sha, post, rede, chave, criado) VALUES (?,?,?,?,?,?,?)',
+                    uuid.uuid4().hex[:16], apr['id'], sha, post['id'], s['rede'], f'{sha}:{s["rede"]}', time.time())
+    except Exception as e:  # noqa: BLE001
+        db.executar("UPDATE posting_slots SET estado='vazio', ref=NULL, sha256=NULL, motivo=?, atualizado=? WHERE id=?", str(e)[:200], time.time(), s['id'])
+        return 'erro'
+    db.executar("UPDATE posting_slots SET estado='agendado', post=?, motivo='', atualizado=? WHERE id=?", post['id'], time.time(), s['id'])
+    db.evento('agente2', 'slot_reservado', 'slot:' + s['id'], {'projeto': p['id'], 'rede': s['rede'], 'sha': sha[:16], 'linha': esc.get('linha', '')})
+    return 'agendado'
+
+
+def _liberar_ref(s: dict, post_id: str):
+    """O horário não usou o vídeo: ele volta para o estoque (corte vira 'pronto'; vídeo do Agente 3 pode ir de novo para esta rede)."""
+    if str(s.get('ref') or '').startswith('p:'):
+        db.executar('DELETE FROM publicacoes WHERE post=? AND rede=?', post_id, s['rede'])
+        return
+    import agente as ag
+    ag._mudar(lambda e: [x.update(status='pronto', post='', quando=None) for x in e['cortes'] if x['id'] == s['ref'] and x.get('post') == post_id])
+
+
 def _acompanhar(s: dict, cfg: dict | None):
     """Atualiza o estado do slot pelo post e trata horário perdido."""
     import postagem as pg
@@ -436,6 +493,8 @@ def _acompanhar(s: dict, cfg: dict | None):
     if not p:
         if s['estado'] in ('agendado', 'publicando'):
             db.executar("UPDATE posting_slots SET estado='erro', motivo='O post foi cancelado fora da agenda', atualizado=? WHERE id=?", agora, s['id'])
+            if str(s.get('ref') or '').startswith('p:'):
+                _liberar_ref(s, s['post'])
         return
     st = p['redes'].get(s['rede'], {}).get('status', '')
     mapa = {'postado': 'publicado', 'postando': 'publicando', 'erro': 'erro', 'liberacao': 'aguardando_aprovacao', 'manual': 'manual'}
@@ -452,8 +511,7 @@ def _acompanhar(s: dict, cfg: dict | None):
         novo = 'aguardando_aprovacao' if pol == 'manual_review' else 'perdido'
         db.executar('UPDATE posting_slots SET estado=?, motivo=?, atualizado=? WHERE id=?', novo,
                     'Servidor estava desligado na hora: não postei atrasado.' if novo == 'perdido' else 'Horário passou: espera você decidir.', agora, s['id'])
-        import agente as ag
-        ag._mudar(lambda e: [x.update(status='pronto', post='', quando=None) for x in e['cortes'] if x['id'] == s['ref'] and x.get('post') == p['id']])
+        _liberar_ref(s, p['id'])
 
 
 def ciclo() -> dict:

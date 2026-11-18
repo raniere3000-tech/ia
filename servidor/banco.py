@@ -164,6 +164,20 @@ ESQUEMA = [
     CREATE TABLE IF NOT EXISTS posting_schedule_exceptions (id TEXT PRIMARY KEY, agenda TEXT NOT NULL, data_local TEXT NOT NULL, regra TEXT NOT NULL,
         UNIQUE (agenda, data_local));
     """,
+    # 8: Central de Automação — linhas de conteúdo do Agente 3 (pautas, lotes, episódios) e eventos do orquestrador de estoque
+    """
+    CREATE TABLE IF NOT EXISTS linhas_conteudo (id TEXT PRIMARY KEY, titulo TEXT NOT NULL, config TEXT NOT NULL, estado TEXT NOT NULL, versao INTEGER NOT NULL DEFAULT 1,
+        criado REAL, atualizado REAL);
+    CREATE TABLE IF NOT EXISTS conteudo_lotes (id TEXT PRIMARY KEY, linha TEXT NOT NULL, meta INTEGER NOT NULL, status TEXT NOT NULL, motivo TEXT,
+        chave TEXT UNIQUE, iniciado REAL, finalizado REAL);
+    CREATE TABLE IF NOT EXISTS conteudo_pautas (id TEXT PRIMARY KEY, linha TEXT NOT NULL, lote TEXT, titulo TEXT NOT NULL, dados TEXT NOT NULL, status TEXT NOT NULL,
+        assinatura TEXT, criado REAL, atualizado REAL);
+    CREATE INDEX IF NOT EXISTS conteudo_pautas_linha ON conteudo_pautas (linha, status);
+    CREATE TABLE IF NOT EXISTS conteudo_episodios (id TEXT PRIMARY KEY, linha TEXT NOT NULL, lote TEXT, pauta TEXT UNIQUE, projeto TEXT, status TEXT NOT NULL,
+        dados TEXT, criado REAL, atualizado REAL);
+    CREATE INDEX IF NOT EXISTS conteudo_episodios_linha ON conteudo_episodios (linha, status);
+    CREATE TABLE IF NOT EXISTS automacao_eventos (n INTEGER PRIMARY KEY AUTOINCREMENT, t REAL, agente TEXT, tipo TEXT, decisao TEXT, motivo TEXT, dados TEXT);
+    """,
 ]
 
 
