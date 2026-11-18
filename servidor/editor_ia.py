@@ -1,0 +1,308 @@
+"""Agente 5, editor de IA: transforma o pedido de corte num plano de edição (EditPlan) e aplica as correções do diretor.
+
+Segurança: o plano só tem campos de listas fechadas e números presos em faixas (contratos.validar_plano). O filtro do FFmpeg
+é montado aqui com números já validados; nenhum texto vindo de IA entra no comando.
+
+Ciclo (pipeline.py manda nas regras):
+  plano -> render -> SHA-256 -> diretor (avaliar_final) -> política 70/5 -> aprovado (certificado) | corrigir | revisão manual.
+Falha técnica do render (FFmpeg, falta de espaço...) sobe como exceção: a fila tenta de novo e isso NÃO conta como correção.
+"""
+from __future__ import annotations
+
+import copy
+import subprocess
+from pathlib import Path
+
+import contratos as ct
+import pipeline as pl
+
+TAMANHOS = {'pequeno': 62 / 1080, 'medio': 78 / 1080, 'grande': 96 / 1080}
+ORDEM_TAMANHO = ['pequeno', 'medio', 'grande']
+ALTURA = {'baixo': 0.78, 'meio': 0.5}
+QUADRO_PARA_MODO = {'desfoque': 'desfocado', 'cortar': 'centro', 'gameplay-streamer': 'manter'}
+MODO_PARA_QUADRO = {'desfocado': 'desfoque', 'centro': 'cortar'}
+FOLGA_PAUSA_MS = 250
+
+
+def _efeito(plano: dict, tipo: str) -> dict | None:
+    return next((e for e in plano['effects'] if e['tipo'] == tipo), None)
+
+
+def _tamanho_nome(frac: float) -> str:
+    return min(TAMANHOS, key=lambda k: abs(TAMANHOS[k] - frac))
+
+
+# ---------------------------------------------------------------- pedido -> plano
+def plano_do_corte(c: dict, tpl: dict, dur_fonte: float | None = None, motivo: str = 'Plano inicial do corte.') -> dict:
+    """Plano inicial a partir do corte escolhido (ini/fim em segundos) e do modelo sorteado."""
+    efeitos = [{'tipo': 'zoom', 'nivel': max(1.0, min(1.6, float(tpl.get('zoom') or 1.0))), 'ini_ms': 0,
+                'fim_ms': int((c['fim'] - c['ini']) * 1000)},
+               {'tipo': 'reframe', 'modo': QUADRO_PARA_MODO.get(tpl.get('enquadramento'), 'manter')}]
+    if tpl.get('legenda', 'nenhuma') != 'nenhuma':
+        efeitos.append({'tipo': 'caption', 'ligado': 1, 'tamanho': round(TAMANHOS.get(tpl.get('tamanho'), TAMANHOS['medio']), 4),
+                        'altura': ALTURA.get(tpl.get('legenda_pos'), 0.78)})
+    if tpl.get('loudnorm'):
+        efeitos.append({'tipo': 'loudnorm', 'alvo_lufs': -16.0})
+    bruto = {'clips': [{'source': 'principal', 'in_ms': int(round(c['ini'] * 1000)), 'out_ms': int(round(c['fim'] * 1000))}],
+             'effects': efeitos, 'template_id': str(tpl.get('modelo') or c.get('modelo') or ''), 'output_profile': 'final',
+             'target_aspect_ratio': tpl.get('formato') if tpl.get('formato') in ct.ASPECTOS else '9:16', 'edit_reason': motivo}
+    return ct.validar_plano(bruto, dur_fonte)
+
+
+def tpl_do_plano(tpl: dict, plano: dict) -> dict:
+    """Modelo do Agente 1 ajustado pelo plano (só os campos que o plano controla)."""
+    t = copy.deepcopy(tpl)
+    z = _efeito(plano, 'zoom')
+    if z:
+        t['zoom'] = round(z['nivel'], 3)
+    cap = _efeito(plano, 'caption')
+    if cap and cap.get('ligado', 1):
+        t['tamanho'] = _tamanho_nome(cap.get('tamanho', TAMANHOS['medio']))
+        t['legenda_pos'] = 'meio' if cap.get('altura', 0.78) < 0.65 else 'baixo'
+        if t.get('legenda', 'nenhuma') == 'nenhuma':
+            t['legenda'] = 'destaque'
+    rf = _efeito(plano, 'reframe')
+    if rf and rf['modo'] in MODO_PARA_QUADRO and t.get('enquadramento') != 'gameplay-streamer':
+        t['enquadramento'] = MODO_PARA_QUADRO[rf['modo']]
+        if rf['modo'] == 'centro':
+            t['pos_x'], t['pos_y'] = 0.5, 0.5
+    if _efeito(plano, 'loudnorm'):
+        t['loudnorm'] = True
+    return t
+
+
+# ---------------------------------------------------------------- correções tipadas
+def _saida_para_fonte(clipes: list, ms: int) -> tuple[int, int] | None:
+    """Instante no vídeo final -> (índice do trecho, instante na fonte)."""
+    acc = 0
+    for i, c in enumerate(clipes):
+        d = c['out_ms'] - c['in_ms']
+        if ms < acc + d:
+            return i, c['in_ms'] + (ms - acc)
+        acc += d
+    return None
+
+
+def _travado(plano: dict, a: int, b: int) -> bool:
+    return any(not (b <= t[0] or a >= t[1]) for t in plano.get('manual_locks') or [])
+
+
+def corrigir(plano: dict, acoes: list, dur_fonte: float | None = None) -> tuple[dict, list]:
+    """Aplica as correções do diretor (já tipadas) e devolve (plano novo validado, lista do que mudou em português)."""
+    p = copy.deepcopy(plano)
+    feitas, vistas = [], set()
+    lim = int(dur_fonte * 1000) if dur_fonte else None
+    for bruto in acoes:
+        try:
+            a = ct.validar_acao(bruto)
+        except ct.ErroContrato:
+            continue
+        chave = a['acao'] if a['acao'] not in ('encurtar_pausa',) else (a['acao'], a.get('ini_ms'), a.get('fim_ms'))
+        if chave in vistas:
+            continue
+        vistas.add(chave)
+        cl = p['clips']
+        if a['acao'] == 'ajustar_inicio':
+            d = int(a.get('delta_ms', 0))
+            novo = max(0, cl[0]['in_ms'] + d)
+            if novo != cl[0]['in_ms'] and cl[0]['out_ms'] - novo >= 300 and not _travado(p, min(novo, cl[0]['in_ms']), max(novo, cl[0]['in_ms'])):
+                feitas.append(f'Começo {"adiantado" if d < 0 else "atrasado"} {abs(novo - cl[0]["in_ms"]) / 1000:.1f} s.')
+                cl[0]['in_ms'] = novo
+        elif a['acao'] == 'ajustar_fim':
+            d = int(a.get('delta_ms', 0))
+            novo = cl[-1]['out_ms'] + d
+            if lim is not None:
+                novo = min(novo, lim)
+            if novo != cl[-1]['out_ms'] and novo - cl[-1]['in_ms'] >= 300 and not _travado(p, min(novo, cl[-1]['out_ms']), max(novo, cl[-1]['out_ms'])):
+                feitas.append(f'Fim {"estendido" if novo > cl[-1]["out_ms"] else "encurtado"} {abs(novo - cl[-1]["out_ms"]) / 1000:.1f} s.')
+                cl[-1]['out_ms'] = novo
+        elif a['acao'] == 'encurtar_pausa':
+            ini, fim = int(a.get('ini_ms', 0)), int(a.get('fim_ms', 0))
+            ini, fim = ini + FOLGA_PAUSA_MS, fim - FOLGA_PAUSA_MS
+            x, y = _saida_para_fonte(cl, ini), _saida_para_fonte(cl, fim)
+            if fim - ini >= 300 and x and y and x[0] == y[0] and len(cl) < ct.LIMITE_CLIPES:
+                i, a_src, b_src = x[0], x[1], y[1]
+                c = cl[i]
+                if a_src - c['in_ms'] >= 300 and c['out_ms'] - b_src >= 300 and not _travado(p, a_src, b_src):
+                    cl[i:i + 1] = [dict(c, out_ms=a_src), dict(c, in_ms=b_src)]
+                    feitas.append(f'Pausa de {(b_src - a_src) / 1000:.1f} s tirada.')
+        elif a['acao'] == 'aumentar_legenda':
+            cap = _efeito(p, 'caption')
+            if not cap:
+                p['effects'].append({'tipo': 'caption', 'ligado': 1, 'tamanho': round(TAMANHOS['medio'], 4), 'altura': 0.78})
+                feitas.append('Legenda ligada.')
+            else:
+                atual = ORDEM_TAMANHO.index(_tamanho_nome(cap.get('tamanho', TAMANHOS['medio'])))
+                if not cap.get('ligado', 1):
+                    cap['ligado'] = 1
+                    feitas.append('Legenda ligada.')
+                elif atual < len(ORDEM_TAMANHO) - 1:
+                    cap['tamanho'] = round(TAMANHOS[ORDEM_TAMANHO[atual + 1]], 4)
+                    feitas.append(f'Legenda aumentada para {ORDEM_TAMANHO[atual + 1]}.')
+        elif a['acao'] == 'subir_legenda':
+            cap = _efeito(p, 'caption')
+            if cap and cap.get('altura', 0.78) > 0.6:
+                cap['altura'] = 0.5
+                feitas.append('Legenda subiu para o meio da tela.')
+        elif a['acao'] == 'reduzir_zoom':
+            z = _efeito(p, 'zoom')
+            if z and z['nivel'] > 1.0:
+                z['nivel'] = round(max(1.0, z['nivel'] - 0.08), 3)
+                feitas.append(f'Zoom reduzido para {z["nivel"]:.2f}.')
+        elif a['acao'] == 'normalizar_audio':
+            if not _efeito(p, 'loudnorm'):
+                p['effects'].append({'tipo': 'loudnorm', 'alvo_lufs': -16.0})
+                feitas.append('Volume normalizado.')
+        elif a['acao'] == 'trocar_enquadramento':
+            rf = _efeito(p, 'reframe')
+            modo = a.get('modo', 'desfocado')
+            if rf and rf['modo'] != modo:
+                rf['modo'] = modo
+                feitas.append(f'Enquadramento trocado para {modo}.')
+            elif not rf:
+                p['effects'].append({'tipo': 'reframe', 'modo': modo})
+                feitas.append(f'Enquadramento trocado para {modo}.')
+        elif a['acao'] == 'suavizar_cortes':
+            if not _efeito(p, 'fade'):
+                p['effects'].append({'tipo': 'fade', 'entrada_ms': 120, 'saida_ms': 250})
+                feitas.append('Entrada e saída suavizadas, vídeo regravado com quadros regulares.')
+        # refazer_cenas e revisao_humana não são do editor: quem chama trata
+    if feitas:
+        p['timeline_version'] = int(p.get('timeline_version') or 1) + 1
+        p['edit_reason'] = ' '.join(feitas)[:300]
+    return ct.validar_plano(p, dur_fonte), feitas
+
+
+# ---------------------------------------------------------------- execução (FFmpeg com números validados)
+def _passo_final(base: Path, plano: dict, destino: Path, base_ini_ms: int):
+    """Tira as pausas (vários trechos) e aplica fade, sempre com quadros regulares (30 fps)."""
+    cl = plano['clips']
+    fade = _efeito(plano, 'fade')
+    partes = [((c['in_ms'] - base_ini_ms) / 1000, (c['out_ms'] - base_ini_ms) / 1000) for c in cl]
+    total = sum(b - a for a, b in partes)
+    fc = []
+    for i, (a, b) in enumerate(partes):
+        fc.append(f'[0:v]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS[v{i}];[0:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS[a{i}]')
+    fc.append(''.join(f'[v{i}][a{i}]' for i in range(len(partes))) + f'concat=n={len(partes)}:v=1:a=1[vc][ac]')
+    vf, af = ['fps=30'], []
+    if fade:
+        e, s = fade.get('entrada_ms', 0) / 1000, fade.get('saida_ms', 0) / 1000
+        if e > 0:
+            vf.append(f'fade=t=in:st=0:d={e:.3f}')
+            af.append(f'afade=t=in:st=0:d={e:.3f}')
+        if s > 0:
+            vf.append(f'fade=t=out:st={max(0.0, total - s):.3f}:d={s:.3f}')
+            af.append(f'afade=t=out:st={max(0.0, total - s):.3f}:d={s:.3f}')
+    fc.append('[vc]' + ','.join(vf) + '[v]')
+    fc.append('[ac]' + (','.join(af) if af else 'anull') + '[a]')
+    cmd = ['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', str(base), '-filter_complex', ';'.join(fc), '-map', '[v]', '-map', '[a]',
+           '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p', '-r', '30', '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+           '-movflags', '+faststart', str(destino)]
+    r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    if r.returncode != 0 or not destino.exists() or destino.stat().st_size < 2000:
+        destino.unlink(missing_ok=True)
+        raise RuntimeError('O editor não conseguiu montar o vídeo final: ' + (r.stderr.strip()[-300:] or 'erro desconhecido'))
+
+
+def tem_audio(arq: Path) -> bool:
+    r = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', str(arq)],
+                       capture_output=True, text=True)
+    return bool(r.stdout.strip())
+
+
+def executar_corte(plano: dict, video: Path, c: dict, palavras: list, tpl: dict, destino: Path, pasta: Path) -> Path:
+    """Render do plano de um corte do Agente 1: o montador do modelo (agente.editar) faz a base; o passo final tira pausas e suaviza."""
+    import agente as ag
+    cl = plano['clips']
+    ini, fim = cl[0]['in_ms'], cl[-1]['out_ms']
+    t = tpl_do_plano(tpl, plano)
+    corte = dict(c, ini=ini / 1000, fim=fim / 1000)
+    precisa_final = len(cl) > 1 or _efeito(plano, 'fade')
+    if not precisa_final:
+        ag.editar(video, corte, palavras, t, destino, pasta)
+        return destino
+    base = pasta / f'{destino.stem}-base.mp4'
+    ag.editar(video, corte, palavras, t, base, pasta)
+    try:
+        if not tem_audio(base):
+            raise RuntimeError('O corte não tem áudio; não dá para tirar pausas.')
+        _passo_final(base, plano, destino, ini)
+    finally:
+        base.unlink(missing_ok=True)
+    return destino
+
+
+def duracao_saida(plano: dict) -> float:
+    return sum(c['out_ms'] - c['in_ms'] for c in plano['clips']) / 1000
+
+
+def palavras_saida(plano: dict, palavras: list) -> list:
+    """Palavras da fonte (início, fim, texto) levadas para o tempo do vídeo final (só as que caem dentro dos trechos)."""
+    out, acc = [], 0.0
+    for c in plano['clips']:
+        a, b = c['in_ms'] / 1000, c['out_ms'] / 1000
+        for p in palavras:
+            if a <= p[0] < b:
+                out.append((p[0] - a + acc, min(p[1], b) - a + acc, p[2]))
+        acc += b - a
+    return out
+
+
+# ---------------------------------------------------------------- ciclo editor <-> diretor
+def rodar(rid: str, ref: str, plano: dict, render, contexto, *, dur_fonte: float | None = None, avisar=None) -> dict:
+    """Loop do Agente 5 com o Agente 4 (final_release).
+    render(plano) -> Path do arquivo exportado; contexto(plano) -> dict para diretor_qualidade.avaliar_final.
+    Devolve {'resultado': 'aprovado'|'revisao_manual'|'agente3', 'arquivo', 'sha', 'relatorio', 'certificado', 'plano', 'pedidos_agente3'}."""
+    import diretor_qualidade as dq
+    avisar = avisar or (lambda _t: None)
+    st = pl.etapa(rid, 'final_release')
+    if st['estado'] in ('aprovado', 'revisao_manual'):       # retomada depois de queda: a etapa já terminou
+        r = pl.obter(rid)
+        return {'resultado': 'aprovado' if st['estado'] == 'aprovado' else 'revisao_manual', 'arquivo': r['arquivo'], 'sha': r['sha256'],
+                'relatorio': r['relatorios'][-1] if r['relatorios'] else None, 'certificado': r['dados'].get('certificado'), 'plano': pl.ultimo_plano(rid),
+                'pedidos_agente3': []}
+    plano = pl.ultimo_plano(rid) or plano
+    anterior = None
+    while True:
+        versao = pl.guardar_plano(rid, plano, plano.get('edit_reason', ''))
+        pl.mover(rid, 'rendering', agente='agent5', etapa=f'Editor exportando a versão {versao} do plano')
+        arq = Path(render(plano))
+        sha = pl.sha_arquivo(arq)
+        pl.guardar_plano(rid, plano, arquivo_sha=sha)
+        pl.mover(rid, 'final_qa_pending', agente='agent4', etapa='Diretor conferindo o vídeo', arquivo=str(arq), sha=sha)
+        avisar('Diretor conferindo o vídeo')
+        rel = dq.avaliar_final(arq, dict(contexto(plano), sha=sha))
+        atual = (ct.hash_plano(plano), sha)
+        dec = pl.registrar_avaliacao(rid, 'final_release', rel, mudou=atual != anterior)
+        anterior = atual
+        rel['attempts_used'], rel['attempts_limit'] = dec['correcoes_usadas'], ct.MAX_CORRECOES
+        rel = pl.guardar_relatorio(rid, 'final_release', ref, sha, rel)
+        base = {'arquivo': str(arq), 'sha': sha, 'relatorio': rel, 'plano': plano, 'pedidos_agente3': [], 'decisao': dec}
+        if dec['decisao'] == 'aprovado':
+            cert = pl.emitir_certificado(ref, sha, rel, run=rid, revisao=versao)
+            pl.mover(rid, 'final_approved', agente='agent2', etapa=f'Aprovado pelo diretor com nota {rel["score"]}', dados={'certificado': cert['id']})
+            return dict(base, resultado='aprovado', certificado=cert['id'])
+        if dec['decisao'] == 'revisao_manual':
+            pl.mover(rid, 'manual_review_required', agente='pessoa', etapa=dec['motivo'])
+            return dict(base, resultado='revisao_manual', certificado=None)
+        todos = rel['blocking_findings'] + rel['findings']
+        acoes = [f['action'] for f in todos if f.get('action') and f.get('target_agent') == 'agent5']
+        pedidos3 = [f for f in todos if f.get('target_agent') == 'agent3']
+        so_pessoa = [f for f in rel['blocking_findings'] if f.get('target_agent') == 'pessoa']
+        if so_pessoa:          # direitos, por exemplo: o editor não resolve
+            pl.encerrar_etapa(rid, 'final_release', 'revisao_manual', so_pessoa[0]['evidence'])
+            pl.mover(rid, 'manual_review_required', agente='pessoa', etapa='Precisa de você: ' + so_pessoa[0]['evidence'][:150])
+            return dict(base, resultado='revisao_manual', certificado=None)
+        novo, feitas = corrigir(plano, acoes, dur_fonte)
+        if ct.hash_plano(novo) == ct.hash_plano(plano):
+            if pedidos3:
+                pl.mover(rid, 'creative_correction_pending', agente='agent3', etapa='O diretor pediu para refazer cenas')
+                return dict(base, resultado='agente3', certificado=None, pedidos_agente3=pedidos3)
+            motivo = 'O editor não tem correção que mude o vídeo para os problemas apontados.'
+            pl.encerrar_etapa(rid, 'final_release', 'revisao_manual', motivo)
+            pl.mover(rid, 'manual_review_required', agente='pessoa', etapa=motivo)
+            return dict(base, resultado='revisao_manual', certificado=None)
+        pl.mover(rid, 'edit_correction_pending', agente='agent5',
+                 etapa=f'Correção {dec["correcoes_usadas"] + 1} de {ct.MAX_CORRECOES}: ' + ' '.join(feitas)[:150])
+        avisar(f'Editor corrigindo ({dec["correcoes_usadas"] + 1} de {ct.MAX_CORRECOES})')
+        plano = novo

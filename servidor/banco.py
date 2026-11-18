@@ -129,6 +129,41 @@ ESQUEMA = [
     CREATE TABLE IF NOT EXISTS aprendizado_experimentos (id TEXT PRIMARY KEY, nome TEXT NOT NULL, variavel TEXT NOT NULL, a TEXT NOT NULL, b TEXT NOT NULL,
         fixos_json TEXT NOT NULL, min_amostras INTEGER NOT NULL, status TEXT NOT NULL, criado REAL, encerrado REAL, resultado_json TEXT);
     """,
+    # 7: esteira dos 5 agentes (editor, diretor com nota, certificado preso ao arquivo) e programação diária do Agente 2 (só acrescenta)
+    """
+    CREATE TABLE IF NOT EXISTS pipeline_runs (id TEXT PRIMARY KEY, origem TEXT NOT NULL, ref TEXT NOT NULL, titulo TEXT, estado TEXT NOT NULL, etapa TEXT,
+        agente TEXT, arquivo TEXT, sha256 TEXT, dados TEXT NOT NULL DEFAULT '{}', criado REAL, atualizado REAL, chave TEXT UNIQUE);
+    CREATE INDEX IF NOT EXISTS pipeline_runs_ref ON pipeline_runs (origem, ref);
+    CREATE INDEX IF NOT EXISTS pipeline_runs_estado ON pipeline_runs (estado, atualizado);
+    CREATE TABLE IF NOT EXISTS pipeline_stages (id TEXT PRIMARY KEY, run TEXT NOT NULL, modalidade TEXT NOT NULL, avaliacoes INTEGER NOT NULL DEFAULT 0,
+        correcoes INTEGER NOT NULL DEFAULT 0, limite INTEGER NOT NULL, estado TEXT NOT NULL, ultimo_relatorio TEXT, atualizado REAL, UNIQUE (run, modalidade));
+    CREATE TABLE IF NOT EXISTS quality_reports (id TEXT PRIMARY KEY, run TEXT, modalidade TEXT NOT NULL, ref TEXT, sha256 TEXT, nota INTEGER NOT NULL,
+        aprovado INTEGER NOT NULL, bloqueios TEXT NOT NULL, partes TEXT NOT NULL, tentativa INTEGER, limite INTEGER, referencias TEXT,
+        versao_avaliador TEXT, versao_politica TEXT, dados TEXT, criado REAL);
+    CREATE INDEX IF NOT EXISTS quality_reports_run ON quality_reports (run, criado);
+    CREATE INDEX IF NOT EXISTS quality_reports_sha ON quality_reports (sha256);
+    CREATE TABLE IF NOT EXISTS quality_findings (id TEXT PRIMARY KEY, relatorio TEXT NOT NULL, categoria TEXT, severidade TEXT, ini_ms INTEGER, fim_ms INTEGER,
+        evidencia TEXT, instrucao TEXT, alvo TEXT, acao TEXT, cena TEXT, confianca REAL, natureza TEXT);
+    CREATE INDEX IF NOT EXISTS quality_findings_rel ON quality_findings (relatorio);
+    CREATE TABLE IF NOT EXISTS edit_plans (id TEXT PRIMARY KEY, run TEXT, versao INTEGER NOT NULL, plano TEXT NOT NULL, hash TEXT NOT NULL, motivo TEXT,
+        arquivo_sha TEXT, criado REAL);
+    CREATE INDEX IF NOT EXISTS edit_plans_run ON edit_plans (run, versao);
+    CREATE TABLE IF NOT EXISTS reference_sets (id TEXT PRIMARY KEY, tema TEXT, plataforma TEXT, idioma TEXT, itens TEXT NOT NULL, origem TEXT, resumo TEXT, criado REAL);
+    CREATE TABLE IF NOT EXISTS approval_certificates (id TEXT PRIMARY KEY, ref TEXT NOT NULL, run TEXT, modalidade TEXT NOT NULL, sha256 TEXT NOT NULL,
+        nota INTEGER, bloqueios TEXT, versao_politica TEXT, revisao INTEGER, manual INTEGER DEFAULT 0, por TEXT, motivo TEXT, assinatura TEXT NOT NULL,
+        criado REAL, expira REAL, revogado REAL);
+    CREATE INDEX IF NOT EXISTS approval_certificates_sha ON approval_certificates (sha256, modalidade);
+    CREATE TABLE IF NOT EXISTS capability_installs (id TEXT PRIMARY KEY, versao TEXT, estado TEXT, detalhe TEXT, conferido REAL);
+    CREATE TABLE IF NOT EXISTS posting_schedules (id TEXT PRIMARY KEY, conta TEXT NOT NULL, rede TEXT NOT NULL, fuso TEXT NOT NULL, modo TEXT NOT NULL,
+        ligado INTEGER NOT NULL DEFAULT 0, regras TEXT NOT NULL, versao INTEGER NOT NULL DEFAULT 1, criado REAL, atualizado REAL, apagado INTEGER DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS posting_slots (id TEXT PRIMARY KEY, agenda TEXT NOT NULL, conta TEXT NOT NULL, rede TEXT NOT NULL, data_local TEXT NOT NULL,
+        hora_local TEXT NOT NULL, ocorrencia INTEGER NOT NULL DEFAULT 0, quando_utc REAL NOT NULL, tipo TEXT NOT NULL, estado TEXT NOT NULL,
+        ref TEXT, sha256 TEXT, post TEXT, motivo TEXT, criado REAL, atualizado REAL,
+        UNIQUE (agenda, data_local, hora_local, ocorrencia));
+    CREATE INDEX IF NOT EXISTS posting_slots_quando ON posting_slots (estado, quando_utc);
+    CREATE TABLE IF NOT EXISTS posting_schedule_exceptions (id TEXT PRIMARY KEY, agenda TEXT NOT NULL, data_local TEXT NOT NULL, regra TEXT NOT NULL,
+        UNIQUE (agenda, data_local));
+    """,
 ]
 
 

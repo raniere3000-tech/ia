@@ -475,6 +475,11 @@ def criar_post(d: dict) -> dict:
     redes = [r for r in d.get('redes', []) if r in REDES]
     if not redes:
         raise ErroRede('Escolha pelo menos uma rede.')
+    import pipeline as pl
+    if pl.ligado():          # esteira ligada: nem chega a criar o post sem o certificado do diretor para este arquivo
+        pp = pl.portao_postagem(video_path(vid))
+        if not pp['ok']:
+            raise ErroRede(pp['detalhe'])
     quando = float(d.get('quando') or agora())
     marca = assinatura(vid)
     if marca and not d.get('repetir'):
@@ -801,6 +806,13 @@ def conferencia(p: dict, rede: str) -> list[dict]:
         item('arquivo', False, str(e))
         return out
     item('arquivo', arq.stat().st_size >= 1000, 'Arquivo do vídeo no servidor.' if arq.stat().st_size >= 1000 else 'O arquivo do vídeo está vazio.')
+    try:     # esteira dos 5 agentes: com ela ligada, só sai arquivo com o certificado do diretor PARA ESTE ARQUIVO
+        import pipeline as pl
+        pp = pl.portao_postagem(arq)
+        if pp['ativo']:
+            item('certificado', pp['ok'], pp['detalhe'])
+    except Exception as e:  # noqa: BLE001  (sem conseguir conferir, não sai)
+        item('certificado', False, f'Não consegui conferir a aprovação do diretor: {str(e)[:120]}')
     if p.get('hash'):
         igual = assinatura(p['video']) in ('', p['hash'])
         item('versao', igual, 'É o mesmo arquivo que foi agendado.' if igual else 'O arquivo mudou depois de agendado (não é a versão que você aprovou). Agende de novo.')
