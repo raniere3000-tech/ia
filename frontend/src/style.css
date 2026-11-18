@@ -1039,3 +1039,20 @@ button.sm:not(.primary):not(.subtle):not(.link-btn):not(.icon-btn){display:inlin
 /* Parte Live */
 .live-pagina{display:flex;flex-direction:column;gap:14px}.live-pagina .field{margin:8px 0}.live-pagina label.check{flex-direction:row;align-items:center;margin:6px 0}
 .live-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:10px 0}.live-pagina details summary{cursor:pointer;margin:8px 0;font-weight:600}
+/* Barra de progresso com previsão */
+.progresso{display:flex;flex-direction:column;gap:3px;margin:4px 0 2px;min-width:0}
+.progresso-barra{height:6px;border-radius:999px;background:var(--panel2,#1b2030);overflow:hidden}
+.progresso-barra>div{height:100%;background:linear-gradient(90deg,#7c5cff,#3ddc97);border-radius:999px;transition:width .6s}
+/* Sino de notificações */
+.sino{position:relative;display:inline-flex}
+.sino-btn{position:relative}
+.sino-num{position:absolute;top:0;right:0;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#ff4d6d;color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center;line-height:1}
+.sino-painel{position:absolute;right:0;top:40px;z-index:60;width:min(380px,calc(100vw - 32px));max-height:70vh;overflow:auto;background:#141826;border:1px solid #2a3046;border-radius:14px;padding:12px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.sino-topo{display:flex;align-items:center;gap:8px;margin-bottom:8px}.sino-topo b{flex:1}
+.sino-perm{margin:4px 0 10px}
+.sino-lista{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.sino-lista li button{all:unset;cursor:pointer;display:flex;flex-direction:column;gap:2px;width:100%;box-sizing:border-box;padding:8px 10px;border-radius:10px;background:#1a1f30;border-left:3px solid #3a4160}
+.sino-lista li.nova button{background:#1f2540}
+.sino-lista li.erro button{border-left-color:#ff4d6d}.sino-lista li.ok button{border-left-color:#3ddc97}
+.sino-lista li span{font-size:12px;color:#aab2c8;overflow-wrap:anywhere}
+.sino-lista li b{font-size:13px}

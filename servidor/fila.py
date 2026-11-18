@@ -139,6 +139,10 @@ def _executar(job: dict):
             db.executar("UPDATE jobs SET status='na_fila', recurso=?, etapa=?, dados=?, decorrido=decorrido+?, lease=0, tentativas=0 WHERE id=?",
                         r.get('recurso', 'leve'), r.get('etapa', 'Na fila'), json.dumps(ctx.dados, ensure_ascii=False), dur, job['id'])
         else:
+            try:
+                medir('job:' + job['tipo'], (job.get('decorrido') or 0) + dur)      # aprende quanto cada tipo de trabalho demora NESTE celular
+            except Exception:  # noqa: BLE001
+                pass
             db.executar("UPDATE jobs SET status='concluido', progresso=100, etapa=?, terminado=?, resultado=?, dados=?, decorrido=decorrido+?, lease=0 WHERE id=?",
                         r.get('etapa', 'Concluído'), time.time(), json.dumps(r.get('resultado'), ensure_ascii=False), json.dumps(ctx.dados, ensure_ascii=False), dur, job['id'])
             db.evento('fila', 'job_concluido', 'job:' + job['id'])
@@ -307,8 +311,14 @@ def restante(job: dict) -> tuple[float, bool]:
     from_handler = ESTIMADORES.get(job['tipo'])
     if from_handler:
         return from_handler(job)
-    s, medido = media('agente1' if job['agente'] == 'agente1' else 'leve')
-    return s * (1 - (job['progresso'] or 0) / 100), medido
+    p = float(job.get('progresso') or 0)
+    if job.get('status') == 'rodando' and p >= 5 and job.get('iniciado'):
+        gasto = time.time() - float(job['iniciado'])                 # pelo ritmo de agora: quanto já levou para chegar aqui
+        return gasto * (100 - p) / p, True
+    s, medido = media('job:' + job['tipo'])
+    if not medido:
+        s, medido = media('agente1' if job['agente'] == 'agente1' else 'leve')
+    return s * (1 - p / 100), medido
 
 
 ESTIMADORES: dict = {}

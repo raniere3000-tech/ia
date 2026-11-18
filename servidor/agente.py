@@ -229,8 +229,17 @@ def anotar(texto: str, tipo: str = 'info'):
     print('agente:', texto)
 
 
+AO_ETAPA = None          # trabalho da fila rodando o Agente 1: recebe (pct, texto) para a barra de progresso do site
+
+
 def etapa(texto: str, pct: float = 0):
     ATUAL.update(etapa=texto, pct=round(pct), desde=ATUAL['desde'] if texto and ATUAL['etapa'] else time.time())
+    if AO_ETAPA and texto:
+        try:
+            AO_ETAPA(pct, texto)
+        except Exception as e:  # noqa: BLE001
+            if e.__class__.__name__ == 'Cancelado':
+                raise                     # você cancelou o trabalho na fila
 
 
 # ---------------------------------------------------------------- IA (Gemini) e orçamento
@@ -1236,7 +1245,12 @@ def _texto_zap(assunto: str, corpo: str) -> str:
 
 def avisar(tipo: str, assunto: str, corpo: str, anexo: Path | None = None, nome_anexo: str = 'corte.mp4', zap: str | None = None,
            zap_tipo: str = '') -> bool:
-    """Avisa por e-mail e pelo WhatsApp (cada um com as suas escolhas). Devolve se o E-MAIL saiu."""
+    """Avisa por e-mail e pelo WhatsApp (cada um com as suas escolhas). Devolve se o E-MAIL saiu. Também fica no sino do site."""
+    try:
+        import alertas
+        alertas.registrar(tipo, assunto, corpo)
+    except Exception as e:  # noqa: BLE001
+        print('agente: alerta do site', e)
     avisar_whatsapp(zap_tipo or tipo, zap or _texto_zap(assunto, corpo))
     cfg = config()['email']
     if not cfg['avisos'].get(tipo, True) or not cfg['para']:

@@ -28,3 +28,14 @@ self.addEventListener('fetch', e => {
   // Resto (ícones, motor de rosto): mostra o guardado e atualiza por trás.
   e.respondWith(caches.match(req).then(r => { const rede = fetch(req).then(guardar).catch(() => r); return r || rede; }));
 });
+
+// Aviso do sino (alertas do servidor): tocar no aviso abre o site na tela certa.
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const alvo = BASE + (e.notification.data && e.notification.data.destino ? '#' + e.notification.data.destino : '');
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
+    const aberto = cs.find(c => c.url.includes(BASE));
+    if (aberto) { aberto.navigate(alvo).catch(() => {}); return aberto.focus(); }
+    return self.clients.openWindow(alvo);
+  }));
+});

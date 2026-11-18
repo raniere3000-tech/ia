@@ -15,7 +15,7 @@ import live as lv
 import orquestrador as oq
 import pipeline as pl
 
-PREFIXOS = ('/api/v1/live', '/api/v1/pipeline', '/api/v1/quality', '/api/v1/capabilities', '/api/v1/viral', '/api/v1/agent2', '/api/v1/automacao', '/api/v1/linhas-conteudo', '/api/v1/biblioteca-criativa', '/api/v1/integracoes')
+PREFIXOS = ('/api/v1/alertas', '/api/v1/live', '/api/v1/pipeline', '/api/v1/quality', '/api/v1/capabilities', '/api/v1/viral', '/api/v1/agent2', '/api/v1/automacao', '/api/v1/linhas-conteudo', '/api/v1/biblioteca-criativa', '/api/v1/integracoes')
 
 
 class ErroRota(Exception):
@@ -181,6 +181,13 @@ def _tratar(metodo: str, caminho: str, q: dict, corpo, quem: str, cab) -> dict:
     rota = (metodo, caminho)
     if caminho.startswith('/api/v1/automacao'):
         return _automacao(metodo, caminho, q, corpo, quem)
+    if rota == ('GET', '/api/v1/alertas'):
+        import alertas
+        return alertas.listar(int(_f(_q(q, 'desde', '0')) or 0), int(_f(_q(q, 'limite', '50')) or 50))
+    if rota == ('POST', '/api/v1/alertas/lidas'):
+        import alertas
+        ate = corpo().get('ate')
+        return alertas.marcar_lidas(int(ate) if isinstance(ate, (int, float)) else None)
     if rota == ('GET', '/api/v1/live'):
         return lv.ver()
     if rota in (('PUT', '/api/v1/live/config'), ('PATCH', '/api/v1/live/config')):

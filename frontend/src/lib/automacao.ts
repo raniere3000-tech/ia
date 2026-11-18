@@ -16,7 +16,7 @@ export type ResumoCentral={config:ConfigCentral;nomes_modo:Record<string,string>
   indicadores:{estoque_cortes:number;estoque_linhas:number;rodando:number;na_fila:number;revisao_manual:number;esperando_voce:number;falhas_24h:number};
   proximas:{id:string;rede:string;data_local:string;hora_local:string;quando_utc:number;estado:string;ref:string|null}[];
   estoque_cortes:EstoqueCortes;linhas:ResumoLinha[];eventos:Evento[];agente1?:SituacaoA1;
-  trabalhos?:{agente:string;titulo:string;status:string;etapa:string;progresso:number}[];
+  trabalhos?:{agente:string;titulo:string;status:string;etapa:string;progresso:number;restante_s?:number|null;estimado?:boolean;comeca_em_s?:number|null}[];
   sem_certificado?:{id:string;titulo:string;status:string;na_fila:boolean;voltas?:number;max_voltas?:number;esperando_voce?:boolean;motivos?:string[]}[];
   posts?:{agendados:number;postados_7d:number;com_erro:number;travados:number}};
 export const mandarEditorTodos=(c:CfgSrv)=>api<{enviados:number}>(c,'POST','/api/v1/automacao/mandar-editor',{});

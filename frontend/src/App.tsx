@@ -11,6 +11,7 @@ import Inicio from './pages/Inicio';
 import { useTrabalhos } from './lib/gravador';
 import { definirSessao } from './lib/api';
 import Tour from './components/Tour';
+import Sino from './components/Sino';
 
 // Cada aba é baixada só quando é aberta (a primeira tela abre mais rápido).
 // Se o site foi atualizado com a aba aberta, o pedaço antigo some do servidor: recarrega uma vez para pegar a versão nova.
@@ -255,10 +256,10 @@ export default function App(){
     <main>
      <div className="topo-movel"><span className="brand-mini"><Clapperboard size={18}/> ESTÚDIO<b>CLIP</b></span>
       <button className={'sinc-chip '+sitCls} onClick={()=>go('projetos')} title={sincR.detalhe||sitTexto}>{sincR.situacao==='offline'?<CloudOff size={14}/>:sincR.situacao==='sincronizando'?<RefreshCw size={14} className="spin"/>:<Cloud size={14}/>}<span>{sitTexto}</span></button>
-      <button className="icon-btn" onClick={()=>setTour(true)} aria-label="Tutorial"><HelpCircle size={19}/></button>
+      <Sino/><button className="icon-btn" onClick={()=>setTour(true)} aria-label="Tutorial"><HelpCircle size={19}/></button>
       <button className="icon-btn" data-tour="ajustes-movel" onClick={()=>go('config')} aria-label="Ajustes"><Gear size={19}/></button></div>
      <header className="page-head"><div><div className="eyebrow">{area.id==='inicio'?'PAINEL DE PRODUÇÃO':area.nome.toUpperCase()}{(()=>{ const sub=area.extras?.find(x=>x[0]===tab)?.[1]||NAV.find(n=>n[0]===tab)?.[1]||''; return area.id!=='inicio'&&tab!=='config'&&sub&&sub!==area.nome?<> › {sub.toUpperCase()}</>:null; })()}</div><h1>{t}</h1><p className="subtitle">{sub}</p></div>
-      <button className={'sinc-chip grande '+sitCls} onClick={()=>go('projetos')} title={sincR.detalhe||sitTexto}>{sincR.situacao==='offline'?<CloudOff size={15}/>:sincR.situacao==='sincronizando'?<RefreshCw size={15} className="spin"/>:<Cloud size={15}/>}<span>{sitTexto}</span></button></header>
+      <button className={'sinc-chip grande '+sitCls} onClick={()=>go('projetos')} title={sincR.detalhe||sitTexto}>{sincR.situacao==='offline'?<CloudOff size={15}/>:sincR.situacao==='sincronizando'?<RefreshCw size={15} className="spin"/>:<Cloud size={15}/>}<span>{sitTexto}</span></button><Sino/></header>
      {sincR.avisos.length>0&&<div className="sinc-avisos">{sincR.avisos.map(a=><div key={a.area} className={'note-bar '+(a.tipo==='conflito'?'bad':'')}>
       {a.tipo==='conflito'?<><AlertTriangle size={16}/><span><b>Conflito em {a.titulo}:</b> outro aparelho salvou uma versão diferente. Escolha qual fica (a outra continua guardada nas versões do projeto).</span>
         <button className="subtle sm" onClick={()=>resolver(a.area,false)}>Usar a do servidor</button><button className="primary sm" onClick={()=>resolver(a.area,true)}>Manter a deste aparelho</button></>

@@ -147,7 +147,21 @@ def ver() -> dict:
         cortes = {c['id']: c for c in ag.estado()['cortes'] if c.get('live')}
     except Exception:  # noqa: BLE001
         cortes = {}
+    try:
+        import banco as db
+        import fila
+        jobs = {j['chave']: j for j in db.todos("SELECT * FROM jobs WHERE tipo='live.bloco' AND status IN ('rodando','na_fila','agendado','aguardando_tentativa')")}
+    except Exception:  # noqa: BLE001
+        jobs = {}
     for lv in lives:
+        for b in lv['blocos']:
+            j = jobs.get(f'live:{lv["id"]}:{b["n"]}')
+            if j:
+                try:
+                    rest = round(fila.restante(j)[0])
+                except Exception:  # noqa: BLE001
+                    rest = None
+                b.update(progresso=j['progresso'] or 0, etapa=j['etapa'] or '', restante_s=rest)
         lv['cortes'] = [{'id': c['id'], 'titulo': c.get('titulo', ''), 'status': c['status'], 'nota': (c.get('qa') or {}).get('nota'),
                          'post': c.get('post', ''), 'quando': c.get('quando'), 'links': c.get('links') or {}}
                         for c in cortes.values() if c['live'] == lv['id']]
@@ -389,6 +403,7 @@ def job_bloco(ctx):
         return {'etapa': 'Arquivo sumiu.'}
     marcar(estado='cortando')
     ctx.progresso(5, f'Live: achando os melhores momentos do bloco {n}')
+    ag.AO_ETAPA = lambda p, t: ctx.progresso(5 + float(p or 0) * 0.93 if p else None, f'Live, bloco {n}: {t}')
     cfg = lv['cfg']
     bruto = arq
     try:
@@ -416,6 +431,7 @@ def job_bloco(ctx):
         _anotar(lid, f'Bloco {n}: erro: {e}', 'erro')
         raise
     finally:
+        ag.AO_ETAPA = None
         ag.etapa('')
     ok = [c for c in criados if c['status'] == 'pronto']
     marcar(estado='feito', cortes=[c['id'] for c in criados], msg=f'{len(criados)} corte(s), {len(ok)} aprovado(s) pelo diretor.')

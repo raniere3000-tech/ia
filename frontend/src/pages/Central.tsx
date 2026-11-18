@@ -3,6 +3,7 @@ import { AlertTriangle, BookOpen, Scissors, CalendarClock, CheckCircle2, FlaskCo
 import { useApp } from '../state';
 import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
 import Esteira from '../components/Esteira';
+import Progresso from '../components/Progresso';
 import ProgramacaoDiaria from '../components/ProgramacaoDiaria';
 import { catalogo, type Catalogo } from '../lib/api';
 import { lerCapacidades } from '../lib/esteira';
@@ -69,7 +70,7 @@ function Geral({r}:{r:ReturnType<typeof useServidor<import('../lib/automacao').R
     <section className="panel">
       <h3><Loader2 size={16} className={(x.trabalhos||[]).some(t=>t.status==='rodando')?'spin':''}/> Agora</h3>
       {(x.trabalhos||[]).length?<ul className="rq-lista">{x.trabalhos!.map((t,k)=><li key={k}><span className={'tag '+(t.status==='rodando'?'ok':'')}>{t.status==='rodando'?'trabalhando':'na fila'}</span> <b>{t.agente}</b> · {t.titulo}
-        {t.etapa&&<><br/><small className="muted">{t.etapa}{t.status==='rodando'&&t.progresso?` (${Math.round(t.progresso)}%)`:''}</small></>}</li>)}</ul>
+        {t.etapa&&<><br/><small className="muted">{t.etapa}</small></>}<Progresso pct={t.progresso} restante={t.restante_s} comecaEm={t.comeca_em_s} estimado={t.estimado} status={t.status==='rodando'?'rodando':'na_fila'}/></li>)}</ul>
         :<p className="muted">Nenhum agente trabalhando nem na fila agora.</p>}
     </section>
     {(x.sem_certificado||[]).length>0&&<section className="panel a1-agora bloqueado">

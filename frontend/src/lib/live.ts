@@ -2,7 +2,7 @@
 import { api, type CfgSrv } from './api';
 
 export type CfgLive={bloco_min:number;cortes_por_bloco:number;nota_min:number;max_horas:number;max_posts:number;intervalo_min:number;redes:string[];postar:boolean};
-export type BlocoLive={n:number;estado:'na_fila'|'cortando'|'feito'|'erro';ini:number;cortes:string[];msg:string};
+export type BlocoLive={n:number;estado:'na_fila'|'cortando'|'feito'|'erro';ini:number;cortes:string[];msg:string;progresso?:number|null;etapa?:string;restante_s?:number|null};
 export type CorteLive={id:string;titulo:string;status:string;nota:number|null;post:string;quando:number|null;links:Record<string,string>};
 export type Live={id:string;link:string;titulo:string;canal_nome:string;estado:'gravando'|'terminando'|'terminada'|'erro';inicio:number;fim:number|null;
   motivo_fim?:string;erro:string;cfg:CfgLive;blocos:BlocoLive[];postados:number;direitos:{origem:string};log:{t:number;tipo:string;texto:string}[];cortes:CorteLive[];gravando_bloco?:number;altura?:number;gravando_desde?:number};

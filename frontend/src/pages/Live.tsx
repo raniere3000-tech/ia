@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CircleStop, Loader2, Radio, Scissors, Send } from 'lucide-react';
 import { useApp } from '../state';
 import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
+import Progresso from '../components/Progresso';
 import { comecarLive, pararLive, salvarCfgLive, verLive, type CfgLive, type Live as TLive } from '../lib/live';
 
 const REDES:[string,string][]=[['youtube','YouTube'],['tiktok','TikTok'],['instagram','Instagram'],['facebook','Facebook']];
@@ -62,10 +63,10 @@ function LiveAtiva({lv,busy,parar,ocupando}:{lv:TLive;busy:boolean;parar?:()=>vo
       <div className="es-ag"><b>{aprovados}</b><span>aprovados pelo diretor</span></div>
       <div className="es-ag"><b>{lv.postados}/{lv.cfg.max_posts}</b><span>enviados para postar</span></div>
     </div>
-    {lv.estado==='gravando'&&lv.gravando_bloco&&<p className="hint">Gravando o bloco {lv.gravando_bloco}: fecha por volta das {hora((lv.gravando_desde||0)+lv.cfg.bloco_min*60)} e já vai para o corte.</p>}
+    {lv.estado==='gravando'&&lv.gravando_bloco&&<><p className="hint">Gravando o bloco {lv.gravando_bloco}: fecha por volta das {hora((lv.gravando_desde||0)+lv.cfg.bloco_min*60)} e já vai para o corte.</p><Progresso pct={lv.gravando_desde?(Date.now()/1000-lv.gravando_desde)/(lv.cfg.bloco_min*60)*100:0} restante={lv.gravando_desde?Math.max(0,lv.gravando_desde+lv.cfg.bloco_min*60-Date.now()/1000):null} status="rodando"/></>}
     {lv.log?.length>0&&<ul className="rq-lista">{lv.log.slice(-3).reverse().map((l,k)=><li key={k}><small className={l.tipo==='erro'?'bad':'muted'}>{hora(l.t)} · {l.texto}</small></li>)}</ul>}
     {lv.blocos.some(b=>b.estado==='na_fila')&&!lv.blocos.some(b=>b.estado==='cortando')&&ocupando&&<p className="hint warn">Os blocos esperam a vez: o celular está terminando "{ocupando}". Assim que acabar, a Live vem primeiro (o Agente 1 automático espera).</p>}
-    {lv.blocos.length>0&&<ul className="rq-lista">{lv.blocos.slice(-6).reverse().map(b=><li key={b.n}><span className={'tag '+(b.estado==='cortando'?'ok':b.estado==='erro'?'bad':'')}>{BLOCO[b.estado]||b.estado}</span> <Scissors size={12}/> Bloco {b.n}{b.msg?<> · <small className="muted">{b.msg}</small></>:null}</li>)}</ul>}
+    {lv.blocos.length>0&&<ul className="rq-lista">{lv.blocos.slice(-6).reverse().map(b=><li key={b.n}><span className={'tag '+(b.estado==='cortando'?'ok':b.estado==='erro'?'bad':'')}>{BLOCO[b.estado]||b.estado}</span> <Scissors size={12}/> Bloco {b.n}{b.msg?<> · <small className="muted">{b.msg}</small></>:null}{(b.estado==='cortando'||b.estado==='na_fila')&&<>{b.etapa&&b.estado==='cortando'?<><br/><small className="muted">{b.etapa}</small></>:null}<Progresso pct={b.progresso} restante={b.restante_s} status={b.estado==='cortando'?'rodando':'na_fila'}/></>}</li>)}</ul>}
     {lv.cortes.length>0&&<ul className="rq-lista">{lv.cortes.slice(-8).reverse().map(c=><li key={c.id}><Send size={12}/> {c.titulo} <span className={'tag '+(c.status==='reprovado'?'bad':c.status==='postado'||c.status==='agendado'?'ok':'')}>{
       c.status==='agendado'?(c.quando&&c.quando>Date.now()/1000?`posta às ${hora(c.quando)}`:'postando'):c.status==='postado'?'postado':c.status==='reprovado'?'reprovado pelo diretor':c.status==='pronto'?'no estoque':c.status}</span>
       {c.nota!=null&&<small className="muted"> nota {c.nota}</small>}{Object.entries(c.links||{}).filter(([,u])=>u).map(([rd,u])=><a key={rd} className="help-link" href={u} target="_blank" rel="noreferrer"> {rd}</a>)}</li>)}</ul>}

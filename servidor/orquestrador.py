@@ -555,14 +555,25 @@ NOME_AGENTE = {'agente1': 'Agente 1', 'agent1': 'Agente 1', 'agente2': 'Agente 2
 
 def _trabalhos() -> list:
     """O que está rodando e na fila agora, com o agente e a etapa (para ver o editor trabalhando)."""
-    out = [{'agente': NOME_AGENTE.get(j['agente'] or '', j['agente'] or ''), 'titulo': j['titulo'] or j['tipo'], 'status': j['status'],
-            'etapa': j['etapa'] or '', 'progresso': j['progresso'] or 0}
-           for j in db.todos("SELECT agente, tipo, titulo, status, etapa, progresso FROM jobs WHERE status IN ('rodando','na_fila','agendado','aguardando_tentativa') "
-                             "ORDER BY CASE status WHEN 'rodando' THEN 0 ELSE 1 END, criado LIMIT 12")]
+    import fila
+    out, frente = [], 0.0
+    for j in db.todos("SELECT * FROM jobs WHERE status IN ('rodando','na_fila','agendado','aguardando_tentativa') "
+                      "ORDER BY CASE status WHEN 'rodando' THEN 0 ELSE 1 END, prioridade DESC, criado LIMIT 12"):
+        try:
+            rest, medido = fila.restante(j)
+        except Exception:  # noqa: BLE001
+            rest, medido = 0.0, False
+        out.append({'agente': NOME_AGENTE.get(j['agente'] or '', j['agente'] or ''), 'titulo': j['titulo'] or j['tipo'], 'status': j['status'],
+                    'etapa': j['etapa'] or '', 'progresso': j['progresso'] or 0, 'restante_s': round(rest), 'estimado': not medido,
+                    'comeca_em_s': round(frente) if j['status'] != 'rodando' else 0})
+        if j['recurso'] == 'pesado':
+            frente += rest
     try:
         import agente as ag
         if ag.OCUPADO.locked() and ag.ATUAL.get('etapa') and not any(x['status'] == 'rodando' for x in out):
-            out.insert(0, {'agente': 'Agente 1', 'titulo': 'Cortes', 'status': 'rodando', 'etapa': ag.ATUAL['etapa'], 'progresso': ag.ATUAL.get('pct', 0)})
+            p, gasto = float(ag.ATUAL.get('pct') or 0), time.time() - float(ag.ATUAL.get('desde') or time.time())
+            out.insert(0, {'agente': 'Agente 1', 'titulo': 'Cortes', 'status': 'rodando', 'etapa': ag.ATUAL['etapa'], 'progresso': p,
+                           'restante_s': round(gasto * (100 - p) / p) if p >= 5 else None, 'estimado': True, 'comeca_em_s': 0})
     except Exception:  # noqa: BLE001
         pass
     return out
