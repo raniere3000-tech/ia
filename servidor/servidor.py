@@ -359,13 +359,18 @@ def url_da_live(link: str) -> dict:
     import yt_dlp
     if not (YT.match(link) or (QUALQUER_URL and link.startswith('http'))):
         raise ag.ErroAgente('A parte Live grava só links do YouTube.')
-    fmt = (f'b[height<={ALTURA}][acodec!=none][vcodec!=none]/bv*[height<={ALTURA}]+ba/'
+    alt = int(os.getenv('ALTURA_LIVE', '1080'))       # corte vertical recorta a imagem: precisa da melhor resolução da live
+    fmt = (f'b[height<={alt}][acodec!=none][vcodec!=none]/bv*[height<={alt}]+ba/'
            'b[acodec!=none][vcodec!=none]/bv*+ba/b/bv*')
-    base = {'format': fmt, 'noplaylist': True, 'quiet': True, 'no_warnings': True, 'no_color': True, 'js_runtimes': js_runtimes()}
+    base = {'format': fmt, 'format_sort': ['res', 'fps', 'br'], 'noplaylist': True, 'quiet': True, 'no_warnings': True, 'no_color': True,
+            'js_runtimes': js_runtimes()}
+
+    def altura(i):
+        return max([i.get('height') or 0] + [f.get('height') or 0 for f in i.get('requested_formats') or []])
     tentativas = [{}, {'extractor_args': {'youtube': {'player_client': ['tv', 'web_safari', 'mweb']}}},
                   {'extractor_args': {'youtube': {'player_client': ['ios', 'android', 'tv_simply']}}}, {'sem_cookies': True}]
     ultimo = ''
-    info = None
+    info = melhor = None
     for extra in tentativas:
         pasta = PASTA / ('live-' + uuid.uuid4().hex[:6])
         pasta.mkdir(parents=True, exist_ok=True)
@@ -377,8 +382,13 @@ def url_da_live(link: str) -> dict:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(link, download=False)
             if info and (info.get('url') or info.get('requested_formats')):
-                break
-            ultimo = 'O YouTube não mandou nenhum formato de vídeo desta live.'
+                if not melhor or altura(info) > altura(melhor):
+                    melhor = info
+                if altura(melhor) >= min(alt, 720):
+                    break          # boa qualidade: não precisa tentar outro modo
+                ultimo = f'O YouTube só mandou a live em {altura(info)}p neste modo.'
+            else:
+                ultimo = 'O YouTube não mandou nenhum formato de vídeo desta live.'
             info = None
         except Exception as e:  # noqa: BLE001
             ultimo = str(e)
@@ -387,6 +397,7 @@ def url_da_live(link: str) -> dict:
                 break          # erro que outro modo não resolve (vídeo privado, sem internet...)
         finally:
             shutil.rmtree(pasta, ignore_errors=True)
+    info = melhor
     if not info:
         raise ag.ErroAgente(erro_amigavel(ultimo))
     if info.get('requested_formats'):            # vídeo e áudio separados: o FFmpeg junta os dois na gravação
@@ -395,7 +406,7 @@ def url_da_live(link: str) -> dict:
         urls = [info['url']] if info.get('url') else []
     return {'url': urls[0] if urls else '', 'urls': urls, 'titulo': info.get('title') or 'Live', 'id': info.get('id') or '',
             'canal': info.get('channel_id') or '', 'canal_nome': info.get('channel') or info.get('uploader') or '',
-            'ao_vivo': bool(info.get('is_live')) and bool(urls)}
+            'ao_vivo': bool(info.get('is_live')) and bool(urls), 'altura': altura(info)}
 
 
 class Handler(BaseHTTPRequestHandler):

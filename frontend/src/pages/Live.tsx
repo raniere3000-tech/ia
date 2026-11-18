@@ -54,7 +54,7 @@ function LiveAtiva({lv,busy,parar,ocupando}:{lv:TLive;busy:boolean;parar?:()=>vo
   const [e,classe]=ESTADO[lv.estado]||[lv.estado,''];
   const aprovados=lv.cortes.filter(c=>['pronto','agendado','postado'].includes(c.status)).length;
   return <section className={'panel'+(lv.estado==='gravando'?' a1-agora':'')}>
-    <h3>{lv.estado==='gravando'?<Loader2 size={16} className="spin"/>:<Radio size={16}/>} {lv.titulo} <span className={'tag '+classe}>{e}</span></h3>
+    <h3>{lv.estado==='gravando'?<Loader2 size={16} className="spin"/>:<Radio size={16}/>} {lv.titulo} <span className={'tag '+classe}>{e}</span>{lv.altura?<span className={'tag '+(lv.altura<720?'bad':'')}>{lv.altura}p</span>:null}</h3>
     <p className="muted">Começou às {hora(lv.inicio)}{lv.fim?` · terminou às ${hora(lv.fim)}`:''}{lv.motivo_fim?` · ${lv.motivo_fim}`:''}</p>
     <div className="pd-metricas">
       <div className="es-ag"><b>{lv.blocos.length}</b><span>blocos gravados</span></div>

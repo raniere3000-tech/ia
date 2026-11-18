@@ -283,7 +283,11 @@ def _gravar(lid: str):
         with open(log, 'wb') as fe:          # nunca em PIPE: com muito aviso o cano enche e o FFmpeg trava
             p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=fe)
         PROC[lid] = p
-        _mudar_live(lid, lambda x: x.update(gravando_bloco=prox, gravando_desde=t0))
+        alt = int(info.get('altura') or 0)
+        if alt and alt != obter(lid).get('altura'):
+            _anotar(lid, f'Gravando em {alt}p.' + (' O YouTube não liberou qualidade melhor para o servidor: o corte pode sair com pouca nitidez.' if alt < 720 else ''),
+                    'erro' if alt < 720 else 'info')
+        _mudar_live(lid, lambda x: x.update(gravando_bloco=prox, gravando_desde=t0, altura=alt or x.get('altura')))
         tam, mudou, motivo = 0, time.time(), ''
         while p.poll() is None:
             time.sleep(3)
