@@ -827,6 +827,7 @@ def _job_agente1(ctx):
         raise
     finally:
         ag.etapa('')
+        ag.depois_do_trabalho()      # Central ligada: continua repondo o estoque logo depois do seu pedido
     return {'resultado': {'ok': True}, 'etapa': 'Concluído'}
 
 

@@ -252,7 +252,7 @@ def estoque_cortes(cortes: list | None = None, ocupado: bool | None = None) -> d
             'demanda_dia': round(dem, 2), 'demanda_fonte': fonte, 'cobertura_dias': round(len(disponiveis) / dem, 1) if dem > 0 else None}
 
 
-def decidir_cortes(cfg: dict, est: dict, repondo: bool, agora: float, ultima_rodada: float, ultima_busca: float) -> dict:
+def decidir_cortes(cfg: dict, est: dict, repondo: bool, agora: float, ultima_rodada: float, ultima_busca: float, ultima_vazia: bool = False) -> dict:
     """Função pura: o que o Agente 1 deve fazer agora e por quê."""
     c = cfg['cortes']
     efetivo = est['efetivo']
@@ -266,7 +266,7 @@ def decidir_cortes(cfg: dict, est: dict, repondo: bool, agora: float, ultima_rod
     deficit = max(1, int(round(c['alvo'] - efetivo)))
     falta_cortar = max(1, math.ceil(deficit / max(est['taxa_aprovacao'], 0.1)))     # para sobrar 'deficit' aprovados, corta um pouco mais
     espera = c['cooldown_min'] * 60 - (agora - ultima_rodada)
-    urgente = efetivo < c['minimo']        # abaixo do mínimo: rodadas seguidas (uma por vez), sem esperar o intervalo
+    urgente = efetivo < c['minimo'] and not ultima_vazia     # abaixo do mínimo: rodadas seguidas; mas se a última não achou nada, espera
     if espera > 0 and not urgente:
         return {'acao': 'esperar', 'repondo': True, 'quantos': falta_cortar,
                 'motivo': f'Faltam {deficit} para o alvo, mas a última rodada foi há pouco. Próxima em {int(espera // 60) + 1} min.'}
@@ -289,7 +289,8 @@ def decisao_cortes() -> dict | None:
     m = _mem()
     est = estoque_cortes()
     agora = time.time()
-    d = decidir_cortes(cfg, est, bool(m['repondo'].get('cortes')), agora, marcas.get('tentativa', 0), marcas.get('busca', 0))
+    d = decidir_cortes(cfg, est, bool(m['repondo'].get('cortes')), agora, marcas.get('tentativa', 0), marcas.get('busca', 0),
+                       bool(marcas.get('rodada_vazia')))
     if cfg['cortes']['frequencia'] == 'hibrido' and d['acao'] == 'nada':
         d = meta_semanal(d, ag.cortes_da_semana(), ag.config()['cortes']['por_semana'], cfg, agora, marcas.get('tentativa', 0))
     d['fontes'] = cfg['cortes']['fontes_rodada']
@@ -336,7 +337,8 @@ def situacao_agente1() -> dict:
     marcas = ag.estado()['marcas']
     est = estoque_cortes()
     agora = time.time()
-    d = decidir_cortes(cfg, est, bool(_mem()['repondo'].get('cortes')), agora, marcas.get('tentativa', 0), marcas.get('busca', 0))
+    d = decidir_cortes(cfg, est, bool(_mem()['repondo'].get('cortes')), agora, marcas.get('tentativa', 0), marcas.get('busca', 0),
+                       bool(marcas.get('rodada_vazia')))
     if cfg['cortes']['frequencia'] == 'hibrido' and d['acao'] == 'nada':
         d = meta_semanal(d, ag.cortes_da_semana(), co['por_semana'], cfg, agora, marcas.get('tentativa', 0))
     canais = ag.estado()['canais']
@@ -497,7 +499,8 @@ def simular() -> dict:
         marcas = ag.estado()['marcas']
         est = estoque_cortes()
         if cfg['cortes']['controle_estoque']:
-            d = decidir_cortes(cfg, est, bool(m['repondo'].get('cortes')), agora, marcas.get('tentativa', 0), marcas.get('busca', 0))
+            d = decidir_cortes(cfg, est, bool(m['repondo'].get('cortes')), agora, marcas.get('tentativa', 0), marcas.get('busca', 0),
+                       bool(marcas.get('rodada_vazia')))
         else:
             d = {'acao': 'meta_semanal', 'motivo': 'Controle por estoque desligado: o Agente 1 segue a meta de cortes por semana.'}
         ligado = ag.config()['cortes']['ligado']

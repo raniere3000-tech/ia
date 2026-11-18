@@ -1519,6 +1519,7 @@ def rodada_estoque(quantos: int, fontes: int = 1) -> str:
         feitos += novos
         if feitos >= quantos:
             break
+    _mudar(lambda e, v=(feitos == 0): e['marcas'].update(rodada_vazia=v))    # rodada sem corte novo: a próxima respeita o intervalo
     return ' '.join(msgs)
 
 
@@ -2119,6 +2120,29 @@ def ver() -> dict:
     }
 
 
+def depois_do_trabalho():
+    """Terminou um trabalho (da Central ou pedido seu): com a Central ligada, ela decide o próximo passo JÁ,
+    sem esperar a volta do relógio. Assim, abaixo do mínimo, os cortes seguem um vídeo atrás do outro."""
+    try:
+        import orquestrador as oq
+        if not oq.ativa():
+            return
+    except Exception:  # noqa: BLE001
+        return
+
+    def seguir():
+        for _ in range(120):                 # espera o trabalho atual soltar o celular (até 2 min)
+            if not OCUPADO.locked():
+                break
+            time.sleep(1)
+        time.sleep(1)
+        try:
+            passo()
+        except Exception as e:  # noqa: BLE001
+            print('agente: continuar depois do trabalho', e)
+    threading.Thread(target=seguir, daemon=True).start()
+
+
 def _em_fundo(nome: str, f, *a):
     def rodar():
         if not OCUPADO.acquire(blocking=False):
@@ -2132,6 +2156,7 @@ def _em_fundo(nome: str, f, *a):
         finally:
             etapa('')
             OCUPADO.release()
+            depois_do_trabalho()
     threading.Thread(target=rodar, daemon=True).start()
 
 

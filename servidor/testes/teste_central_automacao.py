@@ -76,6 +76,8 @@ d = oq.decidir_cortes(cfg, est(15), True, agora, agora - 60, agora)
 check(d['acao'] == 'esperar', 'entre mínimo e alvo: intervalo entre rodadas respeitado (última rodada há 1 min)')
 d = oq.decidir_cortes(cfg, est(8), False, agora, agora - 60, agora)
 check(d['acao'] == 'cortar', 'abaixo do mínimo: rodadas seguidas, sem esperar o intervalo')
+d = oq.decidir_cortes(cfg, est(8), False, agora, agora - 60, agora, ultima_vazia=True)
+check(d['acao'] == 'esperar', 'abaixo do mínimo, mas a última rodada não achou vídeo: espera o intervalo (não fica martelando o YouTube)')
 d = oq.decidir_cortes(cfg, est(8), False, agora, 0, 0)
 check(d['acao'] == 'buscar_canais', 'estoque baixo e busca velha: primeiro procura canais')
 
@@ -131,6 +133,13 @@ ag.passo()
 n_ev = len(oq.eventos(500))
 ag.passo()
 check(len(oq.eventos(500)) == n_ev, 'decisão repetida não enche o histórico')
+passos = []
+_passo_real = ag.passo
+ag.passo = lambda: passos.append(1)
+ag.depois_do_trabalho()
+time.sleep(2.5)
+check(passos == [1], 'terminou um trabalho com a Central ligada: ela decide o próximo passo na hora')
+ag.passo = _passo_real
 oq.pausar('teste')
 check(oq.decisao_cortes()['acao'] == 'nada', 'pausada: o Agente 1 não começa nada')
 oq.retomar('teste')
