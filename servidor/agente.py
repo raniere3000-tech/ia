@@ -81,6 +81,7 @@ PADRAO = {
                      'cor_tarja': '#111111', 'cor_tarja_texto': '#FFFFFF', 'qualidade': 1080},
         'variar': ['cor_destaque', 'gancho_pos', 'zoom'],
         'modelos': [], 'estilos': [], 'modo': '', 'perfil': '', 'aprender': True,
+        'exigir_aprovacao': False,     # False (escolha do Raniere em 18/11): certificado do diretor basta; True: espera o seu ok
     },
     'postagem': {
         'ligado': False, 'redes': ['youtube', 'instagram', 'facebook', 'tiktok', 'kwai'],
@@ -150,6 +151,7 @@ def _limpar_cfg(c: dict) -> dict:
     co['idioma'] = co['idioma'].lower() if re.fullmatch(r'[A-Za-z]{2}', co['idioma']) else 'pt'
     co['regiao'] = co['regiao'].upper() if re.fullmatch(r'[A-Za-z]{2}', co['regiao']) else ''
     co['por_semana'] = max(1, min(21, co['por_semana']))
+    co['exigir_aprovacao'] = co.get('exigir_aprovacao') is True
     co['por_video'] = max(1, min(6, co['por_video']))
     if co.get('dur_v', 0) < 2:          # versão 2: duração do corte passa a ter padrão de 1 min a 1 min e 5 s (pedido do dono)
         co['dur_min'], co['dur_max'], co['dur_v'] = 60, 65, 2
@@ -1511,6 +1513,8 @@ def rodada_estoque(quantos: int, fontes: int = 1) -> str:
         msgs.append(trabalhar_cortes(limite=max(1, quantos - feitos)))
         novos = len(estado()['cortes']) - antes
         if novos <= 0:
+            if msgs[-1]:
+                anotar('Central pediu cortes, mas: ' + msgs[-1], 'erro')     # aparece em "Agente 1 agora", em vez de sumir
             break                      # sem vídeo novo ou deu erro: não insiste nesta rodada
         feitos += novos
         if feitos >= quantos:
@@ -1797,11 +1801,25 @@ def agendar_corte(cid: str, liberado: bool = False, quem: str = 'site') -> dict:
     return p
 
 
+def liberado_para_postar(c: dict) -> bool:
+    """A mesma regra para todo caminho do Agente 2: você aprovou, ou desligou a exigência (aí basta o certificado do diretor)."""
+    if c.get('aprovado_voce'):
+        return True
+    return not config()['cortes'].get('exigir_aprovacao', False)
+
+
 def trabalhar_postagem() -> str:
     """Agenda os cortes prontos e acompanha os que já foram ao ar."""
     feitos = 0
     # só agenda sozinho o que VOCÊ aprovou (o diretor aprova antes; a aprovação final é sua)
-    for c in [x for x in estado()['cortes'] if x['status'] == 'pronto' and not x.get('espera') and x.get('aprovado_voce')]:
+    try:            # com programação diária ligada, quem agenda corte é ela (um caminho só, sem dois agendadores disputando)
+        import agenda_postagem as ag2
+        if ag2.tem_programacao():
+            acompanhar()
+            return 'A programação diária cuida dos horários.'
+    except Exception as e:  # noqa: BLE001
+        print('agente: programação diária', e)
+    for c in [x for x in estado()['cortes'] if x['status'] == 'pronto' and not x.get('espera') and liberado_para_postar(x)]:
         problemas = conferir(c)['bloqueios']
         if problemas:       # fica parado esperando você, sem travar o resto da fila
             _mudar(lambda e, cid=c['id']: [x.update(espera=True) for x in e['cortes'] if x['id'] == cid])
@@ -2243,9 +2261,9 @@ def passo():
         print('agente: central de automação', e)
         dec = None
     if dec is not None:
-        if dec['acao'] == 'buscar_canais':
-            _mudar(lambda e: e['marcas'].update(busca=time.time()))
-            _em_fundo('Busca de canais', buscar_canais)
+        if dec['acao'] == 'buscar_canais':          # procura canais e já emenda a rodada de cortes (não espera a próxima volta)
+            _mudar(lambda e: e['marcas'].update(busca=time.time(), tentativa=time.time()))
+            _em_fundo('Busca de canais e cortes', lambda q=dec['quantos'], f=dec.get('fontes', 1): (buscar_canais(), rodada_estoque(q, f)))
         elif dec['acao'] == 'cortar':
             _mudar(lambda e: e['marcas'].update(tentativa=time.time()))
             _em_fundo('Agente de cortes', lambda q=dec['quantos'], f=dec.get('fontes', 1): rodada_estoque(q, f))

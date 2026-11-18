@@ -128,10 +128,12 @@ def salvar(d: dict, versao=None, quem: str = 'site') -> dict:
 
 
 def _acordar_agentes():
-    """Ligou ou retomou: não espera o relógio (até 2 min do Agente 1 e 5 min da central) para a primeira decisão."""
+    """Ligou ou retomou: não espera o relógio (até 2 min do Agente 1 e 5 min da central) para a primeira decisão.
+    Você acabou de ligar com os parâmetros novos: o intervalo entre rodadas recomeça do zero."""
     def rodar():
         try:
             import agente as ag
+            ag._mudar(lambda e: e['marcas'].update(tentativa=0))
             ag.passo()
         except Exception as e:  # noqa: BLE001
             print('central: acordar agente 1', e)
@@ -238,13 +240,14 @@ def estoque_cortes(cortes: list | None = None, ocupado: bool | None = None) -> d
     import agente as ag
     cortes = ag.estado()['cortes'] if cortes is None else cortes
     co = ag.config()['cortes']
-    disponiveis = [c for c in cortes if c['status'] == 'pronto' and _cert_ok(c)]
+    disponiveis = [c for c in cortes if c['status'] == 'pronto' and _cert_ok(c) and ag.liberado_para_postar(c)]
+    esperando = sum(1 for c in cortes if c['status'] == 'pronto' and _cert_ok(c) and not ag.liberado_para_postar(c))
     reservados = sum(1 for c in cortes if c['status'] == 'agendado')
     taxa, amostra = taxa_aprovacao(cortes)
     ocupado = ag.OCUPADO.locked() if ocupado is None else ocupado
     previsto = round(co['por_video'] * taxa, 1) if ocupado else 0
     dem, fonte = demanda_por_dia()
-    return {'disponiveis': len(disponiveis), 'reservados': reservados, 'em_producao_previsto': previsto, 'taxa_aprovacao': round(taxa, 2),
+    return {'disponiveis': len(disponiveis), 'esperando_voce': esperando, 'reservados': reservados, 'em_producao_previsto': previsto, 'taxa_aprovacao': round(taxa, 2),
             'taxa_amostra': amostra, 'taxa_estimada': amostra < 5, 'efetivo': round(len(disponiveis) + previsto, 1),
             'demanda_dia': round(dem, 2), 'demanda_fonte': fonte, 'cobertura_dias': round(len(disponiveis) / dem, 1) if dem > 0 else None}
 
@@ -263,7 +266,8 @@ def decidir_cortes(cfg: dict, est: dict, repondo: bool, agora: float, ultima_rod
     deficit = max(1, int(round(c['alvo'] - efetivo)))
     falta_cortar = max(1, math.ceil(deficit / max(est['taxa_aprovacao'], 0.1)))     # para sobrar 'deficit' aprovados, corta um pouco mais
     espera = c['cooldown_min'] * 60 - (agora - ultima_rodada)
-    if espera > 0:
+    urgente = efetivo < c['minimo']        # abaixo do mínimo: rodadas seguidas (uma por vez), sem esperar o intervalo
+    if espera > 0 and not urgente:
         return {'acao': 'esperar', 'repondo': True, 'quantos': falta_cortar,
                 'motivo': f'Faltam {deficit} para o alvo, mas a última rodada foi há pouco. Próxima em {int(espera // 60) + 1} min.'}
     if agora - ultima_busca > c['busca_horas'] * 3600:
@@ -335,6 +339,14 @@ def situacao_agente1() -> dict:
     d = decidir_cortes(cfg, est, bool(_mem()['repondo'].get('cortes')), agora, marcas.get('tentativa', 0), marcas.get('busca', 0))
     if cfg['cortes']['frequencia'] == 'hibrido' and d['acao'] == 'nada':
         d = meta_semanal(d, ag.cortes_da_semana(), co['por_semana'], cfg, agora, marcas.get('tentativa', 0))
+    canais = ag.estado()['canais']
+    if d['acao'] != 'nada' and not any(c.get('status') == 'aprovado' for c in canais) and not co.get('temas_outros'):
+        n_sug = sum(1 for c in canais if c.get('status') == 'sugerido')
+        out.update(bloqueio='sem_canais', decisao=d, pode_comecar=False,
+                   motivo=f'O estoque precisa de cortes, mas não há nenhum canal aprovado para o Agente 1 cortar. '
+                          + (f'Há {n_sug} canal(is) sugerido(s) esperando o seu ok em Configurar agentes > Agente 1 > Canais.' if n_sug
+                             else 'Aprove canais em Configurar agentes > Agente 1 > Canais (ou ligue "procurar também em outros canais").'))
+        return out
     out.update(decisao=d, motivo=d['motivo'], pode_comecar=d['acao'] in ('esperar', 'cortar', 'buscar_canais'))
     if d['acao'] in ('cortar', 'buscar_canais'):
         out['motivo'] += f' Começa na próxima volta do relógio (até {int(float(os.getenv("INTERVALO_AGENTE", "120")) // 60) or 1} min).'

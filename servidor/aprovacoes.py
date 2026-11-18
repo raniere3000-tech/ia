@@ -227,7 +227,12 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
     excesso = ds.excede(legenda, redes)
     if excesso:
         raise ErroAprovacao(422, 'A descrição não cabe sem cortar: ' + ' '.join(excesso) + ' Encurte a descrição ou tire essa rede.')
-    quando = _quando(dest) if redes else 0
+    prog = []           # rede com programação diária ligada: o vídeo entra nos horários dela (um caminho só no Agente 2)
+    if (dest.get('quando') or 'proximo') == 'proximo' and not (p.get('dados') or {}).get('linha'):
+        import agenda_postagem as ag2
+        prog = [x for x in ok if ag2.rede_programada(x)]
+    ok = [x for x in ok if x not in prog]
+    quando = _quando(dest) if ok else 0
     aid = uuid.uuid4().hex[:16]
     agora = time.time()
     try:
@@ -269,14 +274,14 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
     def f(d, _p):
         d.setdefault('revisao', {}).setdefault('historico', []).append({'t': agora, 'decisao': 'aprovado', 'origem': origem, 'sha': render_sha})
         d['revisao']['status'] = 'aprovado'
-        d['publicacao'] = {'aprovacao': aid, 'quando': quando, 'redes': ok, 'posts': [x['id'] for x in posts]}
+        d['publicacao'] = {'aprovacao': aid, 'quando': quando, 'redes': ok, 'posts': [x['id'] for x in posts], 'programacao': prog}
         return {'status': 'queued_to_publish' if posts else 'approved'}
     pj.mudar_dados(pid, f)
     db.evento(por or origem, 'video_aprovado', 'projeto:' + pid, {'sha': render_sha, 'origem': origem, 'redes': ok, 'quando': quando})
-    if (p.get('dados') or {}).get('linha'):
+    if (p.get('dados') or {}).get('linha') or prog:
         import agenda_postagem as ag2
         ag2.acordar()          # vídeo de linha aprovado: a programação diária confere já
-    return {'ok': True, 'aprovacao': db.um('SELECT * FROM aprovacoes WHERE id=?', aid), 'posts': posts, 'quando': quando}
+    return {'ok': True, 'aprovacao': db.um('SELECT * FROM aprovacoes WHERE id=?', aid), 'posts': posts, 'quando': quando, 'programacao': prog}
 
 
 def pedir_alteracao(pid: str, render_sha: str, texto: str, origem: str, por: str) -> dict:

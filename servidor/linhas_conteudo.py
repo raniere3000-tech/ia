@@ -652,4 +652,22 @@ def ativos_para(rede: str) -> list:
                 continue
             out.append({'tipo': 'agente3', 'projeto': p, 'ref': 'p:' + p['id'], 'sha': sha, 'nota': cert['nota'], 'criado': r['criado'], 'linha': cfg['titulo'],
                         'prioridade': cfg.get('prioridade', 3)})
+    # vídeos avulsos do Agente 3 que você aprovou "no próximo horário": entram na programação desta rede (prioridade 3)
+    for r in db.todos("SELECT id, criado FROM projetos WHERE tipo='agente3' AND apagado=0 AND status IN ('approved','queued_to_publish')"):
+        try:
+            p = pj.obter(r['id'])
+        except Exception:  # noqa: BLE001
+            continue
+        if (p['dados'] or {}).get('linha') or rede not in ((p['dados'].get('publicacao') or {}).get('programacao') or []):
+            continue
+        sha = _render_sha(p)
+        if not sha or not db.um("SELECT id FROM aprovacoes WHERE projeto=? AND render_sha=? AND decisao='aprovado'", p['id'], sha):
+            continue
+        if db.um("SELECT id FROM posting_slots WHERE ref=? AND rede=? AND estado NOT IN ('cancelado','perdido','vazio')", 'p:' + p['id'], rede):
+            continue
+        cert = pl.certificado(sha) if pl.ligado() else {'nota': None}
+        if not cert:
+            continue
+        out.append({'tipo': 'agente3', 'projeto': p, 'ref': 'p:' + p['id'], 'sha': sha, 'nota': cert.get('nota'), 'criado': r['criado'], 'linha': '',
+                    'prioridade': 3})
     return out

@@ -68,7 +68,7 @@ function Geral({r}:{r:ReturnType<typeof useServidor<import('../lib/automacao').R
       <h3>{x.agente1.trabalhando?<Loader2 size={16} className="spin"/>:<Scissors size={16}/>} Agente 1 agora</h3>
       <p className="a1-motivo">{x.agente1.motivo}</p>
       {x.agente1.decisao&&<p className="hint">Estoque que conta: cortes <b>prontos, sem horário{x.esteira_ligada?' e com certificado do diretor':''}</b>. Agora: {x.estoque_cortes.disponiveis} de {x.config.cortes.alvo} (mínimo {x.config.cortes.minimo}).</p>}
-      {(x.agente1.bloqueio==='agente_desligado'||x.agente1.bloqueio==='fora_do_horario'||x.agente1.bloqueio==='sem_chave')&&<button className="subtle sm" onClick={()=>go('agente','','automacao')}>Abrir a configuração do Agente 1</button>}
+      {['agente_desligado','fora_do_horario','sem_chave','sem_canais'].includes(x.agente1.bloqueio)&&<button className="subtle sm" onClick={()=>go('agente','','automacao')}>Abrir a configuração do Agente 1</button>}
       {x.agente1.pode_comecar&&!x.agente1.trabalhando&&<button className="primary sm" disabled={busy} onClick={()=>fazer(()=>comecarA1(cfg),'Pedido enviado: o Agente 1 começou.')}><Play size={14}/> Começar agora</button>}
       {x.agente1.ultimas.length>0&&<details className="mt"><summary className="hint">O que ele fez por último</summary><ul className="rq-lista">{x.agente1.ultimas.map((l,i)=><li key={i} className={l.tipo==='erro'?'bad':''}><small className="muted">{quando(l.t)}</small> {l.texto}</li>)}</ul></details>}
     </section>}
@@ -125,6 +125,7 @@ function Agentes({conf,est,esteira,salvo}:{conf:ConfigCentral;est:import('../lib
       <button className="primary sm" disabled={busy} onClick={()=>salvar({cortes:c})}>Salvar</button>
       <p className="hint">Agora: <b>{est.disponiveis}</b> corte(s) aprovado(s) sem horário, {est.reservados} agendado(s). A programação pede cerca de <b>{est.demanda_dia}</b> vídeo(s) por dia ({est.demanda_fonte})
         {est.cobertura_dias!=null&&<> : o estoque cobre <b>{est.cobertura_dias}</b> dia(s)</>}. Taxa de aprovação do diretor: {Math.round(est.taxa_aprovacao*100)}%{est.taxa_estimada?' (estimativa: menos de 5 cortes julgados)':` (últimos ${est.taxa_amostra} cortes)`}.</p>
+      <ExigirAprovacao/>
       <p className="hint">Ligar e desligar o Agente 1, os canais e o horário de trabalho continuam em <button className="link-btn" onClick={()=>go('agente','','automacao')}>Configurar Agentes 1, 2 e 3</button>.</p>
     </section>
     <section className="panel">
@@ -401,4 +402,13 @@ function Biblioteca(){
       <div className="row"><button className="primary sm" disabled={busy||ed.nome.trim().length<2} onClick={salvar}>Salvar</button><button className="subtle sm" onClick={()=>setEd(null)}>Cancelar</button></div>
     </div>}
   </section>;
+}
+
+function ExigirAprovacao(){
+  const {toast,settings}=useApp(); const cfg=useCfg();
+  const ag=useServidor(c=>import('../lib/agente').then(m=>m.verAgente({...c,servidorToken:settings.servidorToken})),0);
+  const on=!!(ag.dados as {config?:{cortes?:{exigir_aprovacao?:boolean}}}|null)?.config?.cortes?.exigir_aprovacao;
+  if(!ag.dados) return null;
+  return <label className="check"><input type="checkbox" checked={on} onChange={async e=>{ try{ const m=await import('../lib/agente'); await m.salvarAgente(cfg,{cortes:{exigir_aprovacao:e.target.checked}}); toast(e.target.checked?'Agora cada corte espera o seu ok.':'Certificado do diretor basta: o corte vai sozinho para os horários.','ok'); ag.recarregar(); }catch(err){ toast(erroTexto(err),'erro'); } }}/>
+    Exigir a minha aprovação em cada corte antes dos horários (desmarcado: a nota 70+ do diretor basta)</label>;
 }

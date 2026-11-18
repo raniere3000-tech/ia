@@ -165,8 +165,9 @@ agente.conferir = lambda c: {'bloqueios': [], 'avisos': []}
 agente._mudar(lambda e: e['cortes'].extend([
     {'id': 'ok1', 'titulo': 'a', 'status': 'pronto', 'qa': {'diretor': {'veredito': 'aprovado', 'motivos': []}}, 'criado': 0},
     {'id': 'rep', 'titulo': 'b', 'status': 'reprovado', 'qa': {'diretor': {'veredito': 'reprovado', 'motivos': ['O corte demora']}}, 'criado': 0}]))
+agente.salvar_config({'cortes': {'exigir_aprovacao': True}})
 agente.trabalhar_postagem()
-confere(not agendados, 'corte aprovado pelo diretor não é postado sem a sua aprovação')
+confere(not agendados, 'com "exigir minha aprovação" ligado: corte aprovado pelo diretor espera o seu ok')
 try:
     agente.acao_corte('rep', 'agendar')
     confere(False, 'corte reprovado não pode ser agendado')
@@ -175,6 +176,10 @@ except agente.ErroAgente:
 agente.acao_corte('ok1', 'agendar')
 c = next(x for x in agente.estado()['cortes'] if x['id'] == 'ok1')
 confere(agendados == ['ok1'] and c.get('aprovado_voce'), 'você aprova e ele agenda')
+agente._mudar(lambda e: e['cortes'].append({'id': 'ok2', 'titulo': 'c', 'status': 'pronto', 'qa': {'diretor': {'veredito': 'aprovado', 'motivos': []}}, 'criado': 0}))
+agente.salvar_config({'cortes': {'exigir_aprovacao': False}})
+agente.trabalhar_postagem()
+confere('ok2' in agendados and 'rep' not in agendados, 'padrão (certificado basta): corte aprovado pelo diretor é agendado sozinho; reprovado nunca')
 
 print('\nTUDO OK' if not falhas else f'\n{falhas} FALHA(S)')
 sys.exit(1 if falhas else 0)

@@ -416,6 +416,24 @@ def _sha(c: dict) -> str:
         return ''
 
 
+def _esteira() -> bool:
+    try:
+        import pipeline as pl
+        return pl.ligado()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def rede_programada(rede: str) -> bool:
+    """A programação desta rede está ligada E a esteira também (sem esteira a programação não recebe vídeo; aí vale o caminho antigo)."""
+    return _esteira() and bool(db.um('SELECT id FROM posting_schedules WHERE apagado=0 AND ligado=1 AND rede=?', rede))
+
+
+def tem_programacao() -> bool:
+    """Há programação diária ligada em alguma rede."""
+    return _esteira() and bool(db.um('SELECT id FROM posting_schedules WHERE apagado=0 AND ligado=1'))
+
+
 def elegiveis(rede: str) -> list:
     """Cortes prontos com certificado do diretor válido PARA O ARQUIVO ATUAL, sem bloqueio de direitos, ainda não reservados nesta rede."""
     try:
@@ -432,6 +450,8 @@ def elegiveis(rede: str) -> list:
             continue
         if c.get('redes') and rede not in c['redes']:
             continue
+        if not ag.liberado_para_postar(c):
+            continue            # mesma regra da postagem antiga: espera o seu ok (se a exigência estiver ligada)
         sha = _sha(c)
         cert = pl.certificado(sha) if sha else None
         if not cert:
