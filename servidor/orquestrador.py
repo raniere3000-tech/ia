@@ -16,6 +16,7 @@ import time
 import banco as db
 
 ESTADOS = ('desligada', 'ativa', 'pausada')
+FREQUENCIAS = ('estoque', 'agenda', 'hibrido')     # agenda = meta de cortes por semana (regra antiga); híbrido = estoque + meta mínima da semana
 PRESETS = {
     'economico':   {'minimo': 5,  'alvo': 10, 'busca_horas': 48, 'cooldown_min': 180, 'linha_cooldown_min': 360},
     'equilibrado': {'minimo': 9,  'alvo': 21, 'busca_horas': 24, 'cooldown_min': 60,  'linha_cooldown_min': 120},
@@ -36,8 +37,8 @@ def _padrao() -> dict:
     p = PRESETS['equilibrado']
     return {'estado': 'desligada', 'modo': 'equilibrado', 'versao': 0, 'atualizado': 0, 'por': '',
             'cortes': {'controle_estoque': True, 'minimo': p['minimo'], 'alvo': p['alvo'], 'busca_horas': p['busca_horas'],
-                       'cooldown_min': p['cooldown_min']},
-            'linhas': {'cooldown_min': p['linha_cooldown_min']}}
+                       'cooldown_min': p['cooldown_min'], 'frequencia': 'estoque', 'fontes_rodada': 1},
+            'linhas': {'cooldown_min': p['linha_cooldown_min']}, 'editor': {'modo': 'automatico'}}
 
 
 def config() -> dict:
@@ -47,7 +48,7 @@ def config() -> dict:
         for k in ('estado', 'modo', 'versao', 'atualizado', 'por'):
             if k in v:
                 cfg[k] = v[k]
-        for k in ('cortes', 'linhas'):
+        for k in ('cortes', 'linhas', 'editor'):
             if isinstance(v.get(k), dict):
                 cfg[k].update({a: b for a, b in v[k].items() if a in cfg[k]})
     return cfg
@@ -78,6 +79,12 @@ def validar(d: dict, atual: dict) -> dict:
         mexeu = False
         if 'controle_estoque' in c:
             novo['cortes']['controle_estoque'] = bool(c['controle_estoque'])
+        if 'frequencia' in c:
+            if c['frequencia'] not in FREQUENCIAS:
+                raise ErroAutomacao('Frequência do Agente 1: estoque, agenda ou hibrido.')
+            novo['cortes']['frequencia'] = c['frequencia']
+        if 'fontes_rodada' in c:
+            novo['cortes']['fontes_rodada'] = _int(c['fontes_rodada'], 1, 5, 'Vídeos-fonte por rodada')
         for k, lo, hi, nome in (('minimo', 0, 200, 'Mínimo de cortes'), ('alvo', 1, 300, 'Alvo de cortes'),
                                 ('busca_horas', 1, 168, 'Busca de canais'), ('cooldown_min', 10, 1440, 'Intervalo entre rodadas')):
             if k in c:
@@ -89,6 +96,11 @@ def validar(d: dict, atual: dict) -> dict:
     li = d.get('linhas')
     if isinstance(li, dict) and 'cooldown_min' in li:
         novo['linhas']['cooldown_min'] = _int(li['cooldown_min'], 10, 1440, 'Intervalo entre lotes')
+    ed = d.get('editor')
+    if isinstance(ed, dict) and 'modo' in ed:
+        if ed['modo'] not in ('automatico', 'supervisionado', 'manual'):
+            raise ErroAutomacao('Modo do editor: automatico, supervisionado ou manual.')
+        novo['editor']['modo'] = ed['modo']
     if novo['cortes']['alvo'] <= novo['cortes']['minimo']:
         raise ErroAutomacao('O alvo precisa ser maior que o mínimo (senão o agente fica liga-desliga a cada corte).')
     if 'estado' in d:
@@ -108,7 +120,7 @@ def salvar(d: dict, versao=None, quem: str = 'site') -> dict:
         db.kv_gravar('automacao', novo)
     if novo['estado'] != atual['estado']:
         evento('central', 'estado', novo['estado'], f'De "{atual["estado"]}" para "{novo["estado"]}" por {quem}.')
-    db.evento(quem, 'automacao_config', 'automacao', {k: novo[k] for k in ('estado', 'modo', 'cortes', 'linhas')})
+    db.evento(quem, 'automacao_config', 'automacao', {k: novo[k] for k in ('estado', 'modo', 'cortes', 'linhas', 'editor')})
     return novo
 
 
@@ -245,7 +257,7 @@ def decidir_cortes(cfg: dict, est: dict, repondo: bool, agora: float, ultima_rod
 def decisao_cortes() -> dict | None:
     """Chamado pelo relógio do Agente 1. None = central desligada ou sem controle por estoque (regra antiga da meta semanal)."""
     cfg = config()
-    if cfg['estado'] == 'desligada' or not cfg['cortes']['controle_estoque']:
+    if cfg['estado'] == 'desligada' or not cfg['cortes']['controle_estoque'] or cfg['cortes']['frequencia'] == 'agenda':
         return None
     if cfg['estado'] == 'pausada':
         return {'acao': 'nada', 'repondo': False, 'quantos': 0, 'motivo': 'Automação pausada por você.'}
@@ -253,9 +265,22 @@ def decisao_cortes() -> dict | None:
     marcas = ag.estado()['marcas']
     m = _mem()
     est = estoque_cortes()
-    d = decidir_cortes(cfg, est, bool(m['repondo'].get('cortes')), time.time(), marcas.get('tentativa', 0), marcas.get('busca', 0))
+    agora = time.time()
+    d = decidir_cortes(cfg, est, bool(m['repondo'].get('cortes')), agora, marcas.get('tentativa', 0), marcas.get('busca', 0))
+    if cfg['cortes']['frequencia'] == 'hibrido' and d['acao'] == 'nada':
+        d = meta_semanal(d, ag.cortes_da_semana(), ag.config()['cortes']['por_semana'], cfg, agora, marcas.get('tentativa', 0))
+    d['fontes'] = cfg['cortes']['fontes_rodada']
     _lembrar(m, 'cortes', d, est)
     return d
+
+
+def meta_semanal(d: dict, feitos: int, meta: int, cfg: dict, agora: float, ultima_rodada: float) -> dict:
+    """Híbrido: mesmo com estoque bom, garante a meta mínima de cortes da semana (respeitando o intervalo entre rodadas)."""
+    if feitos >= meta:
+        return d
+    if agora - ultima_rodada < cfg['cortes']['cooldown_min'] * 60:
+        return {**d, 'acao': 'esperar', 'motivo': f'Híbrido: faltam {meta - feitos} cortes para a meta da semana; esperando o intervalo.'}
+    return {**d, 'acao': 'cortar', 'quantos': meta - feitos, 'motivo': f'Híbrido: estoque bom, mas a meta mínima da semana pede mais {meta - feitos} corte(s).'}
 
 
 def _lembrar(m: dict, chave: str, d: dict, est: dict | None = None):

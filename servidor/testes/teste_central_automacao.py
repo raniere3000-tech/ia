@@ -133,9 +133,24 @@ check(erro(lc.atualizar, lid, {'versao': 1, 'tom': 'leve'}) is not None, 'versã
 print('5. Pautas sem repetir')
 
 
+PAGINA = ('<html><body><nav>menu</nav><p>O céu parece azul porque a luz do Sol é espalhada pelas moléculas do ar, e o azul se espalha mais '
+          'do que o vermelho.</p>' + '<p>texto de enchimento da página da fonte.</p>' * 10 + '</body></html>')
+
+
+def buscar_falso(url):
+    import checagem_fatos as cf
+    if 'ceu' in url:
+        return {'ok': True, 'texto': cf.texto_da_pagina(PAGINA.encode(), 'text/html'), 'motivo': ''}
+    return {'ok': False, 'texto': '', 'motivo': 'a página respondeu 404'}
+
+
 def ia_falsa(prompt):
+    if 'Você confere afirmações' in prompt:
+        return {'itens': [{'n': 1, 'fonte': 1, 'trecho': 'a luz do Sol é espalhada pelas moléculas do ar, e o azul se espalha mais do que o vermelho'},
+                          {'n': 2, 'fonte': 1, 'trecho': 'o céu de Marte é rosa segundo a NASA em 1976'}]}
     return {'pautas': [
-        {'titulo': 'Por que o céu é azul', 'resumo': 'luz do sol espalhada', 'classificacao': 'fato', 'fontes': [{'url': 'https://exemplo.org/ceu'}]},
+        {'titulo': 'Por que o céu é azul', 'resumo': 'luz do sol espalhada', 'classificacao': 'fato', 'fontes': [{'url': 'https://exemplo.org/ceu'}],
+         'afirmacoes': ['A luz azul se espalha mais no ar', 'O céu de Marte é rosa']},
         {'titulo': 'Por que o céu fica azul', 'resumo': 'luz do sol espalhada', 'classificacao': 'fato', 'fontes': []},
         {'titulo': 'Como o micro-ondas esquenta comida', 'resumo': 'água vibra', 'classificacao': 'entretenimento'},
         {'titulo': 'O que faz o pão crescer', 'resumo': 'fermento e gás', 'classificacao': 'entretenimento'},
@@ -146,16 +161,23 @@ def ia_falsa(prompt):
     ]}
 
 
-lc._fonte_abre = lambda url: True
 lc.atualizar(lid, {'excluir': ['horóscopo']}, 'teste')
-r = lc.planejar_pautas(lid, 6, ia=ia_falsa)
+r = lc.planejar_pautas(lid, 6, ia=ia_falsa, buscar=buscar_falso)
 tit = [p['titulo'] for p in r['pautas']]
 check(len(r['pautas']) == 6 and 'Por que o céu fica azul' not in tit, 'pauta quase igual a outra do mesmo lote cai como repetida')
 check('Horóscopo de amanhã' not in tit, 'assunto excluído não entra')
 check(all(p['status'] == 'proposta' for p in r['pautas']), 'modo supervisionado: pautas ficam como propostas para você')
 ceu = next(p for p in r['pautas'] if p['titulo'] == 'Por que o céu é azul')
-check(ceu['verificacao'].startswith('fonte encontrada') and 'não foi conferido' in ceu['verificacao'], 'fato com fonte: diz que a fonte abre, sem fingir que conferiu o texto')
-r2 = lc.planejar_pautas(lid, 6, ia=ia_falsa)
+cc = ceu['conferencia']
+check(cc[0]['ok'] and cc[0]['trecho'] and not cc[1]['ok'] and ceu['verificacao'] == 'parcial',
+      'checagem: afirmação com trecho achado no texto da fonte é confirmada; trecho que a IA inventou NÃO é')
+check(lc._briefing(lc.obter(lid), ceu)['descricao'].count('NÃO foram confirmadas') == 1 and 'Marte' in lc._briefing(lc.obter(lid), ceu)['descricao'],
+      'o roteiro recebe a lista do que não pode ser dito como fato')
+import checagem_fatos as cf  # noqa: E402
+saude = cf.conferir({'titulo': 'Chá cura gripe', 'classificacao': 'fato', 'afirmacoes': ['Chá de alho cura gripe'], 'fontes': []}, ia_falsa, buscar_falso)
+check(saude['risco'] == 'alto' and saude['verificacao'] == 'não verificado' and not cf.pode_aceitar_sozinha(saude),
+      'saúde sem fonte: risco alto, não verificado, nunca aceito sozinho')
+r2 = lc.planejar_pautas(lid, 6, ia=ia_falsa, buscar=buscar_falso)
 check(len(r2['pautas']) == 0 and r2['aviso'], 'planejar de novo não repete nenhuma pauta já proposta')
 rr = lc.escrever_pautas(lid, ['Por que o céu é azul', 'Como o arco-íris se forma'])
 check(len(rr['pautas']) == 1 and len(rr['repetidas']) == 1, 'pauta escrita por você também é conferida contra repetição')
@@ -247,6 +269,153 @@ check(rota('POST', f'/api/v1/linhas-conteudo/{lid}/pausar')['estado'] == 'pausad
 check(erro(lc.iniciar_lote, lid, 1, produzir=lambda *a: None) is not None, 'linha pausada não começa lote')
 rota('DELETE', f'/api/v1/linhas-conteudo/{l2["id"]}')
 check(len(rota('GET', '/api/v1/linhas-conteudo')['linhas']) == n_linhas - 1, 'apagar some da lista')
+
+print('11. Linha a partir de uma descrição (a IA propõe, nada é gravado)')
+DESCR = ('Quero uma linha de Curiosidades Científicas com 6 vídeos de 45 segundos, estilo Documentário, narração masculina, imagens de apoio, '
+         'sem personagem, um vídeo por dia às 18:00 no YouTube.')
+
+
+def ia_config(prompt):
+    check('PEDIDO: Quero uma linha' in prompt and 'documentario = ' in prompt, 'a IA recebe o pedido e o catálogo REAL de estilos')
+    return {'config': {'titulo': 'Curiosidades Científicas', 'tema': 'ciência', 'quantidade_lote': 6, 'duracao_seg': 45, 'estilo': 'documentario',
+                       'voz': 'Charon', 'imagens': 'busca', 'personagens': {'modo': 'nenhum'},
+                       'agenda': {'redes': ['youtube', 'tiktok'], 'horarios': ['18:00'], 'dias': [0, 1, 2, 3, 4, 5, 6]}},
+            'duvidas': ['Não ficou claro o público.']}
+
+
+n0 = db.um('SELECT COUNT(*) n FROM linhas_conteudo')['n']
+sg = lc.sugerir_config(DESCR, ia=ia_config)
+pr = sg['proposta']
+check(pr['quantidade_lote'] == 6 and pr['duracao_seg'] == 45 and pr['estilo'] == 'documentario' and pr['voz'] == 'Charon' and pr['imagens'] == 'busca'
+      and pr['agenda']['horarios'] == ['18:00'], 'proposta: 6 vídeos de 45 s, Documentário, voz masculina, imagens de apoio, 18:00')
+check(db.um('SELECT COUNT(*) n FROM linhas_conteudo')['n'] == n0, 'sugerir não grava nada')
+check(any(m['campo'] == 'agenda' for m in sg['mudancas']) and 'Não ficou claro o público.' in sg['avisos'], 'mostra o que muda e as dúvidas')
+sg_beta = lc.sugerir_config(DESCR, ia=lambda p: {'config': {'titulo': 'X linha', 'tema': 'tema x', 'estilo': 'animado2d'}})
+check(sg_beta['proposta']['estilo'] == 'documentario' and any('em teste' in a for a in sg_beta['avisos']), 'IA não escolhe estilo beta sozinha')
+sg_ind = lc.sugerir_config(DESCR, ia=lambda p: {'config': {'titulo': 'X linha', 'tema': 'tema x', 'estilo': 'mapas_animados'}})
+check(any('não roda' in a for a in sg_ind['avisos']), 'IA não escolhe estilo indisponível')
+travada = lc.criar(dict(L, titulo='Linha travada', travas=['estilo', 'voz'], voz='Kore'), 'teste')
+sg_t = lc.sugerir_config(DESCR + ' Use a voz Puck e estilo quadrinhos.', travada['id'], ia=lambda p: {'config': {'voz': 'Puck', 'estilo': 'quadrinhos', 'duracao_seg': 30}})
+check(sg_t['proposta']['voz'] == 'Kore' and sg_t['proposta']['estilo'] == 'documentario' and sg_t['proposta']['duracao_seg'] == 30,
+      'campos com cadeado não mudam; o resto muda')
+check(erro(lc.sugerir_config, DESCR, ia=lambda p: {'config': {'titulo': 'Y', 'tema': 'z'}}) is not None, 'proposta que não passa nas regras é recusada com o motivo')
+nova = rota('POST', '/api/v1/linhas-conteudo', pr)
+ap = {x['rede']: x for x in nova['agenda_aplicada']}
+yt = next(a for a in a2.listar() if a['platform'] == 'youtube')
+tk = next((a for a in a2.listar() if a['platform'] == 'tiktok'), None)
+check(ap['youtube']['ok'] and '18:00' in yt['weekly_rules']['0'] and '09:00' in yt['weekly_rules']['0'], 'YouTube: 18:00 somado aos horários que já existiam')
+check(ap['tiktok']['ok'] and tk and tk['weekly_rules']['3'] == ['18:00'], 'TikTok sem programação: criada com 18:00 todos os dias')
+
+print('12. Prioridade da linha e mover um horário')
+c1 = {'criado': 1, 'nota': 90, 'prioridade': 3, 'ref': 'a'}
+c2 = {'criado': 5, 'nota': 70, 'prioridade': 5, 'ref': 'b'}
+check(a2.ordenar([c1, c2], 'oldest_approved')[0]['ref'] == 'b' and a2.ordenar([c1, c2], 'best_score')[0]['ref'] == 'b',
+      'linha com prioridade maior ocupa o horário primeiro')
+check(a2.ordenar([c1, dict(c2, prioridade=3)], 'best_score')[0]['ref'] == 'a', 'mesma prioridade: vale a regra da programação')
+sv = db.um("SELECT * FROM posting_slots WHERE estado='vazio' AND rede='tiktok' AND quando_utc>? ORDER BY quando_utc LIMIT 1", time.time() + 86400)
+mv = rota('PATCH', f'/api/v1/agent2/slots/{sv["id"]}', {'acao': 'mover', 'data_local': sv['data_local'], 'hora_local': '20:30'})
+check(mv['hora_local'] == '20:30' and mv['tipo'] == 'movido', 'horário movido para 20:30 só naquele dia')
+a2.reconciliar(sv['agenda'])
+check(db.um('SELECT estado FROM posting_slots WHERE id=?', sv['id'])['estado'] == 'vazio' and
+      db.um("SELECT COUNT(*) n FROM posting_slots WHERE rede='tiktok' AND data_local=? AND estado<>'cancelado'", sv['data_local'])['n'] == 1,
+      'a programação não recria o horário antigo nem cancela o movido')
+check(erro(rota, 'PATCH', f'/api/v1/agent2/slots/{sv["id"]}', {'acao': 'mover', 'data_local': sv['data_local'], 'hora_local': '99:00'}) is not None,
+      'horário inválido é recusado')
+outro = db.um("SELECT * FROM posting_slots WHERE rede='tiktok' AND id<>? AND estado='vazio' AND quando_utc>? ORDER BY quando_utc LIMIT 1", sv['id'], time.time() + 86400)
+check('menos de' in str(erro(rota, 'PATCH', f'/api/v1/agent2/slots/{outro["id"]}', {'acao': 'mover', 'data_local': sv['data_local'], 'hora_local': '20:45'})),
+      'mover para perto de outro horário da mesma rede é recusado')
+
+print('13. Biblioteca Criativa (versões e cadeados)')
+import biblioteca_criativa as bc  # noqa: E402
+perfil = rota('POST', '/api/v1/biblioteca-criativa', {'tipo': 'perfil_narracao', 'nome': 'Narrador grave', 'dados': {'voz': 'Kore', 'ritmo': 'calmo'}, 'travas': ['voz']})
+check(perfil['versao'] == 1 and perfil['dados']['voz'] == 'Kore', 'perfil de narração criado (versão 1)')
+check(erro(rota, 'POST', '/api/v1/biblioteca-criativa', {'tipo': 'pacote_visual', 'nome': 'X', 'dados': {'estilo': 'mapas_animados'}}) is not None,
+      'pacote visual com estilo indisponível é recusado')
+e423 = erro(rota, 'PATCH', f'/api/v1/biblioteca-criativa/{perfil["id"]}', {'versao': 1, 'dados': {'voz': 'Puck'}})
+check(e423 is not None and e423.status == 423, 'campo com cadeado não muda sem tirar o cadeado')
+auto = bc.atualizar(perfil['id'], {'dados': {'voz': 'Puck', 'ritmo': 'normal'}}, 1, 'teste', automatico=True)
+check(auto['dados']['voz'] == 'Kore' and auto['dados']['ritmo'] == 'normal' and auto['versao'] == 2, 'sugestão automática ignora o campo travado')
+modelo = bc.criar('modelo_roteiro', 'Pergunta e resposta', {'estrutura': 'pergunta, 3 fatos, conclusão', 'final': 'pergunte ao público'}, quem='teste')
+lb = lc.criar(dict(L, titulo='Linha com biblioteca', biblioteca={'perfil_narracao': perfil['id'], 'modelo_roteiro': modelo['id']}, limite_dia=12), 'teste')
+lc.escrever_pautas(lb['id'], ['Como nascem as estrelas'])
+epb = lc.iniciar_lote(lb['id'], 1, 'teste', produzir=lambda *a: None)['episodios'][0]
+pb = pj.obter(epb['projeto'])
+check(pb['dados']['briefing']['voz'] == 'Kore' and 'pergunta, 3 fatos' in pb['dados']['briefing']['descricao'], 'episódio usa o perfil e o modelo da biblioteca')
+check(pb['dados']['linha']['biblioteca']['perfil_narracao']['versao'] == 2, 'episódio guarda a versão usada (2)')
+bc.atualizar(perfil['id'], {'dados': {'ritmo': 'rapido'}}, 2, 'teste')
+check(pj.obter(epb['projeto'])['dados']['linha']['biblioteca']['perfil_narracao']['versao'] == 2 and len(bc.versoes(perfil['id'])) == 3,
+      'mudar o item cria a versão 3 e NÃO mexe no episódio já feito')
+
+print('14. Orçamento do dia da linha')
+lo = lc.criar(dict(L, titulo='Linha com orçamento', orcamento_dia=1.0, orcamento_video=0.4, limite_dia=12), 'teste')
+lc.escrever_pautas(lo['id'], ['Pauta um do orçamento', 'Pauta dois sobre outra coisa', 'Pauta três bem diferente', 'Quarta pauta nova'])
+r = lc.iniciar_lote(lo['id'], 4, 'teste', produzir=lambda *a: None)
+check(len(r['episodios']) == 2, 'R$ 1,00 por dia e até R$ 0,40 por vídeo: começa só 2 (não os 4 pedidos)')
+for e in r['episodios']:
+    db.executar("INSERT INTO jobs (id, agente, tipo, projeto, status, criado) VALUES (?,?,?,?,?,?)", 'j' + e['projeto'], 'agente3', 'producao', e['projeto'], 'concluido', time.time())
+    db.executar("INSERT INTO custos (job, provedor, modelo, etapa, estimado, moeda, t) VALUES (?,?,?,?,?,?,?)", 'j' + e['projeto'], 'gemini', 'm', 'imagem', 0.45, 'BRL', time.time())
+check(lc.gasto_24h(lo['id']) == 0.9, 'gasto da linha vem do que o produtor registrou (R$ 0,90)')
+eo = erro(lc.iniciar_lote, lo['id'], 1, produzir=lambda *a: None)
+check(eo is not None and 'Orçamento do dia' in str(eo), 'orçamento do dia alcançado: não começa mais nenhum')
+
+print('15. Agente 1: híbrido e fontes por rodada')
+d = oq.meta_semanal({'acao': 'nada', 'repondo': False, 'quantos': 0, 'motivo': ''}, 2, 6, oq.config(), time.time(), 0)
+check(d['acao'] == 'cortar' and d['quantos'] == 4, 'híbrido: estoque bom, mas a meta da semana pede mais 4')
+check(oq.meta_semanal({'acao': 'nada'}, 6, 6, oq.config(), time.time(), 0)['acao'] == 'nada', 'híbrido com a meta cumprida: parado')
+oq.salvar({'cortes': {'frequencia': 'agenda'}}, None, 'teste')
+check(oq.decisao_cortes() is None, 'modo agenda: volta à meta de cortes por semana')
+oq.salvar({'cortes': {'frequencia': 'estoque', 'fontes_rodada': 3}}, None, 'teste')
+check(oq.decisao_cortes()['fontes'] == 3, 'até 3 vídeos-fonte por rodada')
+check(erro(oq.salvar, {'cortes': {'fontes_rodada': 9}}) is not None, 'mais de 5 fontes por rodada é recusado')
+
+print('16. Editor supervisionado (você libera) e manual')
+import editor_ia as ed  # noqa: E402
+import fila  # noqa: E402
+check(ed.modo_editor() == 'automatico', 'padrão: editor automático')
+oq.salvar({'editor': {'modo': 'supervisionado'}}, None, 'teste')
+check(ed.modo_editor() == 'supervisionado', 'modo supervisionado salvo')
+fila.registrar('esteira.recebido', ag.job_esteira_recebido, 'pesado')
+vs = pg.VIDEOS / 'sup1.mp4'
+subprocess.run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=720x1280:d=4:r=30', '-f', 'lavfi', '-i', 'sine=f=300:d=4',
+                '-vf', 'noise=alls=20:allf=t', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', str(vs)], check=True)
+rm = ag.receber_manual({'video': 'sup1', 'titulo': 'Supervisionado', 'direitos': {'origem': 'meu'}, 'destino': 'pronto'})
+jb = db.um("SELECT * FROM jobs WHERE tipo='esteira.recebido' ORDER BY criado DESC LIMIT 1")
+
+
+class Ctx:
+    def __init__(self, d):
+        self.dados = d
+
+    def progresso(self, *a):
+        pass
+
+
+ag.job_esteira_recebido(Ctx(json.loads(jb['dados'])))
+cs = next(x for x in ag.estado()['cortes'] if x['id'] == rm['id'])
+run = db.um("SELECT * FROM pipeline_runs WHERE ref=? ORDER BY criado DESC LIMIT 1", rm['id'])
+check(run['estado'] == 'manual_review_required' and 'supervisionado' in run['etapa'] and not pl.portao_postagem(vs)['ok'] and cs['status'] != 'pronto',
+      'supervisionado: o diretor aprovou, mas sem certificado e fora da agenda até você liberar')
+lib = rota('POST', f'/api/v1/pipeline/jobs/{run["id"]}/manual-review', {'decisao': 'aprovar', 'motivo': 'Conferi a edição, pode ir'})
+cs = next(x for x in ag.estado()['cortes'] if x['id'] == rm['id'])
+check(lib['estado'] == 'final_approved' and pl.portao_postagem(vs)['ok'] and cs['status'] == 'pronto', 'você liberou: certificado do arquivo e corte pronto')
+oq.salvar({'editor': {'modo': 'automatico'}}, None, 'teste')
+
+print('17. Ferramentas externas (ficha, teste, ligar)')
+import integracoes as ig  # noqa: E402
+fs = {f['id']: f for f in rota('GET', '/api/v1/integracoes/capacidades')['ferramentas']}
+check({'moneyprinterturbo', 'openreels', 'cuesync', 'yt-factcheck', 'postiz', 'auto-editor', 'remotion'} <= set(fs), 'todas as ferramentas da seção 7.2 têm ficha')
+check(all(not f['licenca_auditada'] and not f['habilitada'] for k, f in fs.items() if k != 'ffmpeg'), 'nenhuma vem ligada nem com licença dada como conferida')
+check(fs['postiz']['status'] == 'so_referencia' and 'AGPL' in fs['postiz']['licenca_declarada'], 'Postiz: só referência (AGPL)')
+check(rota('POST', '/api/v1/integracoes/ffmpeg/teste')['ok'], 'teste do FFmpeg passa neste aparelho')
+ta = rota('POST', '/api/v1/integracoes/auto-editor/teste')
+check(not ta['ok'] and 'não está instalado' in ta['detalhe'], 'Auto-Editor ausente: teste falha e diz que o FFmpeg continua')
+e412 = erro(rota, 'POST', '/api/v1/integracoes/auto-editor/ligar', {})
+check(e412 is not None and e412.status == 412, 'não liga sem licença conferida')
+e412b = erro(rota, 'POST', '/api/v1/integracoes/auto-editor/ligar', {'licenca_conferida': True, 'nota': 'li o LICENSE'})
+check(e412b is not None and 'teste' in str(e412b), 'com licença conferida, ainda não liga sem o teste passar')
+check(erro(rota, 'POST', '/api/v1/integracoes/moneyprinterturbo/ligar', {'licenca_conferida': True}).status == 409, 'ferramenta só com ficha não pode ser ligada')
+pz = ig.pausas(vs)
+check(pz['fonte'] == 'ffmpeg' and isinstance(pz['pausas'], list), 'pausas: sem Auto-Editor ligado, usa o FFmpeg')
 
 print(f'\n{ok} ok, {falhas} falha(s)')
 sys.exit(1 if falhas else 0)

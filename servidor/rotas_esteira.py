@@ -8,11 +8,13 @@ import agenda_postagem as ag2
 import capacidades as cap
 import contratos as ct
 import inteligencia_viral as iv
+import biblioteca_criativa as bc
+import integracoes as ig
 import linhas_conteudo as lc
 import orquestrador as oq
 import pipeline as pl
 
-PREFIXOS = ('/api/v1/pipeline', '/api/v1/quality', '/api/v1/capabilities', '/api/v1/viral', '/api/v1/agent2', '/api/v1/automacao', '/api/v1/linhas-conteudo')
+PREFIXOS = ('/api/v1/pipeline', '/api/v1/quality', '/api/v1/capabilities', '/api/v1/viral', '/api/v1/agent2', '/api/v1/automacao', '/api/v1/linhas-conteudo', '/api/v1/biblioteca-criativa', '/api/v1/integracoes')
 
 
 class ErroRota(Exception):
@@ -45,6 +47,45 @@ def tratar(metodo: str, caminho: str, q: dict, corpo, quem: str, cabecalhos=None
         raise ErroRota(e.status, str(e))
     except oq.ErroAutomacao as e:
         raise ErroRota(e.status, str(e))
+    except bc.ErroBiblioteca as e:
+        raise ErroRota(e.status, str(e))
+
+
+def _biblioteca(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
+    if (metodo, caminho) == ('GET', '/api/v1/biblioteca-criativa'):
+        return {'itens': bc.listar(_q(q, 'tipo')), 'tipos': {k: {'nome': v['nome'], 'campos': list(v['campos'])} for k, v in bc.TIPOS.items()}}
+    if (metodo, caminho) == ('POST', '/api/v1/biblioteca-criativa'):
+        d = corpo()
+        return bc.criar(str(d.get('tipo') or ''), str(d.get('nome') or ''), d.get('dados') or {}, d.get('travas'), quem)
+    m = re.fullmatch(r'/api/v1/biblioteca-criativa/(bc_\w{10})(/versoes)?', caminho)
+    if not m:
+        raise ErroRota(404, 'Rota não encontrada.')
+    if m.group(2) and metodo == 'GET':
+        return {'versoes': bc.versoes(m.group(1))}
+    if metodo == 'GET':
+        return bc._item(m.group(1))
+    if metodo in ('PATCH', 'PUT'):
+        d = corpo()
+        return bc.atualizar(m.group(1), d, d.get('versao'), quem)
+    if metodo == 'DELETE':
+        return bc.apagar(m.group(1))
+    raise ErroRota(404, 'Rota não encontrada.')
+
+
+def _integracoes(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
+    if (metodo, caminho) == ('GET', '/api/v1/integracoes/capacidades'):
+        return ig.listar()
+    m = re.fullmatch(r'/api/v1/integracoes/([\w-]{2,40})/(teste|ligar|desligar)', caminho)
+    if m and metodo == 'POST':
+        if m.group(2) == 'teste':
+            return ig.testar(m.group(1))
+        d = corpo()
+        try:
+            return ig.ligar(m.group(1), m.group(2) == 'ligar', quem, d.get('licenca_conferida') if 'licenca_conferida' in d else None,
+                            str(d.get('nota') or ''), str(d.get('ref_commit') or ''))
+        except ig.ErroIntegracao as e:
+            raise ErroRota(e.status, str(e)) from None
+    raise ErroRota(404, 'Rota não encontrada.')
 
 
 def _automacao(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
@@ -80,6 +121,9 @@ def _linhas(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
         return {'linhas': lc.listar(), 'modos_pauta': lc.MODOS_PAUTA, 'modos_execucao': lc.MODOS_EXEC}
     if rota == ('POST', '/api/v1/linhas-conteudo'):
         return lc.criar(corpo(), quem)
+    if rota == ('POST', '/api/v1/linhas-conteudo/sugerir'):
+        d = corpo()
+        return lc.sugerir_config(str(d.get('descricao') or ''), d.get('linha') or None)
     m = re.fullmatch(r'/api/v1/linhas-conteudo/pautas/(pa_\w{10})', caminho)
     if m and metodo in ('PATCH', 'POST'):
         d = corpo()
@@ -125,6 +169,10 @@ def _tratar(metodo: str, caminho: str, q: dict, corpo, quem: str, cab) -> dict:
         return _automacao(metodo, caminho, q, corpo, quem)
     if caminho.startswith('/api/v1/linhas-conteudo'):
         return _linhas(metodo, caminho, q, corpo, quem)
+    if caminho.startswith('/api/v1/biblioteca-criativa'):
+        return _biblioteca(metodo, caminho, q, corpo, quem)
+    if caminho.startswith('/api/v1/integracoes'):
+        return _integracoes(metodo, caminho, q, corpo, quem)
     # ---- esteira
     if rota == ('GET', '/api/v1/pipeline'):
         return pl.painel()
@@ -202,8 +250,10 @@ def _mudar_slot(sid: str, d: dict, quem: str) -> dict:
     s = db.um('SELECT * FROM posting_slots WHERE id=?', sid)
     if not s:
         raise ErroRota(404, 'Horário não encontrado.')
+    if d.get('acao') == 'mover':
+        return ag2.mover_slot(sid, str(d.get('data_local') or s['data_local']), str(d.get('hora_local') or ''), quem)
     if d.get('acao') != 'cancelar':
-        raise ErroRota(400, 'Ação inválida (cancelar).')
+        raise ErroRota(400, 'Ação inválida (cancelar ou mover).')
     if s['estado'] in ('publicado', 'publicando'):
         raise ErroRota(409, 'Este horário já foi postado ou está sendo enviado.')
     if s.get('post'):

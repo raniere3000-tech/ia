@@ -1503,6 +1503,21 @@ def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '', limit
     return f'{len(criados)} corte(s) pronto(s).'
 
 
+def rodada_estoque(quantos: int, fontes: int = 1) -> str:
+    """Central de Automação: até `fontes` vídeos-fonte nesta rodada, parando quando já cortou o que o estoque pedia."""
+    feitos, msgs = 0, []
+    for _ in range(max(1, min(int(fontes), 5))):
+        antes = len(estado()['cortes'])
+        msgs.append(trabalhar_cortes(limite=max(1, quantos - feitos)))
+        novos = len(estado()['cortes']) - antes
+        if novos <= 0:
+            break                      # sem vídeo novo ou deu erro: não insiste nesta rodada
+        feitos += novos
+        if feitos >= quantos:
+            break
+    return ' '.join(msgs)
+
+
 # ---------------------------------------------------------------- agente de postagem
 def _hash(arq: Path) -> str:
     h = hashlib.sha1()
@@ -2233,7 +2248,7 @@ def passo():
             _em_fundo('Busca de canais', buscar_canais)
         elif dec['acao'] == 'cortar':
             _mudar(lambda e: e['marcas'].update(tentativa=time.time()))
-            _em_fundo('Agente de cortes', lambda q=dec['quantos']: trabalhar_cortes(limite=q))
+            _em_fundo('Agente de cortes', lambda q=dec['quantos'], f=dec.get('fontes', 1): rodada_estoque(q, f))
         return
     if time.time() - m.get('busca', 0) > 86400:
         _em_fundo('Busca de canais', buscar_canais)

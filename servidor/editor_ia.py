@@ -13,6 +13,7 @@ import copy
 import subprocess
 from pathlib import Path
 
+import banco as db
 import contratos as ct
 import pipeline as pl
 
@@ -249,6 +250,16 @@ def palavras_saida(plano: dict, palavras: list) -> list:
 
 
 # ---------------------------------------------------------------- ciclo editor <-> diretor
+MODOS_EDITOR = ('automatico', 'supervisionado', 'manual')
+
+
+def modo_editor() -> str:
+    """automatico: corrige e libera sozinho (com o diretor). supervisionado: corrige sozinho, mas você libera.
+    manual: não corrige sozinho; reprovou, vai para você. Vale para os cortes (Agente 1, corte manual, vídeo importado)."""
+    v = (db.kv('automacao') or {}).get('editor') or {}
+    return v.get('modo') if v.get('modo') in MODOS_EDITOR else 'automatico'
+
+
 def rodar(rid: str, ref: str, plano: dict, render, contexto, *, dur_fonte: float | None = None, avisar=None) -> dict:
     """Loop do Agente 5 com o Agente 4 (final_release).
     render(plano) -> Path do arquivo exportado; contexto(plano) -> dict para diretor_qualidade.avaliar_final.
@@ -278,6 +289,11 @@ def rodar(rid: str, ref: str, plano: dict, render, contexto, *, dur_fonte: float
         rel['attempts_used'], rel['attempts_limit'] = dec['correcoes_usadas'], ct.MAX_CORRECOES
         rel = pl.guardar_relatorio(rid, 'final_release', ref, sha, rel)
         base = {'arquivo': str(arq), 'sha': sha, 'relatorio': rel, 'plano': plano, 'pedidos_agente3': [], 'decisao': dec}
+        if dec['decisao'] == 'aprovado' and modo_editor() == 'supervisionado':
+            # supervisionado: o diretor aprovou, mas o certificado só sai quando VOCÊ liberar (fica registrado como liberado por você)
+            motivo = f'Editor supervisionado: o diretor aprovou com nota {rel["score"]}. Confira a edição e libere.'
+            pl.mover(rid, 'manual_review_required', agente='pessoa', etapa=motivo)
+            return dict(base, resultado='revisao_manual', certificado=None, decisao=dict(dec, motivo=motivo))
         if dec['decisao'] == 'aprovado':
             cert = pl.emitir_certificado(ref, sha, rel, run=rid, revisao=versao)
             pl.mover(rid, 'final_approved', agente='agent2', etapa=f'Aprovado pelo diretor com nota {rel["score"]}', dados={'certificado': cert['id']})
@@ -293,6 +309,11 @@ def rodar(rid: str, ref: str, plano: dict, render, contexto, *, dur_fonte: float
             pl.encerrar_etapa(rid, 'final_release', 'revisao_manual', so_pessoa[0]['evidence'])
             pl.mover(rid, 'manual_review_required', agente='pessoa', etapa='Precisa de você: ' + so_pessoa[0]['evidence'][:150])
             return dict(base, resultado='revisao_manual', certificado=None)
+        if modo_editor() == 'manual':          # manual: o editor não corrige sozinho; o vídeo vai para você com os pontos do diretor
+            motivo = 'Editor no modo manual: corrija você os pontos apontados pelo diretor.'
+            pl.encerrar_etapa(rid, 'final_release', 'revisao_manual', motivo)
+            pl.mover(rid, 'manual_review_required', agente='pessoa', etapa=motivo)
+            return dict(base, resultado='revisao_manual', certificado=None, decisao=dict(dec, motivo=motivo))
         novo, feitas = corrigir(plano, acoes, dur_fonte)
         if ct.hash_plano(novo) == ct.hash_plano(plano):
             if pedidos3:

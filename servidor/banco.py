@@ -178,6 +178,14 @@ ESQUEMA = [
     CREATE INDEX IF NOT EXISTS conteudo_episodios_linha ON conteudo_episodios (linha, status);
     CREATE TABLE IF NOT EXISTS automacao_eventos (n INTEGER PRIMARY KEY AUTOINCREMENT, t REAL, agente TEXT, tipo TEXT, decisao TEXT, motivo TEXT, dados TEXT);
     """,
+    # 9: Biblioteca Criativa (modelos de roteiro, pacotes visuais, perfis de narração) com versões imutáveis e cadeados por campo
+    """
+    CREATE TABLE IF NOT EXISTS biblioteca_itens (id TEXT PRIMARY KEY, tipo TEXT NOT NULL, nome TEXT NOT NULL, versao INTEGER NOT NULL DEFAULT 1, dados TEXT NOT NULL,
+        travas TEXT NOT NULL DEFAULT '[]', apagado INTEGER NOT NULL DEFAULT 0, criado REAL, atualizado REAL);
+    CREATE INDEX IF NOT EXISTS biblioteca_itens_tipo ON biblioteca_itens (tipo, apagado);
+    CREATE TABLE IF NOT EXISTS biblioteca_versoes (item TEXT NOT NULL, versao INTEGER NOT NULL, dados TEXT NOT NULL, motivo TEXT, por TEXT, criado REAL,
+        PRIMARY KEY (item, versao));
+    """,
 ]
 
 

@@ -334,11 +334,42 @@ def reconciliar(aid: str) -> dict:
                 db.executar("UPDATE posting_slots SET estado=CASE WHEN rede='kwai' THEN 'manual' ELSE 'vazio' END, motivo='voltou para a programação', atualizado=? "
                             "WHERE id=? AND estado='cancelado' AND motivo='saiu da programação'", agora, sid)
     canc = 0
-    for s in db.todos("SELECT id FROM posting_slots WHERE agenda=? AND estado IN ('vazio','manual') AND quando_utc>?", aid, agora):
+    for s in db.todos("SELECT id FROM posting_slots WHERE agenda=? AND estado IN ('vazio','manual') AND quando_utc>? AND tipo<>'movido'", aid, agora):
         if s['id'] not in validos:
             db.executar("UPDATE posting_slots SET estado='cancelado', motivo='saiu da programação', atualizado=? WHERE id=?", agora, s['id'])
             canc += 1
     return {'novos': novos, 'cancelados': canc}
+
+
+def mover_slot(sid: str, data_local: str, hora_local: str, quem: str = 'site') -> dict:
+    """Muda UM horário de lugar (só este dia). Se já tem vídeo, o post vai junto para o novo horário. O resto da programação não muda."""
+    s = db.um('SELECT * FROM posting_slots WHERE id=?', sid)
+    if not s:
+        raise ErroAgenda('Horário não encontrado.', 404)
+    if s['estado'] not in ('vazio', 'agendado', 'reservado', 'aguardando_aprovacao'):
+        raise ErroAgenda('Este horário não pode mais ser mudado (já foi postado, perdido ou cancelado).', 409)
+    cfg = _agenda(s['agenda'])
+    try:
+        dia = date.fromisoformat(str(data_local))
+    except ValueError:
+        raise ErroAgenda('Data inválida (use AAAA-MM-DD).') from None
+    hm = _txt_hm(_hm(hora_local))
+    utc, off = local_para_utc(dia, hm, fuso(cfg['timezone']))
+    if utc < time.time() + 120:
+        raise ErroAgenda('Escolha um horário no futuro (pelo menos 2 minutos à frente).')
+    gap = cfg['minimum_gap_minutes'] * 60
+    perto = db.um("SELECT hora_local, data_local FROM posting_slots WHERE rede=? AND conta=? AND id<>? AND estado NOT IN ('cancelado','perdido') "
+                  "AND ABS(quando_utc-?)<?", s['rede'], s['conta'], sid, utc, gap)
+    if perto:
+        raise ErroAgenda(f'Fica a menos de {cfg["minimum_gap_minutes"]} min do horário de {perto["data_local"]} {perto["hora_local"]} nesta rede.')
+    if s.get('post'):
+        import postagem as pg
+        lim = utc + (cfg['max_delay_minutes'] if cfg['missed_slot_policy'] == 'publish_when_online' else TOLERANCIA_MIN) * 60
+        pg._mudar(s['post'], lambda q: q.update(quando=utc, agenda=dict(q.get('agenda') or {}, ate=lim)))
+    db.executar("UPDATE posting_slots SET data_local=?, hora_local=?, quando_utc=?, tipo='movido', motivo=?, atualizado=? WHERE id=?",
+                dia.isoformat(), hm, utc, f'movido por {quem} (fuso {off})'[:200], time.time(), sid)
+    db.evento(quem, 'slot_movido', 'slot:' + sid, {'de': f'{s["data_local"]} {s["hora_local"]}', 'para': f'{dia.isoformat()} {hm}'})
+    return db.um('SELECT * FROM posting_slots WHERE id=?', sid)
 
 
 def slots(de: float | None = None, ate: float | None = None, rede: str = '', conta: str = '') -> list:
@@ -397,6 +428,13 @@ def elegiveis(rede: str) -> list:
     return out
 
 
+def ordenar(cand: list, politica: str) -> list:
+    """Prioridade da linha (1 a 5; cortes = 3) vem primeiro; depois a regra da programação (mais antigo ou maior nota)."""
+    if politica == 'oldest_approved':
+        return sorted(cand, key=lambda x: (-x.get('prioridade', 3), x['criado']))
+    return sorted(cand, key=lambda x: (-x.get('prioridade', 3), -x['nota'], x['criado']))
+
+
 def _reservar(s: dict, cfg: dict) -> str:
     import agente as ag
     import postagem as pg
@@ -404,8 +442,7 @@ def _reservar(s: dict, cfg: dict) -> str:
     if not cand:
         db.executar("UPDATE posting_slots SET motivo='Sem vídeo aprovado pelo diretor', atualizado=? WHERE id=? AND estado='vazio'", time.time(), s['id'])
         return 'vazio'
-    cand.sort(key=(lambda x: x['criado']) if cfg['selection_policy'] == 'oldest_approved' else (lambda x: (-x['nota'], x['criado'])))
-    esc = cand[0]
+    esc = ordenar(cand, cfg['selection_policy'])[0]
     # trava o slot ANTES de criar o post: só um trabalhador ganha
     n = db.executar("UPDATE posting_slots SET estado='reservado', ref=?, sha256=?, atualizado=? WHERE id=? AND estado='vazio'", esc['ref'], esc['sha'], time.time(), s['id'])
     if not n:

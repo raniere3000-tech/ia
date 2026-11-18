@@ -2,8 +2,8 @@
 
 - Uma LINHA guarda a identidade (tema, ideia geral, estilo do catálogo real, voz, personagens/cenários da biblioteca, agenda e estoque).
 - PAUTAS: a IA propõe N (com gancho, classificação e fontes). Repetição é barrada por semelhança de palavras, não só pelo título.
-  Fonte citada pela IA é conferida só quanto a EXISTIR (o link abre); o conteúdo não é dado como verificado. Pauta de fato sem
-  nenhuma fonte que abra fica "não verificada" e nunca é aceita sozinha.
+  Afirmação de fato só vira "confirmada" quando o trecho que a sustenta é achado no texto baixado da fonte (checagem_fatos.py).
+  Fato de risco alto (saúde, dinheiro, lei) sem tudo confirmado nunca é aceito sozinho.
 - LOTE: cada pauta aceita vira um EPISÓDIO = um projeto do Agente 3 com o seu próprio roteiro, render, nota e versões.
   Se 5 de 6 passarem, os 5 seguem; o 6º fica na correção dele.
 - Os episódios NÃO postam sozinhos ao ficar prontos: o vídeo aprovado (diretor + você, ou só o diretor na publicação automática)
@@ -19,6 +19,7 @@ import unicodedata
 import uuid
 
 import banco as db
+import checagem_fatos as cf
 
 MODOS_PAUTA = ('automatico', 'supervisionado', 'manual')
 MODOS_EXEC = ('lote_unico', 'continuo')
@@ -26,7 +27,8 @@ MODOS_VISUAL = ('nenhum', 'fixo', 'variavel', 'misto')
 CLASSES = ('fato', 'opiniao', 'hipotese', 'entretenimento')
 ESTADOS_PAUTA = ('proposta', 'aceita', 'precisa_voce', 'bloqueada', 'usada', 'trocada', 'repetida')
 SEMELHANCA_MAX = 0.5          # pauta com metade das palavras iguais a outra é repetição
-CAMPOS_TRAVAVEIS = ('estilo', 'voz', 'formato', 'duracao_seg', 'personagens', 'cenarios', 'ideia_roteiro', 'tipo', 'agenda', 'estoque')
+CAMPOS_TRAVAVEIS = ('titulo', 'tema', 'estilo', 'voz', 'formato', 'duracao_seg', 'personagens', 'cenarios', 'ideia_roteiro', 'tipo', 'agenda', 'estoque',
+                    'quantidade_lote', 'publicacao', 'modo_pautas', 'ritmo', 'imagens', 'tom', 'publico')
 
 
 class ErroLinha(Exception):
@@ -90,6 +92,14 @@ def validar(d: dict, atual: dict | None = None) -> dict:
         raise ErroLinha('Personagem fixo: escolha um da biblioteca ou descreva como ele é.')
     ag_ = base.get('agenda') if isinstance(base.get('agenda'), dict) else {}
     redes = [r for r in (ag_.get('redes') or []) if r in ('youtube', 'instagram', 'facebook', 'tiktok', 'kwai')]
+    horarios = []
+    for h in (ag_.get('horarios') or [])[:12]:
+        m = re.fullmatch(r'([01]?\d|2[0-3]):([0-5]\d)', str(h).strip())
+        if not m:
+            raise ErroLinha(f'Horário inválido: {str(h)[:8]} (use HH:MM).')
+        horarios.append(f'{int(m.group(1)):02d}:{m.group(2)}')
+    dias = sorted({int(x) for x in (ag_.get('dias') if ag_.get('dias') is not None else range(7)) if str(x).isdigit() and 0 <= int(x) <= 6})
+    bib = base.get('biblioteca') if isinstance(base.get('biblioteca'), dict) else {}
     es = base.get('estoque') if isinstance(base.get('estoque'), dict) else {}
     minimo = _int(es.get('minimo', 3), 0, 60, 'Estoque mínimo')
     alvo = _int(es.get('alvo', 7), max(1, minimo), 90, 'Estoque alvo')
@@ -113,7 +123,10 @@ def validar(d: dict, atual: dict | None = None) -> dict:
         'modo_pautas': base.get('modo_pautas') if base.get('modo_pautas') in MODOS_PAUTA else 'supervisionado',
         'aprovar_roteiro': base.get('aprovar_roteiro') if base.get('aprovar_roteiro') in ('voce', 'automatico') else 'voce',
         'publicacao': base.get('publicacao') if base.get('publicacao') in ('voce', 'automatica') else 'voce',
-        'agenda': {'redes': redes},
+        'agenda': {'redes': redes, 'horarios': sorted(set(horarios)), 'dias': dias},
+        'prioridade': _int(base.get('prioridade', 3), 1, 5, 'Prioridade na agenda'),
+        'orcamento_dia': max(0.0, min(float(base.get('orcamento_dia') or 0), 500.0)),
+        'biblioteca': {k: str(bib.get(k) or '')[:40] for k in ('modelo_roteiro', 'pacote_visual', 'perfil_narracao')},
         'estoque': {'minimo': minimo, 'alvo': alvo},
         'modo_execucao': base.get('modo_execucao') if base.get('modo_execucao') in MODOS_EXEC else 'lote_unico',
         'limite_dia': _int(base.get('limite_dia', 3), 1, 12, 'Vídeos iniciados por dia'),
@@ -140,7 +153,42 @@ def criar(d: dict, quem: str = 'site') -> dict:
     db.executar('INSERT INTO linhas_conteudo (id, titulo, config, estado, versao, criado, atualizado) VALUES (?,?,?,?,?,?,?)', lid, cfg['titulo'],
                 json.dumps(cfg, ensure_ascii=False), 'ativa', 1, agora, agora)
     db.evento(quem, 'linha_criada', 'linha:' + lid, {'titulo': cfg['titulo'], 'lote': cfg['quantidade_lote']})
-    return obter(lid)
+    r = obter(lid)
+    r['agenda_aplicada'] = aplicar_horarios(cfg, quem)
+    return r
+
+
+def aplicar_horarios(cfg: dict, quem: str = 'site') -> list:
+    """Horários da linha viram horários na programação diária de cada rede (cria a programação ou SOMA os horários aos que já existem).
+    Os horários são da rede, não exclusivos da linha: a prioridade da linha decide quem ocupa cada um."""
+    import agenda_postagem as ag2
+    hs, dias = cfg['agenda'].get('horarios') or [], cfg['agenda'].get('dias') or []
+    out = []
+    if not hs:
+        return out
+    for rede in cfg['agenda']['redes']:
+        try:
+            a = db.um('SELECT id FROM posting_schedules WHERE conta=? AND rede=? AND apagado=0', 'principal', rede)
+            if not a:
+                ag2.criar({'platform': rede, 'mode': 'fixed', 'weekdays': dias, 'fixed_times': hs}, quem)
+                out.append({'rede': rede, 'ok': True, 'acao': 'programação criada'})
+                continue
+            atual = ag2._agenda(a['id'])
+            if atual['mode'] == 'automatic':
+                out.append({'rede': rede, 'ok': False, 'acao': 'A programação desta rede está no modo automático: mude para fixo ou misto para usar horários exatos.'})
+                continue
+            regras = {k: list(v) for k, v in atual['weekly_rules'].items()}
+            mudou = False
+            for d in dias:
+                novo = sorted(set(regras.get(str(d), [])) | set(hs))
+                mudou |= novo != sorted(regras.get(str(d), []))
+                regras[str(d)] = novo
+            if mudou:
+                ag2.atualizar(a['id'], {'weekly_rules': regras}, atual['version'], quem)
+            out.append({'rede': rede, 'ok': True, 'acao': 'horários somados à programação' if mudou else 'horários já estavam na programação'})
+        except ag2.ErroAgenda as e:
+            out.append({'rede': rede, 'ok': False, 'acao': str(e)})
+    return out
 
 
 def atualizar(lid: str, d: dict, quem: str = 'site') -> dict:
@@ -152,7 +200,87 @@ def atualizar(lid: str, d: dict, quem: str = 'site') -> dict:
     db.executar('UPDATE linhas_conteudo SET titulo=?, config=?, estado=?, versao=versao+1, atualizado=? WHERE id=?', cfg['titulo'],
                 json.dumps(cfg, ensure_ascii=False), estado, time.time(), lid)
     db.evento(quem, 'linha_mudou', 'linha:' + lid, {'estado': estado})
-    return obter(lid)
+    r = obter(lid)
+    if 'agenda' in d:
+        r['agenda_aplicada'] = aplicar_horarios(cfg, quem)
+    return r
+
+
+PADRAO_NOVA = {'quantidade_lote': 6, 'duracao_seg': 45, 'estilo': 'documentario', 'modo_pautas': 'supervisionado', 'aprovar_roteiro': 'voce',
+               'publicacao': 'voce', 'modo_execucao': 'lote_unico', 'limite_dia': 6, 'estoque': {'minimo': 3, 'alvo': 7}}
+CAMPOS_SUGESTAO = ('titulo', 'tema', 'subtemas', 'excluir', 'publico', 'objetivo', 'tom', 'ideia_geral', 'ideia_roteiro', 'gancho_preferido', 'restricoes',
+                   'tipo', 'quantidade_lote', 'duracao_seg', 'formato', 'estilo', 'voz', 'ritmo', 'imagens', 'personagens', 'agenda', 'modo_execucao', 'estoque')
+
+
+def _prompt_config(texto: str, catalogo: list, vozes: list, tipos: list, formatos: list) -> str:
+    est = '; '.join(f'{e["id"]} = {e["nome"]} ({e["status"]})' for e in catalogo)
+    return ('Você transforma o pedido do dono em configuração de uma LINHA de vídeos curtos. Use só o que o pedido diz ou deixa claro; '
+            'campo não citado fica de fora do JSON (não invente).\n'
+            f'Estilos (id = nome (situação)): {est}\nVozes: {", ".join(vozes)}. Voz masculina grave: Charon; feminina: Kore.\n'
+            f'Tipos: {", ".join(tipos)}. Formatos: {", ".join(formatos)}.\n'
+            'Campos: titulo, tema, subtemas[], excluir[], publico, objetivo, tom, ideia_geral, ideia_roteiro, gancho_preferido, restricoes, tipo, '
+            'quantidade_lote (1-30), duracao_seg (15-180), formato, estilo (id), voz, ritmo (calmo|normal|agil|rapido), imagens (nenhuma|gemini|busca: '
+            '"imagens de apoio" = busca), personagens {modo: nenhum|fixo|variavel|misto, descricao}, '
+            'agenda {redes: [youtube|instagram|facebook|tiktok|kwai], horarios: ["HH:MM"], dias: [0=segunda..6=domingo]}, '
+            'modo_execucao (lote_unico|continuo: "quando o estoque ficar baixo" = continuo), estoque {minimo, alvo}.\n'
+            f'PEDIDO: {texto[:3000]}\nResponda JSON: {{"config": {{...}}, "duvidas": ["o que ficou em aberto"]}}')
+
+
+def sugerir_config(texto: str, lid: str | None = None, ia=None) -> dict:
+    """A IA lê a descrição livre e PROPÕE a configuração. Nada é gravado: a tela mostra as mudanças e você aplica.
+    Campo com cadeado nunca muda. Estilo fora do catálogo, indisponível ou beta não é escolhido sozinho."""
+    import estilos_codigo as ec
+    import produtor
+    texto = str(texto or '').strip()
+    if len(texto) < 15:
+        raise ErroLinha('Descreva a linha com um pouco mais de detalhe (tema, quantos vídeos, duração, estilo, horários).')
+    atual = _linha(lid) if lid else None
+    base = {k: v for k, v in (atual or PADRAO_NOVA).items() if k not in ('id', 'estado', 'versao', 'criado', 'atualizado')}
+    travas = (atual or {}).get('travas') or []
+    cat = ec.catalogo()
+    if ia is None:
+        import agente as ag
+        ia = lambda prompt: ag.gemini([{'text': prompt}], uso='roteiro')  # noqa: E731
+    try:
+        r = ia(_prompt_config(texto, cat, produtor.VOZES, produtor.TIPOS, list(ec.FORMATOS))) or {}
+    except Exception as e:  # noqa: BLE001
+        raise ErroLinha(f'A IA não conseguiu ler a descrição agora: {str(e)[:200]}', 502)
+    sug = r.get('config') if isinstance(r.get('config'), dict) else {}
+    avisos = [str(x)[:200] for x in (r.get('duvidas') or [])[:6]]
+    estilos = {e['id']: e for e in cat}
+    if 'estilo' in sug:
+        e = estilos.get(str(sug['estilo']))
+        if not e:
+            avisos.append(f'A IA pediu um estilo que não existe ("{str(sug["estilo"])[:30]}"): mantive o atual.')
+            sug.pop('estilo')
+        elif e['status'] == 'indisponivel':
+            avisos.append(f'O estilo "{e["nome"]}" não roda neste servidor: mantive o atual.')
+            sug.pop('estilo')
+        elif e['status'] == 'beta':
+            avisos.append(f'O estilo "{e["nome"]}" está em teste: escolha você e marque "aceito estilo em teste".')
+            sug.pop('estilo')
+    novo = dict(base)
+    mudancas = []
+    for k in CAMPOS_SUGESTAO:
+        if k not in sug or k in travas:
+            continue
+        v = sug[k]
+        if k == 'agenda' and isinstance(v, dict):
+            v = {**(base.get('agenda') or {}), **{a: b for a, b in v.items() if a in ('redes', 'horarios', 'dias')}}
+        if k == 'personagens' and isinstance(v, dict):
+            v = {**(base.get('personagens') or {'modo': 'nenhum', 'ids': [], 'descricao': ''}), **{a: b for a, b in v.items() if a in ('modo', 'descricao')}}
+        if v != base.get(k):
+            novo[k] = v
+    try:
+        cfg = validar(novo, None)
+    except ErroLinha as e:          # o que a IA propôs não passa nas regras: mostra o motivo em vez de gravar algo errado
+        raise ErroLinha(f'A proposta da IA não passou nas regras: {e}. Ajuste a descrição ou preencha o campo à mão.', 422)
+    for k in CAMPOS_SUGESTAO:
+        if cfg.get(k) != base.get(k):
+            mudancas.append({'campo': k, 'de': base.get(k), 'para': cfg.get(k)})
+    if travas:
+        avisos.append('Campos com cadeado não foram mudados: ' + ', '.join(travas) + '.')
+    return {'proposta': cfg, 'mudancas': mudancas, 'avisos': avisos, 'linha': lid or ''}
 
 
 def listar() -> list:
@@ -200,15 +328,6 @@ def repetida(texto: str, existentes: list[str], titulo: str = '') -> str | None:
     return None
 
 
-def _fonte_abre(url: str) -> bool:
-    try:
-        import postagem as pg
-        st, _, _ = pg.http('GET', url, tempo=8)
-        return 200 <= st < 400
-    except Exception:  # noqa: BLE001
-        return False
-
-
 def _prompt(cfg: dict, n: int, evitar: list[str]) -> str:
     return (f'Você planeja pautas de vídeos curtos ({cfg["duracao_seg"]} s, {cfg["formato"]}) da linha "{cfg["titulo"]}".\n'
             f'Tema: {cfg["tema"]}. Subtemas: {", ".join(cfg["subtemas"]) or "livre"}. NÃO tratar de: {", ".join(cfg["excluir"]) or "—"}.\n'
@@ -243,7 +362,7 @@ def _gravar_pauta(lid: str, p: dict, status: str) -> dict:
     return {'id': pid, 'status': status, **p}
 
 
-def planejar_pautas(lid: str, n: int | None = None, ia=None) -> dict:
+def planejar_pautas(lid: str, n: int | None = None, ia=None, buscar=None) -> dict:
     """A IA propõe N pautas. ia(prompt) -> dict (para testes); por padrão o Gemini do servidor."""
     cfg = _linha(lid)
     n = max(1, min(int(n or cfg['quantidade_lote']), 30))
@@ -270,13 +389,12 @@ def planejar_pautas(lid: str, n: int | None = None, ia=None) -> dict:
         if len(novas) >= n:
             break
         if p['classificacao'] == 'fato':
-            for f in p['fontes']:
-                f['abre'] = _fonte_abre(f['url'])
-            p['verificacao'] = 'fonte encontrada (o texto não foi conferido)' if any(f['abre'] for f in p['fontes']) else 'não verificado'
+            p = cf.conferir(p, ia, buscar or cf.baixar)       # afirmação só é "confirmada" com o trecho achado no texto da fonte
         else:
             p['verificacao'] = 'não se aplica'
+            p['risco'] = cf.risco(p)
         if cfg['modo_pautas'] == 'automatico':
-            st = 'precisa_voce' if p['verificacao'] == 'não verificado' else 'aceita'
+            st = 'aceita' if cf.pode_aceitar_sozinha(p) else 'precisa_voce'
         else:
             st = 'proposta'
         novas.append(_gravar_pauta(lid, p, st))
@@ -338,8 +456,9 @@ def _briefing(cfg: dict, p: dict) -> dict:
               f'Cenário: {cfg["cenarios"]["descricao"]}' if cfg['cenarios']['descricao'] else '']
     if p.get('afirmacoes'):
         partes.append('Afirmações que o vídeo pode fazer: ' + ' | '.join(p['afirmacoes']))
-    if p.get('verificacao') == 'não verificado':
-        partes.append('ATENÇÃO: as afirmações não têm fonte conferida; não apresente nada como fato confirmado, use "segundo estudos" só com fonte.')
+    nao_conf = [c['afirmacao'] for c in p.get('conferencia') or [] if not c.get('ok')]
+    if p.get('verificacao') == 'não verificado' or nao_conf:
+        partes.append('ATENÇÃO: estas afirmações NÃO foram confirmadas na fonte; não as apresente como fato: ' + (' | '.join(nao_conf) or 'todas'))
     fontes = '\n'.join(f'{f["origem"]}: {f["url"]}' for f in p.get('fontes') or [] if f.get('abre'))
     return {'tema': p['titulo'], 'nicho': cfg['tema'], 'publico': cfg['publico'], 'objetivo': p.get('objetivo') or cfg['objetivo'], 'idioma': cfg['idioma'],
             'tipo': cfg['tipo'], 'descricao': '\n'.join(x for x in partes if x)[:1500], 'origem': 'linha', 'referencias': fontes[:1500],
@@ -355,6 +474,13 @@ def iniciados_hoje(lid: str) -> int:
     return db.um('SELECT COUNT(*) n FROM conteudo_episodios WHERE linha=? AND criado>?', lid, ini)['n']
 
 
+def gasto_24h(lid: str) -> float:
+    """Gasto estimado (o que o produtor registra a cada chamada de IA) dos vídeos desta linha nas últimas 24 h."""
+    r = db.um('SELECT COALESCE(SUM(c.estimado),0) s FROM custos c JOIN jobs j ON j.id=c.job JOIN conteudo_episodios e ON e.projeto=j.projeto '
+              'WHERE e.linha=? AND c.t>?', lid, time.time() - 86400)
+    return round(float(r['s'] or 0), 2)
+
+
 def iniciar_lote(lid: str, n: int | None = None, quem: str = 'site', motivo: str = 'pedido por você', produzir=None) -> dict:
     """Cria até N episódios (um projeto por pauta aceita ainda não usada) e manda produzir. Idempotente por pauta."""
     import produtor
@@ -368,6 +494,13 @@ def iniciar_lote(lid: str, n: int | None = None, quem: str = 'site', motivo: str
     if folga <= 0:
         raise ErroLinha(f'Esta linha já começou {cfg["limite_dia"]} vídeo(s) nas últimas 24 h (limite que você definiu).', 429)
     n = min(n, folga)
+    if cfg.get('orcamento_dia'):
+        gasto = gasto_24h(lid)
+        cabe = int((cfg['orcamento_dia'] - gasto) // max(cfg['orcamento_video'], 0.01))
+        if cabe <= 0:
+            raise ErroLinha(f'Orçamento do dia da linha alcançado: R$ {gasto:.2f} de R$ {cfg["orcamento_dia"]:.2f} nas últimas 24 h '
+                            f'(cada vídeo pode gastar até R$ {cfg["orcamento_video"]:.2f}).', 429)
+        n = min(n, cabe)
     livres = db.todos("SELECT * FROM conteudo_pautas WHERE linha=? AND status='aceita' ORDER BY criado LIMIT ?", lid, n)
     if not livres:
         raise ErroLinha('Não há pauta aceita para produzir. Planeje pautas (ou aceite as propostas) primeiro.', 409)
@@ -382,10 +515,12 @@ def iniciar_lote(lid: str, n: int | None = None, quem: str = 'site', motivo: str
         n_ok = db.executar("UPDATE conteudo_pautas SET status='usada', lote=?, atualizado=? WHERE id=? AND status='aceita'", lote, time.time(), r['id'])
         if not n_ok:
             continue                   # outra chamada pegou esta pauta primeiro
-        proj = produtor.novo({'briefing': _briefing(cfg, p), 'modo': 'automatico', 'origem': 'linha'}, quem)
-        pj.mudar_dados(proj['id'], lambda d, _p, eid=eid: d.update(linha={'id': lid, 'episodio': eid, 'pauta': r['id'], 'titulo': cfg['titulo']}))
+        import biblioteca_criativa as bc
+        brief, usados = bc.aplicar_no_briefing(_briefing(cfg, p), cfg.get('biblioteca') or {})     # versões da biblioteca ficam presas ao episódio
+        proj = produtor.novo({'briefing': brief, 'modo': 'automatico', 'origem': 'linha'}, quem)
+        pj.mudar_dados(proj['id'], lambda d, _p, eid=eid: d.update(linha={'id': lid, 'episodio': eid, 'pauta': r['id'], 'titulo': cfg['titulo'], 'biblioteca': usados}))
         db.executar('INSERT INTO conteudo_episodios (id, linha, lote, pauta, projeto, status, dados, criado, atualizado) VALUES (?,?,?,?,?,?,?,?,?)', eid, lid, lote,
-                    r['id'], proj['id'], 'produzindo', json.dumps({'titulo': p['titulo']}, ensure_ascii=False), time.time(), time.time())
+                    r['id'], proj['id'], 'produzindo', json.dumps({'titulo': p['titulo'], 'biblioteca': usados}, ensure_ascii=False), time.time(), time.time())
         produzir(proj['id'], f'linha:{eid}')
         feitos.append({'episodio': eid, 'projeto': proj['id'], 'titulo': p['titulo']})
     db.evento(quem, 'lote_iniciado', 'linha:' + lid, {'lote': lote, 'episodios': len(feitos), 'motivo': motivo[:120]})
@@ -456,7 +591,7 @@ def resumo(lid: str) -> dict:
     cfg = _linha(lid)
     e = estoque(lid)
     cont = {r['status']: r['n'] for r in db.todos('SELECT status, COUNT(*) n FROM conteudo_pautas WHERE linha=? GROUP BY status', lid)}
-    return {'id': lid, 'titulo': cfg['titulo'], 'estado': cfg['estado'], 'versao': cfg['versao'], 'estilo': cfg['estilo'], 'modo_execucao': cfg['modo_execucao'],
+    return {'id': lid, 'titulo': cfg['titulo'], 'estado': cfg['estado'], 'gasto_24h': gasto_24h(lid), 'orcamento_dia': cfg.get('orcamento_dia', 0), 'versao': cfg['versao'], 'estilo': cfg['estilo'], 'modo_execucao': cfg['modo_execucao'],
             'publicacao': cfg['publicacao'], 'redes': cfg['agenda']['redes'], 'estoque': e, 'pautas': cont,
             'episodios': db.um('SELECT COUNT(*) n FROM conteudo_episodios WHERE linha=?', lid)['n']}
 
@@ -512,5 +647,6 @@ def ativos_para(rede: str) -> list:
             cert = pl.certificado(sha)
             if not cert:
                 continue
-            out.append({'tipo': 'agente3', 'projeto': p, 'ref': 'p:' + p['id'], 'sha': sha, 'nota': cert['nota'], 'criado': r['criado'], 'linha': cfg['titulo']})
+            out.append({'tipo': 'agente3', 'projeto': p, 'ref': 'p:' + p['id'], 'sha': sha, 'nota': cert['nota'], 'criado': r['criado'], 'linha': cfg['titulo'],
+                        'prioridade': cfg.get('prioridade', 3)})
     return out
