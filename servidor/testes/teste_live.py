@@ -243,5 +243,30 @@ check(lv.config()['cortes_por_bloco'] == 3 and lv.config()['nota_min'] == 60, 'p
 lv._mudar(lambda d: d.update(config={'cortes_por_bloco': 1, 'nota_min': 70}))
 check(lv.config()['cortes_por_bloco'] == 3 and lv.config()['nota_min'] == 60, 'configuração antiga (1 corte, nota 70) é atualizada')
 
+print('9. Memória do celular')
+velha = lv.PASTA / 'velha1'
+velha.mkdir(parents=True, exist_ok=True)
+(velha / 'b00001.ts').write_bytes(b'x' * 5000)
+lv._mudar(lambda d: d['lives'].append({'id': 'velha1', 'estado': 'terminada', 'blocos': [{'n': 1, 'arquivo': str(velha / 'b00001.ts'), 'estado': 'feito'}],
+                                       'inicio': 0, 'cfg': lv.config(), 'log': []}))
+fila1 = lv.PASTA / 'fila1'
+fila1.mkdir(parents=True, exist_ok=True)
+(fila1 / 'b00002.ts').write_bytes(b'x' * 5000)
+lv._mudar(lambda d: d['lives'].append({'id': 'fila1', 'estado': 'terminada', 'blocos': [{'n': 2, 'arquivo': str(fila1 / 'b00002.ts'), 'estado': 'na_fila'}],
+                                       'inicio': 0, 'cfg': lv.config(), 'log': []}))
+liberou = lv.limpar_disco()
+check(liberou >= 5000 and not velha.exists(), 'bloco já feito de live encerrada é apagado (libera memória)')
+check((fila1 / 'b00002.ts').exists(), 'bloco ainda na fila NÃO é apagado')
+lv._livre = lambda: 100 * 2**20
+lv.ESPERA_ESPACO = 0.2
+estado_live.update(ao_vivo=True, chamadas=0)
+lv.PEGAR = pegar
+lv._mudar(lambda d: [x.update(estado='terminada') for x in d['lives']])
+cheio = lv.comecar({'link': 'https://youtube.com/live/cheio', 'origem': 'meu', 'redes': ['youtube']})
+time.sleep(1.5)
+ch = lv.obter(cheio['id'])
+check(ch.get('sem_espaco') and not ch['blocos'] and any('Pouco espaço' in x['texto'] for x in ch['log']), 'pouco espaço: a gravação espera e avisa, sem encher o celular')
+lv.parar(cheio['id'])
+
 print(f'\n{ok} ok, {falhas} falha(s)')
 sys.exit(1 if falhas else 0)

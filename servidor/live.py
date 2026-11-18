@@ -29,6 +29,8 @@ PADRAO = {'v': 2, 'bloco_min': 5, 'cortes_por_bloco': 3, 'nota_min': 60, 'max_ho
           'redes': [], 'postar': True}
 MOTIVOS = ('meu', 'autorizado', 'regra')
 ESPERA_ERRO = 30      # segundos entre tentativas de reabrir a live
+LIVRE_MIN = 1500 * 2**20   # abaixo disso a gravação espera (um bloco de 10 min em 1080p passa de 300 MB)
+ESPERA_ESPACO = 60
 SEM_DADOS = 90        # segundos sem o arquivo crescer = a live parou de mandar vídeo
 
 
@@ -259,6 +261,17 @@ def _gravar(lid: str):
         if restante <= 5:
             _terminar(lid, f'Chegou ao limite de {lv["cfg"]["max_horas"]} hora(s) de gravação.')
             break
+        limpar_disco()
+        if _livre() < LIVRE_MIN:
+            if not obter(lid).get('sem_espaco'):
+                _anotar(lid, f'Pouco espaço no celular ({_livre() // 2**20} MB livres): pausei a gravação até os blocos na fila virarem corte '
+                             'e liberarem espaço. Apague vídeos antigos para liberar mais.', 'erro')
+                _mudar_live(lid, lambda x: x.update(sem_espaco=True))
+            time.sleep(ESPERA_ESPACO)
+            continue
+        if obter(lid).get('sem_espaco'):
+            _mudar_live(lid, lambda x: x.update(sem_espaco=False))
+            _anotar(lid, 'Espaço liberado: voltei a gravar.', 'ok')
         try:
             info = PEGAR(lv['link'])
         except Exception as e:  # noqa: BLE001
@@ -441,10 +454,56 @@ def postar_aprovados(lid: str) -> int:
     return feitos
 
 
+def _livre() -> int:
+    try:
+        PASTA.mkdir(parents=True, exist_ok=True)
+        return shutil.disk_usage(PASTA).free
+    except OSError:
+        return 1 << 40
+
+
+def limpar_disco() -> int:
+    """Apaga da memória do celular os arquivos de bloco que não vão mais virar corte: blocos já feitos ou com erro,
+    sobras de lives encerradas e o MP4 de apoio. Bloco na fila ou sendo cortado fica. Devolve quantos bytes liberou."""
+    liberado = 0
+    try:
+        lives = {x['id']: x for x in _ler()['lives']}
+    except Exception:  # noqa: BLE001
+        return 0
+    if not PASTA.exists():
+        return 0
+    for pasta in PASTA.iterdir():
+        if not pasta.is_dir():
+            continue
+        lv = lives.get(pasta.name)
+        vivos = {Path(b['arquivo']).stem for b in (lv or {}).get('blocos', []) if b['estado'] in ('na_fila', 'cortando')}
+        gravando = lv and lv['estado'] in ('gravando', 'terminando')
+        atual = f'b{int(lv.get("gravando_bloco") or 0):05d}' if gravando else ''
+        for a in pasta.iterdir():
+            if a.suffix not in ('.ts', '.mp4') or a.stem in vivos or a.stem == atual:
+                continue
+            if gravando and a.stem not in {Path(b['arquivo']).stem for b in lv.get('blocos', [])}:
+                continue                    # ainda não registrado (acabou de fechar)
+            try:
+                liberado += a.stat().st_size
+                a.unlink()
+            except OSError:
+                pass
+        if not gravando and not vivos and not any(pasta.glob('*.ts')):
+            shutil.rmtree(pasta, ignore_errors=True)
+    return liberado
+
+
 def iniciar():
     """Servidor ligou: lives que estavam gravando quando ele caiu continuam (se ainda estiverem no ar)."""
     import fila
     fila.registrar('live.bloco', job_bloco, 'pesado')
+    try:
+        mb = limpar_disco() // 2**20
+        if mb:
+            print(f'live: limpeza liberou {mb} MB de blocos antigos')
+    except Exception as e:  # noqa: BLE001
+        print('live: limpeza', e)
     for lv in _ler()['lives']:
         if lv['estado'] == 'gravando':
             threading.Thread(target=_gravar, args=(lv['id'],), daemon=True).start()
