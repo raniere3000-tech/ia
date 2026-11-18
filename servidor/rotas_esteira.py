@@ -49,6 +49,11 @@ def tratar(metodo: str, caminho: str, q: dict, corpo, quem: str, cabecalhos=None
         raise ErroRota(e.status, str(e))
     except bc.ErroBiblioteca as e:
         raise ErroRota(e.status, str(e))
+    except Exception as e:  # noqa: BLE001
+        import agente as _ag
+        if isinstance(e, _ag.ErroAgente):
+            raise ErroRota(409, str(e)) from None
+        raise
 
 
 def _biblioteca(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
@@ -103,6 +108,8 @@ def _automacao(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
         return oq.pausar(quem)
     if rota == ('POST', '/api/v1/automacao/retomar'):
         return oq.retomar(quem)
+    if rota == ('POST', '/api/v1/automacao/mandar-editor'):
+        return oq.mandar_sem_certificado(quem)
     if rota == ('GET', '/api/v1/automacao/agente1'):
         return oq.situacao_agente1()
     if rota == ('POST', '/api/v1/automacao/agente1/comecar'):

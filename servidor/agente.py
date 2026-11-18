@@ -1410,11 +1410,14 @@ def job_esteira_recebido(ctx):
     if not fonte.exists():
         shutil.copyfile(arq, fonte)
     dur = duracao(fonte)
-    run = pl.criar('manual' if c.get('tipo') == 'manual' else 'importado', cid, c.get('titulo', '')[:120], chave=f'recebido:{cid}',
-                   dados={'video': c['video']})
+    rodada = str(ctx.dados.get('rodada') or '')       # "mandar para o editor de novo": execução nova (a antiga fica no histórico)
+    run = pl.criar('manual' if c.get('tipo') == 'manual' else 'importado', cid, c.get('titulo', '')[:120],
+                   chave=f'recebido:{cid}' + (f':{rodada}' if rodada else ''), dados={'video': c['video']})
     inicial = ed.plano_importado(dur, (c.get('formato') or '9:16'), c.get('modelo', ''))
     h0 = __import__('contratos').hash_plano(inicial)
     dr = c.get('direitos') or {}
+    if c.get('tipo') != 'manual' and dr.get('origem') not in MOTIVOS and not conferir(c)['bloqueios']:
+        dr = {'origem': 'regra', 'nota': 'Corte do Agente 1 de canal aprovado por você.'}     # o direito vem do canal aprovado
     ctx.progresso(10, 'Diretor conferindo o vídeo')
     res = ed.rodar(run['id'], cid, inicial, lambda p: ed.executar_importado(p, fonte, arq, h0),
                    lambda p: {'aspecto': p['target_aspect_ratio'], 'sem_audio_ok': False, 'direitos_ok': dr.get('origem') in MOTIVOS,
@@ -1426,8 +1429,14 @@ def job_esteira_recebido(ctx):
     def f(e):
         for x in e['cortes']:
             if x['id'] == cid:
-                x.update(qa=qa, esteira=run['id'], hash=_hash(arq), tamanho=arq.stat().st_size, status='pronto' if vd['aprovado'] else 'reprovado')
+                manter = x['status'] == 'agendado' and x.get('post') and vd['aprovado']     # já tinha post: continua agendado (sem agendar de novo)
+                x.update(qa=qa, esteira=run['id'], hash=_hash(arq), tamanho=arq.stat().st_size,
+                         status='agendado' if manter else 'pronto' if vd['aprovado'] else 'reprovado')
+                if vd['aprovado']:
+                    x.pop('aviso_permitir', None)
     _mudar(f)
+    if vd['aprovado'] and c.get('post'):
+        _reativar_post(cid)
     if res['resultado'] == 'aprovado':
         fonte.unlink(missing_ok=True)
         if c.get('espera_fila'):
@@ -1857,6 +1866,8 @@ def acompanhar():
                        '\nSe quiser postar mesmo assim, abra Publicações (Agendar posts) e toque em "Liberar e postar". Sem a sua liberação, nada é postado.\n', zap_tipo='a2_liberacao')
             continue
         links = {r: d.get('link', '') for r, d in p['redes'].items() if d['status'] == 'postado'}
+        if not links and _barrado_cert(p) and _esteira_ligada():
+            continue                      # barrado só por falta da aprovação do diretor: volta sozinho para o editor (voltar_ao_editor_sozinho)
         erros = {r: d.get('erro', '') for r, d in p['redes'].items() if d['status'] == 'erro'}
         _mudar(lambda e, cid=c['id']: [x.update(status='postado', postado=time.time(), links=links, erros=erros) for x in e['cortes'] if x['id'] == cid])
         corpo = f'Corte: {c["titulo"]}\n\n' + ''.join(f'- {r.capitalize()}: {l or "enviado"}\n' for r, l in links.items())
@@ -2194,6 +2205,193 @@ def rodar_agora(oque: str, link: str = '') -> dict:
     return {'ok': True}
 
 
+def mandar_para_editor(cid: str, quem: str = 'site') -> dict:
+    """Você manda um corte para o editor (Agente 5) e o diretor (Agente 4) de novo: por exemplo, corte feito antes da esteira,
+    sem certificado, que o Agente 2 não deixa postar. Não mexe no post: se o diretor aprovar, o mesmo post passa a valer."""
+    if not _esteira_ligada():
+        raise ErroAgente('A esteira dos 5 agentes está desligada: sem ela não há editor nem diretor para mandar.')
+    c = next((x for x in estado()['cortes'] if x['id'] == cid), None)
+    if not c:
+        raise ErroAgente('Corte não encontrado.')
+    if c['status'] == 'postado' and _postado_barrado(c):
+        _mudar(lambda e: [x.update(status='agendado', links={}, erros={}) for x in e['cortes'] if x['id'] == cid])
+        c['status'] = 'agendado'
+    if c['status'] in ('descartado', 'postado'):
+        raise ErroAgente('Este corte já foi ' + ('descartado.' if c['status'] == 'descartado' else 'postado.'))
+    import fila
+    ja = db_fila_aberta(cid)
+    if ja:
+        return {'ok': True, 'job': ja, 'ja_na_fila': True}
+    rodada = uuid.uuid4().hex[:6]
+    sozinho = quem == 'automático'
+
+    def marcar(e):
+        for x in e['cortes']:
+            if x['id'] == cid:
+                x['qa'] = {**(x.get('qa') or {}), 'diretor': {'veredito': 'conferindo', 'motivos': [], 'tentativas': 0, 't': time.time()}}
+                x['voltas_editor'] = (int(x.get('voltas_editor') or 0) + 1) if sozinho else 0     # você mandou: começa a contar de novo
+                if not sozinho:
+                    x.pop('aviso_permitir', None)
+    _mudar(marcar)
+    j = fila.enfileirar('esteira.recebido', agente='agent5', dados={'corte': cid, 'rodada': rodada}, recurso='pesado',
+                        titulo='Editor e diretor: ' + c['titulo'][:60], chave=f'esteira:{cid}:{rodada}')
+    anotar(f'"{c["titulo"][:60]}" foi para o editor e o diretor ({quem}).', 'ok')
+    return {'ok': True, 'job': j['id']}
+
+
+def db_fila_aberta(cid: str) -> str:
+    import banco as db
+    r = db.um("SELECT id FROM jobs WHERE tipo='esteira.recebido' AND status IN ('agendado','na_fila','rodando','aguardando_tentativa') AND dados LIKE ?",
+              f'%"corte": "{cid}"%')
+    return r['id'] if r else ''
+
+
+TXT_SEM_CERT = 'não tem a aprovação do diretor'
+MAX_VOLTAS = 3           # quantas vezes o corte volta SOZINHO para o editor (cada volta já tem até 5 correções do diretor)
+
+
+def _barrado_cert(p: dict) -> bool:
+    """O post parou na conferência só porque o arquivo não tem a aprovação do diretor."""
+    return any(d['status'] == 'erro' and TXT_SEM_CERT in (d.get('erro') or '') for d in p['redes'].values())
+
+
+def _postado_barrado(c: dict) -> bool:
+    """Versão antiga marcava como 'postado' um post que nem saiu (barrado pela falta de aprovação do diretor)."""
+    return c['status'] == 'postado' and not any((c.get('links') or {}).values()) and \
+        any(TXT_SEM_CERT in (m or '') for m in (c.get('erros') or {}).values())
+
+
+def _reativar_post(cid: str):
+    """O diretor aprovou (ou você permitiu): o post do corte volta a valer.
+    Post ainda no futuro: segue no mesmo horário. Post que já foi barrado: sai da agenda e o corte volta para
+    os prontos, para o Agente 2 dar um horário novo."""
+    c = next((x for x in estado()['cortes'] if x['id'] == cid), None)
+    if not c or not c.get('post'):
+        return
+    p = next((x for x in pg.posts() if x['id'] == c['post']), None)
+    if p and any(d['status'] in ('postado', 'postando') for d in p['redes'].values()):
+        return
+    if p and p['quando'] > pg.agora() and not any(d['status'] == 'erro' for d in p['redes'].values()):
+        nova = pg.assinatura(p['video'])
+        try:
+            pg._mudar(p['id'], lambda q: q.update(hash=nova or q.get('hash', '')))      # é a versão aprovada agora
+        except pg.ErroRede:
+            pass
+        _mudar(lambda e: [x.update(status='agendado') for x in e['cortes'] if x['id'] == cid])
+        return
+    if p:
+        try:
+            pg.cancelar_post(p['id'], manter_video=True)
+        except pg.ErroRede:
+            return
+    _mudar(lambda e: [x.update(status='pronto', post='', links={}, erros={}) for x in e['cortes'] if x['id'] == cid])
+    anotar(f'"{c["titulo"][:50]}" aprovado: voltou para os prontos e ganha um horário novo.', 'ok')
+
+
+def sem_certificado() -> list:
+    """Cortes que o Agente 2 não pode postar porque o arquivo não tem certificado do diretor:
+    prontos/agendados sem certificado, posts barrados por isso e cortes com post que o diretor reprovou."""
+    if not _esteira_ligada():
+        return []
+    import agenda_postagem as ag2
+    import pipeline as pl
+    out = []
+    for c in estado()['cortes']:
+        travado = c['status'] in ('pronto', 'agendado') or _postado_barrado(c) or (c['status'] == 'reprovado' and (c.get('post') or c.get('voltas_editor')))
+        if not travado:
+            continue
+        sha = ag2._sha(c)
+        if sha and pl.certificado(sha):
+            continue
+        voltas = int(c.get('voltas_editor') or 0)
+        out.append({'id': c['id'], 'titulo': c['titulo'], 'status': c['status'], 'na_fila': bool(db_fila_aberta(c['id'])),
+                    'voltas': voltas, 'max_voltas': MAX_VOLTAS,
+                    'esperando_voce': voltas >= MAX_VOLTAS and c['status'] == 'reprovado',
+                    'motivos': ((c.get('qa') or {}).get('diretor') or {}).get('motivos', [])[:3]})
+    return out
+
+
+def voltar_ao_editor_sozinho(maximo: int = 3) -> int:
+    """Chamado pelo relógio: corte sem aprovação do diretor volta sozinho para o editor, até MAX_VOLTAS vezes.
+    Se mesmo assim não passar, avisa você (uma vez) para decidir: mandar de novo ou permitir postar."""
+    mandados = 0
+    for t in sem_certificado():
+        if t['na_fila']:
+            continue
+        c = next((x for x in estado()['cortes'] if x['id'] == t['id']), None)
+        if not c:
+            continue
+        if t['voltas'] < MAX_VOLTAS:
+            if mandados >= maximo:
+                continue
+            try:
+                mandar_para_editor(t['id'], 'automático')
+                mandados += 1
+            except ErroAgente as e:
+                anotar(f'Não consegui mandar "{t["titulo"][:50]}" para o editor: {e}', 'erro')
+            continue
+        if c['status'] == 'reprovado' and not c.get('aviso_permitir'):
+            _mudar(lambda e, cid=t['id']: [x.update(aviso_permitir=time.time()) for x in e['cortes'] if x['id'] == cid])
+            motivos = ''.join(f'- {m}\n' for m in t['motivos']) or '- (sem detalhe)\n'
+            avisar('falha', 'O diretor não aprovou: ' + t['titulo'][:60],
+                   f'Corte: {t["titulo"]}\n\nVoltou {t["voltas"]} vezes para o editor e o diretor ainda não aprovou:\n{motivos}\n'
+                   'Você decide: abra a Central de Automação (Geral) ou o post em Agendar posts e toque em '
+                   '"Permitir postar mesmo assim" ou "Mandar para o editor de novo". Sem a sua decisão, nada é postado.\n',
+                   zap=f'*EstúdioClip*\nO diretor não aprovou "{t["titulo"][:60]}" depois de {t["voltas"]} voltas ao editor. '
+                       'Abra a Central de Automação para permitir postar ou mandar de novo.', zap_tipo='a2_liberacao')
+    return mandados
+
+
+def permitir_postar(cid: str, quem: str = 'você') -> dict:
+    """Você permite postar um corte que o diretor não aprovou: vira um certificado MANUAL, só para este arquivo,
+    com o seu nome. Nunca passa por cima de direitos, arquivo quebrado ou segurança."""
+    import agenda_postagem as ag2
+    import banco as db
+    import pipeline as pl
+    c = next((x for x in estado()['cortes'] if x['id'] == cid), None)
+    if not c:
+        raise ErroAgente('Corte não encontrado.')
+    if c['status'] in ('descartado',) or (c['status'] == 'postado' and not _postado_barrado(c)):
+        raise ErroAgente('Este corte já foi ' + ('descartado.' if c['status'] == 'descartado' else 'postado.'))
+    if db_fila_aberta(cid):
+        raise ErroAgente('O editor e o diretor ainda estão trabalhando neste corte. Espere terminar.')
+    sha = ag2._sha(c)
+    if not sha:
+        raise ErroAgente('O arquivo deste corte não está no servidor.')
+    motivo = 'Você permitiu postar mesmo sem a aprovação do diretor.'
+    if not pl.certificado(sha):
+        try:
+            run = pl.obter(c['esteira']) if c.get('esteira') else None
+        except pl.ErroPipeline:
+            run = None
+        try:
+            if run and run['estado'] == 'manual_review_required':
+                pl.decidir_manual(run['id'], 'aprovar', motivo, quem)
+            else:
+                r = db.um("SELECT * FROM quality_reports WHERE sha256=? AND modalidade='final_release' ORDER BY criado DESC LIMIT 1", sha)
+                if not r:
+                    raise ErroAgente('Este arquivo ainda não passou pelo diretor. Mande para o editor primeiro.')
+                rel = {'score': r['nota'], 'blocking_findings': json.loads(r['bloqueios'] or '[]')}
+                pl.emitir_certificado(cid, sha, rel, run=r['run'] or '', manual=True, por=quem, motivo=motivo)
+        except pl.ErroPipeline as e:
+            raise ErroAgente(str(e)) from e
+
+    def f(e):
+        for x in e['cortes']:
+            if x['id'] == cid:
+                if x['status'] in ('reprovado', 'postado'):
+                    x['status'] = 'agendado' if x.get('post') else 'pronto'
+                x['aprovado_voce'] = time.time()
+                x.pop('aviso_permitir', None)
+                d = x.setdefault('qa', {}).setdefault('diretor', {})
+                d.update(veredito='aprovado', manual=True)
+    _mudar(f)
+    if c.get('post'):
+        _reativar_post(cid)
+    anotar(f'"{c["titulo"][:50]}": você permitiu postar sem a aprovação do diretor.', 'aviso')
+    return {'ok': True}
+
+
 def acao_corte(cid: str, acao: str) -> dict:
     c = next((x for x in estado()['cortes'] if x['id'] == cid), None)
     if not c:
@@ -2216,6 +2414,10 @@ def acao_corte(cid: str, acao: str) -> dict:
             raise ErroAgente('O diretor de qualidade reprovou este corte: ' + ' '.join((c.get('qa') or {}).get('diretor', {}).get('motivos') or [])[:300])
         _mudar(lambda e: [x.update(aprovado_voce=time.time()) for x in e['cortes'] if x['id'] == cid])
         agendar_corte(cid, liberado=True)
+    elif acao == 'editor':
+        mandar_para_editor(cid)
+    elif acao == 'permitir':
+        permitir_postar(cid)
     elif acao == 'email':
         if not email_corte(c):
             raise ErroAgente('Não consegui enviar. Veja o motivo no histórico e confira a parte Avisos.')
@@ -2261,6 +2463,11 @@ def passo():
             aprender()
     else:
         acompanhar()
+    if _esteira_ligada():
+        try:
+            voltar_ao_editor_sozinho()
+        except Exception as e:  # noqa: BLE001
+            print('agente: voltar ao editor', e)
     if m.get('limpeza') != hoje:
         _mudar(lambda e: e['marcas'].update(limpeza=hoje))
         limpar()

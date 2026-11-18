@@ -6,7 +6,7 @@ import Esteira from '../components/Esteira';
 import ProgramacaoDiaria from '../components/ProgramacaoDiaria';
 import { catalogo, type Catalogo } from '../lib/api';
 import { lerCapacidades } from '../lib/esteira';
-import { aplicarSugestoes, comecarA1, apagarLinha, apagarItemBiblioteca, criarItemBiblioteca, criarLinha, ligarFerramenta, listarBiblioteca, listarFerramentas, mudarItemBiblioteca, sugerirLinha, testarFerramenta, type ItemBiblioteca, type Sugestao_Linha, escreverPautas, eventosCentral, iniciarLote, mudarLinha, mudarPauta, obterLinha, pausarCentral, planejarPautas,
+import { aplicarSugestoes, comecarA1, mandarEditorTodos, mandarEditorCorte, permitirCorte, AVISO_PERMITIR, apagarLinha, apagarItemBiblioteca, criarItemBiblioteca, criarLinha, ligarFerramenta, listarBiblioteca, listarFerramentas, mudarItemBiblioteca, sugerirLinha, testarFerramenta, type ItemBiblioteca, type Sugestao_Linha, escreverPautas, eventosCentral, iniciarLote, mudarLinha, mudarPauta, obterLinha, pausarCentral, planejarPautas,
   resumoCentral, retomarCentral, salvarCentral, simularCentral, sugestoesCentral, type ConfigCentral, type ConfigLinha, type Linha, type Simulacao } from '../lib/automacao';
 
 type Aba='geral'|'agentes'|'linhas'|'calendario'|'qualidade'|'historico';
@@ -62,8 +62,27 @@ function Geral({r}:{r:ReturnType<typeof useServidor<import('../lib/automacao').R
         <div className="es-ag"><b>{i.rodando}</b><span>rodando agora</span><small>{i.na_fila} na fila</small></div>
         <div className={'es-ag'+(i.esperando_voce+i.revisao_manual?' bad':'')}><b>{i.esperando_voce+i.revisao_manual}</b><span>esperando você</span><small>{i.revisao_manual} na revisão manual</small></div>
         <div className={'es-ag'+(i.falhas_24h?' bad':'')}><b>{i.falhas_24h}</b><span>falhas em 24 h</span><small>trabalhos e horários</small></div>
+        {x.posts&&<><div className="es-ag"><b>{x.posts.agendados}</b><span>posts agendados</span><small>{x.posts.travados} travado(s) · {x.posts.com_erro} com erro</small></div>
+          <div className="es-ag"><b>{x.posts.postados_7d}</b><span>publicados</span><small>últimos 7 dias</small></div></>}
       </div>
     </section>
+    <section className="panel">
+      <h3><Loader2 size={16} className={(x.trabalhos||[]).some(t=>t.status==='rodando')?'spin':''}/> Agora</h3>
+      {(x.trabalhos||[]).length?<ul className="rq-lista">{x.trabalhos!.map((t,k)=><li key={k}><span className={'tag '+(t.status==='rodando'?'ok':'')}>{t.status==='rodando'?'trabalhando':'na fila'}</span> <b>{t.agente}</b> · {t.titulo}
+        {t.etapa&&<><br/><small className="muted">{t.etapa}{t.status==='rodando'&&t.progresso?` (${Math.round(t.progresso)}%)`:''}</small></>}</li>)}</ul>
+        :<p className="muted">Nenhum agente trabalhando nem na fila agora.</p>}
+    </section>
+    {(x.sem_certificado||[]).length>0&&<section className="panel a1-agora bloqueado">
+      <h3><AlertTriangle size={16}/> {x.sem_certificado!.length} corte(s) travado(s) sem aprovação do diretor</h3>
+      <p className="hint">O Agente 2 não posta sem a aprovação do diretor para o arquivo. Eles voltam <b>sozinhos</b> para o editor, até {x.sem_certificado![0].max_voltas||3} vezes. Se o diretor aprovar, o post volta a valer. Se não aprovar, você recebe um aviso e decide aqui.</p>
+      <ul className="rq-lista">{x.sem_certificado!.slice(0,10).map(c=><li key={c.id}>{c.titulo} <span className="tag">{c.status==='reprovado'?'reprovado':c.status==='pronto'?'pronto':'agendado'}</span>
+        {c.na_fila?<span className="tag ok">no editor agora</span>:c.esperando_voce?<span className="tag bad">esperando você</span>:<span className="tag">volta {Math.min((c.voltas||0)+1,c.max_voltas||3)} de {c.max_voltas||3} logo</span>}
+        {c.esperando_voce&&<>{(c.motivos||[]).length>0&&<><br/><small className="muted">Diretor: {c.motivos!.join('; ')}</small></>}
+          <div className="row-gap left" style={{marginTop:6}}><button className="sm" disabled={busy} onClick={()=>fazer(()=>mandarEditorCorte(cfg,c.id),'Mandado para o editor de novo.')}>Mandar para o editor de novo</button>
+          <button className="sm" disabled={busy} onClick={()=>{ if(window.confirm(AVISO_PERMITIR)) fazer(()=>permitirCorte(cfg,c.id),'Liberado por você. O Agente 2 dá um horário para ele.'); }}>Permitir postar mesmo assim</button></div></>}
+      </li>)}</ul>
+      {x.sem_certificado!.some(c=>!c.na_fila)&&<button className="primary sm" disabled={busy} onClick={()=>fazer(()=>mandarEditorTodos(cfg),'Enviados para o editor e o diretor. Acompanhe em "Agora".')}>Mandar todos para o editor</button>}
+    </section>}
     {x.agente1&&<section className={'panel a1-agora'+(x.agente1.bloqueio?' bloqueado':'')}>
       <h3>{x.agente1.trabalhando?<Loader2 size={16} className="spin"/>:<Scissors size={16}/>} Agente 1 agora</h3>
       <p className="a1-motivo">{x.agente1.motivo}</p>

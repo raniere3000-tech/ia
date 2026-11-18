@@ -3,9 +3,10 @@ import { CheckCircle2, Loader2, ShieldCheck, TriangleAlert, XCircle } from 'luci
 import { api } from '../lib/api';
 import { useCfg, erroTexto } from './Servidor2';
 import { AVISO_LIBERAR } from '../lib/agenda';
+import { mandarEditorPost, permitirPost, AVISO_PERMITIR } from '../lib/automacao';
 
 type Item={item:string;ok:boolean;bloqueia:boolean;detalhe:string;liberavel?:boolean;liberado?:boolean};
-const NOME:Record<string,string>={arquivo:'Arquivo',versao:'Versão',conta:'Conta e permissões',duracao:'Duração',direitos:'Direitos',origem_do_corte:'Origem do corte',aprovacao:'Aprovação (mesmo arquivo aprovado)',qualidade:'Qualidade (QA)',diretor:'Diretor de qualidade',creditos:'Créditos',boas_praticas:'Boas práticas',formato:'Formato da plataforma'};
+const NOME:Record<string,string>={certificado:'Aprovação do diretor',arquivo:'Arquivo',versao:'Versão',conta:'Conta e permissões',duracao:'Duração',direitos:'Direitos',origem_do_corte:'Origem do corte',aprovacao:'Aprovação (mesmo arquivo aprovado)',qualidade:'Qualidade (QA)',diretor:'Diretor de qualidade',creditos:'Créditos',boas_praticas:'Boas práticas',formato:'Formato da plataforma'};
 const ESTADO:Record<string,[string,string]>={agendado:['agendado',''],postando:['postando agora','warn'],postado:['postado','ok'],erro:['deu erro','bad'],manual:['você posta no app',''],bloqueado:['bloqueado','bad'],cancelado:['cancelado',''],liberacao:['esperando sua liberação','warn']};
 type Estado={status:string;erro:string;link:string};
 
@@ -16,6 +17,10 @@ export default function ConferenciaPost({id,onLiberado}:{id:string;onLiberado?:(
   const conferir=async()=>{ setBusy(true); setErro(''); try{ const r=await api<{redes:Record<string,Item[]>;estados?:Record<string,Estado>;hash?:string}>(cfg,'GET',`/api/v1/posts/${id}/conferencia`); setRes(r.redes); setEst(r.estados||{}); setHash(r.hash||''); }catch(e){ setErro(erroTexto(e)); }finally{ setBusy(false); } };
   const liberar=async()=>{ if(!window.confirm(AVISO_LIBERAR)) return; setBusy(true); try{ await api(cfg,'POST',`/posts/${id}/liberar`,{}); onLiberado?.(); await conferir(); }catch(e){ setErro(erroTexto(e)); setBusy(false); } };
   const pedeLib=!!res&&Object.values(res).some(i=>i.some(x=>x.liberavel));
+  const [enviado,setEnviado]=useState('');
+  const semCert=!!res&&Object.values(res).some(i=>i.some(x=>x.item==='certificado'&&!x.ok));
+  const permitir=async()=>{ if(!window.confirm(AVISO_PERMITIR)) return; setBusy(true); setErro(''); try{ await permitirPost(cfg,id); setEnviado('Liberado por você. Se o horário já passou, o Agente 2 dá um horário novo.'); onLiberado?.(); }catch(e){ setErro(erroTexto(e)); }finally{ setBusy(false); } };
+  const editor=async()=>{ setBusy(true); setErro(''); try{ const r=await mandarEditorPost(cfg,id); setEnviado(r.ja_na_fila?'Já está no editor. Acompanhe em Agentes > Central > Agora.':'Mandado para o editor e o diretor. Se o diretor aprovar, este post volta a valer.'); }catch(e){ setErro(erroTexto(e)); }finally{ setBusy(false); } };
   return <div className="conf-post">
    <button className="link-btn" disabled={busy} onClick={conferir}>{busy?<Loader2 size={13} className="spin"/>:<ShieldCheck size={13}/>} Conferir antes de postar</button>
    {erro&&<p className="hint bad">{erro}</p>}
@@ -31,6 +36,10 @@ export default function ConferenciaPost({id,onLiberado}:{id:string;onLiberado?:(
      :itens.some(x=>x.liberavel)?<p className="hint warn">Só falta a sua liberação especial ({itens.filter(x=>x.liberavel).map(x=>NOME[x.item]||x.item).join(', ')}). Sem ela, nada é postado.</p>
      :<p className="hint">Pronto para postar nesta rede.</p>}
    </div>)}
+   {semCert&&!enviado&&<><p className="hint">Sem a aprovação do diretor, este vídeo volta sozinho para o editor (até 3 vezes). Se não passar, você recebe um aviso.</p>
+    <div className="row-gap left" style={{marginTop:6}}><button className="primary sm" disabled={busy} onClick={editor}>Mandar para o editor e o diretor</button>
+    <button className="sm" disabled={busy} onClick={permitir}>Permitir postar mesmo assim</button></div></>}
+   {enviado&&<p className="hint ok">{enviado}</p>}
    {pedeLib&&<button className="primary sm" disabled={busy} onClick={liberar}><ShieldCheck size={14}/> Liberar e postar mesmo assim</button>}
   </div>;
 }

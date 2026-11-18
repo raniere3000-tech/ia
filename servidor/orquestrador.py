@@ -545,7 +545,68 @@ def resumo() -> dict:
         'indicadores': {'estoque_cortes': ec.get('disponiveis', 0), 'estoque_linhas': sum(x['estoque']['livres'] for x in linhas),
                         'rodando': rodando, 'na_fila': na_fila, 'revisao_manual': revisao, 'esperando_voce': espera_voce, 'falhas_24h': falhas},
         'proximas': proximas, 'estoque_cortes': ec, 'linhas': linhas, 'eventos': eventos(15), 'agente1': _situacao_segura(),
+        'trabalhos': _trabalhos(), 'sem_certificado': _sem_cert(), 'posts': _posts_resumo(),
     }
+
+
+NOME_AGENTE = {'agente1': 'Agente 1', 'agent1': 'Agente 1', 'agente2': 'Agente 2', 'agent2': 'Agente 2', 'agente3': 'Agente 3', 'agent3': 'Agente 3',
+               'agent4': 'Agente 4 (diretor)', 'agent5': 'Agente 5 (editor)'}
+
+
+def _trabalhos() -> list:
+    """O que está rodando e na fila agora, com o agente e a etapa (para ver o editor trabalhando)."""
+    out = [{'agente': NOME_AGENTE.get(j['agente'] or '', j['agente'] or ''), 'titulo': j['titulo'] or j['tipo'], 'status': j['status'],
+            'etapa': j['etapa'] or '', 'progresso': j['progresso'] or 0}
+           for j in db.todos("SELECT agente, tipo, titulo, status, etapa, progresso FROM jobs WHERE status IN ('rodando','na_fila','agendado','aguardando_tentativa') "
+                             "ORDER BY CASE status WHEN 'rodando' THEN 0 ELSE 1 END, criado LIMIT 12")]
+    try:
+        import agente as ag
+        if ag.OCUPADO.locked() and ag.ATUAL.get('etapa') and not any(x['status'] == 'rodando' for x in out):
+            out.insert(0, {'agente': 'Agente 1', 'titulo': 'Cortes', 'status': 'rodando', 'etapa': ag.ATUAL['etapa'], 'progresso': ag.ATUAL.get('pct', 0)})
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def _sem_cert() -> list:
+    try:
+        import agente as ag
+        return ag.sem_certificado()
+    except Exception as e:  # noqa: BLE001
+        print('central: sem certificado', e)
+        return []
+
+
+def _posts_resumo() -> dict:
+    """Posts do Agente 2 por situação (todas as redes): o que já foi ao ar, o que está agendado e o que está travado."""
+    try:
+        import postagem as pg
+        out = {'agendados': 0, 'postados_7d': 0, 'com_erro': 0, 'travados': 0}
+        lim = time.time() - 7 * 86400
+        for p in pg.posts():
+            sts = [d.get('status') for d in (p.get('redes') or {}).values()]
+            if any(x in ('agendado', 'postando') for x in sts):
+                out['agendados'] += 1
+            if any(x == 'postado' for x in sts) and (p.get('quando') or 0) > lim:
+                out['postados_7d'] += 1
+            if any(x == 'erro' for x in sts):
+                out['com_erro'] += 1
+            if any(x in ('bloqueado', 'liberacao') for x in sts):
+                out['travados'] += 1
+        return out
+    except Exception as e:  # noqa: BLE001
+        print('central: posts', e)
+        return {}
+
+
+def mandar_sem_certificado(quem: str = 'site') -> dict:
+    import agente as ag
+    n = 0
+    for c in ag.sem_certificado():
+        if not c['na_fila']:
+            ag.mandar_para_editor(c['id'], quem)
+            n += 1
+    return {'ok': True, 'enviados': n}
 
 
 def _situacao_segura() -> dict:

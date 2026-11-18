@@ -865,6 +865,23 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         except FileNotFoundError as e:
             raise pj.ErroProjeto(404, str(e))
     # ---- exportação da Montagem manual feita no servidor
+    m = re.fullmatch(r'/api/v1/posts/(\w+)/(editor|permitir)', caminho)
+    if m and metodo == 'POST':          # alerta "mande para o editor": o botão faz isso pelo corte deste post
+        post = next((x for x in pg.posts() if x['id'] == m.group(1)), None)
+        if not post:
+            raise pj.ErroProjeto(404, 'Post não encontrado.')
+        import agente as _ag
+        c = next((x for x in _ag.estado()['cortes'] if x.get('post') == post['id']), None) or \
+            next((x for x in _ag.estado()['cortes'] if x.get('video') == post.get('video') and x['status'] not in ('descartado', 'postado')), None)
+        if not c:
+            raise pj.ErroProjeto(409, 'Este post não veio de um corte do Agente 1. Vídeo do Agente 3: abra em Fila e aprovações e peça correção; '
+                                      'vídeo enviado à mão: mande pela tela Cortes para passar pelo editor.')
+        try:
+            if m.group(2) == 'permitir':        # o diretor não aprovou e você decidiu postar mesmo assim
+                return _ag.permitir_postar(c['id'], quem)
+            return _ag.mandar_para_editor(c['id'], quem)
+        except _ag.ErroAgente as e:
+            raise pj.ErroProjeto(409, str(e))
     m = re.fullmatch(r'/api/v1/posts/(\w+)/conferencia', caminho)
     if m and metodo == 'GET':
         post = next((x for x in pg.posts() if x['id'] == m.group(1)), None)

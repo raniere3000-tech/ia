@@ -46,7 +46,7 @@ def check(c, m):
 def erro(f, *a, **k):
     try:
         f(*a, **k)
-    except (lc.ErroLinha, oq.ErroAutomacao, rt.ErroRota) as e:
+    except (lc.ErroLinha, oq.ErroAutomacao, rt.ErroRota, ag.ErroAgente) as e:
         return e
     return None
 
@@ -447,6 +447,89 @@ check(e412b is not None and 'teste' in str(e412b), 'com licença conferida, aind
 check(erro(rota, 'POST', '/api/v1/integracoes/moneyprinterturbo/ligar', {'licenca_conferida': True}).status == 409, 'ferramenta só com ficha não pode ser ligada')
 pz = ig.pausas(vs)
 check(pz['fonte'] == 'ffmpeg' and isinstance(pz['pausas'], list), 'pausas: sem Auto-Editor ligado, usa o FFmpeg')
+
+print('18. Corte sem certificado: mandar para o editor e ver o editor trabalhando')
+pl.ligar(True, 'teste')
+vid18 = 'v18teste'
+subprocess.run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=360x640:d=2:r=30', '-c:v', 'libx264', '-preset', 'ultrafast',
+                '-pix_fmt', 'yuv420p', str(pg.VIDEOS / f'{vid18}.mp4')], check=True)
+ag._mudar(lambda e: e['cortes'].append(dict(base, id='sc1', titulo='Sem certificado', chave='ksc1', criado=time.time(), status='agendado', post='p18', video=vid18)))
+sc = [c['id'] for c in ag.sem_certificado()]
+check('sc1' in sc, 'corte agendado sem certificado aparece na lista "precisa do editor"')
+r18 = oq.resumo()
+check(any(c['id'] == 'sc1' for c in r18['sem_certificado']) and 'posts' in r18 and 'trabalhos' in r18, 'a Central mostra os sem certificado, os posts e os trabalhos')
+r = oq.mandar_sem_certificado('teste')
+j = db.um("SELECT * FROM jobs WHERE tipo='esteira.recebido' AND dados LIKE ?", '%"corte": "sc1"%')
+check(r['enviados'] >= 1 and j and j['agente'] == 'agent5', 'mandar para o editor cria o trabalho do Agente 5')
+check(oq.mandar_sem_certificado('teste')['enviados'] == 0, 'mandar de novo não duplica (já está na fila)')
+check(any(t['agente'] == 'Agente 5 (editor)' for t in oq.resumo()['trabalhos']), 'a Central mostra o editor com o vídeo na fila')
+c18 = next(x for x in ag.estado()['cortes'] if x['id'] == 'sc1')
+check(c18['status'] == 'agendado' and c18['post'] == 'p18', 'mandar para o editor não mexe no post já agendado')
+
+print('19. Post barrado volta sozinho para o editor; sem aprovação: aviso e "permitir postar"')
+avisos19 = []
+ag.avisar = lambda tipo, assunto, corpo, *a, **k: avisos19.append(assunto) or True
+vid19 = 'v19teste'
+subprocess.run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=green:s=360x640:d=2:r=30', '-c:v', 'libx264', '-preset', 'ultrafast',
+                '-pix_fmt', 'yuv420p', str(pg.VIDEOS / f'{vid19}.mp4')], check=True)
+TXT = 'Conferência antes de postar: Este arquivo não tem a aprovação do diretor de qualidade (Agente 4) para esta versão. Mande para o editor e o diretor antes de postar.'
+post19 = {'id': 'p19', 'video': vid19, 'criado': time.time(), 'quando': time.time() - 60, 'titulo': 'Barrado', 'legenda': '', 'opcoes': {},
+          'redes': {'youtube': {'status': 'erro', 'link': '', 'erro': TXT}}, 'hash': pg.assinatura(vid19)}
+pg.salvar_posts(pg.posts() + [post19])
+ag._mudar(lambda e: e['cortes'].append(dict(base, id='sc19', titulo='Barrado no post', chave='k19', criado=time.time(), status='agendado', post='p19', video=vid19)))
+ag.acompanhar()
+c19 = next(x for x in ag.estado()['cortes'] if x['id'] == 'sc19')
+check(c19['status'] == 'agendado', 'post barrado só pela falta de aprovação NÃO vira "postado"')
+n = ag.voltar_ao_editor_sozinho()
+c19 = next(x for x in ag.estado()['cortes'] if x['id'] == 'sc19')
+check(n >= 1 and ag.db_fila_aberta('sc19') and c19['voltas_editor'] == 1, 'o relógio manda sozinho para o editor (volta 1 de 3)')
+ag.voltar_ao_editor_sozinho()
+check(next(x for x in ag.estado()['cortes'] if x['id'] == 'sc19')['voltas_editor'] == 1, 'com o trabalho na fila, não manda de novo')
+db.executar("UPDATE jobs SET status='concluido' WHERE tipo='esteira.recebido' AND dados LIKE ?", '%"corte": "sc19"%')
+ag._mudar(lambda e: [x.update(status='reprovado') for x in e['cortes'] if x['id'] == 'sc19'])
+ag.voltar_ao_editor_sozinho()
+check(next(x for x in ag.estado()['cortes'] if x['id'] == 'sc19')['voltas_editor'] == 2, 'reprovado com post: volta de novo para o editor (volta 2)')
+db.executar("UPDATE jobs SET status='concluido' WHERE tipo='esteira.recebido' AND dados LIKE ?", '%"corte": "sc19"%')
+ag._mudar(lambda e: [x.update(status='reprovado', voltas_editor=3) for x in e['cortes'] if x['id'] == 'sc19'])
+avisos19.clear()
+ag.voltar_ao_editor_sozinho()
+ag.voltar_ao_editor_sozinho()
+t19 = next(x for x in ag.sem_certificado() if x['id'] == 'sc19')
+check(not ag.db_fila_aberta('sc19') and t19['esperando_voce'], 'depois de 3 voltas para de mandar e espera você')
+check(len([a for a in avisos19 if 'Barrado no post' in a]) == 1, 'você recebe UM aviso (não repete a cada volta do relógio)')
+sha19 = pl.sha_arquivo(pg.video_path(vid19))
+rel_duro = {'score': 40, 'passed': False, 'blocking_findings': [{'category': 'direitos', 'evidence': 'Sem origem do vídeo.'}], 'partes': {}, 'findings': []}
+pl.guardar_relatorio(None, 'final_release', 'sc19', sha19, rel_duro)
+e19 = erro(ag.permitir_postar, 'sc19', 'teste')
+check(e19 is not None and 'não libera direitos' in str(e19), 'permitir postar NUNCA passa por cima de direitos')
+pl.guardar_relatorio(None, 'final_release', 'sc19', sha19, {'score': 62, 'passed': False, 'blocking_findings': [], 'partes': {}, 'findings': []})
+import api_v1  # noqa: E402
+
+
+class H19:
+    path, corpo, headers = '/api/v1/posts/p19/permitir', b'{}', {}
+
+
+rp = api_v1.tratar(H19(), 'POST', '/api/v1/posts/p19/permitir', {'nome': 'teste', 'id': 's1'})
+c19 = next(x for x in ag.estado()['cortes'] if x['id'] == 'sc19')
+cert = pl.certificado(sha19)
+check(rp['ok'] and cert and cert['manual'], 'permitir postar: certificado MANUAL só para este arquivo')
+check(c19['status'] == 'pronto' and not c19['post'] and not any(p['id'] == 'p19' for p in pg.posts()),
+      'o post barrado sai da agenda e o corte volta aos prontos para ganhar um horário novo')
+check(not any(x['id'] == 'sc19' for x in ag.sem_certificado()), 'some da lista de travados')
+# corte antigo marcado como "postado" sem ter saído: o botão conserta
+ag._mudar(lambda e: e['cortes'].append(dict(base, id='sc19b', titulo='Antigo', chave='k19b', criado=time.time(), status='postado', post='', video=vid18,
+                                            links={}, erros={'youtube': TXT})))
+check(any(x['id'] == 'sc19b' for x in ag.sem_certificado()), 'corte marcado como postado mas barrado aparece como travado')
+ag.mandar_para_editor('sc19b', 'teste')
+check(next(x for x in ag.estado()['cortes'] if x['id'] == 'sc19b')['status'] == 'agendado' and ag.db_fila_aberta('sc19b'), 'e pode voltar para o editor')
+# post ainda no futuro: depois da aprovação continua no mesmo horário, com a versão nova
+post20 = dict(post19, id='p20', quando=time.time() + 3600, redes={'youtube': {'status': 'agendado', 'link': '', 'erro': ''}}, hash='antigo')
+pg.salvar_posts(pg.posts() + [post20])
+ag._mudar(lambda e: e['cortes'].append(dict(base, id='sc20', titulo='Futuro', chave='k20', criado=time.time(), status='pronto', post='p20', video=vid19)))
+ag._reativar_post('sc20')
+check(next(x for x in ag.estado()['cortes'] if x['id'] == 'sc20')['status'] == 'agendado' and
+      next(p for p in pg.posts() if p['id'] == 'p20')['hash'] == pg.assinatura(vid19), 'post no futuro: segue no horário, valendo a versão aprovada')
 
 print(f'\n{ok} ok, {falhas} falha(s)')
 sys.exit(1 if falhas else 0)
