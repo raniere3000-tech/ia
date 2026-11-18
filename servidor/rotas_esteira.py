@@ -11,10 +11,11 @@ import inteligencia_viral as iv
 import biblioteca_criativa as bc
 import integracoes as ig
 import linhas_conteudo as lc
+import live as lv
 import orquestrador as oq
 import pipeline as pl
 
-PREFIXOS = ('/api/v1/pipeline', '/api/v1/quality', '/api/v1/capabilities', '/api/v1/viral', '/api/v1/agent2', '/api/v1/automacao', '/api/v1/linhas-conteudo', '/api/v1/biblioteca-criativa', '/api/v1/integracoes')
+PREFIXOS = ('/api/v1/live', '/api/v1/pipeline', '/api/v1/quality', '/api/v1/capabilities', '/api/v1/viral', '/api/v1/agent2', '/api/v1/automacao', '/api/v1/linhas-conteudo', '/api/v1/biblioteca-criativa', '/api/v1/integracoes')
 
 
 class ErroRota(Exception):
@@ -48,6 +49,8 @@ def tratar(metodo: str, caminho: str, q: dict, corpo, quem: str, cabecalhos=None
     except oq.ErroAutomacao as e:
         raise ErroRota(e.status, str(e))
     except bc.ErroBiblioteca as e:
+        raise ErroRota(e.status, str(e))
+    except lv.ErroLive as e:
         raise ErroRota(e.status, str(e))
     except Exception as e:  # noqa: BLE001
         import agente as _ag
@@ -178,6 +181,15 @@ def _tratar(metodo: str, caminho: str, q: dict, corpo, quem: str, cab) -> dict:
     rota = (metodo, caminho)
     if caminho.startswith('/api/v1/automacao'):
         return _automacao(metodo, caminho, q, corpo, quem)
+    if rota == ('GET', '/api/v1/live'):
+        return lv.ver()
+    if rota in (('PUT', '/api/v1/live/config'), ('PATCH', '/api/v1/live/config')):
+        return lv.salvar_config(corpo())
+    if rota == ('POST', '/api/v1/live/comecar'):
+        return lv.comecar(corpo(), quem)
+    m = re.fullmatch(r'/api/v1/live/(\w+)/parar', caminho)
+    if m and metodo == 'POST':
+        return lv.parar(m.group(1), quem)
     if caminho.startswith('/api/v1/linhas-conteudo'):
         return _linhas(metodo, caminho, q, corpo, quem)
     if caminho.startswith('/api/v1/biblioteca-criativa'):

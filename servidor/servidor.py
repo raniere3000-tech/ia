@@ -348,6 +348,30 @@ def baixar_para_agente(url: str, pasta: Path, idioma: str, progresso):
 ag.BAIXAR = baixar_para_agente
 
 
+def url_da_live(link: str) -> dict:
+    """Parte Live: abre a live (sem baixar) e devolve o endereço do vídeo ao vivo para o FFmpeg gravar."""
+    import yt_dlp
+    if not (YT.match(link) or (QUALQUER_URL and link.startswith('http'))):
+        raise ag.ErroAgente('A parte Live grava só links do YouTube.')
+    pasta = PASTA / ('live-' + uuid.uuid4().hex[:6])
+    pasta.mkdir(parents=True, exist_ok=True)
+    opts = {'format': f'b[height<={ALTURA}][acodec!=none][vcodec!=none]/b[acodec!=none][vcodec!=none]/b', 'noplaylist': True, 'quiet': True,
+            'no_warnings': True, 'js_runtimes': js_runtimes()}
+    ck = cookies_para(pasta)
+    if ck:
+        opts['cookiefile'] = ck
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(link, download=False)
+    except Exception as e:  # noqa: BLE001
+        raise ag.ErroAgente(erro_amigavel(str(e)))
+    finally:
+        shutil.rmtree(pasta, ignore_errors=True)
+    url = info.get('url') or next((f.get('url') for f in reversed(info.get('requested_formats') or []) if f.get('url')), '')
+    return {'url': url, 'titulo': info.get('title') or 'Live', 'id': info.get('id') or '', 'canal': info.get('channel_id') or '',
+            'canal_nome': info.get('channel') or info.get('uploader') or '', 'ao_vivo': bool(info.get('is_live')) and bool(url)}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = 'EstudioClip/' + VERSAO
     protocol_version = 'HTTP/1.1'
@@ -853,6 +877,9 @@ def ligar_servicos():
     fila.registrar('agente1.pesado', _job_agente1, 'pesado')
     fila.registrar('agente1.leve', _job_agente1, 'leve')
     ag.ENFILEIRAR = _enfileirar_agente1
+    import live
+    live.PEGAR = url_da_live
+    live.iniciar()
     ag.PENDENTES = lambda: (db.um("SELECT COUNT(*) AS n FROM jobs WHERE agente='agente1' AND status IN ('agendado','na_fila','rodando')") or {'n': 0})['n']
     produtor.iniciar()
     gpi.iniciar()

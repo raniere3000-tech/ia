@@ -450,6 +450,8 @@ def elegiveis(rede: str) -> list:
             continue
         if c.get('redes') and rede not in c['redes']:
             continue
+        if c.get('live_fila'):
+            continue            # corte da Live: a parte Live posta na hora, a programação não pega
         if not ag.liberado_para_postar(c):
             continue            # mesma regra da postagem antiga: espera o seu ok (se a exigência estiver ligada)
         sha = _sha(c)

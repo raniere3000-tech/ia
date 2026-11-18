@@ -1238,17 +1238,22 @@ def cortes_da_semana() -> int:
     return sum(1 for c in estado()['cortes'] if c['criado'] >= ini and c['status'] not in ('descartado', 'reprovado'))
 
 
-def processar_video(v: dict, quantos: int) -> list:
-    """Baixa um vídeo, escolhe e edita os cortes. Devolve os cortes criados."""
-    if BAIXAR is None:
+def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: dict | None = None, ajustes: dict | None = None) -> list:
+    """Baixa um vídeo, escolhe e edita os cortes. Devolve os cortes criados.
+    baixado=(arquivo, info, legenda): o arquivo já está no servidor (ex.: um bloco gravado da live), não baixa.
+    extra: campos que entram em cada corte criado (ex.: de qual live veio). ajustes: regras do Agente 1 só para esta vez."""
+    if BAIXAR is None and baixado is None:
         raise ErroAgente('Servidor sem a função de download.')
     cfg = config()
-    co = cfg['cortes']
+    co = {**cfg['cortes'], **(ajustes or {})}
     pasta = TRABALHO / uuid.uuid4().hex[:10]
     pasta.mkdir(parents=True, exist_ok=True)
     try:
         etapa(f'Baixando: {v["titulo"][:60]}', 2)
-        arq, info, legenda = BAIXAR(v['url'], pasta, co['idioma'], lambda p: etapa(f'Baixando: {v["titulo"][:60]}', 2 + p * 0.16))
+        if baixado:
+            arq, info, legenda = baixado
+        else:
+            arq, info, legenda = BAIXAR(v['url'], pasta, co['idioma'], lambda p: etapa(f'Baixando: {v["titulo"][:60]}', 2 + p * 0.16))
         dur = float(info.get('duration') or 0) or duracao(arq)
         v.setdefault('titulo', info.get('title') or 'vídeo')
         if not v.get('titulo'):
@@ -1336,6 +1341,8 @@ def processar_video(v: dict, quantos: int) -> list:
                 c.update(perfil=perfil['id'], perfil_nome=perfil['nome'], perfil_versao=perfil['versao'], redes=list(perfil['redes']))
                 if perfil['hashtags_base']:
                     c['hashtags'] = list(dict.fromkeys([*(c.get('hashtags') or []), *perfil['hashtags_base']]))[:12]
+            if extra:
+                c.update(extra)
             _mudar(lambda e, c=c: e['cortes'].append(c))
             criados.append(c)
         return criados
@@ -1760,20 +1767,23 @@ def escolher_vaga(po: dict, por_semana: int) -> dict | None:
     return None
 
 
-def agendar_corte(cid: str, liberado: bool = False, quem: str = 'site') -> dict:
-    """liberado=True: você decidiu agendar mesmo com restrições de direitos/repetição (as técnicas continuam barrando)."""
+def agendar_corte(cid: str, liberado: bool = False, quem: str = 'site', quando: float | None = None, redes_live: list | None = None) -> dict:
+    """liberado=True: você decidiu agendar mesmo com restrições de direitos/repetição (as técnicas continuam barrando).
+    quando/redes_live: a parte Live posta na hora (ou logo depois do post anterior), nas redes escolhidas para a live."""
     cfg = config()
     po = cfg['postagem']
     c = next((x for x in estado()['cortes'] if x['id'] == cid), None)
     if not c or c['status'] != 'pronto':
         raise ErroAgente('Este corte não está na fila de prontos.')
+    if redes_live is not None:
+        po = dict(po, redes=[r for r in redes_live if r in pg.REDES])
     if not po['redes']:
         raise ErroAgente('Escolha pelo menos uma rede na parte Postagem.')
     conf = conferir(c)
     problemas = conf['bloqueios']
     if problemas and not (liberado and conf['liberavel']):
         raise ErroAgente('Não agendei: ' + ' '.join(problemas) + ('' if not conf['liberavel'] else ' Se quiser mesmo assim, use "Liberar e agendar".'))
-    vaga = escolher_vaga(po, cfg['cortes']['por_semana'])
+    vaga = {'quando': max(pg.agora(), quando), 'faixa': 'live'} if quando is not None else escolher_vaga(po, cfg['cortes']['por_semana'])
     if not vaga:
         raise ErroAgente('Não há horário livre. Marque mais horários na parte Postagem.')
     legenda = c.get('legenda_post') or (c['titulo'] + '\n\n' + ' '.join(c['hashtags'])).strip()
@@ -1795,11 +1805,14 @@ def agendar_corte(cid: str, liberado: bool = False, quem: str = 'site') -> dict:
         pg._mudar(p['id'], lambda q: (q.update(liberacao={'itens': ['direitos'], 't': pg.agora(), 'quem': str(quem)[:60], 'hash': q.get('hash') or ''}),
                                       [pg._anotar(q, r, 'liberado', 'Liberação especial dada por você apesar de: ' + ' '.join(problemas)[:200]) for r in q['redes']]))
         anotar(f'Você liberou "{c["titulo"][:50]}" mesmo com restrições: ' + ' '.join(problemas)[:200], 'info')
-    _mudar(lambda e: [x.update(status='agendado', post=p['id'], quando=vaga['quando'], faixa=vaga['faixa'], espera=False,
+    _mudar(lambda e: [x.update(status='agendado', post=p['id'], quando=vaga['quando'], faixa=vaga['faixa'], espera=False, live_fila=False,
                                **({'liberacao': lib} if lib else {})) for x in e['cortes'] if x['id'] == cid])
     quando = datetime.fromtimestamp(vaga['quando']).strftime('%d/%m às %H:%M')
     nomes = ', '.join(r.capitalize() for r in redes)
     anotar(f'"{c["titulo"][:60]}" agendado para {quando} em {nomes}.', 'ok')
+    if vaga['faixa'] == 'live':          # Live: sem aviso de agendado (o aviso vem quando o post sair)
+        pg.acordar()
+        return p
     avisar('agendado', f'Post agendado para {quando}',
            f'Corte: {c["titulo"]}\nQuando: {quando}\nRedes: {nomes}\n\n'
            'Depois do horário, entre em cada aplicativo para conferir e deixar o vídeo público:\n'
