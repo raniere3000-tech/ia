@@ -1056,3 +1056,5 @@ button.sm:not(.primary):not(.subtle):not(.link-btn):not(.icon-btn){display:inlin
 .sino-lista li.erro button{border-left-color:#ff4d6d}.sino-lista li.ok button{border-left-color:#3ddc97}
 .sino-lista li span{font-size:12px;color:#aab2c8;overflow-wrap:anywhere}
 .sino-lista li b{font-size:13px}
+
+.rodape-links{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:8px}.rodape-links a{color:#9b84ff;text-decoration:underline;text-underline-offset:2px}.rodape-links a:hover{color:#fff}

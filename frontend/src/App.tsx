@@ -277,7 +277,7 @@ export default function App(){
      {tab==='inicio'?<InicioM/>:(()=>{ const T=TELAS[tab]; return <T/>; })()}
      </Suspense>
      </ErroTela>}
-     <footer>EstúdioClip • Use apenas vídeos próprios ou com autorização • As chaves ficam neste navegador ou no seu servidor</footer>
+     <footer>EstúdioClip • Use apenas vídeos próprios ou com autorização • As chaves ficam neste navegador ou no seu servidor<nav className="rodape-links" aria-label="Documentos legais"><a href={import.meta.env.BASE_URL+'terms.html'}>Termos de Serviço</a><span aria-hidden="true">•</span><a href={import.meta.env.BASE_URL+'privacy.html'}>Política de Privacidade</a></nav></footer>
     </main>
    </div>
    <Tour aberto={tourAberto} fechar={()=>setTour(false)} abrir={()=>setTour(true)} go={(t:Tab)=>go(t)} naInicio={tab==='inicio'}/>
