@@ -1,6 +1,6 @@
 import ErroTela from './components/ErroTela';
 import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
-import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, Film, Bot, CheckCircle2, AlertTriangle, Info, X, Circle, ListChecks, Send, FolderOpen, Palette, CalendarRange, HelpCircle, Cloud, CloudOff, RefreshCw, ChevronDown, Users, Workflow, Radio } from 'lucide-react';
+import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, Film, Bot, CheckCircle2, AlertTriangle, Info, X, Circle, ListChecks, Send, FolderOpen, Palette, CalendarRange, HelpCircle, Cloud, CloudOff, RefreshCw, ChevronDown, Users, Workflow, Radio, Image as ImageIcon } from 'lucide-react';
 import { AppCtx, PROJETO_VAZIO, captionPresets, type Marca, type Projeto, type Settings, type Tab } from './state';
 import { store } from './lib/store';
 import { salvos, temCofre, cofreAberto, separar, atualizarCofre } from './lib/cofre';
@@ -20,7 +20,7 @@ const CARGA:Partial<Record<Tab,()=>Mod>> = {
   radar:()=>import('./pages/Radar'), cortes:()=>import('./pages/Cortes'), agendar:()=>import('./pages/Agendar'), agente:()=>import('./pages/Agente'), video:()=>import('./pages/VideoCodigo'), vozes:()=>import('./pages/Vozes'),
   manual:()=>import('./pages/Manual'), estilos:()=>import('./pages/Estilos'), templates:()=>import('./pages/Templates'), config:()=>import('./pages/Config'),
   ia:()=>import('./pages/CriarIA'), automatico:()=>import('./pages/Automatico'), projetos:()=>import('./pages/Projetos'), galeria:()=>import('./pages/Galeria'),
-  fila:()=>import('./pages/Fila'), revisar:()=>import('./pages/Revisar'), series:()=>import('./pages/Series'), central:()=>import('./pages/Central'), live:()=>import('./pages/Live'),
+  fila:()=>import('./pages/Fila'), revisar:()=>import('./pages/Revisar'), series:()=>import('./pages/Series'), central:()=>import('./pages/Central'), live:()=>import('./pages/Live'), thumbnails:()=>import('./pages/Thumbnails'),
 };
 const seguro=(f:()=>Mod)=>()=>f().then(m=>{ try{ sessionStorage.removeItem('studio_recarregou'); }catch{ /* sem armazenamento */ } return m; },()=>{
   let ja=true; try{ ja=!!sessionStorage.getItem('studio_recarregou'); sessionStorage.setItem('studio_recarregou','1'); }catch{ /* sem armazenamento */ }
@@ -36,14 +36,14 @@ const adiantar=(t:Tab)=>{ CARGA[t]?.().catch(()=>{}); };
 const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'seguir-rosto',servidor:'',servidorToken:'',servidorCanal:'',geminiKey:'',ia:''};
 const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['video','Animado no navegador',Sparkles],['ia','Agente 3',Bot],['manual','Montagem manual',Film],['automatico','Vários de uma vez',CalendarRange],['series','Séries animadas',Users],['projetos','Meus projetos',FolderOpen],
   ['vozes','Estúdio de vozes',Mic],['galeria','Estilos de animação',Palette],['templates','Templates',LayoutTemplate],['estilos','Legendas e efeitos',Captions],
-  ['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['central','Central de Automação',Workflow],['live','Live',Radio],['agente','Agentes 1, 2 e 3',Bot],['fila','Fila e aprovações',ListChecks],['revisar','Revisar vídeo',CheckCircle2],
+  ['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['central','Central de Automação',Workflow],['live','Live',Radio],['thumbnails','Capas (Agente 6)',ImageIcon],['agente','Agentes 1, 2 e 3',Bot],['fila','Fila e aprovações',ListChecks],['revisar','Revisar vídeo',CheckCircle2],
   ['agendar','Posts agendados',CalendarClock],['config','Ajustes',Gear]];
 /** As cinco áreas (barra de baixo no celular, menu lateral no computador). A engrenagem fica fora delas. */
 type AreaNav={id:string;nome:string;curto:string;Icon:typeof Home;abas:Tab[];extras?:[Tab,string][]};
 const AREAS_NAV:AreaNav[] = [
   {id:'inicio',nome:'Início',curto:'Início',Icon:Home,abas:['inicio']},
-  {id:'criar',nome:'Criar vídeos',curto:'Criar',Icon:Clapperboard,abas:['ia','automatico','series','video','manual','projetos','vozes','galeria','templates','estilos']},
-  {id:'automacao',nome:'Automação e agentes',curto:'Agentes',Icon:Workflow,abas:['central','live','agente'],extras:[['central','Central'],['live','Live'],['agente','Configurar agentes']]},
+  {id:'criar',nome:'Criar vídeos',curto:'Criar',Icon:Clapperboard,abas:['ia','automatico','series','video','manual','projetos','thumbnails','vozes','galeria','templates','estilos']},
+  {id:'automacao',nome:'Automação e agentes',curto:'Agentes',Icon:Workflow,abas:['central','live','thumbnails','agente'],extras:[['central','Central'],['live','Live'],['thumbnails','Capas (Agente 6)'],['agente','Configurar agentes']]},
   {id:'radar',nome:'Radar e cortes',curto:'Radar',Icon:Search,abas:['radar','cortes']},
   {id:'fila',nome:'Fila e aprovações',curto:'Fila',Icon:ListChecks,abas:['fila','revisar']},
   {id:'posts',nome:'Publicações',curto:'Posts',Icon:Send,abas:['agendar','agente'],extras:[['agente','Agente 2 (postagem)']]},
@@ -71,6 +71,7 @@ const TITLES:Record<Tab,[string,string]> = {
   projetos:['Meus projetos','Tudo o que está salvo no servidor do celular, com versões. Daqui você também envia os dados deste navegador.'],
   galeria:['Estilos de animação','Veja como fica cada visual antes de escolher. Os marcados como prontos já funcionam no celular.'],
   central:['Central de Automação','Um lugar só para os 5 agentes: o estoque decide quando cortar e quando criar, a programação diz quando postar, e o diretor confere tudo antes.'],
+  thumbnails:['Capas (Agente 6)','Capas dos cortes e dos vídeos do Agente 3: quadros reais do vídeo, até 4 opções, conferidas pelo diretor antes de você escolher.'],
   live:['Live','Grave uma live: os melhores momentos viram cortes, o editor e o diretor conferem, e o aprovado é postado na hora.'],
   fila:['Fila e aprovações','O que o servidor está fazendo, o que vem depois e os vídeos esperando a sua decisão.'],
   revisar:['Revisar vídeo','Assista, confira e decida: aprovar, pedir correção ou rejeitar.'],

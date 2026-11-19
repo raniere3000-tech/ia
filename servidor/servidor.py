@@ -513,7 +513,7 @@ class Handler(BaseHTTPRequestHandler):
             raise Erro(404, 'Rota não encontrada.')
         sessao = None
         q = parse_qs(urlparse(self.path).query)
-        if metodo == 'GET' and caminho.startswith('/api/v1/assets/') and q.get('sig'):
+        if metodo == 'GET' and caminho.startswith(('/api/v1/assets/', '/api/v1/thumbnails/midia/')) and q.get('sig'):
             if not api_v1._arquivo_assinado(caminho, q):
                 raise Erro(403, 'Link vencido. Abra de novo pelo site.')
         elif (metodo, caminho) not in api_v1.ABERTAS:

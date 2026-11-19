@@ -637,11 +637,47 @@ def postar_youtube(p: dict, arq: Path) -> str:
         st, _, j = http('PUT', destino, dados=f.read(), cab={'Content-Type': 'video/mp4', 'Content-Length': str(tam)}, tempo=1800)
     _ok(st, j, 'YouTube recusou o vídeo')
     vid = j.get('id')
+    _capa_youtube(p, arq, vid, tok)
     priv = (j.get('status') or {}).get('privacyStatus')
     link = f'https://youtube.com/shorts/{vid}'
     if p['opcoes'].get('youtube_privacidade', 'public') != 'private' and priv == 'private':
         link += '  (o YouTube deixou privado: projeto do Google ainda não verificado; veja o "?")'
     return link
+
+
+def _capa(arq: Path) -> dict | None:
+    try:
+        import thumbnails as th
+        return th.capa_para_video(arq)
+    except Exception:  # noqa: BLE001 - capa nunca derruba o post
+        return None
+
+
+def _nota_capa(p: dict, rede: str, msg: str):
+    try:
+        _mudar(p['id'], lambda q: _anotar(q, rede, 'capa', msg))
+    except ErroRede:
+        pass
+
+
+def _capa_youtube(p: dict, arq: Path, vid: str, tok: str):
+    """Agente 6: manda a capa aprovada PARA ESTE ARQUIVO (thumbnails.set). Se o YouTube recusar, o vídeo continua postado e fica a nota."""
+    cap = _capa(arq)
+    if not cap or not vid:
+        return
+    try:
+        dados = cap['arquivo'].read_bytes()
+        st, _, j = http('POST', URL['google_api'] + '/upload/youtube/v3/thumbnails/set?videoId=' + urllib.parse.quote(vid), dados=dados,
+                        cab={'Authorization': 'Bearer ' + tok, 'Content-Type': 'image/jpeg', 'Content-Length': str(len(dados))}, tempo=120)
+        if st < 300:
+            import thumbnails as th
+            th.marcar_rede_ok('youtube')
+            _nota_capa(p, 'youtube', 'Capa do Agente 6 enviada.')
+        else:
+            _nota_capa(p, 'youtube', 'O YouTube não aceitou a capa (o vídeo foi postado): ' + _msg(j)[:200] +
+                       (' A conta precisa estar verificada para capa personalizada.' if st == 403 else ''))
+    except (OSError, ErroTemporario) as e:
+        _nota_capa(p, 'youtube', f'Capa não enviada (o vídeo foi postado): {e}'[:300])
 
 
 def _rupload(url: str, token: str, arq: Path):
@@ -673,7 +709,8 @@ def postar_instagram(p: dict, arq: Path) -> str:
         raise ErroRede('A Página escolhida não tem Instagram profissional ligado. Ligue o Instagram à Página no app do Instagram ou no Facebook.')
     base = f"{URL['graph']}/{GRAPH_V}"
     st, _, j = http('POST', f"{base}/{pg['ig_id']}/media", form={
-        'media_type': 'REELS', 'upload_type': 'resumable', 'caption': _texto(p, 2200), 'share_to_feed': 'true', 'access_token': pg['token']})
+        'media_type': 'REELS', 'upload_type': 'resumable', 'caption': _texto(p, 2200), 'share_to_feed': 'true', 'access_token': pg['token'],
+        **({'thumb_offset': str(cap['tempo_ms'])} if (cap := _capa(arq)) and cap['tempo_ms'] else {})})
     _ok(st, j, 'Instagram recusou o Reels')
     cont = j['id']
     _rupload(j.get('uri') or f"{URL['rupload']}/ig-api-upload/{GRAPH_V}/{cont}", pg['token'], arq)
@@ -711,6 +748,9 @@ def postar_tiktok(p: dict, arq: Path) -> str:
         opcoes = ((j.get('data') or {}).get('privacy_level_options') or ['SELF_ONLY']) if st < 300 else ['SELF_ONLY']
         priv = 'PUBLIC_TO_EVERYONE' if 'PUBLIC_TO_EVERYONE' in opcoes else opcoes[0]
         corpo = {'post_info': {'title': _texto(p, 2200), 'privacy_level': priv}, 'source_info': fonte}
+        cap = _capa(arq)
+        if cap and cap['tempo_ms']:            # o TikTok só aceita o MOMENTO do vídeo como capa (não a arte)
+            corpo['post_info']['video_cover_timestamp_ms'] = cap['tempo_ms']
         rota = '/v2/post/publish/video/init/'
     else:
         corpo = {'source_info': fonte}
@@ -813,6 +853,14 @@ def conferencia(p: dict, rede: str) -> list[dict]:
             item('certificado', pp['ok'], pp['detalhe'])
     except Exception as e:  # noqa: BLE001  (sem conseguir conferir, não sai)
         item('certificado', False, f'Não consegui conferir a aprovação do diretor: {str(e)[:120]}')
+    if rede == 'youtube':    # Agente 6: só exige capa se você ligou "exigir capa no YouTube"
+        try:
+            import thumbnails as th
+            if th.config()['exigir_capa_youtube']:
+                item('capa', th.capa_para_video(arq) is not None, 'Capa aprovada para este arquivo.' if th.capa_para_video(arq) else
+                     'Falta a capa aprovada para este arquivo (Agente 6). Escolha uma capa em Thumbnails ou desligue "exigir capa".')
+        except Exception as e:  # noqa: BLE001
+            item('capa', False, f'Não consegui conferir a capa: {str(e)[:120]}')
     ag2 = p.get('agenda') or {}
     if ag2.get('ate') and ag2.get('politica') != 'publish_when_online' and agora() > ag2['ate'] and not p['redes'].get(rede, {}).get('tentativas'):
         item('horario', False, 'O horário da programação diária já passou (servidor estava desligado): não posto atrasado.')

@@ -186,6 +186,22 @@ ESQUEMA = [
     CREATE TABLE IF NOT EXISTS biblioteca_versoes (item TEXT NOT NULL, versao INTEGER NOT NULL, dados TEXT NOT NULL, motivo TEXT, por TEXT, criado REAL,
         PRIMARY KEY (item, versao));
     """,
+    # 10: Agente 6 (capas/thumbnails): pedidos, variantes com hash, escolha presa ao vídeo e à capa, perfis de marca
+    """
+    CREATE TABLE IF NOT EXISTS thumbnail_jobs (id TEXT PRIMARY KEY, origem TEXT NOT NULL, referencia TEXT NOT NULL, video_sha TEXT NOT NULL,
+        config TEXT NOT NULL, estado TEXT NOT NULL, fila_job TEXT, criado REAL NOT NULL, atualizado REAL NOT NULL, erro TEXT, chave TEXT UNIQUE,
+        titulo TEXT, metodo TEXT, correcoes INTEGER NOT NULL DEFAULT 0, custo REAL NOT NULL DEFAULT 0, por TEXT);
+    CREATE INDEX IF NOT EXISTS thumbnail_jobs_ref ON thumbnail_jobs (origem, referencia);
+    CREATE TABLE IF NOT EXISTS thumbnail_variantes (id TEXT PRIMARY KEY, job TEXT NOT NULL, numero INTEGER NOT NULL, versao INTEGER NOT NULL,
+        arquivo TEXT NOT NULL, sha256 TEXT NOT NULL, formato TEXT NOT NULL, largura INTEGER, altura INTEGER, conceito TEXT, nota INTEGER,
+        relatorio TEXT, estado TEXT NOT NULL, criado REAL NOT NULL, layout TEXT, quadro_t REAL, metodo TEXT, custo REAL NOT NULL DEFAULT 0,
+        UNIQUE(job, numero, versao));
+    CREATE TABLE IF NOT EXISTS thumbnail_selecoes (id TEXT PRIMARY KEY, job TEXT NOT NULL, variante TEXT NOT NULL, video_sha TEXT NOT NULL,
+        thumb_sha TEXT NOT NULL, escolha TEXT NOT NULL, por TEXT, aprovado INTEGER NOT NULL DEFAULT 0, criado REAL NOT NULL, revogado REAL, motivo TEXT);
+    CREATE INDEX IF NOT EXISTS thumbnail_selecoes_video ON thumbnail_selecoes (video_sha, revogado);
+    CREATE TABLE IF NOT EXISTS thumbnail_perfis (id TEXT PRIMARY KEY, nome TEXT NOT NULL, escopo TEXT NOT NULL, config TEXT NOT NULL,
+        versao INTEGER NOT NULL DEFAULT 1, criado REAL NOT NULL, atualizado REAL NOT NULL);
+    """,
 ]
 
 
