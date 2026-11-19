@@ -64,5 +64,26 @@ ag._completar_link(c, {'id': 'p2', 'legenda': t})
 check('p2' not in mud, 'post que já tem o link não é mexido')
 ag.pg._mudar = _orig
 
+# última conferência antes de enviar: post de corte sem o link (agendado antes, editado à mão ou feito pela tela) ganha o link
+pg = ag.pg
+pg.posts = lambda: list(POSTS.values())
+POSTS = {'q1': {'id': 'q1', 'video': 'v1', 'origem': 'agente', 'titulo': 'Fuga insana', 'legenda': 'Fuga insana\n\n#gta6 #gameplay', 'redes': {}},
+         'q2': {'id': 'q2', 'video': 'v2', 'origem': 'manual', 'titulo': 'Outro', 'legenda': 'Outro #gta', 'redes': {}},
+         'q3': {'id': 'q3', 'video': 'v3', 'origem': 'agente', 'titulo': 'Sem fonte', 'legenda': 'Sem fonte', 'redes': {}},
+         'q4': {'id': 'q4', 'video': 'v4', 'origem': 'agente3', 'titulo': 'Próprio', 'legenda': 'Próprio', 'redes': {}}}
+pg._mudar = lambda pid, f: (f(POSTS[pid]), POSTS[pid])[1]
+CORTES = [dict(c, id='c1', post='q1', video='v1'), dict(c, id='c2', post='', video='v2'), {'id': 'c3', 'post': 'q3', 'video': 'v3', 'titulo': 'Sem fonte', 'origem': ''},
+          dict(c, id='c4', post='q4', video='v4')]
+ag.estado = lambda: {'cortes': CORTES}
+for q in POSTS:
+    pg._garantir_link(q)
+check(POSTS['q1']['legenda'].startswith('Fuga insana\n\n#gta6') and POSTS['q1']['legenda'].endswith('[' + YT + ']'), 'post do agente sem link ganha o link antes de enviar: ' + repr(POSTS['q1']['legenda']))
+check(POSTS['q2']['legenda'].endswith('[' + YT + ']'), 'post feito pela tela com o vídeo de um corte também ganha o link')
+check(POSTS['q3']['legenda'] == 'Sem fonte' and any(x['evento'] == 'sem_link' for x in POSTS['q3']['relatorio']), 'sem fonte conhecida: não inventa, fica anotado')
+check(POSTS['q4']['legenda'] == 'Próprio', 'vídeo próprio (Agente 3) não é mexido')
+antes = POSTS['q1']['legenda']
+pg._garantir_link('q1')
+check(POSTS['q1']['legenda'] == antes, 'conferir de novo não repete o link')
+
 print(f'{ok} ok, {falhas} falha(s)')
 sys.exit(1 if falhas else 0)
