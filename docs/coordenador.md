@@ -43,6 +43,10 @@ O Agente 2 confere isso sempre, a cada volta da programação (e também no cami
 
 Sem pedidos repetidos: só uma reposição por vez e, depois, no mínimo 60 minutos até a próxima (dá para mudar). Com a Central pausada, ou com a opção desligada em **Coordenador > Configurações**, ele não pede nada. A reposição só manda **cortar**. Nada é postado sem o diretor e os portões de sempre.
 
+### Vídeos próprios de uma ordem (ex.: 10 vídeos, um por dia)
+
+Se você posta antes da hora um vídeo de uma ordem do Coordenador, o Agente 2 avisa que aquele horário ficou vazio e o Coordenador **adianta a série**: o próximo vídeo vai para o horário que ficou livre, e os seguintes sobem um horário cada. Continua um por dia; a série só termina um dia antes. Se o próximo vídeo ainda está sendo feito pelo Agente 3, ele já leva o horário novo e sai nele assim que você liberar. Vídeo que já está saindo, que já saiu ou que veio da programação diária não é mexido.
+
 ## Corrigir
 
 No pacote, "Pedir correção" tem duas opções:

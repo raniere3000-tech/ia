@@ -156,6 +156,32 @@ check(len(PEDIDOS) == antes + 1 and len(ordens_repo()) == 2, 'sem corte pronto e
 ag.trabalhar_postagem()
 check(len(PEDIDOS) == antes + 1, 'não pede de novo enquanto o Agente 1 trabalha')
 
+print('7. Ordem do Coordenador (vídeos próprios, um por dia): postar antes da hora adianta o próximo')
+oid = 'ordem7'
+agora7 = time.time()
+db.executar('INSERT INTO coordenador_ordens (id, autor, texto, plano_json, versao_plano, status, criado, atualizado, chave) VALUES (?,?,?,?,?,?,?,?,?)',
+            oid, 'site', '3 vídeos de curiosidades, um por dia', '{"intencao": "produzir_videos", "parametros": {}}', 1, 'em_execucao', agora7, agora7, None)
+dia = [agora7 + 86400 * (n + 1) for n in range(3)]
+posts7, tids = [], []
+for n in range(3):
+    tid = co._nova_tarefa(oid, f'agendar_{n + 1}', 'agente2', 'a2.agendar', {'i': n, 'redes': ['youtube'], 'quando': dia[n]}, [])
+    tids.append(tid)
+    if n < 2:      # vídeos 1 e 2 prontos e agendados; o 3 ainda em produção
+        a7 = gerar(f'cur{n}.mp4', ['yellow', 'purple'][n])
+        pl.emitir_certificado(f'cur{n}', pl.sha_arquivo(a7), {'score': 85, 'blocking_findings': []})
+        pp = pg.criar_post({'video': f'cur{n}', 'redes': ['youtube'], 'quando': dia[n], 'titulo': f'Curiosidade {n + 1}', 'legenda': 'x', 'origem': 'agente3'})
+        posts7.append(pp['id'])
+        co._set_tarefa(tid, estado='concluida', resultado={'posts': [pp['id']], 'quando': dia[n]})
+pg.postar_agora(posts7[0])
+ps = {p['id']: p for p in pg.posts()}
+t7 = {t['id']: t for t in co._tarefas(oid)}
+check(ps[posts7[0]]['quando'] <= time.time(), 'o vídeo 1 sai agora')
+check(abs(ps[posts7[1]]['quando'] - dia[0]) < 1, 'o vídeo 2 subiu para o horário que ficou livre (o do vídeo 1)')
+check(abs(t7[tids[2]]['parametros']['quando'] - dia[1]) < 1, 'o vídeo 3, ainda em produção, já vai para o horário do vídeo 2')
+check(co.eventos(oid, 'antecipado'), 'fica no histórico da ordem')
+pg.postar_agora(posts7[0])
+check(abs(next(p for p in pg.posts() if p['id'] == posts7[1])['quando'] - dia[0]) < 1, 'tentar de novo o mesmo post não adianta nada de novo')
+
 shutil.rmtree(TMP, ignore_errors=True)
 print(f'\n{ok} ok, {falhas} falhas')
 sys.exit(1 if falhas else 0)

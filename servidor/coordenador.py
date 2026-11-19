@@ -1978,6 +1978,62 @@ def pedir_reposicao(motivo: str, detalhes: dict | None = None, origem: str = 'ag
     return {'ok': True, 'ordem': oid}
 
 
+# ---------------------------------------------------------------- post antecipado: o próximo vídeo da ordem sobe
+def post_antecipado(post_id: str, quando_antigo: float) -> dict:
+    """Você postou antes da hora um vídeo de uma ordem (ex.: 10 vídeos, um por dia). O horário dele ficou vazio:
+    os próximos vídeos da mesma ordem sobem um horário cada (o próximo vai para o horário que ficou livre),
+    então continua um por dia e a série só termina um dia antes. Vídeo ainda em produção leva o horário novo com ele."""
+    import postagem as pg
+    with _LOCK:
+        alvo = None
+        for r in db.todos("SELECT id, ordem_id FROM coordenador_tarefas WHERE acao='a2.agendar' AND estado='concluida' AND resultado_json LIKE ?", f'%{post_id}%'):
+            t = next((x for x in _tarefas(r['ordem_id']) if x['id'] == r['id']), None)
+            if t and post_id in (t['resultado'].get('posts') or []):
+                alvo = t
+                break
+        if not alvo:
+            return {'ok': False, 'motivo': 'O post não é de uma ordem do Coordenador.'}
+        oid = alvo['ordem_id']
+        ps = {p['id']: p for p in pg.posts()}
+        if any(ps.get(x) and ps[x]['quando'] > _agora() + 60 for x in alvo['resultado'].get('posts') or []):
+            return {'ok': False, 'motivo': 'Ainda há rede deste vídeo no horário antigo; o horário não ficou vazio.'}
+        i0 = alvo['parametros'].get('i', 0)
+        seguintes = sorted([t for t in _tarefas(oid) if t['acao'] == 'a2.agendar' and isinstance(t['parametros'].get('i'), int) and t['parametros']['i'] > i0
+                            and t['estado'] not in ('cancelada', 'falhou', 'bloqueada')], key=lambda t: t['parametros']['i'])
+        livre, movidos = quando_antigo, []
+        for t in seguintes:
+            if t['estado'] == 'concluida':
+                posts = [ps[x] for x in t['resultado'].get('posts') or [] if x in ps]
+                if not posts or any(p.get('agenda') or any(r['status'] != 'agendado' for r in p['redes'].values()) for p in posts):
+                    break               # já saiu, está saindo ou é da programação diária: não mexe daqui em diante
+                antigo = t['resultado'].get('quando') or posts[0]['quando']
+                for p in posts:
+                    pg._mudar(p['id'], lambda q, v=livre: q.update(quando=v))
+                _set_tarefa(t['id'], resultado=dict(t['resultado'], quando=livre, nota=f'Adiantado para {_hora_txt(livre)} (o vídeo anterior saiu antes da hora).'))
+            else:
+                antigo = t['parametros'].get('quando')
+                if not antigo:
+                    break
+                _set_tarefa(t['id'], parametros=dict(t['parametros'], quando=livre))
+            movidos.append({'video': t['parametros']['i'] + 1, 'de': antigo, 'para': livre, 'pronto': t['estado'] == 'concluida'})
+            livre = antigo
+        evento(oid, alvo['id'], 'agente2', 'antecipado', {'post': post_id, 'horario_livre': quando_antigo, 'movidos': movidos})
+    if movidos:
+        m = movidos[0]
+        txt = (f'Você postou o vídeo {i0 + 1} antes da hora. O vídeo {m["video"]} vai para {_hora_txt(m["para"])}'
+               + ('' if m['pronto'] else ' (o Agente 3 ainda está fazendo; ele sai nesse horário assim que você liberar)')
+               + (f'. Os outros {len(movidos) - 1} sobem um horário cada.' if len(movidos) > 1 else '.'))
+    else:
+        txt = f'Você postou o vídeo {i0 + 1} antes da hora. Não há próximo vídeo nesta ordem para pôr no horário {_hora_txt(quando_antigo)}.'
+    try:
+        import agente as ag
+        ag.avisar('coordenador', f'Ordem {_ref_ordem(oid)}: horário adiantado', txt)
+    except Exception as e:  # noqa: BLE001
+        print('coordenador: aviso', e)
+    acordar()
+    return {'ok': True, 'ordem': oid, 'movidos': movidos, 'texto': txt}
+
+
 # ---------------------------------------------------------------- em segundo plano
 def acordar():
     _ACORDAR.set()
