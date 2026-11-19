@@ -758,8 +758,14 @@ def postar_tiktok(p: dict, arq: Path) -> str:
         rota = '/v2/post/publish/inbox/video/init/'
     st, _, j = http('POST', URL['tiktok_api'] + rota, js=corpo, cab=cab)
     erro = (j.get('error') or {})
+    if direto and priv != 'SELF_ONLY' and (st >= 300 or erro.get('code') not in (None, 'ok')) and _tiktok_nao_auditado(erro):
+        # App ainda não aprovado pelo TikTok: só aceita "Só eu" (SELF_ONLY) em conta privada. Tenta assim primeiro.
+        priv = 'SELF_ONLY'
+        corpo['post_info']['privacy_level'] = priv
+        st, _, j = http('POST', URL['tiktok_api'] + rota, js=corpo, cab=cab)
+        erro = (j.get('error') or {})
     if direto and (st >= 300 or erro.get('code') not in (None, 'ok')) and _tiktok_nao_auditado(erro):
-        # App ainda não aprovado pelo TikTok: postagem direta só vale para conta privada. Manda como rascunho.
+        # Nem assim (conta pública?): manda como rascunho.
         direto, rota = False, '/v2/post/publish/inbox/video/init/'
         st, _, j = http('POST', URL['tiktok_api'] + rota, js={'source_info': fonte}, cab=cab)
         erro = (j.get('error') or {})
@@ -781,7 +787,7 @@ def postar_tiktok(p: dict, arq: Path) -> str:
     if direto:
         return 'Enviado ao TikTok' + ('' if priv == 'PUBLIC_TO_EVERYONE' else ' como "Só eu" (app ainda não aprovado pelo TikTok)')
     if caiu_rascunho:
-        return ('O app ainda não foi aprovado pelo TikTok, então a postagem direta não é permitida: '
+        return ('O app ainda não foi aprovado pelo TikTok e a postagem direta só vale para conta privada: '
                 'o vídeo foi para os rascunhos/notificações do TikTok. Abra o app e toque em Postar')
     return 'Está nos rascunhos/notificações do TikTok: abra o app e toque em Postar'
 
