@@ -41,10 +41,17 @@ export default function Coordenador(){
 }
 
 // ---------------------------------------------------------------- conversa
-function Conversar({abrirOrdem}:{abrirOrdem:(id:string)=>void}){
+// O rascunho é o mesmo na tela do Coordenador e no atalho rápido (fica nesta aba do navegador).
+const RASCUNHO='coord_rascunho';
+const lerRascunho=()=>{ try{ return sessionStorage.getItem(RASCUNHO)||''; }catch{ return ''; } };
+const gravarRascunho=(t:string)=>{ try{ if(t) sessionStorage.setItem(RASCUNHO,t); else sessionStorage.removeItem(RASCUNHO); }catch{ /* sem armazenamento */ } };
+
+/** O chat do Coordenador. Também é usado pelo atalho rápido (mesmas mensagens do servidor, mesmo rascunho). */
+export function Conversar({abrirOrdem,compacto=false}:{abrirOrdem:(id:string)=>void;compacto?:boolean}){
   const {toast}=useApp(); const cfg=useCfg();
   const conv=useServidor(c=>lerConversa(c),0);
-  const [texto,setTexto]=useState(''); const [busy,setBusy]=useState(false);
+  const [texto,setTextoE]=useState(lerRascunho); const [busy,setBusy]=useState(false);
+  const setTexto=(t:string)=>{ setTextoE(t); gravarRascunho(t); };
   const [ultima,setUltima]=useState<Resposta|null>(null);
   const fim=useRef<HTMLDivElement>(null);
   useEffect(()=>{ fim.current?.scrollIntoView({block:'end'}); },[conv.dados,ultima]);
@@ -55,11 +62,11 @@ function Conversar({abrirOrdem}:{abrirOrdem:(id:string)=>void}){
     catch(e){ toast(erroTexto(e),'erro'); } finally{ setBusy(false); }
   }
   const msgs=conv.dados?.mensagens||[];
-  return <section className="panel coord-chat">
+  return <section className={'panel coord-chat'+(compacto?' compacto':'')}>
     <p className="hint">Peça do seu jeito. Eu monto um plano com os agentes 1 a 6 e <b>nada começa sem você confirmar</b>. Nada é postado sem você liberar o pacote final (vídeo + capa).</p>
     <Erro e={conv.erro}/>
     <div className="coord-msgs" aria-live="polite">
-      {!msgs.length&&<p className="muted">Ainda não conversamos. Experimente um dos exemplos abaixo.</p>}
+      {!msgs.length&&<p className="muted">{compacto?'Ainda não conversamos. Escreva o que você quer, por exemplo: "Como está?" ou "Faça 3 vídeos sobre café".':'Ainda não conversamos. Experimente um dos exemplos abaixo.'}</p>}
       {msgs.map(m=>{ const ev=m.evento as {de?:string;texto?:string;ordem?:string;memoria?:string}; const meu=ev.de==='voce';
         return <div key={m.id} className={'coord-msg '+(meu?'meu':'dele')}><p>{ev.texto}</p>
           <small className="muted">{quando(m.criado)}{ev.ordem&&!meu&&<> · <button className="link-btn" onClick={()=>abrirOrdem(ev.ordem!)}>abrir a ordem</button></>}</small></div>; })}
@@ -68,9 +75,9 @@ function Conversar({abrirOrdem}:{abrirOrdem:(id:string)=>void}){
       {ultima?.tipo==='memoria'&&ultima.memoria&&ultima.memoria.status==='proposta'&&<MemoriaProposta m={ultima.memoria} feita={m=>setUltima({...ultima,memoria:m})}/>}
       <div ref={fim}/>
     </div>
-    <div className="coord-exemplos">{EXEMPLOS.map(e=><button key={e} className="subtle sm" onClick={()=>enviar(e)} disabled={busy}>{e.length>48?e.slice(0,46)+'…':e}</button>)}</div>
+    {!compacto&&<div className="coord-exemplos">{EXEMPLOS.map(e=><button key={e} className="subtle sm" onClick={()=>enviar(e)} disabled={busy}>{e.length>48?e.slice(0,46)+'…':e}</button>)}</div>}
     <form className="coord-enviar" onSubmit={e=>{ e.preventDefault(); enviar(); }}>
-      <textarea rows={2} value={texto} onChange={e=>setTexto(e.target.value)} maxLength={2000} placeholder="Ex.: faça 5 vídeos sobre o espaço, 1 por dia no TikTok às 19h"
+      <textarea rows={2} value={texto} aria-label="Mensagem para o Coordenador" data-coord-texto onChange={e=>setTexto(e.target.value)} maxLength={2000} placeholder="Ex.: faça 5 vídeos sobre o espaço, 1 por dia no TikTok às 19h"
         onKeyDown={e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); enviar(); } }}/>
       <button className="primary" disabled={busy||!texto.trim()} aria-label="Enviar">{busy?<Loader2 size={16} className="spin"/>:<Send size={16}/>}</button>
     </form>

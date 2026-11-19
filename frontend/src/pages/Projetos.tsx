@@ -75,15 +75,20 @@ function Propostas(){
 }
 
 export default function Projetos(){
-  const {settings,toast,go}=useApp(); const cfg=useCfg();
+  const {settings,toast,go,area}=useApp(); const cfg=useCfg();
   const lista=useServidor(c=>listarProjetos(c),20);
+  // Biblioteca única, vista dos dois estúdios: o filtro começa no estúdio de onde você veio (os projetos são os mesmos).
+  const [filtro,setFiltro]=useState<'todos'|'edicao'|'ia'>(area==='edicao'?'edicao':area==='estudio-ia'?'ia':'todos');
   const [vendo,setVendo]=useState<ProjetoMeta|null>(null); const [bib,setBib]=useState('');
   if(!settings.servidor) return <PrecisaServidor oque="Meus projetos"/>;
-  const ps=lista.dados?.projetos||[];
+  const todos=lista.dados?.projetos||[];
+  const ps=todos.filter(p=>filtro==='todos'||(filtro==='ia'?['agente3','video'].includes(p.tipo):['manual','vozes','video'].includes(p.tipo)));
   return <div className="projetos">
     <Migracao/>
     <section className="panel">
      <div className="section-head"><h2><FolderOpen size={17}/> No servidor ({ps.length})</h2>{lista.dados&&<span className="hint">{(lista.dados.livre_mb/1024).toFixed(1)} GB livres no celular</span>}</div>
+     <div className="chips-abas mb" role="radiogroup" aria-label="Filtrar projetos">{([['todos',`Todos (${todos.length})`],['edicao','Estúdio de Edição'],['ia','Estúdio IA']] as const).map(([k,t])=>
+       <button key={k} role="radio" aria-checked={filtro===k} className={'chip-aba '+(filtro===k?'active':'')} onClick={()=>setFiltro(k)}>{t}</button>)}</div>
      {lista.erro&&<p className="hint bad">{lista.erro}</p>}
      {ps.length===0&&<p className="hint">Nada ainda.</p>}
      <ul className="proj-lista">{ps.map(p=><li key={p.id}>
