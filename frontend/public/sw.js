@@ -16,7 +16,8 @@ self.addEventListener('fetch', e => {
   const guardar = res => { if (res && res.ok && res.type === 'basic') { const copia = res.clone(); caches.open(CACHE).then(c => c.put(req, copia)).catch(() => {}); } return res; };
   if (req.mode === 'navigate') {
     // Página: rede primeiro; sem internet, a última versão guardada.
-    e.respondWith(fetch(req).then(res => { if (res.ok) { const copia = res.clone(); caches.open(CACHE).then(c => c.put(BASE, copia)).catch(() => {}); } return res; })
+    const ehApp = url.pathname === BASE || url.pathname === BASE + 'index.html';   // termos, privacidade e arquivos de verificação não substituem o app guardado
+    e.respondWith(fetch(req).then(res => { if (res.ok && ehApp) { const copia = res.clone(); caches.open(CACHE).then(c => c.put(BASE, copia)).catch(() => {}); } return res; })
       .catch(() => caches.match(BASE).then(r => r || Response.error())));
     return;
   }
