@@ -33,6 +33,8 @@ Tela: **Criar vídeos > Capas (Agente 6)**, também em **Automação e agentes**
    - **Supervisionado:** você escolhe.
    - **Manual:** só faz capa quando você pede.
 
+   "Criar sozinho" vem **ligado** (desde 19/11). Nos modos automático e supervisionado, o Agente 6 faz capas sozinho para os cortes prontos ou já agendados (enquanto o post não saiu) e para os vídeos do Agente 3, até 2 por vez, primeiro os que saem mais cedo. Sem o Pillow no servidor, ele te avisa uma vez.
+
    Uma capa abaixo da nota só é usada com a sua confirmação. Uma capa com bloqueio nunca é usada.
 6. A escolha cria o pacote: vídeo + capa + metadados, preso ao SHA-256 dos dois. Se o vídeo mudar, a escolha cai. Se a capa mudar, a aprovação cai. Escolher uma capa nova para o mesmo vídeo derruba a anterior.
 7. O evento `thumbnail.pacote_pronto` fica registrado. O Coordenador (Agente 7), no futuro, entra entre esse evento e a liberação ao Agente 2.

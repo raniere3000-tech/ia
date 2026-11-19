@@ -417,5 +417,25 @@ confere(st == 200 and dz['pedidos'] >= 5 and dz['tempo_ativo_medio_s'] is not No
 st, cf, _ = api('POST', '/api/v1/thumbnails/config', {'modo': 'qualquer'})
 confere(st == 400, 'modo inválido recusado')
 
+print('13. Criar sozinho também no supervisionado, com cortes já agendados')
+import time as _t  # noqa: E402
+th.salvar_config({'modo': 'supervisionado'})
+video('corte5', 720, 1280, 5)
+video('corte6', 720, 1280, 5)
+video('corte7', 720, 1280, 5)
+ag._mudar(lambda e: e['cortes'].extend([
+    {'id': 'c5', 'video': 'corte5', 'titulo': 'Sai depois', 'status': 'agendado', 'quando': _t.time() + 9000, 'gancho': 'a'},
+    {'id': 'c6', 'video': 'corte6', 'titulo': 'Sai antes', 'status': 'agendado', 'quando': _t.time() + 600, 'gancho': 'b'},
+    {'id': 'c7', 'video': 'corte7', 'titulo': 'Já foi', 'status': 'postado', 'quando': _t.time() - 600, 'gancho': 'c'}]))
+th.salvar_config({'modo': 'manual'})
+confere(th.varrer() == 0, 'modo manual: não cria nada sozinho')
+th.salvar_config({'modo': 'supervisionado'})
+confere(th.config()['criar_sozinho'], '"criar sozinho" vem ligado')
+n = th.varrer()
+confere(n >= 1 and th._ultimo_job('corte', 'c6') is not None, f'supervisionado: cria capa para corte já agendado, primeiro o que sai antes ({n})')
+confere(th._ultimo_job('corte', 'c7') is None, 'corte já postado não ganha capa')
+j6 = esperar(th._ultimo_job('corte', 'c6')['id'])
+confere(j6['estado'] == 'aguardando_escolha' and not j6.get('selecao'), f'supervisionado: as capas esperam a sua escolha ({j6["estado"]})')
+
 print(f'\n{ok_n} ok, {falhas} falha(s)   (pasta {TMP})')
 sys.exit(1 if falhas else 0)
