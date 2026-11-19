@@ -2039,7 +2039,41 @@ def acordar():
     _ACORDAR.set()
 
 
+def conferir_links(horas: float = 48) -> dict:
+    """O Coordenador confere com antecedência os cortes agendados: todo corte leva o link do vídeo original na descrição.
+    Falta o link e dá para saber de onde veio: coloca. Não dá para saber: avisa você uma vez por post (nunca inventa link)."""
+    import postagem as pg
+    res = {'conferidos': 0, 'colocados': [], 'sem_link': []}
+    limite = _agora() + horas * 3600
+    avisados = set(db.kv('agente7.sem_link_avisados', []) or [])
+    for p in pg.posts():
+        if p['quando'] > limite or not any(r['status'] == 'agendado' for r in p['redes'].values()):
+            continue
+        st = pg._garantir_link(p['id'])
+        if st is None:
+            continue
+        res['conferidos'] += 1
+        if st == 'colocado':
+            res['colocados'].append(p['id'])
+            evento(None, None, 'agente7', 'link_original', {'post': p['id'], 'titulo': (p.get('titulo') or '')[:80], 'acao': 'colocado'})
+        elif st == 'sem_link' and p['id'] not in avisados:
+            res['sem_link'].append(p['id'])
+            avisados.add(p['id'])
+            evento(None, None, 'agente7', 'link_original', {'post': p['id'], 'titulo': (p.get('titulo') or '')[:80], 'acao': 'sem_link'})
+            try:
+                import agente as ag
+                ag.avisar('coordenador', 'Corte sem link do vídeo original: ' + (p.get('titulo') or '')[:60],
+                          f'O corte "{p.get("titulo") or ""}" está agendado para {_hora_txt(p["quando"])}, mas não sei de qual vídeo ele saiu, '
+                          'então a descrição vai sem o link original.\n\nSe quiser pôr o link, edite a descrição em Publicações (Posts agendados).')
+            except Exception as e:  # noqa: BLE001
+                print('coordenador: aviso sem link', e)
+    if res['sem_link']:
+        db.kv_gravar('agente7.sem_link_avisados', sorted(avisados)[-500:])
+    return res
+
+
 def _vigia():
+    ultimo_link = 0.0
     while True:
         _ACORDAR.wait(INTERVALO)
         _ACORDAR.clear()
@@ -2047,6 +2081,12 @@ def _vigia():
             avancar_todas()
         except Exception as e:  # noqa: BLE001
             print('coordenador:', e)
+        if _agora() - ultimo_link > 600:        # a cada 10 minutos
+            ultimo_link = _agora()
+            try:
+                conferir_links()
+            except Exception as e:  # noqa: BLE001
+                print('coordenador: links', e)
 
 
 def iniciar():

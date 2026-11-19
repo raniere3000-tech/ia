@@ -1086,7 +1086,7 @@ def preflight(p: dict, rede: str) -> list:
     return [x['detalhe'] for x in conferencia(p, rede) if x['bloqueia']]
 
 
-def _garantir_link(pid: str):
+def _garantir_link(pid: str) -> str | None:
     """Última conferência antes de enviar: post de um corte leva o link do vídeo original na descrição (crédito ao criador).
     Vale também para posts agendados antes de existir o link e para descrições editadas à mão. Sem link conhecido, não inventa:
     fica anotado no relatório do post."""
@@ -1095,14 +1095,14 @@ def _garantir_link(pid: str):
         import descricao as ds
         p = next((x for x in posts() if x['id'] == pid), None)
         if not p or str(p.get('origem') or '') in ('agente3', 'coordenador'):     # vídeo próprio: não tem vídeo original
-            return
+            return None
         c = next((x for x in ag.estado()['cortes'] if x.get('post') == pid), None) or \
             next((x for x in ag.estado()['cortes'] if x.get('video') == p['video']), None)
         if not c:
-            return
+            return None
         link = ag.link_original(c)
         if link and link in (p.get('legenda') or ''):
-            return
+            return 'ok'
 
         def f(q):
             if link:
@@ -1111,8 +1111,10 @@ def _garantir_link(pid: str):
             elif not any(x.get('evento') == 'sem_link' for x in q.get('relatorio') or []):
                 _anotar(q, '', 'sem_link', 'Não sei de qual vídeo este corte saiu: a descrição vai sem o link original.')
         _mudar(pid, f)
+        return 'colocado' if link else 'sem_link'
     except Exception as e:  # noqa: BLE001  (nunca atrapalha o envio)
         print('postagem: link original', e)
+        return None
 
 
 def _publicar_um(pid: str, rede: str):

@@ -11,6 +11,7 @@ TMP = Path(tempfile.mkdtemp(prefix='ec-link-'))
 os.environ['DADOS'] = str(TMP / 'dados')
 os.environ['BANCO_ARQ'] = str(TMP / 'dados' / 'database' / 'studio.sqlite')
 os.environ['CENTRAL_SEM_ACORDAR'] = '1'
+os.environ['COORDENADOR_SEM_VIGIA'] = '1'
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import agente as ag  # noqa: E402
 import descricao as ds  # noqa: E402
@@ -84,6 +85,31 @@ check(POSTS['q4']['legenda'] == 'Próprio', 'vídeo próprio (Agente 3) não é 
 antes = POSTS['q1']['legenda']
 pg._garantir_link('q1')
 check(POSTS['q1']['legenda'] == antes, 'conferir de novo não repete o link')
+
+# o Coordenador confere com antecedência os cortes agendados (a cada 10 minutos, em segundo plano)
+import time  # noqa: E402
+import coordenador as co  # noqa: E402
+import banco as db  # noqa: E402
+db.migrar()
+AVISOS = []
+ag.avisar = lambda *a, **k: AVISOS.append(a) or True
+POSTS.update({'r1': {'id': 'r1', 'video': 'w1', 'origem': 'agente', 'titulo': 'Amanhã', 'legenda': 'Amanhã #gta', 'quando': time.time() + 3600,
+                     'redes': {'youtube': {'status': 'agendado'}}},
+              'r2': {'id': 'r2', 'video': 'w2', 'origem': 'agente', 'titulo': 'Sem origem', 'legenda': 'Sem origem', 'quando': time.time() + 7200,
+                     'redes': {'youtube': {'status': 'agendado'}}},
+              'r3': {'id': 'r3', 'video': 'w3', 'origem': 'agente', 'titulo': 'Longe', 'legenda': 'Longe', 'quando': time.time() + 30 * 86400,
+                     'redes': {'youtube': {'status': 'agendado'}}}})
+for k in ('q1', 'q2', 'q3', 'q4'):
+    POSTS[k].update(quando=time.time() - 60, redes={'youtube': {'status': 'postado'}})
+CORTES += [dict(c, id='d1', post='r1', video='w1'), {'id': 'd2', 'post': 'r2', 'video': 'w2', 'titulo': 'Sem origem', 'origem': ''},
+           dict(c, id='d3', post='r3', video='w3')]
+res = co.conferir_links()
+check(res['colocados'] == ['r1'] and POSTS['r1']['legenda'].endswith('[' + YT + ']'), f'Coordenador pôs o link no corte agendado: {res}')
+check(res['sem_link'] == ['r2'] and len(AVISOS) == 1 and 'sem link' in AVISOS[0][1].lower(), 'corte sem origem conhecida: te avisa')
+check(POSTS['r3']['legenda'] == 'Longe', 'só confere o que sai nas próximas 48 horas')
+res = co.conferir_links()
+check(not res['colocados'] and not res['sem_link'] and len(AVISOS) == 1, 'conferir de novo: não repete o link nem o aviso')
+check(any(e['categoria'] == 'link_original' for e in co.eventos()), 'fica no histórico do Coordenador')
 
 print(f'{ok} ok, {falhas} falha(s)')
 sys.exit(1 if falhas else 0)

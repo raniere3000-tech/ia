@@ -5,7 +5,7 @@ import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
 import Progresso from '../components/Progresso';
 import { urlServidor } from '../lib/api';
 import { tempoTexto } from '../lib/alertas';
-import { ESCOPOS, ESTADO_ORDEM, ESTADO_TAREFA, REDES, acaoMemoria, acaoOrdem, acaoSugestao, confirmarOrdem, conferirHistorico, criarMemoria, decidir, escolherCapaPacote,
+import { ESCOPOS, ESTADO_ORDEM, ESTADO_TAREFA, REDES, acaoMemoria, acaoOrdem, acaoSugestao, confirmarOrdem, conferirHistorico, conferirLinks, criarMemoria, decidir, escolherCapaPacote,
   interpretar, lerAgentes, lerAprovacoes, lerCfgCoord, lerConversa, lerEventos, lerMemoria, lerMemorias, lerOrdem, lerOrdens, lerSugestoes, mudarParametros, salvarCfgCoord,
   type Aprovacao, type CfgCoord, type Evento, type Memoria, type Ordem, type Resposta } from '../lib/coordenador';
 
@@ -301,10 +301,11 @@ function ListaEventos({eventos}:{eventos:Evento[]}){
 function Historico(){
   const {toast}=useApp(); const cfg=useCfg(); const r=useServidor(c=>lerEventos(c),10);
   async function conferir(){ try{ const x=await conferirHistorico(cfg); toast(x.ok?`Histórico íntegro (${x.conferidos} registros).`:`Registro ${x.quebrado_em} foi mexido por fora.`,x.ok?'ok':'erro'); }catch(e){ toast(erroTexto(e),'erro'); } }
+  async function links(){ try{ const x=await conferirLinks(cfg); toast(`${x.conferidos} corte(s) agendado(s) conferido(s). Link colocado em ${x.colocados.length}.`+(x.sem_link.length?` ${x.sem_link.length} sem vídeo de origem conhecido (te avisei).`:''),x.sem_link.length?'erro':'ok'); r.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); } }
   return <section className="panel">
     <h3><History size={16}/> Histórico</h3>
     <p className="hint">Tudo o que o Coordenador fez e decidiu, em ordem. Cada registro carrega o código do anterior: dá para ver se alguém mexeu.</p>
-    <button className="subtle sm" onClick={conferir}>Conferir o histórico</button>
+    <div className="row"><button className="subtle sm" onClick={conferir}>Conferir o histórico</button> <button className="subtle sm" onClick={links}>Conferir o link original dos cortes agendados</button></div>
     <Erro e={r.erro}/>
     <ListaEventos eventos={r.dados?.eventos||[]}/>
   </section>;

@@ -47,6 +47,10 @@ Sem pedidos repetidos: só uma reposição por vez e, depois, no mínimo 60 minu
 
 Se você posta antes da hora um vídeo de uma ordem do Coordenador, o Agente 2 avisa que aquele horário ficou vazio e o Coordenador **adianta a série**: o próximo vídeo vai para o horário que ficou livre, e os seguintes sobem um horário cada. Continua um por dia; a série só termina um dia antes. Se o próximo vídeo ainda está sendo feito pelo Agente 3, ele já leva o horário novo e sai nele assim que você liberar. Vídeo que já está saindo, que já saiu ou que veio da programação diária não é mexido.
 
+## Link do vídeo original nos cortes
+
+A cada 10 minutos, o Coordenador confere os cortes agendados para as próximas 48 horas. Todo corte precisa levar o link do vídeo de onde saiu (crédito ao criador). Se falta o link e dá para saber de onde o corte veio, ele coloca. Se não dá para saber, ele não inventa: avisa você uma vez por post. O Agente 2 faz a mesma conferência de novo logo antes de enviar. Na aba Histórico há o botão "Conferir o link original dos cortes agendados" (`POST /api/v1/coordenador/links/conferir`).
+
 ## Corrigir
 
 No pacote, "Pedir correção" tem duas opções:

@@ -54,6 +54,7 @@ export const lerSugestoes=(c:CfgSrv)=>api<{sugestoes:Sugestao[];nota:string}>(c,
 export const acaoSugestao=(c:CfgSrv,id:string,acao:'propor'|'dispensar')=>api<Memoria|{ok:boolean}>(c,'POST',`${B}/aprendizado/sugestoes/${encodeURIComponent(id)}/${acao}`,{});
 export const lerEventos=(c:CfgSrv,ordem='')=>api<{eventos:Evento[]}>(c,'GET',`${B}/eventos?ordem=${ordem}&limite=150`);
 export const conferirHistorico=(c:CfgSrv)=>api<{ok:boolean;conferidos:number;quebrado_em?:number}>(c,'GET',`${B}/historico/conferir`);
+export const conferirLinks=(c:CfgSrv)=>api<{conferidos:number;colocados:string[];sem_link:string[]}>(c,'POST',`${B}/links/conferir`,{});
 export const lerCfgCoord=(c:CfgSrv)=>api<CfgCoord>(c,'GET',`${B}/config`);
 export const salvarCfgCoord=(c:CfgSrv,d:Partial<CfgCoord>)=>api<CfgCoord>(c,'POST',`${B}/config`,d);
 

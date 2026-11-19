@@ -595,6 +595,8 @@ def _coord(metodo: str, caminho: str, q: dict, corpo, quem: str):
         return {'eventos': co.eventos(v('ordem'), v('categoria'), _int(v('limite', '100'), 100))}
     if rota == ('GET', base + '/historico/conferir'):
         return co.conferir_historico()
+    if rota == ('POST', base + '/links/conferir'):
+        return co.conferir_links()
     if rota == ('GET', base + '/aprovacoes'):
         return co.aprovacoes(v('estado'))
     m = re.fullmatch(base + r'/aprovacoes/(\w+)/(decidir|capa)', caminho)
