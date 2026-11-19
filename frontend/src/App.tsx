@@ -1,6 +1,6 @@
 import ErroTela from './components/ErroTela';
 import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
-import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, Film, Bot, CheckCircle2, AlertTriangle, Info, X, Circle, ListChecks, Send, FolderOpen, Palette, CalendarRange, HelpCircle, Cloud, CloudOff, RefreshCw, ChevronDown, Users, Workflow, Radio, Image as ImageIcon } from 'lucide-react';
+import { Home, Search, Clapperboard, CalendarClock, Captions, LayoutTemplate, Settings as Gear, Sparkles, Mic, Film, Bot, CheckCircle2, AlertTriangle, Info, X, Circle, ListChecks, FolderOpen, Palette, CalendarRange, HelpCircle, Cloud, CloudOff, RefreshCw, ChevronDown, Users, Workflow, Radio, Image as ImageIcon, CalendarDays, MessagesSquare, Brain, Wrench, LayoutDashboard, ShieldCheck, BarChart3 } from 'lucide-react';
 import { AppCtx, PROJETO_VAZIO, captionPresets, type Marca, type Projeto, type Settings, type Tab } from './state';
 import { store } from './lib/store';
 import { salvos, temCofre, cofreAberto, separar, atualizarCofre } from './lib/cofre';
@@ -12,6 +12,8 @@ import { useTrabalhos } from './lib/gravador';
 import { definirSessao } from './lib/api';
 import Tour from './components/Tour';
 import Sino from './components/Sino';
+import CoordenadorRapido from './components/CoordenadorRapido';
+import { AREAS, INICIOS, lerRota, enderecoDe, areaPreferida, menuDa, secaoAtiva, type Area, type Secao } from './navigation/rotas';
 
 // Cada aba é baixada só quando é aberta (a primeira tela abre mais rápido).
 // Se o site foi atualizado com a aba aberta, o pedaço antigo some do servidor: recarrega uma vez para pegar a versão nova.
@@ -21,6 +23,7 @@ const CARGA:Partial<Record<Tab,()=>Mod>> = {
   manual:()=>import('./pages/Manual'), estilos:()=>import('./pages/Estilos'), templates:()=>import('./pages/Templates'), config:()=>import('./pages/Config'),
   ia:()=>import('./pages/CriarIA'), automatico:()=>import('./pages/Automatico'), projetos:()=>import('./pages/Projetos'), galeria:()=>import('./pages/Galeria'),
   fila:()=>import('./pages/Fila'), revisar:()=>import('./pages/Revisar'), series:()=>import('./pages/Series'), central:()=>import('./pages/Central'), live:()=>import('./pages/Live'), thumbnails:()=>import('./pages/Thumbnails'), coordenador:()=>import('./pages/Coordenador'),
+  agentes:()=>import('./pages/AgentesHome'), edicao:()=>import('./pages/EdicaoHome'), estudioIA:()=>import('./pages/EstudioIAHome'),
 };
 const seguro=(f:()=>Mod)=>()=>f().then(m=>{ try{ sessionStorage.removeItem('studio_recarregou'); }catch{ /* sem armazenamento */ } return m; },()=>{
   let ja=true; try{ ja=!!sessionStorage.getItem('studio_recarregou'); sessionStorage.setItem('studio_recarregou','1'); }catch{ /* sem armazenamento */ }
@@ -34,25 +37,16 @@ const VIVAS:Tab[]=['cortes','video','vozes','manual'];
 const adiantar=(t:Tab)=>{ CARGA[t]?.().catch(()=>{}); };
 
 const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-community/whisper-base',idioma:'portuguese',api:'',legendaPadrao:'classico-contorno',efeitoPadrao:'seguir-rosto',servidor:'',servidorToken:'',servidorCanal:'',geminiKey:'',ia:''};
-const NAV:[Tab,string,typeof Home][] = [['inicio','Início',Home],['video','Animado no navegador',Sparkles],['ia','Agente 3',Bot],['manual','Montagem manual',Film],['automatico','Vários de uma vez',CalendarRange],['series','Séries animadas',Users],['projetos','Meus projetos',FolderOpen],
-  ['vozes','Estúdio de vozes',Mic],['galeria','Estilos de animação',Palette],['templates','Templates',LayoutTemplate],['estilos','Legendas e efeitos',Captions],
-  ['radar','Radar de vídeos',Search],['cortes','Gerar cortes',Clapperboard],['coordenador','Coordenador',Bot],['central','Central de Automação',Workflow],['live','Live',Radio],['thumbnails','Capas (Agente 6)',ImageIcon],['agente','Agentes 1, 2 e 3',Bot],['fila','Fila e aprovações',ListChecks],['revisar','Revisar vídeo',CheckCircle2],
-  ['agendar','Posts agendados',CalendarClock],['config','Ajustes',Gear]];
+/** Ícone de cada tela no submenu (os nomes e o lugar de cada tela vêm de navigation/rotas.ts, registro único). */
+const ICONE:Record<Tab,typeof Home>={inicio:Home,video:Sparkles,ia:Bot,manual:Film,automatico:CalendarRange,series:Users,projetos:FolderOpen,vozes:Mic,galeria:Palette,templates:LayoutTemplate,estilos:Captions,
+  radar:Search,cortes:Clapperboard,coordenador:MessagesSquare,central:Workflow,live:Radio,thumbnails:ImageIcon,agente:Bot,fila:ListChecks,revisar:ShieldCheck,agendar:CalendarClock,config:Gear,
+  agentes:LayoutDashboard,edicao:Film,estudioIA:Sparkles};
+const ICONE_SECAO:Record<string,typeof Home>={memoria:Brain,skills:Wrench,resultados:BarChart3,linhas:CalendarDays,agente2:Bot};
+const iconeDe=(s:Secao)=>ICONE_SECAO[s.secao]||ICONE[s.aba];
 /** As cinco áreas (barra de baixo no celular, menu lateral no computador). A engrenagem fica fora delas. */
-type AreaNav={id:string;nome:string;curto:string;Icon:typeof Home;abas:Tab[];extras?:[Tab,string][]};
-const AREAS_NAV:AreaNav[] = [
-  {id:'inicio',nome:'Início',curto:'Início',Icon:Home,abas:['inicio']},
-  {id:'criar',nome:'Criar vídeos',curto:'Criar',Icon:Clapperboard,abas:['ia','automatico','series','video','manual','projetos','thumbnails','vozes','galeria','templates','estilos']},
-  {id:'automacao',nome:'Automação e agentes',curto:'Agentes',Icon:Workflow,abas:['coordenador','central','live','thumbnails','agente'],extras:[['coordenador','Coordenador'],['central','Central'],['live','Live'],['thumbnails','Capas (Agente 6)'],['agente','Configurar agentes']]},
-  {id:'radar',nome:'Radar e cortes',curto:'Radar',Icon:Search,abas:['radar','cortes']},
-  {id:'fila',nome:'Fila e aprovações',curto:'Fila',Icon:ListChecks,abas:['fila','revisar']},
-  {id:'posts',nome:'Publicações',curto:'Posts',Icon:Send,abas:['agendar','agente'],extras:[['agente','Agente 2 (postagem)']]},
-];
-/** Os quatro modos de criar ficam juntos no topo da área Criar. */
-const MODOS:Tab[]=['ia','automatico','series','video','manual'];
-const OCULTAS:Tab[]=['revisar'];
-const areaDe=(t:Tab,pref='')=>AREAS_NAV.find(a=>a.id===pref&&a.abas.includes(t))||AREAS_NAV.find(a=>a.abas.includes(t))||AREAS_NAV[0];
-const lerRota=():[Tab,string]=>{ const [h,...r]=decodeURIComponent(location.hash.slice(1)).split('/'); return NAV.some(n=>n[0]===h)?[h as Tab,r.join('/')]:['inicio','']; };
+const ICONE_AREA:Record<Area,typeof Home>={inicio:Home,agentes:Bot,edicao:Clapperboard,'estudio-ia':Sparkles,publicacoes:CalendarDays};
+const rotaAgora=()=>lerRota(location.hash);
+const SECOES_DA=(a:Area)=>menuDa(a).map(s=>s.aba as Tab).concat(a==='inicio'?['inicio']:[]);
 const TITLES:Record<Tab,[string,string]> = {
   inicio:['Bem-vindo ao EstúdioClip','Escreva um assunto e o celular faz o vídeo. Daqui você também acompanha o que está pronto para aprovar.'],
   radar:['Descubra vídeos em alta','Pesquise qualquer nicho no YouTube e encontre canais e vídeos com muitas visualizações.'],
@@ -75,7 +69,10 @@ const TITLES:Record<Tab,[string,string]> = {
   thumbnails:['Capas (Agente 6)','Capas dos cortes e dos vídeos do Agente 3: quadros reais do vídeo, até 4 opções, conferidas pelo diretor antes de você escolher.'],
   live:['Live','Grave uma live: os melhores momentos viram cortes, o editor e o diretor conferem, e o aprovado é postado na hora.'],
   fila:['Fila e aprovações','O que o servidor está fazendo, o que vem depois e os vídeos esperando a sua decisão.'],
-  revisar:['Revisar vídeo','Assista, confira e decida: aprovar, pedir correção ou rejeitar.'],
+  revisar:['Aprovações','Vídeos e roteiros esperando a sua decisão. Abra um para assistir e aprovar, pedir correção ou rejeitar.'],
+  agentes:['Central de Agentes','Os sete agentes: o que cada um faz agora, quanto trabalhou e onde configurar.'],
+  edicao:['Estúdio de Edição','Crie e monte vídeos à mão: projetos, editor, radar, cortes, templates, legendas e efeitos.'],
+  estudioIA:['Estúdio IA','Crie a partir de uma ideia: Criar com IA, séries e personagens, produção em lote e biblioteca criativa.'],
 };
 
 export default function App(){
@@ -86,14 +83,23 @@ export default function App(){
     if(temCofre()){ store.setJson('studio_settings',separar(n).publico); atualizarCofre(n); } else store.setJson('studio_settings',n);
     return n; }),[]);
   definirSessao(settings.servidorSessao||'');
-  const [tab,setTab]=useState<Tab>(()=>lerRota()[0]);
-  const [rotaExtra,setExtra]=useState(()=>lerRota()[1]);
-  const [areaPref,setAreaPref]=useState('');
+  // Rota = área + tela + extra. Endereços antigos (#coordenador/..., #thumbnails/...) continuam abrindo a tela certa.
+  const [rota,setRota]=useState(rotaAgora);
+  const tab=rota.aba as Tab, rotaExtra=rota.extra, area=rota.area;
+  const areaRef=useRef<Area>(area); areaRef.current=area;
   const [abertas,setAbertas]=useState<Tab[]>(()=>VIVAS.includes(tab)?[tab]:[]);
-  const go=useCallback((t:Tab,extra='',area='')=>{ setTab(t); setExtra(extra); setAreaPref(area); if(VIVAS.includes(t)) setAbertas(a=>a.includes(t)?a:[...a,t]);
-    const novo='#'+t+(extra?'/'+encodeURIComponent(extra):''); if(location.hash!==novo) history.pushState(null,'',novo); window.scrollTo({top:0}); },[]);
+  // Endereço antigo ou só a área: troca pelo endereço novo, sem criar um passo a mais no Voltar.
+  useEffect(()=>{ if(/^#(senha|par)=/.test(location.hash)||location.search.includes('state=')) return; const r=rotaAgora(); const novo=enderecoDe(r.aba,r.extra,r.area);
+    if(location.hash&&location.hash!==novo) history.replaceState(history.state,'',novo); },[]);
+  const go=useCallback((t:Tab,extra='',areaP='')=>{
+    const novo=enderecoDe(t,extra,areaPreferida(areaP,areaRef.current)); const r=lerRota(novo);
+    setRota(r); if(VIVAS.includes(t)) setAbertas(a=>a.includes(t)?a:[...a,t]);
+    if(location.hash!==novo) history.pushState(null,'',novo); window.scrollTo({top:0}); },[]);
+  const irArea=useCallback((a:Area)=>{ const r=lerRota(INICIOS[a]); go(r.aba as Tab,r.extra,r.area); },[go]);
   // Voltar e avançar do navegador trocam de tela.
-  useEffect(()=>{ const f=()=>{ if(/^#(senha|par)=/.test(location.hash)) return; const [t,x]=lerRota(); setTab(t); setExtra(x); if(VIVAS.includes(t)) setAbertas(a=>a.includes(t)?a:[...a,t]); };
+  useEffect(()=>{ const f=()=>{ if(/^#(senha|par)=/.test(location.hash)) return; const r=rotaAgora(); setRota(r); const t=r.aba as Tab; if(VIVAS.includes(t)) setAbertas(a=>a.includes(t)?a:[...a,t]);
+      // link antigo aberto com o site já carregado: mostra o endereço novo no lugar (o Voltar continua igual)
+      const novo=enderecoDe(r.aba,r.extra,r.area); if(location.hash&&location.hash!==novo) history.replaceState(history.state,'',novo); };
     addEventListener('popstate',f); addEventListener('hashchange',f); return ()=>{ removeEventListener('popstate',f); removeEventListener('hashchange',f); }; },[]);
   useEffect(()=>{ if(VIVAS.includes(tab)) setAbertas(a=>a.includes(tab)?a:[...a,tab]); },[tab]);
   const vivas=useRef<HTMLDivElement>(null);
@@ -136,7 +142,7 @@ export default function App(){
     const q=new URLSearchParams(location.search); const state=q.get('state')||''; const m=/^(google|meta|tiktok)_/.exec(state);
     if(!m) return;
     const code=q.get('code'); const erro=q.get('error_description')||q.get('error_message')||q.get('error');
-    history.replaceState(null,'',location.pathname+'#agendar'); setTab('agendar');
+    history.replaceState(null,'',location.pathname+'#publicacoes/calendario'); setRota(lerRota('#publicacoes/calendario'));
     const nome={google:'YouTube',meta:'Facebook e Instagram',tiktok:'TikTok'}[m[1]]!;
     const t0=+(store.get('studio_login_popup')||0); const ehJanela=!!window.opener||(t0>0&&Date.now()-t0<30*60*1000);
     const avisar=(msg:object)=>{ try{ const bc=new BroadcastChannel('estudioclip-contas'); bc.postMessage(msg); bc.close(); }catch{ /* navegador antigo */ } };
@@ -214,9 +220,13 @@ export default function App(){
     return ()=>{ clearTimeout(t0); clearInterval(iv); document.removeEventListener('visibilitychange',vis); removeEventListener('online',on); };
   },[settings.servidor,passar]);
   const sinc=useMemo(()=>({...sincR,passar}),[sincR,passar]);
-  const ctx=useMemo(()=>({settings,setSettings,tab,go,rotaExtra,sinc,toast,projeto,setProjeto,template,setTemplate,modelos,setModelos,modelosSinc,linkRef,setLinkRef,marcas,setMarcas}),[settings,setSettings,tab,go,rotaExtra,sinc,toast,projeto,setProjeto,template,setTemplate,modelos,setModelos,modelosSinc,linkRef,marcas,setMarcas]);
-  const area=areaDe(tab,areaPref);
-  const [aberto,setAberto]=useState<string>('');
+  // Atalho global do Coordenador: abre o mesmo chat (mesmas mensagens do servidor) por cima da tela atual.
+  const [coordAberto,setCoordAberto]=useState(false);
+  const abrirCoordenador=useCallback(()=>setCoordAberto(true),[]);
+  const ctx=useMemo(()=>({settings,setSettings,tab,go,area,abrirCoordenador,rotaExtra,sinc,toast,projeto,setProjeto,template,setTemplate,modelos,setModelos,modelosSinc,linkRef,setLinkRef,marcas,setMarcas}),[settings,setSettings,tab,go,area,abrirCoordenador,rotaExtra,sinc,toast,projeto,setProjeto,template,setTemplate,modelos,setModelos,modelosSinc,linkRef,marcas,setMarcas]);
+  const areaInfo=AREAS.find(a=>a.id===area)!;
+  const ativa=secaoAtiva(area,tab,rotaExtra);
+  const abrirSecao=(x:Secao)=>go(x.aba as Tab,x.extra||'',x.irPara||x.area);
   const [tourAberto,setTour]=useState(false);
   useEffect(()=>{ const f=()=>setTour(true); addEventListener('estudio:tour',f); return ()=>removeEventListener('estudio:tour',f); },[]);
   const resolver=async(a:string,manterAqui:boolean)=>{
@@ -234,19 +244,19 @@ export default function App(){
    <div className="app">
     <aside className="sidebar" aria-label="Menu">
      <div className="brand"><span className="brand-icon"><Clapperboard size={22}/></span><div><strong>ESTÚDIO<span>CLIP</span></strong><small>CRIAR • CORTAR • PUBLICAR</small></div></div>
-     <nav className="areas">{AREAS_NAV.map(a=>{ const ativa=area.id===a.id; const expandida=ativa||aberto===a.id; const subs=a.abas.filter(t=>!OCULTAS.includes(t)&&t!=='inicio');
-      const ocupado=a.abas.some(t=>trabalhos.includes(t));
-      return <div key={a.id} className={'area-grupo'+(ativa?' ativa':'')}>
-       <button className={'nav area-btn '+(ativa?'active':'')} data-tour={'area-'+a.id} aria-current={ativa?'page':undefined}
-        onClick={()=>{ if(ativa&&subs.length){ setAberto(x=>x===a.id?'':a.id); return; } go(a.abas[0],'',a.id); setAberto(''); }}
-        onPointerEnter={()=>adiantar(a.abas[0])} title={a.nome}>
-        <a.Icon size={18}/><span>{a.nome}</span><b className="nav-curto" aria-hidden="true">{a.curto}</b>
-        {a.id==='radar'&&projeto.clips.length>0&&<em className="nav-badge">{projeto.clips.filter(c=>!c.descartado).length}</em>}
+      <nav className="areas" aria-label="Áreas">{AREAS.map(a=>{ const atual=area===a.id&&tab!=='config'; const subs=menuDa(a.id);
+      const ocupado=SECOES_DA(a.id).some(t=>trabalhos.includes(t)); const Icon=ICONE_AREA[a.id];
+      return <div key={a.id} className={'area-grupo'+(atual?' ativa':'')}>
+       <button className={'nav area-btn '+(atual?'active':'')} data-tour={'area-'+a.id} aria-current={atual?'page':undefined}
+        onClick={()=>irArea(a.id)} onPointerEnter={()=>adiantar(lerRota(INICIOS[a.id]).aba as Tab)} title={a.nome}>
+        <Icon size={18}/><span>{a.nome}</span><b className="nav-curto" aria-hidden="true">{a.curto}</b>
+        {a.id==='edicao'&&projeto.clips.length>0&&<em className="nav-badge">{projeto.clips.filter(c=>!c.descartado).length}</em>}
         {ocupado&&<i className="nav-ocupado" role="status" aria-label="Trabalhando" title="Trabalhando"/>}
-        {subs.length>1&&<ChevronDown size={14} className={'nav-seta'+(expandida?' aberta':'')} aria-hidden="true"/>}
+        {subs.length>1&&<ChevronDown size={14} className={'nav-seta'+(atual?' aberta':'')} aria-hidden="true"/>}
        </button>
-       {expandida&&subs.length>1&&<div className="nav-subs">{subs.map(t=>{ const [,label,Icon]=NAV.find(n=>n[0]===t)!; const nome=a.extras?.find(x=>x[0]===t)?.[1]||label;
-         return <button key={t} className={'nav sub '+(tab===t&&ativa?'active':'')} onClick={()=>go(t,'',a.id)} onPointerEnter={()=>adiantar(t)}><Icon size={15}/><span>{nome}</span>{trabalhos.includes(t)&&<i className="nav-ocupado" aria-hidden="true"/>}</button>; })}</div>}
+       {atual&&subs.length>1&&<div className="nav-subs">{subs.map(x=>{ const I=iconeDe(x);
+         return <button key={x.secao} className={'nav sub '+(ativa?.secao===x.secao&&ativa.area===x.area?'active':'')} aria-current={ativa?.secao===x.secao?'page':undefined}
+           onClick={()=>abrirSecao(x)} onPointerEnter={()=>adiantar(x.aba as Tab)}><I size={15}/><span>{x.nome}</span>{trabalhos.includes(x.aba)&&<i className="nav-ocupado" aria-hidden="true"/>}</button>; })}</div>}
       </div>; })}</nav>
      <div className="sidebar-bottom">
       <button className={'nav '+(tab==='config'?'active':'')} data-tour="ajustes" onClick={()=>go('config')}><Gear size={18}/><span>Ajustes</span></button>
@@ -258,20 +268,21 @@ export default function App(){
     <main>
      <div className="topo-movel"><span className="brand-mini"><Clapperboard size={18}/> ESTÚDIO<b>CLIP</b></span>
       <button className={'sinc-chip '+sitCls} onClick={()=>go('projetos')} title={sincR.detalhe||sitTexto}>{sincR.situacao==='offline'?<CloudOff size={14}/>:sincR.situacao==='sincronizando'?<RefreshCw size={14} className="spin"/>:<Cloud size={14}/>}<span>{sitTexto}</span></button>
-      <Sino/><button className="icon-btn" onClick={()=>setTour(true)} aria-label="Tutorial"><HelpCircle size={19}/></button>
+      <button className="icon-btn" onClick={abrirCoordenador} aria-label="Falar com o Coordenador" title="Coordenador"><MessagesSquare size={19}/></button>
+      <Sino/><button className="icon-btn so-largo" onClick={()=>setTour(true)} aria-label="Tutorial"><HelpCircle size={19}/></button>
       <button className="icon-btn" data-tour="ajustes-movel" onClick={()=>go('config')} aria-label="Ajustes"><Gear size={19}/></button></div>
-     <header className="page-head"><div><div className="eyebrow">{area.id==='inicio'?'PAINEL DE PRODUÇÃO':area.nome.toUpperCase()}{(()=>{ const sub=area.extras?.find(x=>x[0]===tab)?.[1]||NAV.find(n=>n[0]===tab)?.[1]||''; return area.id!=='inicio'&&tab!=='config'&&sub&&sub!==area.nome?<> › {sub.toUpperCase()}</>:null; })()}</div><h1>{t}</h1><p className="subtitle">{sub}</p></div>
+     <header className="page-head"><div><div className="eyebrow">{tab==='config'?'AJUSTES':area==='inicio'?'PAINEL DE PRODUÇÃO':areaInfo.nome.toUpperCase()}{area!=='inicio'&&tab!=='config'&&ativa&&ativa.nome!==areaInfo.nome&&<> › {ativa.nome.toUpperCase()}</>}</div><h1>{t}</h1><p className="subtitle">{sub}</p></div>
+      <button className="coord-rapido" onClick={abrirCoordenador} title="Abrir o chat do Coordenador sem sair desta tela"><MessagesSquare size={15}/><span>Coordenador</span></button>
       <button className={'sinc-chip grande '+sitCls} onClick={()=>go('projetos')} title={sincR.detalhe||sitTexto}>{sincR.situacao==='offline'?<CloudOff size={15}/>:sincR.situacao==='sincronizando'?<RefreshCw size={15} className="spin"/>:<Cloud size={15}/>}<span>{sitTexto}</span></button><Sino/></header>
      {sincR.avisos.length>0&&<div className="sinc-avisos">{sincR.avisos.map(a=><div key={a.area} className={'note-bar '+(a.tipo==='conflito'?'bad':'')}>
       {a.tipo==='conflito'?<><AlertTriangle size={16}/><span><b>Conflito em {a.titulo}:</b> outro aparelho salvou uma versão diferente. Escolha qual fica (a outra continua guardada nas versões do projeto).</span>
         <button className="subtle sm" onClick={()=>resolver(a.area,false)}>Usar a do servidor</button><button className="primary sm" onClick={()=>resolver(a.area,true)}>Manter a deste aparelho</button></>
       :<><Info size={16}/><span><b>{a.titulo}</b> mudou em outro aparelho.</span><button className="primary sm" onClick={()=>resolver(a.area,false)}>Carregar a versão nova</button></>}
      </div>)}</div>}
-     {area.id!=='inicio'&&tab!=='config'&&<div className="sub-abas" role="tablist" aria-label={area.nome}>
-      {area.id==='criar'&&<div className="modos">{MODOS.map(m=>{ const [,label,Icon]=NAV.find(n=>n[0]===m)!; return <button key={m} role="tab" aria-selected={tab===m} className={'modo '+(tab===m?'active':'')} onClick={()=>go(m,'',area.id)} onPointerEnter={()=>adiantar(m)}><Icon size={15}/> {label}</button>; })}</div>}
-      <div className="chips-abas">{area.abas.filter(x=>!OCULTAS.includes(x)&&!(area.id==='criar'&&MODOS.includes(x))).filter((_x,_i,l)=>l.length>1).map(x=>{ const [,label,Icon]=NAV.find(n=>n[0]===x)!; const nome=area.extras?.find(e=>e[0]===x)?.[1]||label;
-        return <button key={x} role="tab" aria-selected={tab===x} className={'chip-aba '+(tab===x?'active':'')} onClick={()=>go(x,'',area.id)} onPointerEnter={()=>adiantar(x)}><Icon size={14}/> {nome}</button>; })}</div>
-     </div>}
+     {area!=='inicio'&&tab!=='config'&&<nav className="sub-abas" aria-label={'Seções de '+areaInfo.nome}>
+      <div className="chips-abas" role="tablist">{menuDa(area).map(x=>{ const I=iconeDe(x); const sel=ativa?.secao===x.secao;
+        return <button key={x.secao} role="tab" aria-selected={sel} className={'chip-aba '+(sel?'active':'')} onClick={()=>abrirSecao(x)} onPointerEnter={()=>adiantar(x.aba as Tab)}><I size={14}/> {x.nome}</button>; })}</div>
+     </nav>}
      <div ref={vivas} style={{display:'contents'}}>{abertas.map(k=>{ const T=TELAS[k as Exclude<Tab,'inicio'>]; return <div key={k} data-tela={k} style={{display:tab===k?'contents':'none'}}>
       <ErroTela chave={k}><Suspense fallback={<p className="hint carregando-tela" role="status">Abrindo...</p>}><T/></Suspense></ErroTela></div>; })}</div>
      {!VIVAS.includes(tab)&&<ErroTela chave={tab}>
@@ -282,6 +293,7 @@ export default function App(){
      <footer>EstúdioClip • Use apenas vídeos próprios ou com autorização • As chaves ficam neste navegador ou no seu servidor<nav className="rodape-links" aria-label="Documentos legais"><a href={import.meta.env.BASE_URL+'terms.html'}>Termos de Serviço</a><span aria-hidden="true">•</span><a href={import.meta.env.BASE_URL+'privacy.html'}>Política de Privacidade</a></nav></footer>
     </main>
    </div>
+   <CoordenadorRapido aberto={coordAberto} fechar={()=>setCoordAberto(false)}/>
    <Tour aberto={tourAberto} fechar={()=>setTour(false)} abrir={()=>setTour(true)} go={(t:Tab)=>go(t)} naInicio={tab==='inicio'}/>
    <div className="toasts" aria-live="polite">{toasts.map(x=><div key={x.id} className={'toast '+x.kind}>{x.kind==='ok'?<CheckCircle2 size={17}/>:x.kind==='erro'?<AlertTriangle size={17}/>:<Info size={17}/>}<span>{x.msg}</span><button onClick={()=>setToasts(t=>t.filter(y=>y.id!==x.id))} aria-label="Fechar"><X size={15}/></button></div>)}</div>
   </AppCtx.Provider>;

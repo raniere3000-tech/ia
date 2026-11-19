@@ -4,10 +4,13 @@ import type { Cue, Preset } from './lib/captions';
 import type { Template } from './lib/render';
 import type { Modelo } from './lib/modelos';
 import presets from '../../config/presets.json';
+import type { Area } from './navigation/rotas';
 
 export type Marca = {id:string;inicio:number;fim:number;titulo:string;nota?:number;motivo?:string;gancho?:string;hashtags?:string[];ia?:boolean};
 export type Settings = {ytKey:string; claudeKey:string; whisperModel:string; idioma:string; api:string; legendaPadrao:string; efeitoPadrao:string; servidor:string; servidorToken:string; servidorCanal:string; servidorSessao?:string; servidorAnuncio?:string; geminiKey:string; muapiKey?:string; ia:''|'gemini'|'claude'};
-export type Tab = 'inicio'|'radar'|'cortes'|'video'|'vozes'|'manual'|'agendar'|'agente'|'estilos'|'templates'|'config'|'ia'|'automatico'|'projetos'|'galeria'|'fila'|'revisar'|'series'|'central'|'live'|'thumbnails'|'coordenador';
+export type Tab = 'inicio'|'radar'|'cortes'|'video'|'vozes'|'manual'|'agendar'|'agente'|'estilos'|'templates'|'config'|'ia'|'automatico'|'projetos'|'galeria'|'fila'|'revisar'|'series'|'central'|'live'|'thumbnails'|'coordenador'
+  /** Entradas das áreas novas (Agentes = painel dos 7 agentes; Estúdio de Edição; Estúdio IA). */
+  |'agentes'|'edicao'|'estudioIA';
 
 export type Projeto = {
   file:File|null; url:string; nome:string; duracao:number;
@@ -25,6 +28,10 @@ export const effectPresets = allPresets.filter(p=>p.tipo==='efeito');
 export type Ctx = {
   settings:Settings; setSettings:(s:Partial<Settings>)=>void;
   tab:Tab; go:(t:Tab,extra?:string,area?:string)=>void;
+  /** Área aberta agora (uma das cinco). */
+  area:Area;
+  /** Abre o atalho rápido do Coordenador (sem sair da tela). */
+  abrirCoordenador:()=>void;
   /** Parte depois da aba no endereço (ex.: #revisar/<projeto>). */
   rotaExtra:string;
   /** Situação do salvamento no servidor. */

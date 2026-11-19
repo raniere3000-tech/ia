@@ -4,7 +4,9 @@ import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { useCfg, useServidor, PrecisaServidor, erroTexto } from '../components/Servidor2';
 import { Etapas } from '../components/Prontidao';
-import { lerRevisao, aprovar, pedirCorrecao, refazerCena, rejeitar, aprovarRoteiro, reenviarEmail, lerDescricao, salvarDescricao, type Descricao, urlServidor, duracaoTexto, horaTexto, type Render, type Cena, type Briefing, type Qualidade, type Problema, type QuadroVersao, type Correcao, quadrosRender } from '../lib/api';
+import { lerAprovacoes } from '../lib/coordenador';
+import { lerEsteira } from '../lib/esteira';
+import { pendentes, lerRevisao, aprovar, pedirCorrecao, refazerCena, rejeitar, aprovarRoteiro, reenviarEmail, lerDescricao, salvarDescricao, type Descricao, urlServidor, duracaoTexto, horaTexto, type Render, type Cena, type Briefing, type Qualidade, type Problema, type QuadroVersao, type Correcao, quadrosRender } from '../lib/api';
 
 const REDES:[string,string][]=[['youtube','YouTube'],['instagram','Instagram'],['facebook','Facebook'],['tiktok','TikTok'],['kwai','Kwai (manual)']];
 const DECISAO:Record<string,string>={aprovado:'Aprovado',alterar:'Correção pedida',rejeitado:'Rejeitado'};
@@ -113,6 +115,33 @@ function DescricaoPub({pid,redes,v,setV}:{pid:string;redes:string[];v:DescEstado
   </div>;
 }
 
+/** Agentes > Aprovações sem vídeo escolhido: o que espera a sua decisão, de onde já existia (nada é aprovado daqui). */
+function ListaAprovacoes(){
+  const {go}=useApp();
+  const p=useServidor(pendentes,20);
+  const co=useServidor(c=>lerAprovacoes(c,'pendente').catch(()=>null),30);
+  const est=useServidor(c=>lerEsteira(c).catch(()=>null),30);
+  const l=p.dados?.pendentes||[];
+  const nCo=co.dados?.aprovacoes.length; const nEst=est.dados?.contagem?.manual_review_required;
+  return <div className="aprovacoes">
+    <section className="panel">
+     <div className="section-head"><h2><ShieldCheck size={17}/> Vídeos e roteiros do Agente 3</h2>{p.carregando&&<Loader2 size={14} className="spin"/>}</div>
+     {p.erro&&<p className="hint bad">{p.erro}</p>}
+     {p.dados&&!l.length&&<p className="hint">Nada esperando você agora.</p>}
+     <ul className="proj-lista">{l.map(x=><li key={x.projeto}><div className="grow"><b>{x.titulo||x.ref}</b><small className="muted"> {x.tipo==='video'?'Vídeo pronto para assistir':'Roteiro para aprovar'} • {horaTexto(x.atualizado)}</small></div>
+       <button className="primary sm" onClick={()=>go('revisar',x.projeto,'agentes')}><Eye size={14}/> Abrir</button></li>)}</ul>
+    </section>
+    <section className="panel">
+     <div className="section-head"><h2><ShieldCheck size={17}/> Outras liberações</h2></div>
+     <ul className="proj-lista">
+      <li><div className="grow"><b>Pacotes do Coordenador (vídeo + capa)</b><small className="muted"> {nCo==null?'não disponível':nCo===1?'1 esperando você':`${nCo} esperando você`}</small></div><button className="subtle sm" onClick={()=>go('coordenador','aprovacoes','agentes')}>Abrir</button></li>
+      <li><div className="grow"><b>Revisão manual da esteira (diretor e editor)</b><small className="muted"> {nEst==null?'não disponível':`${nEst} esperando você`}</small></div><button className="subtle sm" onClick={()=>go('agente','esteira','agentes')}>Abrir</button></li>
+      <li><div className="grow"><b>Fila do servidor</b><small className="muted"> o que está rodando e o que vem depois</small></div><button className="subtle sm" onClick={()=>go('fila','','agentes')}>Abrir</button></li>
+     </ul>
+    </section>
+  </div>;
+}
+
 export default function Revisar(){
   const {settings,rotaExtra,toast,go}=useApp(); const cfg=useCfg();
   const pid=rotaExtra;
@@ -125,7 +154,7 @@ export default function Revisar(){
   const [refazer,setRefazer]=useState<{i:number;imagem:boolean;voz:boolean;plano?:string}|null>(null);
   const [desc,setDesc]=useState<DescEstado>({txt:'',link:'',srv:null});
   if(!settings.servidor) return <PrecisaServidor oque="A revisão"/>;
-  if(!pid) return <section className="panel empty-state"><h2>Nenhum vídeo escolhido</h2><button className="primary" onClick={()=>go('fila')}>Abrir Fila e aprovações</button></section>;
+  if(!pid) return <ListaAprovacoes/>;
   const r=rev.dados;
   if(!r) return <section className="panel">{rev.erro?<p className="hint bad">{rev.erro}</p>:<p className="hint"><Loader2 size={14} className="spin"/> Abrindo...</p>}</section>;
   const p=r.projeto; const d=p.dados as {briefing:Briefing;cenas:Cena[];render:Render|null;roteiro:{titulo:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[]}|null;producao?:{erro?:string};qualidade?:Qualidade;diretor?:{veredito:string;motivos:string[];tentativas:number};renders?:{id:string;versao:number}[];correcoes?:Correcao[]};

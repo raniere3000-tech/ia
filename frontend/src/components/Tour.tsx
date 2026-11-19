@@ -4,17 +4,16 @@ import { store } from '../lib/store';
 import type { Tab } from '../state';
 
 /** Versão do tour: muda quando houver novidade que vale mostrar de novo. */
-const VERSAO=2;
+const VERSAO=3;
 type Passo={alvo:string[];aba?:Tab;titulo:string;texto:string;exemplo:string};
 const PASSOS:Passo[]=[
-  {alvo:['area-inicio'],aba:'inicio',titulo:'1. Início',texto:'O resumo do dia: servidor do celular ligado ou não, vídeos produzindo, prontos para revisar e posts agendados. Daqui você continua de onde parou.',exemplo:'Toque em um vídeo pronto para revisar direto.'},
-  {alvo:['area-criar'],aba:'ia',titulo:'2. Criar vídeos',texto:'O jeito mais fácil é o Agente 3: escreva o assunto, toque em Criar meu vídeo e o celular faz tudo. Vários de uma vez faz vídeos em série ou todo dia. Animado no navegador e Montagem manual são para quem quer montar à mão. Aqui também ficam Meus projetos, Vozes, Estilos e Templates.',exemplo:'Criar vídeos > Agente 3 > escreva "Por que o céu é azul?" > Criar meu vídeo.'},
-  {alvo:['area-automacao'],aba:'central',titulo:'3. Agentes',texto:'A Central de Automação mostra o que cada agente está fazendo e por quê, o estoque de vídeos, as linhas de conteúdo e o calendário. Em "Configurar Agentes 1, 2 e 3" você liga cada um, escolhe canais, chaves e horários.',exemplo:'Agentes > Central > Visão geral > "Agente 1 agora".'},
-  {alvo:['area-radar'],aba:'radar',titulo:'4. Radar e cortes',texto:'Descubra vídeos em alta e faça cortes de vídeos seus ou autorizados, à mão.',exemplo:'Use um assunto do Radar como tema de um vídeo ORIGINAL em Criar > Com IA.'},
-  {alvo:['area-fila'],aba:'fila',titulo:'5. Fila e aprovações',texto:'Tudo o que o servidor está fazendo, com tempo decorrido e previsão medida no seu celular. Os vídeos prontos esperam aqui a sua decisão: aprovar, pedir correção ou rejeitar.',exemplo:'Revisar e aprovar pelo e-mail: responda APROVAR com o código que veio no e-mail.'},
-  {alvo:['area-posts'],aba:'agendar',titulo:'6. Publicações',texto:'Contas das redes, agenda dos posts e o Agente 2, que publica nos horários marcados. Vídeo do Agente 3 só chega aqui depois da sua aprovação.',exemplo:'Conecte o YouTube uma vez em Agenda e contas.'},
-  {alvo:['ajustes','ajustes-movel'],aba:'config',titulo:'7. Ajustes (engrenagem)',texto:'Servidor do celular, aparelhos conectados (código de uso único), chaves, e-mail, backups e diagnóstico.',exemplo:'Conectar o notebook: Ajustes > Aparelhos > Gerar código.'},
-  {alvo:[],titulo:'8. Pronto!',texto:'Cada tela tem um botão ? com a explicação daquela parte. O tutorial fica em Ajustes e no ? do topo. O que depende de configuração ou de teste no aparelho aparece marcado, nunca como pronto.',exemplo:'Agendar o Agente 3 para 21h: Criar vídeos > Automático > Rotinas.'},
+  {alvo:['area-inicio'],aba:'inicio',titulo:'1. Início',texto:'O resumo da produção com números reais do servidor: vídeos produzidos, agendados, publicados, quem está trabalhando agora, a próxima publicação e o que precisa da sua atenção.',exemplo:'Troque Hoje / 7 dias / 30 dias para ver outro período.'},
+  {alvo:['area-agentes'],aba:'agentes',titulo:'2. Agentes',texto:'Abre no painel dos sete agentes: o que cada um faz agora, quanto trabalhou e onde configurar. No submenu ficam o Coordenador-Geral, Configurar agentes, Execuções, Aprovações, Automação, Memória e Skills.',exemplo:'Agentes > cartão do Agente 7 > Conversar.'},
+  {alvo:['area-edicao'],aba:'edicao',titulo:'3. Estúdio de Edição',texto:'Para criar à mão: novo projeto, continuar projeto, editor (montagem manual), Radar e cortes, templates, legendas e efeitos, vozes e Live.',exemplo:'Estúdio de Edição > Radar e Cortes.'},
+  {alvo:['area-estudio-ia'],aba:'estudioIA',titulo:'4. Estúdio IA',texto:'Para criar a partir de uma ideia: Criar com IA (Agente 3), Séries e personagens, Produção em lote e Biblioteca criativa.',exemplo:'Estúdio IA > Criar com IA > escreva "Por que o céu é azul?".'},
+  {alvo:['area-publicacoes'],aba:'agendar',titulo:'5. Publicações',texto:'Posts agendados e publicados, contas das redes, programação diária e resultados. Vídeo do Agente 3 só chega aqui depois da sua aprovação.',exemplo:'Conecte o YouTube uma vez em Publicações > Posts e contas.'},
+  {alvo:['ajustes','ajustes-movel'],aba:'config',titulo:'6. Ajustes (engrenagem)',texto:'Servidor do celular, aparelhos conectados (código de uso único), chaves, e-mail, backups e diagnóstico. O balão de conversa no topo abre o Coordenador em qualquer tela.',exemplo:'Conectar o notebook: Ajustes > Aparelhos > Gerar código.'},
+  {alvo:[],titulo:'7. Pronto!',texto:'Cada tela tem um botão ? com a explicação daquela parte. O tutorial fica em Ajustes e no ? do topo. O que depende de configuração ou de teste no aparelho aparece marcado, nunca como pronto.',exemplo:'Endereços antigos salvos nos favoritos continuam abrindo a tela certa.'},
 ];
 
 type Estado={versao:number;resposta:'concluido'|'depois'|'nunca'|''};
