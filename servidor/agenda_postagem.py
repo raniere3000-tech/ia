@@ -564,6 +564,40 @@ def _liberar_ref(s: dict, post_id: str):
     ag._mudar(lambda e: [x.update(status='pronto', post='', quando=None) for x in e['cortes'] if x['id'] == s['ref'] and x.get('post') == post_id])
 
 
+def liberar_horario(sid: str, post_id: str) -> bool:
+    """Você postou antes da hora: o vídeo saiu, então o horário volta a ficar livre e recebe o próximo vídeo aprovado.
+    Se não houver vídeo, o Agente 2 pede mais ao Coordenador (que manda o Agente 1 cortar)."""
+    s = db.um('SELECT * FROM posting_slots WHERE id=?', sid)
+    if not s or s.get('post') != post_id or s['quando_utc'] <= time.time() + 60:
+        return False
+    db.executar("UPDATE posting_slots SET estado='vazio', post=NULL, ref=NULL, sha256=NULL, motivo=?, atualizado=? WHERE id=?",
+                'Você postou o vídeo deste horário antes da hora: horário livre de novo.', time.time(), sid)
+    db.evento('agente2', 'slot_liberado', 'slot:' + sid, {'post': post_id, 'motivo': 'postado antes da hora'})
+    acordar()
+    return True
+
+
+def _pedir_reposicao(res: dict):
+    """Validação de sempre: horário vazio nas próximas horas e nenhum vídeo para pôr nele -> pede mais ao Coordenador."""
+    agora = time.time()
+    vazios = db.todos("SELECT id, rede, quando_utc FROM posting_slots WHERE estado='vazio' AND quando_utc>? AND quando_utc<? ORDER BY quando_utc",
+                      agora + 60, agora + float(os.getenv('REPOSICAO_HORAS', '24')) * 3600)
+    if not vazios:
+        return
+    sem = [s for s in vazios if not elegiveis(s['rede'])]
+    if not sem:
+        return
+    try:
+        import coordenador as co
+        prox = sem[0]
+        r = co.pedir_reposicao(f'{len(sem)} horário(s) sem vídeo nas próximas horas (o próximo: {prox["rede"]} às '
+                               f'{time.strftime("%d/%m %H:%M", time.localtime(prox["quando_utc"]))}). Pedi mais cortes ao Agente 1.',
+                               {'horarios_vazios': len(sem), 'rede': prox['rede'], 'quando': prox['quando_utc']})
+        res['reposicao'] = r
+    except Exception as e:  # noqa: BLE001
+        print('agenda: reposição', e)
+
+
 def _acompanhar(s: dict, cfg: dict | None):
     """Atualiza o estado do slot pelo post e trata horário perdido."""
     import postagem as pg
@@ -615,6 +649,7 @@ def ciclo() -> dict:
             cfg = cfgs.get(s['agenda'])
             if cfg and cfg['enabled'] and _reservar(s, cfg) == 'agendado':
                 res['agendados'] += 1
+        _pedir_reposicao(res)
         return res
     finally:
         _LOCK.release()

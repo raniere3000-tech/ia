@@ -541,18 +541,42 @@ def cancelar_post(pid: str, manter_video: bool = False):
 
 def postar_agora(pid: str, rede: str = ''):
     """Posta agora. Com `rede`, tenta de novo SÓ nessa rede (as que já foram ficam como estão)."""
+    antes: dict = {}
+
     def f(p):
         if rede and rede not in p['redes']:
             raise ErroRede('Este post não tem essa rede.')
         if not rede:
+            antes['quando'] = p['quando'] if p['quando'] > agora() + 60 else 0
+            if p['quando'] > agora() + 60 and (p.get('agenda') or {}).get('slot'):
+                p['agenda_liberada'] = p['agenda']['slot']     # postado antes da hora: o horário da programação volta a ficar livre
+                p.pop('agenda', None)
             p['quando'] = min(p['quando'], agora())
         for nome, r in p['redes'].items():
             if (not rede or nome == rede) and r['status'] in ('erro', 'agendado'):
                 r.update(status='agendado', erro='', tentativas=0, proxima=0)
                 if rede:
                     _anotar(p, nome, 'tentar_de_novo', 'Você pediu para tentar de novo só nesta rede.')
-    _mudar(pid, f)
+    p = _mudar(pid, f)
     acordar()
+    if not rede:
+        try:       # o corte acompanha: a vaga do horário antigo fica livre para o próximo corte
+            import agente
+            agente._mudar(lambda e: [x.update(quando=agora(), via_agenda=False) for x in e['cortes'] if x.get('post') == pid])
+        except Exception as e:  # noqa: BLE001
+            print('postagem: corte do post', e)
+        if antes.get('quando') and not p.get('agenda_liberada') and p.get('origem') != 'agenda':
+            try:       # vídeo de uma ordem do Coordenador: o próximo da série sobe para o horário que ficou livre
+                import coordenador as co
+                co.post_antecipado(pid, antes['quando'])
+            except Exception as e:  # noqa: BLE001
+                print('postagem: post antecipado', e)
+        if p.get('agenda_liberada'):
+            try:
+                import agenda_postagem as a2
+                a2.liberar_horario(p['agenda_liberada'], pid)
+            except Exception as e:  # noqa: BLE001
+                print('postagem: liberar horário', e)
 
 
 def liberar(pid: str, quem: str = 'site') -> dict:

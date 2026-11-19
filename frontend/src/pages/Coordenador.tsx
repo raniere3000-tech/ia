@@ -323,6 +323,8 @@ function Config(){
     <label className="check"><input type="checkbox" checked={c.exigir_liberacao} onChange={e=>setC({...c,exigir_liberacao:e.target.checked})}/> O Agente 2 só posta vídeo liberado aqui (vale para todos os posts)</label>
     <label className="check"><input type="checkbox" checked={c.usar_ia} onChange={e=>setC({...c,usar_ia:e.target.checked})}/> Usar a IA para entender pedidos que as regras não entendem</label>
     <div className="thumb-grade">{num('max_videos','Máximo de vídeos por pedido',1,30)}{num('correcoes_por_etapa','Correções por etapa',1,10)}{num('capas_padrao','Capas por vídeo (padrão)',0,4)}{num('intervalo_horas','Horas entre posts do mesmo dia',1,12)}</div>
+    <label className="check"><input type="checkbox" checked={c.reposicao_automatica} onChange={e=>setC({...c,reposicao_automatica:e.target.checked})}/> Quando faltar vídeo para um horário, pedir mais cortes ao Agente 1 sozinho</label>
+    <div className="thumb-grade">{num('reposicao_intervalo_min','Minutos entre pedidos de mais cortes',10,1440)}</div>
     <button className="primary sm" onClick={salvar}>Salvar</button>
   </section>;
 }
