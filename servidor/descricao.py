@@ -80,6 +80,19 @@ def com_creditos(texto: str, exigidos) -> str:
     return texto + '\n\n' + bloco
 
 
+def com_link(texto: str, link: str) -> str:
+    """Garante o link do vídeo original (crédito ao criador) numa legenda pronta. Se o rodapé fixo já está lá,
+    só preenche o colchete; se não está, acrescenta o rodapé no fim. Sem link válido, não mexe (nunca inventa)."""
+    texto = str(texto or '').rstrip()
+    link = link_valido(link)
+    if not link or link in texto:
+        return texto
+    m = _RE_RODAPE.search(texto)
+    if m:
+        return texto[:m.start()] + SEPARADOR + '\n' + RODAPE.format(link)
+    return texto + '\n\n' + SEPARADOR + '\n' + RODAPE.format(link)
+
+
 def excede(texto: str, redes) -> list:
     """Avisos das redes cujo limite a descrição passa (não corta nada)."""
     n = len(texto or '')

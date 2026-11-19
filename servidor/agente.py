@@ -1333,6 +1333,16 @@ def cortes_da_semana() -> int:
     return sum(1 for c in estado()['cortes'] if c['criado'] >= ini and c['status'] not in ('descartado', 'reprovado'))
 
 
+def _link_do_video(v: dict) -> str:
+    """Endereço público do vídeo original: o do YouTube pelo id (11 letras) ou o link que veio com ele."""
+    import descricao as ds
+    vid = str(v.get('id') or '')
+    m = re.match(r'([\w-]{11})(?:-live\d+)?$', vid)
+    if m and not vid.startswith('x'):
+        return 'https://www.youtube.com/watch?v=' + m.group(1)
+    return ds.link_valido(v.get('url', ''))
+
+
 def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: dict | None = None, ajustes: dict | None = None) -> list:
     """Baixa um vídeo, escolhe e edita os cortes. Devolve os cortes criados.
     baixado=(arquivo, info, legenda): o arquivo já está no servidor (ex.: um bloco gravado da live), não baixa.
@@ -1440,7 +1450,7 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             if run:
                 c['esteira'] = run
             c.update(id=cid, chave=secrets.token_urlsafe(18), video=vid, criado=time.time(), status='pronto' if vd['aprovado'] else 'reprovado', post='',
-                     origem=v['id'], origem_titulo=v['titulo'][:150], canal=v.get('canal', ''), canal_nome=v.get('canal_nome', ''),
+                     origem=v['id'], origem_url=_link_do_video(v), origem_titulo=v['titulo'][:150], canal=v.get('canal', ''), canal_nome=v.get('canal_nome', ''),
                      variacoes=usadas, fala=fonte, tamanho=(pg.VIDEOS / (vid + '.mp4')).stat().st_size, email=False,
                      tipo='agente', modelo=modelo['id'], modelo_nome=modelo['nome'], hash=_hash(pg.VIDEOS / (vid + '.mp4')),
                      legendado=tpl['legenda'] != 'nenhuma', qa=qa, estilo_visual=tpl.get('estilo_visual', ''), formato=tpl.get('formato', ''))
@@ -1885,6 +1895,26 @@ def escolher_vaga(po: dict, por_semana: int) -> dict | None:
     return None
 
 
+def link_original(c: dict) -> str:
+    """Link do vídeo de onde o corte saiu (vai na descrição para dar o crédito ao criador)."""
+    import descricao as ds
+    if c.get('origem_url'):
+        return ds.link_valido(c['origem_url'])
+    if re.fullmatch(r'[\w-]{11}', str(c.get('origem') or '')):
+        return 'https://www.youtube.com/watch?v=' + c['origem']
+    return ds.link_valido((c.get('gameplay') or {}).get('fonte', ''))
+
+
+def legenda_do_corte(c: dict) -> str:
+    """Descrição do post de um corte: título, hashtags e, no fim, "Link original do vídeo [link]".
+    A legenda editada por você é mantida; só ganha o link se ele faltar."""
+    import descricao as ds
+    link = link_original(c)
+    if c.get('legenda_post'):
+        return ds.com_link(c['legenda_post'], link)
+    return ds.compor(c.get('titulo') or 'Corte', c.get('hashtags') or [], link)
+
+
 def agendar_corte(cid: str, liberado: bool = False, quem: str = 'site', quando: float | None = None, redes_live: list | None = None) -> dict:
     """liberado=True: você decidiu agendar mesmo com restrições de direitos/repetição (as técnicas continuam barrando).
     quando/redes_live: a parte Live posta na hora (ou logo depois do post anterior), nas redes escolhidas para a live."""
@@ -1904,7 +1934,7 @@ def agendar_corte(cid: str, liberado: bool = False, quem: str = 'site', quando: 
     vaga = {'quando': max(pg.agora(), quando), 'faixa': 'live'} if quando is not None else escolher_vaga(po, cfg['cortes']['por_semana'])
     if not vaga:
         raise ErroAgente('Não há horário livre. Marque mais horários na parte Postagem.')
-    legenda = c.get('legenda_post') or (c['titulo'] + '\n\n' + ' '.join(c['hashtags'])).strip()
+    legenda = legenda_do_corte(c)
     sit = pub.situacao(c)
     titulo_post = c['titulo']
     if sit:                                           # pacote aprovado: usa o texto exato aprovado, sem acrescentar nada
@@ -1976,6 +2006,15 @@ def trabalhar_postagem() -> str:
     return f'{feitos} corte(s) agendado(s).' if feitos else 'Nada novo para agendar.'
 
 
+def _completar_link(c: dict, p: dict):
+    try:
+        nova = legenda_do_corte(dict(c, legenda_post=p.get('legenda') or '')) if p.get('legenda') else ''
+        if nova and nova != p.get('legenda'):
+            pg._mudar(p['id'], lambda q: q.update(legenda=nova[:5000]))
+    except Exception:  # noqa: BLE001 - nunca atrapalha o acompanhamento
+        pass
+
+
 def acompanhar():
     """Vê o resultado dos posts do agente e avisa quando terminam ou falham."""
     ps = {p['id']: p for p in pg.posts()}
@@ -1985,6 +2024,8 @@ def acompanhar():
             _mudar(lambda e, cid=c['id']: [x.update(status='pronto', post='') for x in e['cortes'] if x['id'] == cid])
             continue
         sts = {r: d['status'] for r, d in p['redes'].items()}
+        if not any(s in ('postando', 'postado') for s in sts.values()):
+            _completar_link(c, p)            # posts antigos, agendados antes do link: ganham o link do vídeo original
         if any(s in ('agendado', 'postando') for s in sts.values()):
             continue
         pede = {r: d.get('erro', '') for r, d in p['redes'].items() if d['status'] == 'liberacao'}

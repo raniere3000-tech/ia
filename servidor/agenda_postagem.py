@@ -493,7 +493,7 @@ def _reservar(s: dict, cfg: dict) -> str:
         return _reservar_agente3(s, cfg, esc)
     c = esc['corte']
     try:
-        legenda = c.get('legenda_post') or (c['titulo'] + '\n\n' + ' '.join(c.get('hashtags') or [])).strip()
+        legenda = ag.legenda_do_corte(c)
         po = ag.config()['postagem']
         p = pg.criar_post({'video': c['video'], 'redes': [s['rede']], 'quando': s['quando_utc'], 'titulo': c['titulo'], 'legenda': legenda,
                            'youtube_privacidade': po.get('youtube_privacidade', 'public'), 'tiktok_modo': po.get('tiktok_modo', 'rascunho'),

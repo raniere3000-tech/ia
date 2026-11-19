@@ -144,6 +144,8 @@ def conformidade(p: dict, fatos: dict) -> dict:
 
 # ---------------------------------------------------------------- montar, editar, aprovar
 def _link_original(c: dict) -> str:
+    if c.get('origem_url'):
+        return ds.link_valido(c['origem_url'])
     if c.get('origem') and re.fullmatch(r'[\w-]{11}', str(c['origem'])):
         return ds.link_valido('https://www.youtube.com/watch?v=' + c['origem'])
     return ds.link_valido((c.get('gameplay') or {}).get('fonte', ''))
