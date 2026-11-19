@@ -1,8 +1,11 @@
 """Diagnóstico do TikTok: mostra o que o TikTok responde, sem passar pelo site.
 Uso no Termux:  cd ~/ia/servidor && python diag_tiktok.py
+Para mandar um vídeo de verdade para os rascunhos:  python diag_tiktok.py ultimo   (ou o caminho do .mp4)
 Não mostra chaves nem tokens."""
 import json
 import subprocess
+import sys
+from pathlib import Path
 
 import postagem as pg
 
@@ -33,4 +36,17 @@ mostrar('2. Opções da conta (creator_info)', st, j)
 fonte = {'source': 'FILE_UPLOAD', 'video_size': 1000000, 'chunk_size': 1000000, 'total_chunk_count': 1}
 st, _, j = pg.http('POST', base + '/v2/post/publish/inbox/video/init/', js={'source_info': fonte}, cab=cab)
 mostrar('3. Iniciar envio como RASCUNHO (nada é publicado)', st, j)
+if len(sys.argv) > 1:
+    if sys.argv[1] == 'ultimo':
+        vids = sorted(pg.VIDEOS.glob('*.mp4'), key=lambda f: f.stat().st_mtime)
+        if not vids:
+            raise SystemExit('Nenhum vídeo em ' + str(pg.VIDEOS))
+        arq = vids[-1]
+    else:
+        arq = Path(sys.argv[1]).expanduser()
+    print(f'\n== 4. Enviando {arq.name} ({arq.stat().st_size // 1024} KB) como rascunho...')
+    try:
+        print('Resultado:', pg.postar_tiktok({'opcoes': {'tiktok_modo': 'rascunho'}}, arq))
+    except Exception as e:  # noqa: BLE001
+        print('Erro:', e)
 print('\nCopie tudo acima e mande para o Claude.')
