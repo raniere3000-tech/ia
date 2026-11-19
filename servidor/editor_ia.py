@@ -63,7 +63,7 @@ def tpl_do_plano(tpl: dict, plano: dict) -> dict:
         if t.get('legenda', 'nenhuma') == 'nenhuma':
             t['legenda'] = 'destaque'
     rf = _efeito(plano, 'reframe')
-    if rf and rf['modo'] in MODO_PARA_QUADRO and t.get('enquadramento') != 'gameplay-streamer':
+    if rf and rf['modo'] in MODO_PARA_QUADRO and t.get('enquadramento') not in ('gameplay-streamer', 'comparacao'):
         t['enquadramento'] = MODO_PARA_QUADRO[rf['modo']]
         if rf['modo'] == 'centro':
             t['pos_x'], t['pos_y'] = 0.5, 0.5

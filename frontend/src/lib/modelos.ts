@@ -1,7 +1,7 @@
 // Biblioteca de templates (modelos de vídeo): a mesma para a edição manual e para os agentes do servidor.
 import type { Clip, Formato, Tarja } from './analyze';
 import type { Cue, Preset } from './captions';
-import { TEMPLATE_PADRAO, type RenderOpts, type Regiao, type Saida, type Template, type Visual } from './render';
+import { COMP_PADRAO, TEMPLATE_PADRAO, type Comparacao, type RenderOpts, type Regiao, type Saida, type Template, type Visual } from './render';
 import type { EstiloUso } from './estilosVisuais';
 import { store } from './store';
 import { cabAuth } from './api';
@@ -13,6 +13,8 @@ export type Modelo = {
   id:string; nome:string;
   layout:Layout; formato:Formato; zoom:number; posX:number; posY:number;
   jogo:Regiao; camera:Regiao; divisao:number;
+  /** Só no layout Comparação: as duas partes do vídeo, rótulos, cores e selo VS. */
+  comp?:Comparacao;
   legenda:string; legendaPos:'baixo'|'meio';
   efeito:string;
   gancho:boolean; ganchoPos:'topo'|'alto';
@@ -32,6 +34,7 @@ export const LAYOUTS:[Layout,string,string][] = [
   ['desfoque','Fundo desfocado','O vídeo inteiro no meio e o fundo preenchido com ele mesmo desfocado.'],
   ['cheio','Tela cheia','O vídeo preenche a tela toda; você escolhe o zoom e para onde olhar.'],
   ['gameplay-streamer','Gameplay + Streamer','Gameplay em cima e a câmera do streamer embaixo, os dois sempre visíveis.'],
+  ['comparacao','Comparação (tela dividida)','Dois lados do mesmo vídeo (antes x depois, jogo antigo x novo), cada um com seu rótulo e um selo VS no meio.'],
 ];
 /** Efeitos que o site e o servidor dos agentes sabem fazer igual. */
 export const EFEITOS_MODELO:[string,string][] = [['nenhum','Sem efeito'],['zoom-acao','Zoom lento (aproxima aos poucos)'],['transicao-fade','Transição: escurece no começo e no fim'],['virada-cena','Transição: clarão no começo']];
@@ -49,6 +52,7 @@ export const MODELOS_PADRAO:Modelo[] = [
   {...BASE,id:'padrao',nome:'Fundo desfocado'},
   {...BASE,id:'tela-cheia',nome:'Tela cheia',layout:'cheio',legenda:'impacto-vermelho',efeito:'transicao-fade'},
   {...BASE,id:'gameplay-streamer',nome:'Gameplay + Streamer',layout:'gameplay-streamer',legenda:'neon-gamer',legendaPos:'meio'},
+  {...BASE,id:'comparacao',nome:'Comparação (tela dividida)',layout:'comparacao',divisao:50,efeito:'virada-cena',comp:{...COMP_PADRAO}},
 ];
 export const novoId=()=> 'm'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 export const novoModelo=(base?:Modelo):Modelo=>({...(base||BASE),id:novoId(),nome:base?base.nome+' (cópia)':'Novo template'});
@@ -61,11 +65,20 @@ export function comLeg(m:Modelo,presets:Preset[]):Modelo{
 }
 
 const K='studio_modelos';
-function completar(m:Partial<Modelo>):Modelo{ return {...BASE,...m,jogo:{...BASE.jogo,...(m.jogo||{})},camera:{...BASE.camera,...(m.camera||{})}} as Modelo; }
+function completar(m:Partial<Modelo>):Modelo{ return {...BASE,...m,jogo:{...BASE.jogo,...(m.jogo||{})},camera:{...BASE.camera,...(m.camera||{})},comp:{...COMP_PADRAO,...(m.comp||{})}} as Modelo; }
 /** Lê a biblioteca deste navegador. Na primeira vez cria os três de partida, já com a marca antiga (logo, @, cor). */
 export function lerModelos():Biblioteca{
   const b=store.json<Partial<Biblioteca>>(K,{});
-  if(Array.isArray(b.modelos)&&b.modelos.length) return {atualizado:+(b.atualizado||0),modelos:b.modelos.map(completar)};
+  if(Array.isArray(b.modelos)&&b.modelos.length){
+    const ms=b.modelos.map(completar);
+    // modelos de partida que chegaram depois (Comparação) entram uma vez só; se a pessoa apagar, não voltam
+    if(!store.json<boolean>(K+'_comp',false)){
+      try{ localStorage.setItem(K+'_comp','true'); }catch{ /* sem armazenamento: tenta de novo na próxima */ }
+      const novo=MODELOS_PADRAO.find(x=>x.id==='comparacao');
+      if(novo&&!ms.some(x=>x.id===novo.id)){ ms.push({...novo,comp:{...COMP_PADRAO}}); gravarModelos({atualizado:+(b.atualizado||0),modelos:ms}); }
+    }
+    return {atualizado:+(b.atualizado||0),modelos:ms};
+  }
   return {atualizado:0,modelos:comMarcaAntiga(MODELOS_PADRAO)};
 }
 /** Quem já tinha logo e @ configurados continua com eles em todos os templates de partida. */
@@ -108,7 +121,7 @@ export async function sincronizar(cfg:Cfg,local:Biblioteca,presets:Preset[]):Pro
 // ---------------------------------------------------------------- aplicar nos cortes
 export const marcaDe=(m:Modelo):Template=>({ativo:!!(m.logo||m.credito.trim()||m.moldura),logo:m.logo,logoPos:m.logoPos,credito:m.credito,cor:m.cor,moldura:m.moldura});
 export const estiloDe=(m:Modelo):EstiloUso|null=>m.estiloVisual?{id:m.estiloVisual,forca:m.estiloForca??1,off:[...(m.estiloOff||[])],texto:m.estiloTexto||''}:null;
-export const visualDe=(m:Modelo):VisualClip=>({layout:m.layout,zoom:m.zoom,posX:m.posX,posY:m.posY,jogo:{...m.jogo},camera:{...m.camera},divisao:m.divisao,gancho:m.gancho,ganchoPos:m.ganchoPos,legendaPos:m.legendaPos,marca:marcaDe(m),resolucao:m.resolucao,qualidade:m.qualidade,estilo:estiloDe(m)});
+export const visualDe=(m:Modelo):VisualClip=>({layout:m.layout,zoom:m.zoom,posX:m.posX,posY:m.posY,jogo:{...m.jogo},camera:{...m.camera},divisao:m.divisao,comp:{...COMP_PADRAO,...(m.comp||{})},gancho:m.gancho,ganchoPos:m.ganchoPos,legendaPos:m.legendaPos,marca:marcaDe(m),resolucao:m.resolucao,qualidade:m.qualidade,estilo:estiloDe(m)});
 /** O que muda em um corte quando ele recebe um template. É uma cópia: ajustar o corte depois não altera o template. */
 export function aplicarModelo(m:Modelo):Partial<Clip>{
   return {modelo:m.id,visual:visualDe(m),formato:m.formato,legenda:m.legenda,efeito:m.efeito,tarja:m.tarja?{...m.tarja}:null,semTemplate:false,estiloVisual:undefined};
@@ -119,7 +132,7 @@ export function modeloDoCorte(m:Modelo,c:Clip):Modelo{
   const v=c.visual;
   return {...m,formato:c.formato,legenda:c.legenda,efeito:EFEITOS_MODELO.some(([id])=>id===c.efeito)?c.efeito:m.efeito,tarja:c.tarja?{...c.tarja}:null,
     estiloVisual:(c.estiloVisual!==undefined?c.estiloVisual:v?.estilo)?.id||'',estiloForca:(c.estiloVisual!==undefined?c.estiloVisual:v?.estilo)?.forca??1,estiloOff:[...((c.estiloVisual!==undefined?c.estiloVisual:v?.estilo)?.off||[])],
-    ...(v?{layout:v.layout,zoom:v.zoom,posX:v.posX,posY:v.posY,jogo:{...v.jogo},camera:{...v.camera},divisao:v.divisao,gancho:v.gancho,ganchoPos:v.ganchoPos,legendaPos:v.legendaPos}:{})};
+    ...(v?{layout:v.layout,zoom:v.zoom,posX:v.posX,posY:v.posY,jogo:{...v.jogo},camera:{...v.camera},divisao:v.divisao,...(v.comp?{comp:{...v.comp}}:{}),gancho:v.gancho,ganchoPos:v.ganchoPos,legendaPos:v.legendaPos}:{})};
 }
 
 /**

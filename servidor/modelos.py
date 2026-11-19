@@ -17,7 +17,7 @@ import visual_presets as vp
 
 ARQ = pg.DADOS / 'modelos.json'
 FORMATOS = {'9:16': (1080, 1920), '1:1': (1080, 1080), '16:9': (1920, 1080)}
-LAYOUTS = ('desfoque', 'cheio', 'gameplay-streamer')
+LAYOUTS = ('desfoque', 'cheio', 'gameplay-streamer', 'comparacao')
 EFEITOS = ('nenhum', 'zoom-acao', 'transicao-fade', 'virada-cena')   # os que o servidor também sabe fazer
 ESTILOS = ('destaque', 'simples', 'caixa', 'nenhuma')
 POS_LOGO = ('top-left', 'top-right', 'bottom-left', 'bottom-right')
@@ -55,12 +55,26 @@ def _cor(v, padrao):
     return v if isinstance(v, str) and _COR.fullmatch(v) else padrao
 
 
+# Comparação em tela dividida: duas partes do MESMO quadro (ex.: vídeo "lado a lado" de antes x depois),
+# uma em cima e outra embaixo (ou lado a lado no 16:9), cada uma com o seu rótulo e um selo "VS" na divisa.
+COMP_PADRAO = {'a': {'x': 0, 'y': 0, 'w': 0.5, 'h': 1}, 'b': {'x': 0.5, 'y': 0, 'w': 0.5, 'h': 1},
+               'rotuloA': 'ANTES', 'rotuloB': 'DEPOIS', 'corA': '#FF5A36', 'corB': '#2BB8FF', 'vs': True, 'textoVs': 'VS'}
+
+
+def _comp(c) -> dict:
+    c = c if isinstance(c, dict) else {}
+    return {'a': _regiao(c.get('a'), COMP_PADRAO['a']), 'b': _regiao(c.get('b'), COMP_PADRAO['b']),
+            'rotuloA': str(c.get('rotuloA', COMP_PADRAO['rotuloA']))[:24], 'rotuloB': str(c.get('rotuloB', COMP_PADRAO['rotuloB']))[:24],
+            'corA': _cor(c.get('corA'), COMP_PADRAO['corA']), 'corB': _cor(c.get('corB'), COMP_PADRAO['corB']),
+            'vs': bool(c.get('vs', True)), 'textoVs': (str(c.get('textoVs', 'VS')).strip() or 'VS')[:4]}
+
+
 BASE = {
     'id': '', 'nome': 'Modelo', 'layout': 'desfoque', 'formato': '9:16', 'zoom': 1.0, 'posX': 0.5, 'posY': 0.5,
     'jogo': {'x': 0, 'y': 0, 'w': 1, 'h': 1}, 'camera': {'x': 0.72, 'y': 0.62, 'w': 0.28, 'h': 0.38}, 'divisao': 62,
     'legenda': 'karaoke-amarelo', 'legendaPos': 'baixo', 'efeito': 'nenhum', 'gancho': True, 'ganchoPos': 'topo',
     'tarja': None, 'cor': '#7758ef', 'logo': '', 'logoPos': 'top-right', 'moldura': False, 'credito': '',
-    'resolucao': 1080, 'qualidade': 'media',
+    'resolucao': 1080, 'qualidade': 'media', 'comp': dict(COMP_PADRAO),
     'leg': {'estilo': 'destaque', 'cor': '#FFFFFF', 'corDestaque': '#FFE14D', 'maiusculas': True},
 }
 PADROES = [
@@ -69,6 +83,8 @@ PADROES = [
          leg={'estilo': 'destaque', 'cor': '#FFFFFF', 'corDestaque': '#FF4D4D', 'maiusculas': True}),
     dict(BASE, id='gameplay-streamer', nome='Gameplay + Streamer', layout='gameplay-streamer', legenda='neon-gamer', legendaPos='meio',
          leg={'estilo': 'destaque', 'cor': '#FFFFFF', 'corDestaque': '#5CE1E6', 'maiusculas': True}),
+    dict(BASE, id='comparacao', nome='Comparação (tela dividida)', layout='comparacao', divisao=50, legenda='karaoke-amarelo', efeito='virada-cena',
+         leg={'estilo': 'destaque', 'cor': '#FFFFFF', 'corDestaque': '#FFE14D', 'maiusculas': True}),
 ]
 
 
@@ -96,7 +112,7 @@ def limpar(m: dict) -> dict:
         'zoom': round(_num(m.get('zoom'), 1.0, 1.0, 1.6), 2),
         'posX': round(_num(m.get('posX'), 0.5, 0, 1), 3), 'posY': round(_num(m.get('posY'), 0.5, 0, 1), 3),
         'jogo': _regiao(m.get('jogo'), BASE['jogo']), 'camera': _regiao(m.get('camera'), BASE['camera']),
-        'divisao': round(_num(m.get('divisao'), 62, 35, 80)),
+        'divisao': round(_num(m.get('divisao'), 50 if m.get('layout') == 'comparacao' else 62, 35, 80)), 'comp': _comp(m.get('comp')),
         'legenda': re.sub(r'[^a-z0-9-]', '', str(m.get('legenda', '')))[:40],
         'legendaPos': 'meio' if m.get('legendaPos') == 'meio' else 'baixo',
         'efeito': str(m.get('efeito', 'nenhum'))[:30] or 'nenhum',
@@ -135,11 +151,21 @@ def biblioteca(antigo: dict | None = None) -> dict:
     with pg.LOCK:
         d = pg._ler(ARQ, None)
         if isinstance(d, dict) and isinstance(d.get('modelos'), list) and d['modelos']:
+            # modelos de partida que chegaram depois (ex.: Comparação): entram uma vez só; se a pessoa apagar, não voltam
+            extras = d.setdefault('extras', [])
+            novos = [m for m in PADROES if m['id'] == 'comparacao' and m['id'] not in extras]
+            if novos:
+                ids = {m.get('id') for m in d['modelos']}
+                for m in novos:
+                    extras.append(m['id'])
+                    if m['id'] not in ids and len(d['modelos']) < MAX_MODELOS:
+                        d['modelos'].append(limpar(m))
+                pg._gravar(ARQ, d)
             return d
         ms = [limpar(m) for m in PADROES]
         if antigo:
             ms[0] = _do_template_antigo(antigo)
-        d = {'atualizado': 0, 'modelos': ms}
+        d = {'atualizado': 0, 'modelos': ms, 'extras': ['comparacao']}
         pg._gravar(ARQ, d)
         return d
 
@@ -155,7 +181,7 @@ def salvar(d: dict) -> dict:
             ms.append(m)
     if not ms:
         raise ErroModelo('A biblioteca precisa de pelo menos um modelo.')
-    novo = {'atualizado': float(d.get('atualizado') or time.time()), 'modelos': ms}
+    novo = {'atualizado': float(d.get('atualizado') or time.time()), 'modelos': ms, 'extras': ['comparacao']}
     with pg.LOCK:
         pg._gravar(ARQ, novo)
     return novo
@@ -185,7 +211,7 @@ def tpl(m: dict) -> dict:
         'modelo': m['id'], 'formato': m['formato'], 'legenda': lg['estilo'] if m['legenda'] else 'nenhuma', 'cor': lg['cor'],
         'cor_destaque': lg['corDestaque'], 'maiusculas': lg['maiusculas'], 'tamanho': 'medio', 'legenda_pos': m['legendaPos'],
         'enquadramento': {'cheio': 'cortar'}.get(m['layout'], m['layout']), 'zoom': m['zoom'], 'pos_x': m['posX'], 'pos_y': m['posY'],
-        'jogo': m['jogo'], 'camera': m['camera'], 'divisao': m['divisao'], 'efeito': m['efeito'] if m['efeito'] in EFEITOS else 'nenhum',
+        'jogo': m['jogo'], 'camera': m['camera'], 'divisao': m['divisao'], 'comp': m.get('comp') or _comp(None), 'efeito': m['efeito'] if m['efeito'] in EFEITOS else 'nenhum',
         'gancho': m['gancho'], 'gancho_pos': m['ganchoPos'],
         'tarja_topo_on': bool(tj.get('topo')), 'tarja_base_on': bool(tj.get('base')), 'tarja_topo': tj.get('textoTopo', ''), 'tarja_base': tj.get('textoBase', ''),
         'cor_tarja': tj.get('cor', '#111111'), 'cor_tarja_texto': tj.get('corTexto', '#FFFFFF'), 'tarja_alt': tj.get('altura', 12),

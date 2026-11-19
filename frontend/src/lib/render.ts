@@ -15,7 +15,10 @@ import { posicao, type Trilha } from './rosto';
 /** Parte do vídeo original, em frações de 0 a 1 (x, y, largura, altura). */
 export type Regiao = {x:number;y:number;w:number;h:number};
 /** Composição vinda de um template: enquadramento, zoom e posição. Sem isso vale o comportamento antigo (pelo efeito). */
-export type Visual = {layout:'desfoque'|'cheio'|'gameplay-streamer'; zoom:number; posX:number; posY:number; jogo:Regiao; camera:Regiao; divisao:number; gancho:boolean; ganchoPos:'topo'|'alto'};
+/** Comparação em tela dividida: duas partes do mesmo quadro, cada uma com um rótulo, e o selo VS na divisa. */
+export type Comparacao = {a:Regiao; b:Regiao; rotuloA:string; rotuloB:string; corA:string; corB:string; vs:boolean; textoVs:string};
+export const COMP_PADRAO:Comparacao = {a:{x:0,y:0,w:0.5,h:1},b:{x:0.5,y:0,w:0.5,h:1},rotuloA:'ANTES',rotuloB:'DEPOIS',corA:'#FF5A36',corB:'#2BB8FF',vs:true,textoVs:'VS'};
+export type Visual = {layout:'desfoque'|'cheio'|'gameplay-streamer'|'comparacao'; zoom:number; posX:number; posY:number; jogo:Regiao; camera:Regiao; divisao:number; gancho:boolean; ganchoPos:'topo'|'alto'; comp?:Comparacao};
 export type RenderOpts = {legenda:Preset|null; efeito:string; cues:Cue[]; gancho:string; accent:string; template:Template; logoImg?:HTMLImageElement|null; rosto?:Trilha|null; tarja?:Tarja|null; visual?:Visual|null; estilo?:EstiloUso|null};
 /** Tamanho e peso do arquivo exportado. escala 1 = 1080p; 2/3 = 720p. */
 export type Saida = {escala:number; bitrate:number};
@@ -26,6 +29,47 @@ function drawRegiao(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,r:Regiao,vw:
   const alvo=dw/dh;
   if(sw/sh>alvo){ const n=sh*alvo; sx+=(sw-n)/2; sw=n; } else { const n=sw/alvo; sy+=(sh-n)/2; sh=n; }
   ctx.drawImage(v,sx,sy,sw,sh,dx,dy,dw,dh);
+}
+
+/** Mesma conta do servidor (servidor/comparacao.py): A em cima e B embaixo no vertical; lado a lado no 16:9. */
+function geoComparacao(vis:Visual,W:number,H:number){
+  const div=Math.max(35,Math.min(65,vis.divisao||50))/100, esp=Math.max(6,Math.floor(Math.min(W,H)*0.012/2)*2);
+  if(W>H){ const w1=Math.floor(W*div/2)*2; return {empilhado:false,corte:w1,esp,a:[0,0,w1,H],b:[w1,0,W-w1,H],cx:w1,cy:H/2}; }
+  const h1=Math.floor(H*div/2)*2; return {empilhado:true,corte:h1,esp,a:[0,0,W,h1],b:[0,h1,W,H-h1],cx:W/2,cy:h1};
+}
+function desenharComparacaoFundo(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,vis:Visual,vw:number,vh:number,W:number,H:number){
+  const c={...COMP_PADRAO,...(vis.comp||{})}, g=geoComparacao(vis,W,H);
+  drawRegiao(ctx,v,c.a,vw,vh,...(g.a as [number,number,number,number]));
+  drawRegiao(ctx,v,c.b,vw,vh,...(g.b as [number,number,number,number]));
+  ctx.fillStyle='#FFFFFF';
+  if(g.empilhado) ctx.fillRect(0,g.corte-g.esp/2,W,g.esp); else ctx.fillRect(g.corte-g.esp/2,0,g.esp,H);
+}
+/** Rótulos que entram deslizando e o selo VS que aparece com um pulinho (por cima de estilo e tarjas). */
+function desenharComparacaoTextos(ctx:CanvasRenderingContext2D,vis:Visual,t:number,W:number,H:number){
+  const c={...COMP_PADRAO,...(vis.comp||{})}, g=geoComparacao(vis,W,H);
+  const fs=Math.min(W,H)*0.05, m=Math.min(W,H)*0.05, pad=fs*0.32, folga=g.esp/2+pad+fs*0.35;
+  const ease=(x:number)=>1-Math.pow(1-Math.max(0,Math.min(1,x)),3);
+  const rotulo=(txt:string,cor:string,ancX:'esq'|'dir',ancY:'cima'|'baixo',x:number,y:number,atraso:number)=>{
+    txt=txt.trim().toUpperCase(); if(!txt) return;
+    ctx.font=`800 ${Math.round(fs)}px ${FONT_STACK}`; ctx.textBaseline='middle'; ctx.textAlign='left';
+    const w=ctx.measureText(txt).width+pad*2, h=fs*1.15+pad*2;
+    const p=ease((t-atraso)/0.38); const x0=ancX==='esq'?-W*0.6:W*1.6;
+    let bx=(ancX==='esq'?x:x-w); bx=x0+(bx-x0)*p; const by=ancY==='baixo'?y-h:y;
+    ctx.fillStyle=cor; ctx.fillRect(bx,by,w,h); ctx.fillStyle='#FFFFFF'; ctx.fillText(txt,bx+pad,by+h/2+fs*0.04);
+  };
+  ctx.save();
+  if(g.empilhado){ rotulo(c.rotuloA,c.corA,'esq','baixo',m,g.corte-folga+pad,0); rotulo(c.rotuloB,c.corB,'dir','cima',W-m,g.corte+folga-pad,0.12); }
+  else { rotulo(c.rotuloA,c.corA,'esq','baixo',m,H-m*1.4+pad,0); rotulo(c.rotuloB,c.corB,'dir','baixo',W-m,H-m*1.4+pad,0.12); }
+  if(c.vs){
+    const k=t<0.15?0:t<0.33?1.18*(t-0.15)/0.18:t<0.43?1.18-0.18*(t-0.33)/0.1:1;
+    if(k>0){
+      const r=fs*1.15*k; ctx.beginPath(); ctx.arc(g.cx,g.cy,r,0,Math.PI*2); ctx.fillStyle='#FFD23F'; ctx.fill();
+      ctx.lineWidth=g.esp*0.6*k; ctx.strokeStyle='#FFFFFF'; ctx.stroke();
+      ctx.font=`800 ${Math.round(fs*1.05*k)}px ${FONT_STACK}`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#111111';
+      ctx.fillText((c.textoVs||'VS').slice(0,4).toUpperCase(),g.cx,g.cy+fs*0.04*k);
+    }
+  }
+  ctx.restore();
 }
 
 export function formatoSuportado(){
@@ -45,7 +89,7 @@ export function drawFrame(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,small:
   ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
   const cover=Math.max(W/vw,H/vh), fit=Math.min(W/vw,H/vh);
   let z=1,dx=0,dy=0;
-  if(o.efeito==='zoom-acao') z=1+0.18*Math.min(1,t/Math.max(1,dur));
+  if(o.efeito==='zoom-acao'&&o.visual?.layout!=='comparacao') z=1+0.18*Math.min(1,t/Math.max(1,dur));
   if(o.efeito==='camera-shake' && (t%4)<0.22){ dx=(Math.random()-.5)*28; dy=(Math.random()-.5)*28; }
   const vis=o.visual||null;
   if(vis){ z*=Math.max(1,vis.zoom||1); }
@@ -54,6 +98,8 @@ export function drawFrame(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,small:
     const h1=Math.round(H*Math.max(35,Math.min(80,vis.divisao||62))/100/2)*2;
     drawRegiao(ctx,v,vis.jogo,vw,vh,0,0,W,h1);
     drawRegiao(ctx,v,vis.camera,vw,vh,0,h1,W,H-h1);
+  }else if(vis?.layout==='comparacao'){
+    desenharComparacaoFundo(ctx,v,vis,vw,vh,W,H);
   }else if(o.efeito==='seguir-rosto' && o.rosto && Math.abs(W/H - vw/vh) >= 0.05){
     // Corta o quadro inteiro (sem bordas) e move a janela para manter o rosto no centro.
     const p=posicao(o.rosto,t); const w=vw*cover, h=vh*cover;
@@ -73,7 +119,10 @@ export function drawFrame(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,small:
   }
   desenharEstilo(ctx,o.estilo,W,H,t);   // estilo visual: depois do enquadramento, antes de tarjas, legenda e gancho (mesma ordem do servidor)
   const hTarja=o.tarja?drawTarjas(ctx,o.tarja,W,H):0;
-  if(o.legenda){ const cue=o.cues.find(c=>t>=c.start&&t<c.end); if(cue) drawCaption(ctx,o.legenda,cue.text,t-cue.start,cue.end-cue.start,W,H); }
+  if(vis?.layout==='comparacao') desenharComparacaoTextos(ctx,vis,t,W,H);
+  // na comparação o meio é a divisa com o selo VS: legenda "no meio" desce (igual ao servidor)
+  const leg=o.legenda&&vis?.layout==='comparacao'&&o.legenda.position==='center'?{...o.legenda,position:'center-bottom' as Preset['position']}:o.legenda;
+  if(leg){ const cue=o.cues.find(c=>t>=c.start&&t<c.end); if(cue) drawCaption(ctx,leg,cue.text,t-cue.start,cue.end-cue.start,W,H); }
   if(!vis||vis.gancho) drawHook(ctx,o.gancho,o.accent,W,o.tarja?.topo?hTarja:0,vis?.ganchoPos==='alto'?H*0.14:0);
   if(o.template.ativo) drawTemplate(ctx,o.template,o.logoImg||null,W,H);
   if(o.efeito==='transicao-fade'){ const a=Math.max(0,1-t/0.4,1-(dur-t)/0.4); if(a>0){ ctx.fillStyle=`rgba(0,0,0,${Math.min(1,a)})`; ctx.fillRect(0,0,W,H);} }

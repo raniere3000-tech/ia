@@ -2,6 +2,7 @@ import { LayoutTemplate, RotateCcw, Save } from 'lucide-react';
 import { useApp } from '../state';
 import type { Clip } from '../lib/analyze';
 import EstiloVisual from './EstiloVisual';
+import { COMP_PADRAO } from '../lib/render';
 import { LAYOUTS, aplicarModelo, modeloDoCorte, semModelo, type Layout, type VisualClip } from '../lib/modelos';
 
 /**
@@ -42,7 +43,11 @@ export default function EscolherModelo({clip,aplicar,ajustar,escopo}:{clip:Clip;
         <label>Composição<select value={v.layout} onChange={e=>setV({layout:e.target.value as Layout})}>{LAYOUTS.map(([id,n])=><option key={id} value={id}>{n}</option>)}</select></label>
         <label>Altura da legenda<select value={v.legendaPos} onChange={e=>setV({legendaPos:e.target.value as VisualClip['legendaPos']})}><option value="baixo">Embaixo</option><option value="meio">No meio</option></select></label>
       </div>
-      {v.layout!=='gameplay-streamer'&&<label>Zoom: {Math.round(v.zoom*100)}%<input type="range" min={100} max={160} step={5} value={Math.round(v.zoom*100)} onChange={e=>setV({zoom:+e.target.value/100})}/></label>}
+      {v.layout==='comparacao'&&<div className="small-grid">
+        <label>Rótulo de cima / esquerda<input value={v.comp?.rotuloA??COMP_PADRAO.rotuloA} maxLength={24} onChange={e=>setV({comp:{...COMP_PADRAO,...(v.comp||{}),rotuloA:e.target.value}})}/></label>
+        <label>Rótulo de baixo / direita<input value={v.comp?.rotuloB??COMP_PADRAO.rotuloB} maxLength={24} onChange={e=>setV({comp:{...COMP_PADRAO,...(v.comp||{}),rotuloB:e.target.value}})}/></label>
+      </div>}
+      {v.layout!=='gameplay-streamer'&&v.layout!=='comparacao'&&<label>Zoom: {Math.round(v.zoom*100)}%<input type="range" min={100} max={160} step={5} value={Math.round(v.zoom*100)} onChange={e=>setV({zoom:+e.target.value/100})}/></label>}
       {v.layout==='cheio'&&<label>Olhar para: {v.posX<0.4?'esquerda':v.posX>0.6?'direita':'centro'}<input type="range" min={0} max={100} value={Math.round(v.posX*100)} onChange={e=>setV({posX:+e.target.value/100})}/></label>}
       {v.layout==='gameplay-streamer'&&<label>Altura do gameplay: {v.divisao}%<input type="range" min={35} max={80} value={v.divisao} onChange={e=>setV({divisao:+e.target.value})}/></label>}
       <label className="check"><input type="checkbox" checked={v.gancho} onChange={e=>setV({gancho:e.target.checked})}/> Mostrar o texto de gancho</label>
