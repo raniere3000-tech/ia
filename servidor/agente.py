@@ -2003,7 +2003,29 @@ def trabalhar_postagem() -> str:
             anotar(f'Não agendei "{c["titulo"][:50]}": {e}', 'erro')
             break
     acompanhar()
+    _pedir_reposicao()
     return f'{feitos} corte(s) agendado(s).' if feitos else 'Nada novo para agendar.'
+
+
+def _pedir_reposicao():
+    """Validação de sempre (sem programação diária): há horário livre nas próximas horas e nenhum corte pronto
+    para ele -> o Agente 2 pede mais ao Coordenador, que manda o Agente 1 cortar."""
+    try:
+        cfg = config()
+        po = cfg['postagem']
+        if not po.get('redes') or not po.get('faixas'):
+            return None
+        if any(x['status'] == 'pronto' and not x.get('espera') for x in estado()['cortes']):
+            return None
+        vaga = escolher_vaga(po, cfg['cortes']['por_semana'])
+        if not vaga or vaga['quando'] > time.time() + float(os.getenv('REPOSICAO_HORAS', '24')) * 3600:
+            return None
+        import coordenador as co
+        return co.pedir_reposicao('Horário de ' + time.strftime('%d/%m %H:%M', time.localtime(vaga['quando'])) +
+                                  ' sem vídeo para postar. Pedi mais cortes ao Agente 1.', {'quando': vaga['quando'], 'caminho': 'agente2'})
+    except Exception as e:  # noqa: BLE001
+        print('agente: reposição', e)
+        return None
 
 
 def _completar_link(c: dict, p: dict):

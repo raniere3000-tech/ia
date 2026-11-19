@@ -33,6 +33,16 @@ Tela: **Automação e agentes > Coordenador** (`#coordenador`). Também há um b
 6. **Você libera o pacote.** O pacote é o vídeo final mais a capa escolhida, presos pelo SHA-256 dos dois. Você pode escolher a capa ali mesmo. Se o vídeo ou a capa mudarem depois, a liberação cai e o pacote volta para você.
 7. **O Agente 2 agenda.** Ele usa o mesmo caminho de sempre (`aprovacoes.aprovar`), então todos os portões continuam valendo. Se a produção passou do horário pedido, o vídeo vai para o dia seguinte no mesmo horário, e a ordem mostra isso.
 
+## Horário sem vídeo: reposição automática
+
+O Agente 2 confere isso sempre, a cada volta da programação (e também no caminho antigo, sem programação diária).
+
+1. **Você posta antes da hora.** Se você toca em "Postar agora" num post que estava preso a um horário da programação, o vídeo sai na hora e aquele horário **volta a ficar livre**. O corte que já saiu não volta para a fila, então ele não é postado duas vezes.
+2. **O horário livre recebe o próximo vídeo aprovado** pelo diretor, no mesmo horário de antes.
+3. **Não há vídeo aprovado?** Se algum horário das próximas 24 horas está vazio e não há vídeo para ele, o Agente 2 pede mais vídeos ao Coordenador. O Coordenador abre sozinho uma ordem de reposição e manda o Agente 1 cortar. Os cortes novos passam pelo editor e pelo diretor como sempre, e o primeiro aprovado vai para o horário vazio.
+
+Sem pedidos repetidos: só uma reposição por vez e, depois, no mínimo 60 minutos até a próxima (dá para mudar). Com a Central pausada, ou com a opção desligada em **Coordenador > Configurações**, ele não pede nada. A reposição só manda **cortar**. Nada é postado sem o diretor e os portões de sempre.
+
 ## Corrigir
 
 No pacote, "Pedir correção" tem duas opções:
@@ -108,7 +118,7 @@ Tudo fica no histórico: o que você pediu, o plano, o que foi mandado a cada ag
 | `GET /aprendizado/sugestoes` | Sugestões com evidência |
 | `POST /aprendizado/sugestoes/{id}/propor` ou `/dispensar` | Vira proposta de memória, ou some da lista |
 | `GET /eventos`, `GET /historico/conferir` | Histórico e conferência da corrente de hashes |
-| `GET/POST /config` | Modo, exigir liberação, limites e uso da IA |
+| `GET/POST /config` | Modo, exigir liberação, limites, uso da IA e reposição automática (`reposicao_automatica`, `reposicao_intervalo_min`) |
 
 Erros: 400 (pedido inválido ou fora do catálogo), 404, 409 (falta dado, proposta ou pacote mudou), 429 (limite de correções ou de pedidos por hora).
 

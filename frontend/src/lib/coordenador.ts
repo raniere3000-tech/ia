@@ -30,7 +30,7 @@ export type AgenteInfo={id:string;nome:string;estado:string;atual:{job:string;ti
   custo_30d?:{valor:number;moeda:string;registros:number};custo_capas_30d_usd?:number;posts_agendados?:number;ordens_ativas?:number;esperando_voce?:number;modo?:string};
 export type Sugestao={id:string;tipo:string;titulo:string;evidencia:Record<string,unknown>;confianca:number|null;proposta:{texto:string;escopo:string;chave:string}};
 export type CfgCoord={modo:'supervisionado'|'automatico';exigir_liberacao:boolean;max_videos:number;correcoes_por_etapa:number;qualidade_minima:number;
-  usar_ia:boolean;capas_padrao:number;intervalo_horas:number};
+  usar_ia:boolean;capas_padrao:number;intervalo_horas:number;reposicao_automatica:boolean;reposicao_intervalo_min:number};
 
 const B='/api/v1/coordenador';
 export const interpretar=(c:CfgSrv,texto:string,chave='')=>api<Resposta>(c,'POST',`${B}/interpretar`,{texto,chave});
