@@ -66,7 +66,7 @@ export async function enviarVideo(c:Cfg,blob:Blob,nome:string,onPct:(p:number)=>
 
 export const criarPost=(c:Cfg,d:{video:string;redes:Rede[];titulo:string;legenda:string;quando:number;youtube_privacidade:string;tiktok_modo:string;modelo?:string;direitos?:{origem:string;nota:string}})=>chamar<Post>(c,'POST','/posts',d);
 export const listarPosts=(c:Cfg)=>chamar<{posts:Post[];agora:number}>(c,'GET','/posts');
-export const postarAgora=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/agora`,{});
+export const postarAgora=(c:Cfg,id:string,rede?:string)=>chamar(c,'POST',`/posts/${id}/agora`,rede?{rede}:{});
 export const cancelarPost=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/cancelar`,{});
 export const editarPost=(c:Cfg,id:string,d:{quando?:number;redes?:Rede[];titulo?:string;legenda?:string})=>chamar<Post>(c,'POST',`/posts/${id}/editar`,d);
 export const liberarPost=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/liberar`,{});

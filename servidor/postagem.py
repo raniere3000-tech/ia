@@ -539,12 +539,18 @@ def cancelar_post(pid: str, manter_video: bool = False):
             arq.unlink(missing_ok=True)
 
 
-def postar_agora(pid: str):
+def postar_agora(pid: str, rede: str = ''):
+    """Posta agora. Com `rede`, tenta de novo SÓ nessa rede (as que já foram ficam como estão)."""
     def f(p):
-        p['quando'] = agora()
-        for r in p['redes'].values():
-            if r['status'] in ('erro', 'agendado'):
+        if rede and rede not in p['redes']:
+            raise ErroRede('Este post não tem essa rede.')
+        if not rede:
+            p['quando'] = min(p['quando'], agora())
+        for nome, r in p['redes'].items():
+            if (not rede or nome == rede) and r['status'] in ('erro', 'agendado'):
                 r.update(status='agendado', erro='', tentativas=0, proxima=0)
+                if rede:
+                    _anotar(p, nome, 'tentar_de_novo', 'Você pediu para tentar de novo só nesta rede.')
     _mudar(pid, f)
     acordar()
 
@@ -1049,6 +1055,7 @@ def _publicar_um(pid: str, rede: str):
             q['redes'][rede].update(status='erro', erro=msg[:500])
             _anotar(q, rede, 'bloqueado', msg)
         _mudar(pid, barrar)
+        _avisar_falha(pid, rede, msg)
         return
 
     def iniciar(p):
@@ -1075,26 +1082,87 @@ def _publicar_um(pid: str, rede: str):
                 _anotar(q, rede, 'tentar_de_novo', str(e))
             _mudar(pid, de_novo)
         else:
-            _mudar(pid, lambda q: q['redes'][rede].update(status='erro', erro=(str(e)[:400] + f' Tentei {n + 1} vezes. Clique em Tentar de novo.')))
+            _mudar(pid, lambda q: q['redes'][rede].update(status='erro', erro=(str(e)[:400] + f' Tentei {n + 1} vezes. Toque em Tentar de novo nesta rede.')))
+            _avisar_falha(pid, rede, str(e)[:400])
     except Exception as e:  # noqa: BLE001
         msg = str(e) if isinstance(e, ErroRede) else f'Erro inesperado: {e}'
         def falhou(q):
             q['redes'][rede].update(status='erro', erro=msg[:500])
             _anotar(q, rede, 'erro', msg)
         _mudar(pid, falhou)
+        _avisar_falha(pid, rede, msg)
 
 
-def ciclo():
-    """Publica tudo que já passou do horário (uma rede por vez)."""
+_EM_ENVIO: set = set()                  # (post, rede) sendo enviado agora
+_TRAVA_REDE: dict = {}                  # uma trava por rede: TikTok travado não segura o YouTube
+_TRAVA_ENVIO = threading.Lock()
+
+
+def _enviar_rede(pid: str, rede: str):
+    """Envia um post para UMA rede. Erro aqui fica só nesta rede (as outras seguem normalmente)."""
+    with _TRAVA_ENVIO:
+        trava = _TRAVA_REDE.setdefault(rede, threading.Lock())
+    try:
+        with trava:
+            _publicar_um(pid, rede)
+    except Exception as e:  # noqa: BLE001  (nunca derruba o envio das outras redes)
+        msg = f'Erro inesperado ao postar: {str(e)[:300]}'
+        try:
+            def falhou(q):
+                if q['redes'].get(rede, {}).get('status') in ('agendado', 'postando'):
+                    q['redes'][rede].update(status='erro', erro=msg)
+                    _anotar(q, rede, 'erro', msg)
+            _mudar(pid, falhou)
+            _avisar_falha(pid, rede, msg)
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        with _TRAVA_ENVIO:
+            _EM_ENVIO.discard((pid, rede))
+
+
+def ciclo(esperar: bool = True):
+    """Publica tudo que já passou do horário. Cada rede vai por conta própria: se uma falhar ou demorar
+    (ex.: TikTok), as outras (ex.: YouTube) são postadas do mesmo jeito. esperar=False: não espera os envios acabarem."""
+    fios = []
     for p in lista_posts():
         if p['quando'] > agora() or not video_pronto(p['video']):
             continue
         for rede, r in p['redes'].items():
             if r['status'] == 'agendado':
-                if agora() >= r.get('proxima', 0):
-                    _publicar_um(p['id'], rede)
-            elif r['status'] == 'postando' and agora() - r.get('inicio', 0) > 3600:
-                _mudar(p['id'], lambda q, rede=rede: q['redes'][rede].update(status='erro', erro='O envio foi interrompido (servidor desligou?). Clique em Tentar de novo.'))
+                if agora() < r.get('proxima', 0):
+                    continue
+                with _TRAVA_ENVIO:
+                    if (p['id'], rede) in _EM_ENVIO:
+                        continue
+                    _EM_ENVIO.add((p['id'], rede))
+                t = threading.Thread(target=_enviar_rede, args=(p['id'], rede), daemon=True, name=f'post-{rede}')
+                t.start()
+                fios.append(t)
+            elif r['status'] == 'postando' and agora() - r.get('inicio', 0) > 3600 and (p['id'], rede) not in _EM_ENVIO:
+                _mudar(p['id'], lambda q, rede=rede: q['redes'][rede].update(status='erro', erro='O envio foi interrompido (servidor desligou?). Toque em Tentar de novo nesta rede.'))
+    if esperar:
+        for t in fios:
+            t.join()
+
+
+def _avisar_falha(pid: str, rede: str, msg: str):
+    """Avisa na hora que UMA rede falhou, dizendo o que já foi postado nas outras e como tentar de novo só nela."""
+    try:
+        p = next((x for x in posts() if x['id'] == pid), None)
+        if not p:
+            return
+        nome = rede.capitalize()
+        ok = [r.capitalize() for r, x in p['redes'].items() if x['status'] == 'postado']
+        outras = [r.capitalize() for r, x in p['redes'].items() if r != rede and x['status'] in ('agendado', 'postando')]
+        corpo = (f'Post: {p.get("titulo") or (p.get("legenda") or "")[:60]}\n\nNão foi para o {nome}: {msg}\n\n'
+                 + (f'Já foi postado em: {", ".join(ok)}.\n' if ok else '')
+                 + (f'Ainda vai para: {", ".join(outras)} (não depende do {nome}).\n' if outras else '')
+                 + f'\nPara tentar de novo só no {nome}: abra Publicações (Posts agendados) e toque em "Tentar de novo no {nome}".\n')
+        import agente as ag
+        ag.avisar('falha', f'Falhou no {nome}' + (f' (já foi no {", ".join(ok)})' if ok else ''), corpo, zap_tipo='a2_falha')
+    except Exception as e:  # noqa: BLE001  (aviso é extra)
+        print('postagem: aviso de falha', e)
 
 
 def iniciar_relogio():
@@ -1115,7 +1183,7 @@ def iniciar_relogio():
                 if agora() - conferido > float(os.getenv('CONFERE_CONTAS_H', '6')) * 3600:
                     conferido = agora()
                     verificar_contas()
-                ciclo()
+                ciclo(esperar=False)
             except Exception as e:  # noqa: BLE001
                 print('agendador:', e)
             _acordar.wait(float(os.getenv('INTERVALO_AGENDA', '30')))

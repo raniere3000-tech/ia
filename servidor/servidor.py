@@ -854,7 +854,7 @@ def _rotas_agenda(self, caminho: str):
         if acao == 'liberar':
             return pg.liberar(pid)
         if acao == 'agora':
-            return pg.postar_agora(pid)
+            return pg.postar_agora(pid, str(d.get('rede') or ''))
         if acao == 'cancelar':
             return pg.cancelar_post(pid)
         return pg.marcar_feito(pid, str(d.get('rede', '')))
