@@ -32,6 +32,7 @@ import produtor
 import projetos as pj
 import renderizador as rd
 import rotas_esteira
+import thumbnails as th
 import series as srs
 from skills import catalogo as skcat
 from skills import roteador as skrot
@@ -501,6 +502,54 @@ def _series(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
     raise pj.ErroProjeto(404, 'Rota não encontrada.')
 
 
+def _thumbs(metodo: str, caminho: str, q: dict, corpo, quem: str):
+    rota = (metodo, caminho)
+    base = '/api/v1/thumbnails'
+    if rota == ('GET', base + '/capacidades'):
+        return th.capacidades()
+    if rota == ('GET', base + '/config'):
+        return th.config()
+    if rota in (('POST', base + '/config'), ('PATCH', base + '/config')):
+        return th.salvar_config(corpo(), quem)
+    if rota == ('GET', base + '/fontes'):
+        return {'fontes': th.fontes(q.get('origem', [''])[0], q.get('termo', [''])[0], _int(q.get('limite', ['80'])[0], 80))}
+    if rota == ('GET', base + '/jobs'):
+        return th.listar(q.get('estado', [''])[0], _int(q.get('limite', ['50'])[0], 50))
+    if rota == ('POST', base + '/jobs'):
+        return th.criar(corpo(), quem)
+    if rota == ('GET', base + '/desempenho'):
+        return th.desempenho()
+    if rota == ('GET', base + '/perfis'):
+        return {'perfis': th.perfis()}
+    if rota == ('POST', base + '/perfis'):
+        return th.criar_perfil(corpo(), quem)
+    m = re.fullmatch(base + r'/perfis/(\w+)', caminho)
+    if m and metodo in ('PATCH', 'POST'):
+        return th.mudar_perfil(m.group(1), corpo(), quem)
+    m = re.fullmatch(base + r'/midia/(\w+)', caminho)
+    if m and metodo == 'GET':
+        arq, nome = th.midia(m.group(1))
+        raise Resposta(arq, 'image/jpeg', nome, 'baixar' in q)
+    m = re.fullmatch(base + r'/jobs/(\w+)(?:/(cancelar|refazer|variantes|selecionar|validar|pacote))?', caminho)
+    if m:
+        tid, acao = m.group(1), m.group(2)
+        if metodo == 'GET' and not acao:
+            return th.obter(tid)
+        if metodo == 'GET' and acao == 'variantes':
+            return {'variantes': th.obter(tid)['variantes']}
+        if metodo == 'GET' and acao == 'pacote':
+            return th.pacote(tid)
+        if metodo == 'POST' and acao == 'cancelar':
+            return th.cancelar(tid, quem)
+        if metodo == 'POST' and acao == 'refazer':
+            return th.refazer(tid, corpo(), quem)
+        if metodo == 'POST' and acao == 'selecionar':
+            return th.selecionar(tid, corpo(), quem)
+        if metodo == 'POST' and acao == 'validar':        # o diretor confere de novo a escolha (vídeo e capa ainda iguais?)
+            return th.pacote(tid)
+    raise pj.ErroProjeto(404, 'Rota não encontrada.')
+
+
 def iniciar():
     fila.registrar('estilo.demo', job_demo, 'pesado')
     fila.registrar('skills.instalar', job_skills, 'leve')
@@ -510,6 +559,7 @@ def iniciar():
     fila.registrar('esteira.recebido', _ag.job_esteira_recebido, 'pesado')
     rotas_esteira.ag2.iniciar()
     rotas_esteira.oq.iniciar()
+    th.iniciar()
     exportacao.iniciar()
     diretor.iniciar()
     storyboard.iniciar()
@@ -901,6 +951,12 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     # ---- núcleo criativo (Modelagem com IA, biblioteca compartilhada e tendências)
     if caminho.startswith('/api/v1/criativo/'):
         return _criativo(metodo, caminho, q, corpo, quem, sid)
+    # ---- Agente 6: capas (thumbnails)
+    if caminho.startswith('/api/v1/thumbnails'):
+        try:
+            return _thumbs(metodo, caminho, q, corpo, quem)
+        except th.ErroThumb as e:
+            raise pj.ErroProjeto(e.status, str(e))
     # ---- esteira dos 5 agentes, diretor de qualidade, capacidades, referências virais e programação diária do Agente 2
     if caminho.startswith(rotas_esteira.PREFIXOS):
         try:

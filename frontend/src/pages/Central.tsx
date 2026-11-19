@@ -27,6 +27,7 @@ export default function Central(){
   const trocar=(a:Aba)=>{ setAba(a); go('central',a,'automacao'); };
   return <div className="central">
     <div className="ag-abas" role="tablist">{ABAS.map(([k,t])=><button key={k} role="tab" aria-selected={aba===k} className={aba===k?'active':''} onClick={()=>trocar(k)}>{t}</button>)}</div>
+    <div className="row-gap left central-atalhos"><button className="subtle sm" onClick={()=>go('thumbnails','','automacao')}>Capas dos vídeos (Agente 6)</button></div>
     {r.erro&&<p className="hint bad"><AlertTriangle size={13}/> {r.erro}</p>}
     {aba==='geral'&&<Geral r={r}/>}
     {aba==='agentes'&&r.dados&&<Agentes conf={r.dados.config} est={r.dados.estoque_cortes} esteira={r.dados.esteira_ligada} salvo={r.recarregar}/>}

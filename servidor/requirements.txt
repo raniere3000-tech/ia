@@ -1,3 +1,4 @@
 yt-dlp[default]>=2026.10.26
 deno>=2.5
 imageio-ffmpeg>=0.5
+pillow>=10

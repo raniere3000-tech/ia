@@ -84,13 +84,15 @@ fi
 if [ ! -f .instalado ]; then
   echo "Primeira vez: instalando (uns 3 minutos)..."
   pkg update -y
-  pkg install -y python ffmpeg nodejs tmux curl
+  pkg install -y python ffmpeg nodejs tmux curl python-pillow
   [ "$1" = "link" ] && pkg install -y cloudflared
   pip install -U yt-dlp yt-dlp-ejs
   touch .instalado
 else
   pip install -q -U yt-dlp yt-dlp-ejs || true   # mantém o yt-dlp em dia (o YouTube muda sempre)
 fi
+# Agente 6 (capas) desenha com o Pillow: no Termux vem pronto pelo pacote python-pillow
+python -c "import PIL" 2>/dev/null || pkg install -y python-pillow || echo "Aviso: não instalei o Pillow; as capas (Agente 6) ficam desligadas. Rode:  pkg install python-pillow"
 # Se já tem um servidor ligado (outra sessão do Termux), desliga antes para não dar "Address already in use".
 pkill -f "vigia-estudioclip" 2>/dev/null || true
 pkill -f "python servidor.py" 2>/dev/null && sleep 1 || true
