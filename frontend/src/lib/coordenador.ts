@@ -14,7 +14,7 @@ export type ItemConf={item:string;ok:boolean;detalhe:string};
 export type CapaOpcao={job:string;id:string;numero:number;versao:number;nota:number;estado:string;layout:string;formato:string;url:string;sha256:string};
 export type Aprovacao={id:string;ordem_id:string;ordem_ref:string;tarefa_id:string;origem:string;referencia:string;video_sha256:string;thumbnail_sha256:string|null;
   pacote_hash:string;decisao:'pendente'|'aprovado'|'reprovado';por:string|null;criado:number;decidido:number|null;revogado:number|null;motivo:string|null;
-  relatorio:{itens:ItemConf[];titulo:string;ref:string;projeto:string;destino:{redes:string[];quando:number|null};capas_pedidas:number;
+  relatorio:{itens:ItemConf[];titulo:string;ref:string;projeto:string;destino?:{redes:string[];quando:number|null};capas_pedidas:number;
     capa_por_rede?:Record<string,{tipo:string;nota:string;estado:string}>};capas?:CapaOpcao[]};
 export type Ordem={id:string;ref:string;autor:string;texto:string;plano:Plano;versao_plano:number;status:string;criado:number;atualizado:number;
   tarefas:Tarefa[];aprovacoes:Aprovacao[];eta:Eta;eventos:Evento[];repetido?:boolean};

@@ -1,4 +1,6 @@
 """Pacote de publicação: capas reais, conformidade por rede, descrição no formato fixo, aprovação presa ao hash, sem refazer o vídeo."""
+import os
+os.environ.setdefault('ESTEIRA_COMPLETA', '0')  # fluxo anterior; a esteira obrigatória dos 7 agentes tem o teste próprio (teste_esteira_7.py)
 import os, sys, subprocess, tempfile, hashlib
 from pathlib import Path
 TMP = Path(tempfile.mkdtemp(prefix='ec-pk-'))

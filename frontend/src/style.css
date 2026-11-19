@@ -1200,3 +1200,16 @@ body.sem-rolar{overflow:hidden}
 .ah-topo{position:relative}.ah-carregando{position:absolute;top:16px;right:16px}
 .kpi-defs{margin-top:12px;font-size:12.5px}.kpi-defs summary{cursor:pointer;color:var(--muted);min-height:32px}
 @media(max-width:820px){.kpi small{display:none}}
+/* Esteira dos 7 agentes (Início e Coordenador > Esteira) */
+.pi-estados{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,190px),1fr));gap:8px}
+.pi-estado{display:grid;gap:4px;align-content:start;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:12px;min-width:0}.pi-estado b{font-size:13px}.pi-estado .tag{justify-self:start}.pi-estado small{overflow-wrap:anywhere}
+.esteira7-politica{display:grid;gap:6px;margin:8px 0}
+.esteira7-filtros{margin:8px 0;flex-wrap:wrap}.esteira7-filtros .on{outline:2px solid var(--accent,#7aa2ff)}
+.esteira7-video{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:10px;display:grid;gap:6px;min-width:0}
+.esteira7-cab{display:flex;align-items:center;gap:8px;background:none;border:0;color:inherit;text-align:left;padding:0;min-height:var(--toque,40px);width:100%}.esteira7-cab b{overflow-wrap:anywhere}
+.esteira7-barra{height:6px;border-radius:4px;background:var(--line);overflow:hidden}.esteira7-barra i{display:block;height:100%;background:var(--ok,#3fb950)}
+.esteira7-etapas{list-style:none;padding:0;margin:8px 0;display:grid;gap:6px}
+.esteira7-etapa{border-left:3px solid var(--line);padding:4px 0 4px 10px;display:grid;gap:2px;font-size:12px;min-width:0}.esteira7-etapa small{overflow-wrap:anywhere}
+.esteira7-etapa.ok{border-left-color:var(--ok,#3fb950)}.esteira7-etapa.warn{border-left-color:var(--warn,#d29922)}.esteira7-etapa.bad{border-left-color:var(--bad,#f85149)}.esteira7-etapa.info{border-left-color:var(--accent,#7aa2ff)}
+.esteira7-hist{max-height:240px;overflow:auto;font-size:12px}
+.esteira7-rec li{margin:6px 0}

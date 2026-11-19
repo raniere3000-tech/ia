@@ -6,6 +6,7 @@ Uso: cd servidor && python testes/teste_motor.py
 from __future__ import annotations
 
 import os
+os.environ.setdefault('ESTEIRA_COMPLETA', '0')  # fluxo anterior; a esteira obrigatória dos 7 agentes tem o teste próprio (teste_esteira_7.py)
 import sys
 import tempfile
 import time

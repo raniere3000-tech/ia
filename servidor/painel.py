@@ -50,6 +50,40 @@ def _esteira_ligada() -> bool | None:
     return bool(pl.ligado())
 
 
+ESTADOS_REAIS = {'ativo': 'Trabalhando', 'na_fila': 'Na fila', 'aguardando_voce': 'Esperando você', 'bloqueado': 'Bloqueado',
+                 'aguardando_etapa': 'Esperando a etapa anterior', 'sem_demanda': 'Sem trabalho agora'}
+
+
+def _estado_real(ag_id: str, a: dict, ini: float) -> dict:
+    """Estado de verdade do agente: junta a fila (trabalho rodando) com o registro da esteira dos 7 agentes
+    (o diretor e o editor trabalham DENTRO do trabalho do Agente 1, então a fila sozinha diria "parado")."""
+    est = (a or {}).get('esteira') or {}
+    e_est = est.get('estado')
+    fila = (a or {}).get('estado')
+    if fila in ('trabalhando', 'coordenando') or e_est == 'ativo':
+        real = 'ativo'
+    elif e_est in ('aguardando_voce', 'bloqueado'):
+        real = e_est
+    elif fila == 'na_fila' or e_est == 'na_fila':
+        real = 'na_fila'
+    elif e_est == 'aguardando_etapa':
+        real = 'aguardando_etapa'
+    else:
+        real = 'sem_demanda' if e_est is not None or fila else None
+    def met():
+        import esteira as es
+        return es.metricas_agente(ag_id, ini)
+    return {'estado_real': real, 'estado_real_nome': ESTADOS_REAIS.get(real) if real else None, 'motivo': est.get('motivo') or '',
+            'esteira_agora': est.get('agora') or [], 'esteira_contagem': est.get('contagem') or {}, 'esteira_periodo': _seguro(met)}
+
+
+def _esteira7() -> dict:
+    import esteira as es
+    r = es.resumo()
+    r['politica'] = es.politica()
+    return r
+
+
 def resumo(periodo: str = '7d') -> dict:
     if periodo not in PERIODOS:
         periodo = '7d'
@@ -125,6 +159,7 @@ def resumo(periodo: str = '7d') -> dict:
         item = {'id': ag_id, 'estado': a.get('estado'), 'atual': a.get('atual') or [], 'na_fila': a.get('na_fila'),
                 'concluidas_periodo': c['concluidas'], 'falhas_periodo': c['falhas'], 'tempo_ativo_s': c['tempo_ativo_s'],
                 'tempos_medios': a.get('tempos_medios') or {}}
+        item.update(_estado_real(ag_id, a, ini))
         if ag_id == 'agente2':        # o Agente 2 posta pelo próprio relógio (não usa a fila): conta pelos posts
             item['concluidas_periodo'] = publicados
             item['falhas_periodo'] = posts_erro
@@ -138,7 +173,7 @@ def resumo(periodo: str = '7d') -> dict:
     x7 = atual.get('agente7') or {}
     agentes.append({'id': 'agente7', 'estado': x7.get('estado'), 'atual': [], 'na_fila': None, 'ordens_ativas': x7.get('ordens_ativas'),
                     'esperando_voce': x7.get('esperando_voce'), 'modo': x7.get('modo'), 'concluidas_periodo': ok7, 'falhas_periodo': er7,
-                    'tempo_ativo_s': None, 'unidade': 'pedidos', 'tempos_medios': {}})
+                    'tempo_ativo_s': None, 'unidade': 'pedidos', 'tempos_medios': {}, **_estado_real('agente7', x7, ini)})
 
     # ---- atenção (só o que dá para conferir)
     alertas = []
@@ -155,6 +190,7 @@ def resumo(periodo: str = '7d') -> dict:
 
     return {
         'gerado_em': agora, 'periodo': periodo, 'inicio': ini, 'backend_disponivel': True, 'esteira_ligada': esteira,
+        'esteira7': _seguro(_esteira7),
         'totais': {'videos_criados': videos, 'videos_por_origem': {'agente1': v1, 'agente3': v3}, 'aprovados_disponiveis': aprov,
                    'agendados': agendados, 'publicados': publicados, 'em_producao': em_producao, 'esperando_decisao': esperando,
                    'falhas': falhas, 'posts_com_erro': posts_erro},

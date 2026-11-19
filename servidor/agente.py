@@ -230,6 +230,7 @@ def anotar(texto: str, tipo: str = 'info'):
     print('agente:', texto)
 
 
+JOB_ATUAL = ''          # id do trabalho da fila do Agente 1 rodando agora: vai em cada corte (job_a1) para o Coordenador saber o que saiu dele
 AO_ETAPA = None          # trabalho da fila rodando o Agente 1: recebe (pct, texto) para a barra de progresso do site
 
 
@@ -1354,6 +1355,7 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
     co = {**cfg['cortes'], **(ajustes or {})}
     pasta = TRABALHO / uuid.uuid4().hex[:10]
     pasta.mkdir(parents=True, exist_ok=True)
+    t_inicio = time.time()
     try:
         etapa(f'Baixando: {v["titulo"][:60]}', 2)
         if baixado:
@@ -1387,6 +1389,7 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             raise ErroAgente('Nenhum trecho passou nas suas regras (pontuação mínima, duração e assuntos proibidos).')
         criados = []
         memo_cam: dict = {}
+        t_corte = t_inicio
         for i, c in enumerate(escolhidos):
             etapa(f'Editando o corte {i + 1} de {len(escolhidos)}', 62 + 34 * i / len(escolhidos))
             rnd = random.Random(f'{v["id"]}-{c["ini"]}-{time.time()}')
@@ -1419,7 +1422,10 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             estilo_ant = (tpl.get('estilo_visual', ''), tpl.get('estilo_forca', 1.0), tpl.get('estilo_off', []), tpl.get('estilo_texto', ''))
             cid = uuid.uuid4().hex[:10]
             if _esteira_ligada():
-                # Esteira dos 5 agentes: Agente 5 (editor) faz o plano e o vídeo; Agente 4 (diretor) dá nota 0-100; até 5 correções; certificado no arquivo
+                # Esteira dos 7 agentes: A1 registra o trecho -> A4 avaliação inicial (corrige começo/fim com o A1, até 5x, sem renderizar)
+                # -> A5 edita e exporta -> A4 confere o arquivo final (até 5 correções) -> certificado no arquivo. A6, A7 e A2 seguem pela esteira.
+                if not _previo_corte(c, palavras, co, dur, v, cid, t_corte, fonte, i, len(escolhidos)):
+                    continue
                 etapa(f'Editor e diretor trabalhando no corte {i + 1} de {len(escolhidos)}', 62 + 34 * i / len(escolhidos))
                 qa, vd, run = corte_pela_esteira(arq, c, palavras, tpl, vid, cid, pasta, dur, v, co)
                 refeito = qa['diretor']['tentativas']
@@ -1461,8 +1467,11 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
                     c['hashtags'] = list(dict.fromkeys([*(c.get('hashtags') or []), *perfil['hashtags_base']]))[:12]
             if extra:
                 c.update(extra)
+            if JOB_ATUAL:
+                c.setdefault('job_a1', JOB_ATUAL)
             _mudar(lambda e, c=c: e['cortes'].append(c))
             criados.append(c)
+            t_corte = time.time()
         return criados
     finally:
         shutil.rmtree(pasta, ignore_errors=True)
@@ -1474,6 +1483,63 @@ def _esteira_ligada() -> bool:
         import pipeline as pl
         return pl.ligado()
     except Exception:  # noqa: BLE001 - banco sem a migração: segue o fluxo antigo
+        return False
+
+
+def _previo_corte(c: dict, palavras: list, co: dict, dur: float, v: dict, cid: str, t0: float, fonte: str, i: int, n: int) -> bool:
+    """Produção (A1) com recibo + avaliação inicial do diretor (A4) ANTES de editar. Reprovado: o A1 ajusta começo/fim (até 5 correções)
+    e o A4 confere de novo. Sem conserto: o trecho é descartado sem gastar render. Devolve True se pode seguir para o editor."""
+    import diretor_qualidade as dq
+    import esteira as es
+    import pipeline as pl
+    c.setdefault('titulo', (v.get('titulo') or 'Corte')[:90])
+    evid = es.garantir('corte', cid, c.get('titulo') or '')
+    es.marcar_seguro(evid, 'producao', 'concluida', inicio=t0, fim=time.time(), executor='agente.processar_video',
+                     recibo={'corte': cid, 'origem': v.get('id', ''), 'ini': round(float(c['ini']), 2), 'fim': round(float(c['fim']), 2),
+                             'nota_agente1': c.get('nota'), 'fala': fonte, 'job': JOB_ATUAL or None})
+    run = pl.criar('corte', cid, (c.get('titulo') or 'corte')[:120], chave=f'corte:{v.get("id", "")}:{float(c["ini"]):.2f}:{cid}',
+                   estado='cuts_selected', dados={'origem': v.get('id', '')})
+    __import__('banco').executar('UPDATE esteira_videos SET run=? WHERE id=?', run['id'], evid)
+    fins = fins_de_frase(palavras)
+    anterior = None
+    es.marcar_seguro(evid, 'a4_previo', 'executando', executor='diretor_qualidade.avaliar_previo_corte')
+    while True:
+        etapa(f'Diretor: avaliação inicial do corte {i + 1} de {n}', 62 + 34 * i / max(1, n))
+        ajuste = ajustar_corte(c, palavras, {}, co, dur) if co.get('dur_max') and co.get('dur_min') is not None else None
+        rel = dq.avaliar_previo_corte(c, palavras, {'dur_min': co.get('dur_min'), 'dur_max': co.get('dur_max'), 'fins': fins, 'sem_fala': bool(c.get('sem_legenda')),
+                                                    'ajuste': ajuste})     # direitos: conferidos no arquivo final (A4) e no pacote (A7)
+        atual = (round(float(c['ini']), 2), round(float(c['fim']), 2))
+        dec = pl.registrar_avaliacao(run['id'], 'creative_preedit', rel, mudou=atual != anterior)
+        anterior = atual
+        rel['attempts_used'], rel['attempts_limit'] = dec['correcoes_usadas'], 5
+        rel = pl.guardar_relatorio(run['id'], 'creative_preedit', cid, '', rel)
+        rec = {'relatorio': rel['id'], 'nota': rel['score'], 'bloqueios': len(rel['blocking_findings']), 'decisao': dec['decisao'], 'ini': atual[0], 'fim': atual[1]}
+        if dec['decisao'] == 'aprovado':
+            pl.mover(run['id'], 'creative_approved', agente='agent5', etapa=f'Avaliação inicial aprovada com nota {rel["score"]}')
+            es.marcar_seguro(evid, 'a4_previo', 'concluida', recibo=rec, correcoes=dec['correcoes_usadas'])
+            return True
+        acoes = [f['action'] for f in rel['blocking_findings'] + rel['findings'] if f.get('action') and f.get('target_agent') == 'agent1']
+        if dec['decisao'] == 'corrigir' and acoes:
+            es.marcar_seguro(evid, 'a4_previo', 'reprovada', recibo=rec, motivo='; '.join(f['evidence'] for f in rel['blocking_findings'][:2]) or dec['motivo'])
+            es.marcar_seguro(evid, 'producao', 'corrigindo', motivo=f'Agente 1 ajustando o trecho (correção {dec["correcoes_usadas"] + 1} de 5)',
+                             correcoes=dec['correcoes_usadas'] + 1)
+            t_c = time.time()
+            for a in acoes:
+                if a['acao'] == 'ajustar_inicio':
+                    c['ini'] = round(max(0.0, float(c['ini']) + a['delta_ms'] / 1000), 2)
+                elif a['acao'] == 'ajustar_fim':
+                    c['fim'] = round(min(dur or 1e9, float(c['fim']) + a['delta_ms'] / 1000), 2)
+            c['dur'] = round(float(c['fim']) - float(c['ini']), 1)
+            es.marcar_seguro(evid, 'producao', 'concluida', inicio=t_c, fim=time.time(), executor='agente.ajustar_corte',
+                             recibo={'corte': cid, 'ini': c['ini'], 'fim': c['fim'], 'correcao': dec['correcoes_usadas'] + 1, 'acoes': acoes})
+            es.marcar_seguro(evid, 'a4_previo', 'executando', nova_tentativa=True)
+            continue
+        motivo = dec['motivo'] if dec['decisao'] == 'revisao_manual' else 'O Agente 1 não tem ajuste que resolva: ' + '; '.join(
+            f['evidence'] for f in rel['blocking_findings'][:2])
+        pl.encerrar_etapa(run['id'], 'creative_preedit', 'revisao_manual', motivo[:300])
+        pl.mover(run['id'], 'cancelled', etapa='Trecho descartado na avaliação inicial: ' + motivo[:150])
+        es.marcar_seguro(evid, 'a4_previo', 'revisao_manual', recibo=rec, motivo='Trecho descartado antes de editar (nada foi renderizado): ' + motivo)
+        anotar(f'Diretor descartou um trecho de "{v.get("titulo", "")[:50]}" antes de editar: {motivo[:150]}', 'erro')
         return False
 
 
@@ -1506,10 +1572,16 @@ def _qa_da_esteira(res: dict, run: str) -> tuple[dict, dict]:
 
 
 def corte_pela_esteira(arq: Path, c: dict, palavras: list, tpl: dict, vid: str, cid: str, pasta: Path, dur: float, v: dict, co: dict) -> tuple:
+    import banco as db
     import editor_ia as ed
     import pipeline as pl
-    run = pl.criar('corte', cid, (c.get('titulo') or v.get('titulo') or 'corte')[:120], chave=f'corte:{v.get("id", "")}:{c["ini"]:.2f}:{vid}',
-                   estado='cuts_selected', dados={'video': vid, 'origem': v.get('id', '')})
+    ja = db.um("SELECT run FROM esteira_videos WHERE id=?", f'corte:{cid}')
+    if ja and ja['run']:            # a avaliação inicial já abriu a execução deste corte: o editor continua nela
+        run = pl.obter(ja['run'])
+        pl.mover(run['id'], 'edit_queued', agente='agent5', etapa='Na fila do editor', dados={'video': vid})
+    else:
+        run = pl.criar('corte', cid, (c.get('titulo') or v.get('titulo') or 'corte')[:120], chave=f'corte:{v.get("id", "")}:{c["ini"]:.2f}:{vid}',
+                       estado='cuts_selected', dados={'video': vid, 'origem': v.get('id', '')})
     plano = ed.plano_do_corte(c, tpl, dur)
     destino = pg.VIDEOS / (vid + '.mp4')
     res = ed.rodar(run['id'], cid, plano, lambda p: ed.executar_corte(p, arq, c, palavras, tpl, destino, pasta),
@@ -1543,6 +1615,16 @@ def job_esteira_recebido(ctx):
     dr = c.get('direitos') or {}
     if c.get('tipo') != 'manual' and dr.get('origem') not in MOTIVOS and not conferir(c)['bloqueios']:
         dr = {'origem': 'regra', 'nota': 'Corte do Agente 1 de canal aprovado por você.'}     # o direito vem do canal aprovado
+    import esteira as es
+    evid = es.garantir('corte', cid, c.get('titulo', ''), run=run['id'])
+    if es._etapa(evid, 'producao')['estado'] not in es.OK:
+        if c.get('tipo') == 'manual':
+            es.marcar_seguro(evid, 'producao', 'pulada_justificada', motivo='Corte feito por você no site (não passou pelo Agente 1).', recibo={'corte': cid, 'tipo': 'manual'})
+        else:
+            es.marcar_seguro(evid, 'producao', 'concluida', recibo={'corte': cid, 'video': c['video'], 'tipo': c.get('tipo') or 'agente', 'criado': c.get('criado')},
+                             executor='corte existente')
+    if es._etapa(evid, 'a4_previo')['estado'] not in es.OK:
+        es.marcar_seguro(evid, 'a4_previo', 'pulada_justificada', motivo='O vídeo já chega editado: não há trecho para avaliar antes; o diretor confere o arquivo final.')
     ctx.progresso(10, 'Diretor conferindo o vídeo')
     res = ed.rodar(run['id'], cid, inicial, lambda p: ed.executar_importado(p, fonte, arq, h0),
                    lambda p: {'aspecto': p['target_aspect_ratio'], 'sem_audio_ok': False, 'direitos_ok': dr.get('origem') in MOTIVOS,
@@ -1980,6 +2062,18 @@ def liberado_para_postar(c: dict) -> bool:
     return not config()['cortes'].get('exigir_aprovacao', False)
 
 
+def a7_liberou(c: dict) -> bool:
+    """Esteira dos 7 agentes: o corte só vai para o Publicador com a liberação final do Coordenador (vídeo + capa pelo hash)."""
+    try:
+        import coordenador as co
+        import esteira as es
+        if not es.completa():
+            return True
+        return co.liberado(pg.video_path(c['video']))['ok']
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def trabalhar_postagem() -> str:
     """Agenda os cortes prontos e acompanha os que já foram ao ar."""
     feitos = 0
@@ -1991,7 +2085,7 @@ def trabalhar_postagem() -> str:
             return 'A programação diária cuida dos horários.'
     except Exception as e:  # noqa: BLE001
         print('agente: programação diária', e)
-    for c in [x for x in estado()['cortes'] if x['status'] == 'pronto' and not x.get('espera') and liberado_para_postar(x)]:
+    for c in [x for x in estado()['cortes'] if x['status'] == 'pronto' and not x.get('espera') and liberado_para_postar(x) and a7_liberou(x)]:
         problemas = conferir(c)['bloqueios']
         if problemas:       # fica parado esperando você, sem travar o resto da fila
             _mudar(lambda e, cid=c['id']: [x.update(espera=True) for x in e['cortes'] if x['id'] == cid])

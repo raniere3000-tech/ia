@@ -15,6 +15,7 @@ from pathlib import Path
 
 import banco as db
 import contratos as ct
+import esteira as es
 import pipeline as pl
 
 TAMANHOS = {'pequeno': 62 / 1080, 'medio': 78 / 1080, 'grande': 96 / 1080}
@@ -274,12 +275,24 @@ def rodar(rid: str, ref: str, plano: dict, render, contexto, *, dur_fonte: float
                 'pedidos_agente3': []}
     plano = pl.ultimo_plano(rid) or plano
     anterior = None
+    corrigindo = 0
+    # registro da esteira dos 7 agentes: A5 (edição e exportação) e A4 (arquivo final), com o tempo de cada trecho e a prova
+    es.marcar_run(rid, 'a5_edicao', 'executando', executor='editor_ia.rodar')
+
+    def a4(estado, rel, dec, motivo='', cert=None):
+        es.marcar_run(rid, 'a4_final', estado, recibo={'relatorio': rel['id'], 'nota': rel['score'], 'bloqueios': len(rel['blocking_findings']),
+                                                       'decisao': dec['decisao'], 'certificado': cert, 'sha': sha},
+                      saida_sha=sha if cert else None, entrada_sha=sha, motivo=motivo or dec.get('motivo') or '', correcoes=dec['correcoes_usadas'])
     while True:
         versao = pl.guardar_plano(rid, plano, plano.get('edit_reason', ''))
         pl.mover(rid, 'rendering', agente='agent5', etapa=f'Editor exportando a versão {versao} do plano')
         arq = Path(render(plano))
         sha = pl.sha_arquivo(arq)
         pl.guardar_plano(rid, plano, arquivo_sha=sha)
+        es.marcar_run(rid, 'a5_edicao', 'concluida', executor='editor_ia.rodar', saida_sha=sha, correcoes=corrigindo,
+                      recibo={'plano_versao': versao, 'sha': sha, 'arquivo': arq.name, 'tamanho': arq.stat().st_size,
+                              'efeitos': [e.get('tipo') for e in plano.get('effects') or []], 'trechos': len(plano.get('clips') or [])})
+        es.marcar_run(rid, 'a4_final', 'executando', entrada_sha=sha, executor='diretor_qualidade.avaliar_final')
         pl.mover(rid, 'final_qa_pending', agente='agent4', etapa='Diretor conferindo o vídeo', arquivo=str(arq), sha=sha)
         avisar('Diretor conferindo o vídeo')
         rel = dq.avaliar_final(arq, dict(contexto(plano), sha=sha))
@@ -293,13 +306,16 @@ def rodar(rid: str, ref: str, plano: dict, render, contexto, *, dur_fonte: float
             # supervisionado: o diretor aprovou, mas o certificado só sai quando VOCÊ liberar (fica registrado como liberado por você)
             motivo = f'Editor supervisionado: o diretor aprovou com nota {rel["score"]}. Confira a edição e libere.'
             pl.mover(rid, 'manual_review_required', agente='pessoa', etapa=motivo)
+            a4('aguardando_usuario', rel, dec, motivo)
             return dict(base, resultado='revisao_manual', certificado=None, decisao=dict(dec, motivo=motivo))
         if dec['decisao'] == 'aprovado':
             cert = pl.emitir_certificado(ref, sha, rel, run=rid, revisao=versao)
             pl.mover(rid, 'final_approved', agente='agent2', etapa=f'Aprovado pelo diretor com nota {rel["score"]}', dados={'certificado': cert['id']})
+            a4('concluida', rel, dec, cert=cert['id'])
             return dict(base, resultado='aprovado', certificado=cert['id'])
         if dec['decisao'] == 'revisao_manual':
             pl.mover(rid, 'manual_review_required', agente='pessoa', etapa=dec['motivo'])
+            a4('revisao_manual', rel, dec)
             return dict(base, resultado='revisao_manual', certificado=None)
         todos = rel['blocking_findings'] + rel['findings']
         acoes = [f['action'] for f in todos if f.get('action') and f.get('target_agent') == 'agent5']
@@ -308,24 +324,32 @@ def rodar(rid: str, ref: str, plano: dict, render, contexto, *, dur_fonte: float
         if so_pessoa:          # direitos, por exemplo: o editor não resolve
             pl.encerrar_etapa(rid, 'final_release', 'revisao_manual', so_pessoa[0]['evidence'])
             pl.mover(rid, 'manual_review_required', agente='pessoa', etapa='Precisa de você: ' + so_pessoa[0]['evidence'][:150])
+            a4('revisao_manual', rel, dec, 'Precisa de você: ' + so_pessoa[0]['evidence'])
             return dict(base, resultado='revisao_manual', certificado=None)
         if modo_editor() == 'manual':          # manual: o editor não corrige sozinho; o vídeo vai para você com os pontos do diretor
             motivo = 'Editor no modo manual: corrija você os pontos apontados pelo diretor.'
             pl.encerrar_etapa(rid, 'final_release', 'revisao_manual', motivo)
             pl.mover(rid, 'manual_review_required', agente='pessoa', etapa=motivo)
+            a4('revisao_manual', rel, dec, motivo)
             return dict(base, resultado='revisao_manual', certificado=None, decisao=dict(dec, motivo=motivo))
         novo, feitas = corrigir(plano, acoes, dur_fonte)
         if ct.hash_plano(novo) == ct.hash_plano(plano):
             if pedidos3:
                 pl.mover(rid, 'creative_correction_pending', agente='agent3', etapa='O diretor pediu para refazer cenas')
+                a4('reprovada', rel, dec, 'O diretor pediu para o Agente 3 refazer cenas.')
                 return dict(base, resultado='agente3', certificado=None, pedidos_agente3=pedidos3)
             motivo = 'O editor não tem correção que mude o vídeo para os problemas apontados.'
             pl.encerrar_etapa(rid, 'final_release', 'revisao_manual', motivo)
             pl.mover(rid, 'manual_review_required', agente='pessoa', etapa=motivo)
+            a4('revisao_manual', rel, dec, motivo)
             return dict(base, resultado='revisao_manual', certificado=None)
         pl.mover(rid, 'edit_correction_pending', agente='agent5',
                  etapa=f'Correção {dec["correcoes_usadas"] + 1} de {ct.MAX_CORRECOES}: ' + ' '.join(feitas)[:150])
         avisar(f'Editor corrigindo ({dec["correcoes_usadas"] + 1} de {ct.MAX_CORRECOES})')
+        a4('reprovada', rel, dec, f'Nota {rel["score"]}: ' + '; '.join(f['evidence'] for f in rel['blocking_findings'][:2]))
+        corrigindo = dec['correcoes_usadas'] + 1
+        es.marcar_run(rid, 'a5_edicao', 'corrigindo', motivo=f'Correção {corrigindo} de {ct.MAX_CORRECOES}: ' + ' '.join(feitas)[:200],
+                      correcoes=corrigindo, recibo={'acoes': acoes[:8]})
         plano = novo
 
 

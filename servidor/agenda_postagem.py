@@ -434,6 +434,15 @@ def tem_programacao() -> bool:
     return _esteira() and bool(db.um('SELECT id FROM posting_schedules WHERE apagado=0 AND ligado=1'))
 
 
+def _liberado(sha: str) -> bool:
+    try:
+        import coordenador as co
+        import esteira as es
+        return not es.completa() or co.liberado_sha(sha)['ok']
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def elegiveis(rede: str) -> list:
     """Cortes prontos com certificado do diretor válido PARA O ARQUIVO ATUAL, sem bloqueio de direitos, ainda não reservados nesta rede."""
     try:
@@ -461,6 +470,8 @@ def elegiveis(rede: str) -> list:
         conf = ag.conferir(c)
         if conf['bloqueios']:
             continue
+        if not _liberado(sha):
+            continue            # esteira dos 7 agentes: só entra no horário o pacote liberado pelo Coordenador (A7)
         out.append({'tipo': 'corte', 'corte': c, 'ref': c['id'], 'sha': sha, 'nota': cert['nota'], 'criado': c.get('criado', 0)})
     try:        # vídeos das linhas de conteúdo do Agente 3 (aprovados por você ou pela publicação automática da linha)
         import linhas_conteudo as lc

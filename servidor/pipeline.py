@@ -34,6 +34,13 @@ class ErroPipeline(Exception):
 
 # ---------------------------------------------------------------- liga/desliga (rollback sem perder dados)
 def ligado() -> bool:
+    try:
+        import esteira as es
+        completa = es.completa()       # esteira obrigatória dos 7 agentes: editor e diretor sempre ligados
+    except Exception:  # noqa: BLE001
+        completa = False
+    if completa:
+        return True
     v = db.kv('pipeline_v2')
     if isinstance(v, dict) and 'ligado' in v:
         return bool(v['ligado'])

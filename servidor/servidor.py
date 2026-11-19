@@ -870,6 +870,7 @@ def _job_agente1(ctx):
     """Pedido manual do agente de cortes, agora pela fila (antes era recusado quando estava ocupado)."""
     oque, link = ctx.dados.get('oque', ''), ctx.dados.get('link', '')
     ag.AO_ETAPA = lambda p, t: ctx.progresso(float(p) if p else None, t)       # a barra do site acompanha o Agente 1
+    ag.JOB_ATUAL = ctx.id                     # cada corte guarda de qual trabalho saiu (o Coordenador acompanha por ele)
     ctx.progresso(5, {'buscar': 'Buscando canais', 'cortar': 'Fazendo cortes', 'link': 'Cortando o link', 'tema': 'Procurando vídeo pelo tema', 'postar': 'Agendando cortes'}.get(oque, oque))
     nome = {'buscar': 'Busca de canais', 'cortar': 'Agente de cortes', 'link': 'Corte do link', 'tema': 'Corte por tema', 'postar': 'Agente de postagem'}.get(oque, oque)
     try:
@@ -889,6 +890,7 @@ def _job_agente1(ctx):
         raise
     finally:
         ag.AO_ETAPA = None
+        ag.JOB_ATUAL = ''
         ag.etapa('')
         ag.depois_do_trabalho()      # Central ligada: continua repondo o estoque logo depois do seu pedido
     return {'resultado': {'ok': True}, 'etapa': 'Concluído'}

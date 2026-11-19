@@ -1,4 +1,6 @@
 """Estilos visuais dentro do corte de verdade (agente.editar): cada estilo x cada layout, com legenda, tarja e moldura."""
+import os
+os.environ.setdefault('ESTEIRA_COMPLETA', '0')  # fluxo anterior; a esteira obrigatória dos 7 agentes tem o teste próprio (teste_esteira_7.py)
 import sys, subprocess, tempfile, json
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

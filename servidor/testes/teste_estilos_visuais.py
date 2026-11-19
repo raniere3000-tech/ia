@@ -1,4 +1,6 @@
 """Renderiza de verdade os 12 estilos visuais com FFmpeg e confere: roda, muda a imagem, mantém duração e áudio."""
+import os
+os.environ.setdefault('ESTEIRA_COMPLETA', '0')  # fluxo anterior; a esteira obrigatória dos 7 agentes tem o teste próprio (teste_esteira_7.py)
 import sys, os, subprocess, tempfile, hashlib
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

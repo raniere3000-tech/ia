@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Brain, CheckCircle2, Copy, Download, FileText, History, Package, Lightbulb, ListChecks, Loader2, MessageSquare, Pause, Play, Send, Settings2, ShieldCheck, Undo2, Users, XCircle } from 'lucide-react';
+import { Bot, Brain, CheckCircle2, Copy, Download, FileText, History, Package, Lightbulb, ListChecks, Loader2, MessageSquare, Pause, Play, Send, Settings2, ShieldCheck, Undo2, Users, Workflow, XCircle } from 'lucide-react';
 import { useApp } from '../state';
 import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
 import Progresso from '../components/Progresso';
+import EsteiraSete from '../components/EsteiraSete';
 import { urlServidor } from '../lib/api';
 import { tempoTexto } from '../lib/alertas';
 import { ESCOPOS, ESTADO_ORDEM, ESTADO_TAREFA, REDES, acaoMemoria, acaoOrdem, acaoSugestao, confirmarOrdem, conferirHistorico, conferirLinks, criarMemoria, enviarKwai, lerKwai, decidir, escolherCapaPacote,
   interpretar, lerAgentes, lerAprovacoes, lerCfgCoord, lerConversa, lerEventos, lerMemoria, lerMemorias, lerOrdem, lerOrdens, lerSugestoes, mudarParametros, salvarCfgCoord,
   type Aprovacao, type CfgCoord, type Evento, type Memoria, type Ordem, type Resposta } from '../lib/coordenador';
 
-type Aba='conversar'|'ordens'|'aprovacoes'|'agentes'|'kwai'|'memoria'|'aprendizado'|'historico'|'config';
-const ABAS:[Aba,string,typeof Bot][]=[['conversar','Conversar',MessageSquare],['ordens','Ordens',ListChecks],['aprovacoes','Liberar',ShieldCheck],['agentes','Agentes',Users],['kwai','Kwai',Package],
+type Aba='conversar'|'esteira'|'ordens'|'aprovacoes'|'agentes'|'kwai'|'memoria'|'aprendizado'|'historico'|'config';
+const ABAS:[Aba,string,typeof Bot][]=[['conversar','Conversar',MessageSquare],['esteira','Esteira',Workflow],['ordens','Ordens',ListChecks],['aprovacoes','Liberar',ShieldCheck],['agentes','Agentes',Users],['kwai','Kwai',Package],
   ['memoria','Memória',Brain],['aprendizado','Aprendizado',Lightbulb],['historico','Histórico',History],['config','Configurações',Settings2]];
 const quando=(t?:number|null)=>t?new Date(t*1000).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
 const EXEMPLOS=['Faça 3 vídeos sobre a história do café, voz masculina, estilo documentário, 2 capas por vídeo, postar no YouTube amanhã às 18h',
@@ -30,6 +31,7 @@ export default function Coordenador(){
   return <div className="coord">
     <div className="ag-abas" role="tablist">{ABAS.map(([k,t,I])=><button key={k} role="tab" aria-selected={aba===k} className={aba===k?'active':''} onClick={()=>trocar(k)}><I size={14}/> {t}</button>)}</div>
     {aba==='conversar'&&<Conversar abrirOrdem={abrirOrdem}/>}
+    {aba==='esteira'&&<EsteiraSete/>}
     {aba==='ordens'&&(ordemSel?<OrdemTela id={ordemSel} voltar={()=>{ setOrdemSel(''); trocar('ordens'); }} irLiberar={()=>trocar('aprovacoes')}/>:<Ordens abrir={abrirOrdem}/>)}
     {aba==='aprovacoes'&&<Liberar abrirOrdem={abrirOrdem}/>}
     {aba==='agentes'&&<Agentes/>}
@@ -192,7 +194,7 @@ function Pacote({a,mudou,abrirOrdem}:{a:Aprovacao;mudou:()=>void;abrirOrdem:(id:
   async function fazer(f:()=>Promise<unknown>,msg:string){ setBusy(true); try{ await f(); toast(msg,'ok'); mudou(); }catch(e){ toast(erroTexto(e),'erro'); mudou(); }finally{ setBusy(false); } }
   const pode=rel.itens.every(i=>i.ok||(i.item==='capa'&&semCapa));
   return <div className="coord-pacote">
-    <b>{rel.titulo}</b> <small className="muted">{rel.ref} · <button className="link-btn" onClick={()=>abrirOrdem(a.ordem_id)}>{a.ordem_ref}</button> · <button className="link-btn" onClick={()=>go('revisar',rel.projeto)}>assistir</button></small>
+    <b>{rel.titulo}</b> <small className="muted">{a.origem==='corte'?'corte':rel.ref}{a.ordem_id?<> · <button className="link-btn" onClick={()=>abrirOrdem(a.ordem_id)}>{a.ordem_ref}</button></>:' · esteira dos 7 agentes'}{rel.projeto&&<> · <button className="link-btn" onClick={()=>go('revisar',rel.projeto)}>assistir</button></>}</small>
     <ul className="coord-conf">{rel.itens.map(i=><li key={i.item} className={i.ok?'ok':'bad'}>{i.ok?'✓':'✗'} {i.detalhe}</li>)}</ul>
     {!!rel.destino?.redes?.length&&<p className="hint">Vai para {rel.destino.redes.join(', ')}{rel.destino.quando?` em ${quando(rel.destino.quando)}`:''}.</p>}
     {rel.capa_por_rede&&Object.entries(rel.capa_por_rede).filter(([,c])=>c.tipo!=='custom_image_upload').map(([r,c])=><p key={r} className="hint warn">{r}: {c.nota}</p>)}
@@ -200,14 +202,14 @@ function Pacote({a,mudou,abrirOrdem}:{a:Aprovacao;mudou:()=>void;abrirOrdem:(id:
       onClick={()=>fazer(()=>escolherCapaPacote(cfg,a.id,v,v.estado!=='aprovada'||undefined),'Capa escolhida.')}>
       <img src={urlServidor(cfg,v.url)} alt={`Capa ${v.numero}`} className={v.formato==='9:16'?'vert':''} loading="lazy"/>
       <small>Nota {v.nota}{v.estado!=='aprovada'?' (abaixo do mínimo)':''}</small></button>)}</div>}
-    {rel.capas_pedidas>0&&!a.thumbnail_sha256&&<label className="check"><input type="checkbox" checked={semCapa} onChange={e=>setSemCapa(e.target.checked)}/> Liberar sem capa</label>}
+    {a.ordem_id&&rel.capas_pedidas>0&&!a.thumbnail_sha256&&<label className="check"><input type="checkbox" checked={semCapa} onChange={e=>setSemCapa(e.target.checked)}/> Liberar sem capa</label>}
     <div className="row-gap left">
       <button className="primary sm" disabled={busy||!pode} onClick={()=>fazer(()=>decidir(cfg,a.id,{decisao:'aprovar',pacote_hash:a.pacote_hash,sem_capa:semCapa}),'Pacote liberado.')}><CheckCircle2 size={14}/> Liberar</button>
       <button className="subtle sm" disabled={busy} onClick={()=>setReprovar(!reprovar)}><Undo2 size={14}/> Pedir correção</button>
     </div>
     {reprovar&&<div className="coord-falta">
       <div className="seg" role="radiogroup">{([['video','Refazer o vídeo'],['capa','Refazer só a capa']] as const).map(([k,t])=>
-        <button key={k} role="radio" aria-checked={alvo===k} className={alvo===k?'on':''} onClick={()=>setAlvo(k)} disabled={k==='capa'&&!rel.capas_pedidas}>{t}</button>)}</div>
+        <button key={k} role="radio" aria-checked={alvo===k} className={alvo===k?'on':''} onClick={()=>setAlvo(k)} disabled={k==='capa'&&!!a.ordem_id&&!rel.capas_pedidas}>{t}</button>)}</div>
       <textarea rows={2} value={com} onChange={e=>setCom(e.target.value)} placeholder="O que precisa mudar?"/>
       <button className="primary sm" disabled={busy||com.trim().length<3} onClick={()=>fazer(()=>decidir(cfg,a.id,{decisao:'reprovar',alvo,comentario:com,pacote_hash:a.pacote_hash}),'Correção pedida.')}>Mandar corrigir</button>
     </div>}

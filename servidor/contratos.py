@@ -25,7 +25,7 @@ NOMES_PARTES = {'tecnica': 'Técnica, som e sincronia', 'legendas': 'Legendas e 
                 'gancho': 'Gancho (começo)', 'clareza': 'Começo e fim completos', 'identidade': 'Identidade e template',
                 'estrutura': 'Estrutura', 'roteiro': 'Roteiro', 'consistencia': 'Continuidade', 'narracao': 'Narração e falas', 'assets': 'Imagens e direitos'}
 SEVERIDADES = ('baixa', 'media', 'alta', 'bloqueio')
-ALVOS = ('agent3', 'agent5', 'pessoa')
+ALVOS = ('agent1', 'agent3', 'agent5', 'pessoa')     # agent1: o Agente 1 refaz começo/fim do trecho antes da edição
 # bloqueios que NENHUMA nota e nenhuma revisão manual simples passam por cima
 BLOQUEIOS_DUROS = ('direitos', 'arquivo_quebrado', 'seguranca')
 

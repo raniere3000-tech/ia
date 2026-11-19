@@ -4,6 +4,7 @@ import { useApp, type Tab } from '../state';
 import { useCfg } from './Servidor2';
 import { duracaoTexto, horaTexto } from '../lib/api';
 import { AGENTES_INFO, PERIODOS, nd, useResumo, type Periodo, type Resumo } from '../lib/dashboard';
+import { ESTADO_REAL } from '../lib/esteira7';
 import { SeletorPeriodo, AvisoDados, TrabalhoAtual } from './PainelPartes';
 
 const REDE:Record<string,string>={youtube:'YouTube',instagram:'Instagram',facebook:'Facebook',tiktok:'TikTok',kwai:'Kwai'};
@@ -76,6 +77,17 @@ export default function PainelInicio(){
       </section>
     </div>
     <section className="panel">
+      <div className="section-head"><h2><Bot size={18}/> Os 7 agentes agora</h2><button className="link-btn" onClick={ir('coordenador','esteira','agentes')}>Esteira <ArrowRight size={13}/></button></div>
+      {!r?<p className="hint">{res.erro?'Não disponível sem o servidor.':'Lendo...'}</p>:<div className="pi-estados" role="list">{r.agentes.map(a=>{ const info=AGENTES_INFO[a.id];
+        const [nome,cor]=a.estado_real?(ESTADO_REAL[a.estado_real]||[a.estado_real_nome||a.estado_real,'']):['Não disponível',''];
+        return <div key={a.id} className="pi-estado" role="listitem"><b>{info?`${info.n} · ${info.nome}`:a.id}</b><span className={'tag '+cor}>{nome}</span>
+          {a.esteira_agora?.[0]&&<small>{a.esteira_agora[0].etapa}: {a.esteira_agora[0].titulo}</small>}
+          {a.motivo&&a.estado_real!=='ativo'&&<small className="muted">{a.motivo.slice(0,140)}</small>}
+        </div>; })}</div>}
+      {r?.esteira7&&<p className="hint">Esteira: {Object.entries(r.esteira7.por_etapa).length?Object.entries(r.esteira7.por_etapa).map(([k,n])=>`${n} em ${r.esteira7!.nomes_etapa[k]||k}`).join(' · '):'nenhum vídeo em andamento'}
+        {r.esteira7.por_estado.publicado?` · ${r.esteira7.por_estado.publicado} publicado(s) pela esteira`:''}{r.esteira7.politica.completa?'':' · esteira completa DESLIGADA'}</p>}
+    </section>
+    <section className="panel">
       <div className="section-head"><h2><Bot size={18}/> Produção por agente ({nomeP})</h2></div>
       {!r?<p className="hint">{res.erro?'Não disponível sem o servidor.':'Lendo...'}</p>:<div className="pi-agentes" role="list">{r.agentes.map(a=>{ const info=AGENTES_INFO[a.id];
         return <div key={a.id} className="pi-ag" role="listitem"><b>{info?`${info.n} · ${info.nome}`:a.id}</b>
@@ -83,6 +95,7 @@ export default function PainelInicio(){
           <span><em>{a.atual.length||(a.id==='agente7'?nd(a.ordens_ativas):0)}</em> em andamento</span>
           <span><em>{nd(a.falhas_periodo)}</em> {a.id==='agente2'?'com erro':'falhas'}</span>
           {a.id!=='agente2'&&a.id!=='agente7'&&<span><em>{nd(a.tempo_ativo_s,duracaoTexto)}</em> medido</span>}
+          {a.esteira_periodo&&<span title="Etapas da esteira concluídas com prova (recibo) no período"><em>{a.esteira_periodo.concluidas}</em> etapas com prova{a.esteira_periodo.tempo_medio_s!=null?` · média ${duracaoTexto(a.esteira_periodo.tempo_medio_s)}`:''}</span>}
         </div>; })}</div>}
     </section>
     {r&&<section className="panel">

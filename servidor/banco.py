@@ -227,6 +227,21 @@ ESQUEMA = [
         thumbnail_sha256 TEXT, pacote_hash TEXT NOT NULL, relatorio TEXT, decisao TEXT NOT NULL, por TEXT, criado REAL NOT NULL, decidido REAL, revogado REAL, motivo TEXT);
     CREATE INDEX IF NOT EXISTS coordenador_aprovacoes_video ON coordenador_aprovacoes (video_sha256, decisao, revogado);
     """,
+    # 12: esteira obrigatória dos 7 agentes: um registro por vídeo e uma linha por etapa, com prova (recibo/hash) e tempo real
+    """
+    CREATE TABLE IF NOT EXISTS esteira_videos (id TEXT PRIMARY KEY, origem TEXT NOT NULL, ref TEXT NOT NULL, titulo TEXT, ordem_id TEXT, run TEXT,
+        estado TEXT NOT NULL, etapa_atual TEXT, motivo TEXT, politica TEXT, criado REAL NOT NULL, atualizado REAL NOT NULL);
+    CREATE INDEX IF NOT EXISTS esteira_videos_estado ON esteira_videos (estado, atualizado);
+    CREATE INDEX IF NOT EXISTS esteira_videos_ordem ON esteira_videos (ordem_id);
+    CREATE TABLE IF NOT EXISTS esteira_etapas (id TEXT PRIMARY KEY, video TEXT NOT NULL, etapa TEXT NOT NULL, agente TEXT NOT NULL, estado TEXT NOT NULL,
+        ordem INTEGER NOT NULL, entrada_sha TEXT, saida_sha TEXT, recibo TEXT, inicio REAL, fim REAL, segundos_ativos REAL, segundos_fila REAL,
+        tentativas INTEGER NOT NULL DEFAULT 0, correcoes INTEGER NOT NULL DEFAULT 0, erro TEXT, motivo TEXT, executor TEXT, atualizado REAL NOT NULL,
+        UNIQUE (video, etapa));
+    CREATE INDEX IF NOT EXISTS esteira_etapas_agente ON esteira_etapas (agente, estado, fim);
+    CREATE TABLE IF NOT EXISTS esteira_historico (n INTEGER PRIMARY KEY AUTOINCREMENT, video TEXT NOT NULL, etapa TEXT NOT NULL, estado TEXT NOT NULL,
+        detalhe TEXT, t REAL NOT NULL);
+    CREATE INDEX IF NOT EXISTS esteira_historico_video ON esteira_historico (video, n);
+    """,
 ]
 
 

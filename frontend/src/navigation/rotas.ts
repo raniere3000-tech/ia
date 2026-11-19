@@ -45,6 +45,7 @@ export const SECOES:Secao[] = [
   // ---- Agentes (Modelo B)
   {area:'agentes',secao:'visao-geral',aba:'agentes',nome:'Visão geral',menu:true},
   {area:'agentes',secao:'coordenador',aba:'coordenador',nome:'Coordenador-Geral',menu:true},
+  {area:'agentes',secao:'esteira',aba:'coordenador',extra:'esteira',nome:'Esteira dos 7 agentes',menu:true},
   {area:'agentes',secao:'configurar',aba:'agente',nome:'Configurar agentes',menu:true},
   {area:'agentes',secao:'execucoes',aba:'fila',nome:'Execuções',menu:true},
   {area:'agentes',secao:'aprovacoes',aba:'revisar',nome:'Aprovações',menu:true},

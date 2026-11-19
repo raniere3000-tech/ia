@@ -1,4 +1,6 @@
 """Agente 1 com estilos visuais: sorteio entre os escolhidos, respeita estilo do template e estilo indisponível."""
+import os
+os.environ.setdefault('ESTEIRA_COMPLETA', '0')  # fluxo anterior; a esteira obrigatória dos 7 agentes tem o teste próprio (teste_esteira_7.py)
 import sys, random
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

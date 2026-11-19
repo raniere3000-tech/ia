@@ -480,6 +480,15 @@ def criar_post(d: dict) -> dict:
         pp = pl.portao_postagem(video_path(vid))
         if not pp['ok']:
             raise ErroRede(pp['detalhe'])
+    try:
+        import esteira as es
+        completa = es.completa()
+    except Exception:  # noqa: BLE001
+        completa = False
+    if completa:             # esteira dos 7 agentes: o Publicador só agenda o pacote liberado pelo Coordenador (vídeo + capa pelo hash)
+        falta = es.falta_para_postar(pl.sha_arquivo(video_path(vid)), vid, str(d.get('projeto') or ''))
+        if falta:
+            raise ErroRede(falta)
     quando = float(d.get('quando') or agora())
     marca = assinatura(vid)
     if marca and not d.get('repetir'):
@@ -961,7 +970,7 @@ def conferencia(p: dict, rede: str) -> list[dict]:
             item('capa', False, f'Não consegui conferir a capa: {str(e)[:120]}')
     try:     # Agente 7: com "exigir liberação do coordenador" ligado, só sai o pacote que você liberou (vídeo + capa pelo hash)
         import coordenador as co
-        if co.config()['exigir_liberacao']:
+        if co.exigir_liberacao_efetiva():
             lib = co.liberado(arq)
             item('liberacao', lib['ok'], 'Pacote liberado no Coordenador (Agente 7).' if lib['ok'] else
                  'Falta liberar o pacote final no Coordenador (Agente 7), ou o vídeo/capa mudou depois da liberação.')
@@ -1130,6 +1139,17 @@ def _publicar_um(pid: str, rede: str):
             q['redes'][rede].update(status='liberacao', erro=msg[:500])
             _anotar(q, rede, 'pede_liberacao', msg)
         _mudar(pid, pedir)
+        return
+    so_esteira = bloqueios and all(x['item'] in ('certificado', 'capa', 'liberacao') for x in conf if x['bloqueia'])
+    if so_esteira and agora() - float(atual['redes'][rede].get('esperando_esteira') or agora()) < 24 * 3600:
+        # falta só etapa da esteira (diretor, capa ou liberação): o post espera e tenta de novo; só vira erro depois de 24 h
+        msg = 'Esperando a esteira dos 7 agentes: ' + ' '.join(bloqueios)
+        def esperar(q):
+            r = q['redes'][rede]
+            if not r.get('esperando_esteira'):
+                _anotar(q, rede, 'esperando_esteira', msg)
+            r.update(status='agendado', erro=msg[:500], proxima=agora() + 600, esperando_esteira=r.get('esperando_esteira') or agora())
+        _mudar(pid, esperar)
         return
     if bloqueios:
         msg = 'Conferência antes de postar: ' + ' '.join(bloqueios)

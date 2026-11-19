@@ -625,6 +625,16 @@ def aprovar_automaticos(quem: str = 'automação') -> int:
     return n
 
 
+def _liberado(sha: str) -> bool:
+    """Esteira dos 7 agentes: o vídeo só ocupa horário com a liberação final do Coordenador (A7) para este arquivo."""
+    try:
+        import coordenador as co
+        import esteira as es
+        return not es.completa() or co.liberado_sha(sha)['ok']
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def ativos_para(rede: str) -> list:
     """Vídeos das linhas que podem ocupar um horário desta rede: aprovados (por você ou pela publicação automática),
     certificado válido para o arquivo e ainda sem horário nesta rede."""
@@ -648,7 +658,7 @@ def ativos_para(rede: str) -> list:
             if db.um("SELECT id FROM posting_slots WHERE ref=? AND rede=? AND estado NOT IN ('cancelado','perdido','vazio')", 'p:' + p['id'], rede):
                 continue
             cert = pl.certificado(sha)
-            if not cert:
+            if not cert or not _liberado(sha):
                 continue
             out.append({'tipo': 'agente3', 'projeto': p, 'ref': 'p:' + p['id'], 'sha': sha, 'nota': cert['nota'], 'criado': r['criado'], 'linha': cfg['titulo'],
                         'prioridade': cfg.get('prioridade', 3)})
@@ -666,7 +676,7 @@ def ativos_para(rede: str) -> list:
         if db.um("SELECT id FROM posting_slots WHERE ref=? AND rede=? AND estado NOT IN ('cancelado','perdido','vazio')", 'p:' + p['id'], rede):
             continue
         cert = pl.certificado(sha) if pl.ligado() else {'nota': None}
-        if not cert:
+        if not cert or not _liberado(sha):
             continue
         out.append({'tipo': 'agente3', 'projeto': p, 'ref': 'p:' + p['id'], 'sha': sha, 'nota': cert.get('nota'), 'criado': r['criado'], 'linha': '',
                     'prioridade': 3})

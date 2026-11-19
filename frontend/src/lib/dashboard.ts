@@ -7,13 +7,17 @@ export type Periodo='hoje'|'7d'|'30d';
 export const PERIODOS:[Periodo,string][]=[['hoje','Hoje'],['7d','7 dias'],['30d','30 dias']];
 export type AtualJob={job:string;titulo:string;progresso:number;etapa:string;restante_s:number|null;desde:number};
 export type AgenteResumo={id:string;estado:string|null;atual:AtualJob[];na_fila:number|null;concluidas_periodo:number|null;falhas_periodo:number|null;
-  tempo_ativo_s:number|null;tempos_medios:Record<string,{segundos:number;amostras:number}>;unidade?:string;ordens_ativas?:number|null;esperando_voce?:number|null;modo?:string|null};
+  tempo_ativo_s:number|null;tempos_medios:Record<string,{segundos:number;amostras:number}>;unidade?:string;ordens_ativas?:number|null;esperando_voce?:number|null;modo?:string|null;
+  /** Estado de verdade pela esteira dos 7 agentes + fila (ativo, na_fila, aguardando_voce, bloqueado, aguardando_etapa, sem_demanda). */
+  estado_real?:string|null;estado_real_nome?:string|null;motivo?:string;esteira_agora?:{video:string;titulo:string;etapa:string;desde:number|null}[];
+  esteira_periodo?:{concluidas:number;falhas:number;por_etapa:Record<string,number>;tempo_medio_s:number|null;amostras:number}|null};
 export type Resumo={gerado_em:number;periodo:Periodo;inicio:number;backend_disponivel:boolean;esteira_ligada:boolean|null;
   totais:{videos_criados:number|null;videos_por_origem:{agente1:number|null;agente3:number|null};aprovados_disponiveis:number|null;agendados:number|null;publicados:number|null;
     em_producao:number|null;esperando_decisao:number|null;falhas:number|null;posts_com_erro:number|null};
   definicoes:Record<string,string>;agentes:AgenteResumo[];
   proxima_publicacao:{post:string;titulo:string;quando:number;redes:string[];status:string}|null;
   alertas:{tipo:string;texto:string;onde:string}[];
+  esteira7?:{por_estado:Record<string,number>;por_etapa:Record<string,number>;nomes_etapa:Record<string,string>;politica:{completa:boolean;liberacao_automatica:boolean}}|null;
   /** true quando o servidor ainda não tem o painel novo e os dados vieram só do Coordenador (sem contagem por período). */
   parcial?:boolean};
 

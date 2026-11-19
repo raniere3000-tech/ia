@@ -213,6 +213,15 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
     dr = diretor_ok(p, render_sha)
     if not dr['aprovado']:
         raise ErroAprovacao(409, 'O diretor de qualidade não aprovou esta versão: ' + ' '.join(dr['motivos'])[:400] + ' Refaça as cenas apontadas.')
+    try:
+        import esteira as es
+        completa = es.completa()
+    except Exception:  # noqa: BLE001
+        completa = False
+    if completa:          # esteira dos 7 agentes: a sua aprovação vale como liberação final do Agente 7 se o pacote estiver completo
+        lib = es.liberar_por_pessoa('render', pid, por or origem)
+        if not lib['ok']:
+            raise ErroAprovacao(409, 'Ainda não dá para aprovar: ' + ' '.join(lib['falta'])[:400])
     dest = dict(p['dados']['briefing'].get('destinos') or {})
     if isinstance(destinos, dict):
         dest.update({k: v for k, v in destinos.items() if k in ('redes', 'quando', 'data', 'titulo', 'legenda', 'link_original')})

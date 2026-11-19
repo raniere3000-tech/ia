@@ -344,6 +344,71 @@ def avaliar_criativo(cenas: list, briefing: dict, roteiro: dict, extras: dict | 
             'evaluator_version': VERSAO}
 
 
+def avaliar_previo_corte(c: dict, palavras: list, ctx: dict) -> dict:
+    """Avaliação inicial do Agente 4 para um corte do Agente 1, ANTES de editar e exportar (nada é renderizado à toa).
+    Mede o trecho escolhido: duração, se começa com fala, se termina no fim de uma frase, quanta fala tem, direitos e título.
+    Correções vão para o Agente 1 (ajustar_inicio / ajustar_fim em ms). ctx: dur_min, dur_max, fins (set|None), sem_fala,
+    direitos_ok, direitos_motivo, ajuste ({'ini','fim'} proposto pelo Agente 1 ou None)."""
+    pesos = ct.PESOS['creative_preedit']
+    pontos = dict(pesos)
+    achados, bloqueios = [], []
+    ini, fim = float(c['ini']), float(c['fim'])
+    dur = fim - ini
+    ajuste = ctx.get('ajuste') or {}
+
+    def acao(nome, novo, velho, lim):
+        d = round((float(novo) - velho) * 1000)
+        d = max(lim[0], min(lim[1], d))
+        return {'acao': nome, 'delta_ms': d} if abs(d) >= 50 else None
+    a_ini = acao('ajustar_inicio', ajuste['ini'], ini, (-5000, 5000)) if 'ini' in ajuste else None
+    a_fim = acao('ajustar_fim', ajuste['fim'], fim, (-5000, 8000)) if 'fim' in ajuste else None
+
+    def tira(parte, n, f, bloq=False):
+        pontos[parte] = max(0, pontos[parte] - n)
+        achados.append(f)
+        if bloq:
+            bloqueios.append(f)
+    dmin, dmax = ctx.get('dur_min'), ctx.get('dur_max')
+    if dur <= 0:
+        f = ct.achado('arquivo_quebrado', 'bloqueio', 'O trecho escolhido não tem duração.', 'Escolher outro trecho.', alvo='agent1')
+        tira('estrutura', pesos['estrutura'], f, True)
+    elif dmin and dur < dmin - 1:
+        tira('estrutura', 15, ct.achado('ritmo', 'alta', f'O trecho tem {dur:.1f} s (mínimo {dmin} s).', 'Estender até o fim da próxima frase.', alvo='agent1',
+                                         ini_ms=int(ini * 1000), fim_ms=int(fim * 1000), acao=a_fim))
+    elif dmax and dur > dmax + 2:
+        tira('estrutura', 15, ct.achado('ritmo', 'alta', f'O trecho tem {dur:.1f} s (máximo {dmax} s).', 'Terminar numa frase anterior.', alvo='agent1',
+                                         ini_ms=int(ini * 1000), fim_ms=int(fim * 1000), acao=a_fim))
+    if not ctx.get('sem_fala'):
+        dentro = [p for p in palavras if ini <= p[0] <= fim]
+        if not dentro:
+            f = ct.achado('narracao', 'bloqueio', 'Ninguém fala neste trecho.', 'Escolher outro trecho com fala.', alvo='agent1')
+            tira('narracao', pesos['narracao'], f, True)
+        else:
+            espera = dentro[0][0] - ini
+            if espera > 2.0:
+                tira('roteiro', 12, ct.achado('gancho', 'bloqueio', f'O trecho demora {espera:.1f} s para alguém falar: o gancho se perde.',
+                                              'Começar logo antes da primeira fala.', alvo='agent1', ini_ms=int(ini * 1000), fim_ms=int(dentro[0][0] * 1000),
+                                              acao=a_ini), True)
+            fins = ctx.get('fins')
+            if fins is not None and dentro[-1][1] not in fins:
+                tira('consistencia', 12, ct.achado('clareza', 'bloqueio', 'O trecho termina no meio de uma frase.', 'Terminar no fim da frase.',
+                                                   alvo='agent1', ini_ms=int(dentro[-1][0] * 1000), fim_ms=int(fim * 1000), acao=a_fim), True)
+            ritmo = len(dentro) / max(dur, 0.1)
+            if ritmo < 0.8:
+                tira('narracao', 6, ct.achado('ritmo', 'media', f'Pouca fala no trecho ({ritmo:.1f} palavra/s): fica parado.', 'Preferir um trecho com mais fala.',
+                                              alvo='agent1'))
+    if ctx.get('direitos_ok') is False:
+        f = ct.achado('direitos', 'bloqueio', ctx.get('direitos_motivo') or 'Falta registrar de quem é o vídeo.', 'Diga de quem é o vídeo antes de postar.',
+                      alvo='pessoa')
+        tira('assets', pesos['assets'], f, True)
+    if not str(c.get('titulo') or '').strip():
+        tira('estrutura', 3, ct.achado('identidade', 'baixa', 'O trecho está sem título.', 'Dar um título curto.', alvo='agent1'))
+    nota = round(sum(pontos.values()))
+    return {'schema_version': ct.SCHEMA, 'stage': 'creative_preedit', 'score': nota, 'passed': ct.decidir(nota, bloqueios), 'blocking_findings': bloqueios,
+            'findings': achados, 'partes': {k: {'pontos': pontos[k], 'maximo': pesos[k], 'nome': ct.NOMES_PARTES[k]} for k in pesos},
+            'avisos': [], 'medidas': {'ini': ini, 'fim': fim, 'duracao': round(dur, 2)}, 'evaluator_version': VERSAO}
+
+
 def cenas_para_refazer(rel: dict) -> list:
     out = []
     for f in rel['findings']:

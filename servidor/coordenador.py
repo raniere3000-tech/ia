@@ -1225,8 +1225,9 @@ def _iniciar(o: dict, t: dict):
         r = ag.rodar_agora(pr['oque'], pr.get('link') or '')
         _set_tarefa(t['id'], estado='executando', inicio=agora, job_id=r.get('job'), resultado={'fila': bool(r.get('fila')), 'ja_na_fila': bool(r.get('ja_na_fila'))})
         evento(oid, t['id'], 'agente7', 'delegado', {'agente': 'agente1', 'oque': pr['oque'], 'job': r.get('job')})
-        if not r.get('job'):         # sem fila (modo antigo): rodou em segundo plano; o coordenador não tem como confirmar o fim
-            _set_tarefa(t['id'], estado='concluida', fim=_agora(), resultado={'nota': 'Pedido entregue ao Agente 1 (sem fila para acompanhar).'})
+        if not r.get('job'):         # sem fila: não há como provar que o trabalho aconteceu, então NÃO conclui
+            _set_tarefa(t['id'], estado='falhou', fim=_agora(), erro='O Agente 1 não entrou na fila: não dá para acompanhar nem confirmar o trabalho. '
+                        + str(r.get('erro') or r.get('mensagem') or '')[:200])
         return
     if a in ('central.pausar', 'central.retomar'):
         import orquestrador as oq
@@ -1272,6 +1273,10 @@ def _acompanhar(o: dict, t: dict):
         except th.ErroThumb:
             _set_tarefa(t['id'], estado='falhou', erro='O pedido de capa sumiu.', fim=_agora())
             return
+        if j['estado'] == 'revisao_manual' and not th.selecao_ativa(j['id']):
+            if t['estado'] != 'aguardando_voce':
+                _set_tarefa(t['id'], estado='aguardando_voce', erro=(j.get('erro') or 'Nenhuma capa passou no diretor: escolha ou peça de novo em Capas.')[:300])
+            return
         if j['estado'] in ('aguardando_escolha', 'pronto', 'revisao_manual'):
             _set_tarefa(t['id'], estado='concluida', fim=_agora(), resultado=dict(t['resultado'], estado_capas=j['estado'],
                                                                                   aprovadas=sum(1 for v in j['variantes'] if v['estado'] == 'aprovada')))
@@ -1291,7 +1296,26 @@ def _acompanhar(o: dict, t: dict):
         if not j:
             _set_tarefa(t['id'], estado='falhou', erro='O trabalho sumiu da fila.', fim=_agora())
         elif j['status'] == 'concluido':
-            _set_tarefa(t['id'], estado='concluida', fim=_agora(), resultado=dict(t['resultado'], resultado=_l(j.get('resultado'), j.get('resultado'))))
+            res = dict(t['resultado'], resultado=_l(j.get('resultado'), j.get('resultado')))
+            if t['parametros'].get('oque') in ('cortar', 'link', 'tema'):
+                # prova do trabalho: os cortes que saíram DESTE trabalho, cada um com o registro da esteira (A4 -> A5 -> A4 -> A6 -> A7 -> A2)
+                import agente as ag
+                import esteira as es
+                cortes = [c for c in ag.estado()['cortes'] if c.get('job_a1') == t['job_id']]
+                ids = []
+                for c in cortes:
+                    vid = es.garantir('corte', c['id'], c.get('titulo') or '', ordem_id=o['id'])
+                    ids.append(vid)
+                descartados = db.todos("SELECT v.id FROM esteira_videos v JOIN esteira_etapas e ON e.video=v.id AND e.etapa='producao' "
+                                       "WHERE v.estado='descartado' AND e.recibo LIKE ?", f'%"job": "{t["job_id"]}"%')
+                res.update(cortes=[c['id'] for c in cortes], esteira=ids, descartados_na_avaliacao=len(descartados))
+                if not cortes:
+                    _set_tarefa(t['id'], estado='falhou', fim=_agora(), resultado=res,
+                                erro='O Agente 1 terminou sem nenhum corte aprovado' + (f' ({len(descartados)} trecho(s) descartado(s) pelo diretor).' if descartados else '.'))
+                    evento(o['id'], t['id'], 'agente1', 'sem_resultado', {'job': t['job_id'], 'descartados': len(descartados)})
+                    return
+                evento(o['id'], t['id'], 'agente1', 'concluida', {'job': t['job_id'], 'cortes': len(cortes)})
+            _set_tarefa(t['id'], estado='concluida', fim=_agora(), resultado=res)
         elif j['status'] in ('falhou', 'cancelado'):
             _set_tarefa(t['id'], estado='falhou', erro=(j.get('erro') or j['status'])[:300], fim=_agora())
 
@@ -1467,15 +1491,13 @@ def _revalidar(aid: str) -> bool:
     rel = _l(a['relatorio'], {})
     motivo = ''
     try:
-        import aprovacoes as apv
-        import projetos as pj
+        import esteira as es
         import thumbnails as th
-        p = pj.obter(a['referencia'])
-        r = apv._render_atual(p)
-        if not r or r['sha'] != a['video_sha256']:
-            motivo = 'O vídeo mudou depois da liberação.'
+        arq, sha, _x = es.arquivo_atual({'origem': 'corte' if a['origem'] == 'corte' else 'render', 'ref': a['referencia']})
+        if not arq or sha != a['video_sha256']:
+            motivo = 'O vídeo mudou (ou foi apagado) depois da liberação.'
         elif a['thumbnail_sha256']:
-            capa = th.capa_para_video(Path(r['arquivo']))
+            capa = th.capa_para_video(arq)
             if not capa or capa['sha'] != a['thumbnail_sha256']:
                 motivo = 'A capa mudou ou caiu depois da liberação.'
     except Exception as e:  # noqa: BLE001
@@ -1521,21 +1543,24 @@ def aprovacoes(estado: str = '') -> dict:
         pub = _aprov_publica(a)
         if a['decisao'] == 'pendente' and not a['revogado']:
             pub['capas'] = _capas_da_aprovacao(pub)
-            pub['video_url'] = f'/api/v1/projetos/{a["referencia"]}'
+            pub['video_url'] = f'/api/v1/projetos/{a["referencia"]}' if a['origem'] != 'corte' else ''
         out.append(pub)
     return {'aprovacoes': out}
 
 
 def _capas_da_aprovacao(pub: dict) -> list:
     """As capas do pedido ligado a este vídeo, para você escolher aqui mesmo."""
-    t = db.um('SELECT * FROM coordenador_tarefas WHERE id=?', pub['tarefa_id'])
-    if not t:
-        return []
-    ct = (_l(t['parametros_json'], {}) or {}).get('capas_tarefa')
-    if not ct:
-        return []
-    c = db.um('SELECT resultado_json FROM coordenador_tarefas WHERE id=?', ct)
-    tid = (_l(c['resultado_json'], {}) or {}).get('thumb') if c else None
+    t = db.um('SELECT * FROM coordenador_tarefas WHERE id=?', pub['tarefa_id']) if pub.get('tarefa_id') else None
+    if t:
+        ct = (_l(t['parametros_json'], {}) or {}).get('capas_tarefa')
+        if not ct:
+            return []
+        c = db.um('SELECT resultado_json FROM coordenador_tarefas WHERE id=?', ct)
+        tid = (_l(c['resultado_json'], {}) or {}).get('thumb') if c else None
+    else:            # pacote da esteira: as capas do Agente 6 para ESTE vídeo
+        r = db.um('SELECT id FROM thumbnail_jobs WHERE origem=? AND referencia=? AND video_sha=? ORDER BY criado DESC LIMIT 1',
+                  'corte' if pub.get('origem') == 'corte' else 'render', pub['referencia'], pub['video_sha256'])
+        tid = r['id'] if r else (pub.get('relatorio') or {}).get('thumb_job')
     if not tid:
         return []
     try:
@@ -1561,7 +1586,14 @@ def escolher_capa(aid: str, d: dict, quem: str = 'site') -> dict:
     except th.ErroThumb as e:
         raise ErroCoord(e.status, str(e))
     evento(a['ordem_id'], a['tarefa_id'], quem, 'capa_escolhida', {'aprovacao': aid, 'variante': v['id']})
-    avancar(a['ordem_id'])
+    if a['ordem_id']:
+        avancar(a['ordem_id'])
+    else:
+        try:
+            import esteira as es
+            es.avancar(es.vid_de(a['origem'], a['referencia']))
+        except Exception as e:  # noqa: BLE001
+            print('coordenador: esteira', e)
     return {'aprovacao': _aprov_publica(db.um('SELECT * FROM coordenador_aprovacoes WHERE id=?', aid))}
 
 
@@ -1576,6 +1608,8 @@ def decidir(aid: str, d: dict, quem: str = 'site') -> dict:
             raise ErroCoord(404, 'Liberação não encontrada.')
         if a['revogado'] or a['decisao'] != 'pendente':
             raise ErroCoord(409, 'Esta liberação já foi decidida ou caiu. Atualize a tela.')
+        if not a['ordem_id']:
+            return _decidir_pacote(a, d, quem)
         o = _ordem(a['ordem_id'])
         t = next(x for x in _tarefas(o['id']) if x['id'] == a['tarefa_id'])
         prod = next(x for x in _tarefas(o['id']) if x['id'] == t['parametros']['produzir'])
@@ -1640,11 +1674,157 @@ def decidir(aid: str, d: dict, quem: str = 'site') -> dict:
 def liberado(arq: Path) -> dict:
     """Usado pelo Agente 2 (com "exigir liberação" ligado): existe liberação válida para ESTE arquivo?"""
     import pipeline as pl
-    sha = pl.sha_arquivo(arq)
+    return liberado_sha(pl.sha_arquivo(arq))
+
+
+def liberado_sha(sha: str) -> dict:
+    if not sha:
+        return {'ok': False}
     for a in db.todos("SELECT id FROM coordenador_aprovacoes WHERE video_sha256=? AND decisao='aprovado' AND revogado IS NULL ORDER BY decidido DESC", sha):
         if _revalidar(a['id']):
             return {'ok': True, 'aprovacao': a['id']}
     return {'ok': False}
+
+
+def exigir_liberacao_efetiva() -> bool:
+    """O Agente 2 exige a liberação do Coordenador? Sim com "exigir liberação" ligado OU com a esteira completa dos 7 agentes."""
+    if config()['exigir_liberacao']:
+        return True
+    try:
+        import esteira as es
+        return es.completa()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def criar_pacote(v: dict, arq: Path, sha: str, rev: dict) -> dict:
+    """Pacote de liberação da esteira (sem ordem): um por vídeo+versão. Quem confere é o Agente 7 (esteira.revisar_pacote)."""
+    ja = db.um('SELECT * FROM coordenador_aprovacoes WHERE referencia=? AND video_sha256=? AND revogado IS NULL ORDER BY criado DESC LIMIT 1', v['ref'], sha)
+    if ja:
+        return ja
+    aid = secrets.token_hex(6)
+    rel = {'itens': rev['itens'], 'titulo': rev.get('titulo') or v.get('titulo') or '', 'ref': v['ref'], 'thumb_job': rev.get('thumb_job') or '',
+           'variante': rev.get('variante') or '', 'esteira': v['id'], 'metadados_sha': rev.get('metadados_sha'), 'origem_video': v['origem']}
+    if v['origem'] == 'render':
+        try:
+            import aprovacoes as apv
+            rel['ref'] = apv.ref(v['ref'])
+            rel['projeto'] = v['ref']
+        except Exception as e:  # noqa: BLE001
+            print('coordenador: referência do vídeo', e)
+    db.executar('INSERT INTO coordenador_aprovacoes (id, ordem_id, tarefa_id, origem, referencia, video_sha256, thumbnail_sha256, pacote_hash, relatorio, decisao, por, '
+                'criado, decidido) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', aid, None, None, v['origem'], v['ref'], sha, rev.get('thumb_sha') or None,
+                rev['pacote_hash'], _j(rel), 'pendente', None, _agora(), None)
+    evento(None, None, 'agente7', 'pacote', {'aprovacao': aid, 'video': v['id'], 'video_sha': sha[:16], 'ok': rev['ok']})
+    return db.um('SELECT * FROM coordenador_aprovacoes WHERE id=?', aid)
+
+
+def atualizar_pacote(aid: str, rev: dict):
+    """Pacote ainda pendente: atualiza a conferência (a capa pode ter sido escolhida, o título mudou...)."""
+    a = db.um('SELECT * FROM coordenador_aprovacoes WHERE id=?', aid)
+    if not a or a['decisao'] != 'pendente' or a['revogado']:
+        return
+    rel = _l(a['relatorio'], {}) or {}
+    if rel.get('itens') == rev['itens'] and a['pacote_hash'] == rev['pacote_hash']:
+        return
+    rel.update(itens=rev['itens'], thumb_job=rev.get('thumb_job') or '', variante=rev.get('variante') or '', metadados_sha=rev.get('metadados_sha'),
+               titulo=rev.get('titulo') or rel.get('titulo'))
+    db.executar('UPDATE coordenador_aprovacoes SET thumbnail_sha256=?, pacote_hash=?, relatorio=? WHERE id=?', rev.get('thumb_sha') or None, rev['pacote_hash'], _j(rel), aid)
+
+
+def avisar_pacote(a: dict):
+    rel = _l(a['relatorio'], {}) or {}
+    try:
+        import agente as ag
+        ag.avisar('coordenador', f'Pacote para liberar: {(rel.get("titulo") or "")[:60]}',
+                  'Vídeo, capa, título e descrição conferidos pelo Agente 7. Libere em Agentes > Coordenador > Aprovações.')
+    except Exception as e:  # noqa: BLE001
+        print('coordenador: aviso do pacote', e)
+
+
+def _correcoes_pacote(referencia: str, alvo: str) -> int:
+    rs = db.todos("SELECT relatorio FROM coordenador_aprovacoes WHERE referencia=? AND decisao='reprovado' AND ordem_id IS NULL", referencia)
+    return sum(1 for r in rs if (_l(r['relatorio'], {}) or {}).get('reprovado_alvo') == alvo)
+
+
+def _decidir_pacote(a: dict, d: dict, quem: str) -> dict:
+    """Pacote da esteira (sem ordem): liberar, ou mandar corrigir SÓ o que precisa (vídeo -> editor/Agente 3; capa -> Agente 6)."""
+    import esteira as es
+    v = db.um('SELECT * FROM esteira_videos WHERE id=?', es.vid_de(a['origem'], a['referencia']))
+    if v:
+        arq, sha, extra = es.arquivo_atual(v)
+        if arq and sha == a['video_sha256']:
+            atualizar_pacote(a['id'], es.revisar_pacote(v, arq, sha, extra))
+            a = db.um('SELECT * FROM coordenador_aprovacoes WHERE id=?', a['id'])
+        elif not arq or sha != a['video_sha256']:
+            db.executar('UPDATE coordenador_aprovacoes SET revogado=?, motivo=? WHERE id=?', _agora(), 'O vídeo mudou: pacote novo.', a['id'])
+            raise ErroCoord(409, 'O vídeo mudou. Atualize a tela: há um pacote novo.')
+    if str(d.get('pacote_hash') or '') != a['pacote_hash']:
+        raise ErroCoord(409, 'O pacote mudou depois que você abriu (vídeo, capa ou descrição). Confira de novo.')
+    rel = _l(a['relatorio'], {}) or {}
+    dec = d.get('decisao')
+    if dec == 'aprovar':
+        ruins = [i for i in rel.get('itens') or [] if not i['ok']]
+        if ruins:
+            raise ErroCoord(409, 'Ainda não dá para liberar: ' + ' '.join(i['detalhe'] for i in ruins)[:400])
+        db.executar("UPDATE coordenador_aprovacoes SET decisao='aprovado', por=?, decidido=? WHERE id=?", str(quem)[:60], _agora(), a['id'])
+        evento(None, None, quem, 'liberacao', {'aprovacao': a['id'], 'decisao': 'aprovado', 'video': rel.get('esteira')})
+    elif dec == 'reprovar':
+        alvo = d.get('alvo')
+        com = str(d.get('comentario') or '').strip()[:1000]
+        if alvo not in ('video', 'capa'):
+            raise ErroCoord(400, 'Diga o que refazer: o vídeo ou a capa.')
+        if len(com) < 3:
+            raise ErroCoord(400, 'Escreva o que precisa mudar.')
+        limite = config()['correcoes_por_etapa']
+        n = _correcoes_pacote(a['referencia'], alvo)
+        if n >= limite:
+            raise ErroCoord(429, f'Já foram {n} correções para {"este vídeo" if alvo == "video" else "esta capa"} (limite {limite}).')
+        feito = ''
+        if alvo == 'video':
+            if a['origem'] == 'corte':
+                import agente as ag
+                try:
+                    r = ag.mandar_para_editor(a['referencia'], quem)
+                except ag.ErroAgente as e:
+                    raise ErroCoord(409, str(e))
+                feito = 'editor e diretor (job ' + str(r.get('job') or '') + ')'
+            else:
+                import aprovacoes as apv
+                try:
+                    apv.pedir_alteracao(a['referencia'], a['video_sha256'], com, 'coordenador', quem)
+                except apv.ErroAprovacao as e:
+                    raise ErroCoord(e.status, str(e))
+                feito = 'Agente 3 (alteração pedida)'
+        else:
+            import thumbnails as th
+            try:
+                j = th.criar({'origem': 'corte' if a['origem'] == 'corte' else 'render', 'referencia': a['referencia'], 'metodo': 'inteligente',
+                              'variantes': th.config()['variantes_padrao'], 'descricao': com, 'chave_idempotencia': f'pacote:{a["id"]}:{n + 1}'}, quem)
+            except th.ErroThumb as e:
+                raise ErroCoord(e.status, str(e))
+            feito = 'Agente 6 (pedido de capa ' + j['id'] + ')'
+        rel.update(reprovado_alvo=alvo, correcao=n + 1, feito=feito)
+        db.executar("UPDATE coordenador_aprovacoes SET decisao='reprovado', por=?, decidido=?, motivo=?, relatorio=?, revogado=? WHERE id=?",
+                    str(quem)[:60], _agora(), com[:300], _j(rel), _agora(), a['id'])
+        evento(None, None, quem, 'correcao', {'aprovacao': a['id'], 'alvo': alvo, 'n': n + 1, 'feito': feito})
+        if v:
+            es.marcar_seguro(v['id'], 'a7_liberacao', 'reprovada', recibo={'aprovacao': a['id'], 'alvo': alvo}, motivo=f'Reprovado ({alvo}): {com}'[:300])
+            if alvo == 'capa':
+                es.marcar_seguro(v['id'], 'a6_capa', 'corrigindo', correcoes=n + 1, motivo=f'Capa refeita a pedido (correção {n + 1} de {limite}).')
+            else:
+                es.marcar_seguro(v['id'], 'a5_edicao', 'na_fila' if a['origem'] == 'corte' else 'aguardando_dependencia', correcoes=n + 1,
+                                 motivo=f'Vídeo voltou para correção ({n + 1} de {limite}).')
+                if a['origem'] != 'corte':
+                    es.marcar_seguro(v['id'], 'producao', 'corrigindo', correcoes=n + 1, motivo='Agente 3 refazendo o que você pediu.')
+    else:
+        raise ErroCoord(400, 'Decisão inválida (aprovar ou reprovar).')
+    if v:
+        try:
+            es.avancar(v['id'])
+        except Exception as e:  # noqa: BLE001
+            print('coordenador: esteira', e)
+    return {'aprovacao': _aprov_publica(db.um('SELECT * FROM coordenador_aprovacoes WHERE id=?', a['id']))}
 
 
 def _agendar(o: dict, t: dict):
@@ -1814,6 +1994,7 @@ def agentes() -> dict:
         item = {'id': ag_id, 'nome': NOMES_AGENTE[ag_id], 'estado': 'trabalhando' if rod else ('na_fila' if fila_n else 'parado'), 'atual': atual,
                 'na_fila': fila_n, 'feitos_24h': feitos, 'falhas_24h': falhas, 'tempos_medios': medias,
                 'custo_30d': {'valor': round(custo.get('s') or 0, 4), 'moeda': custo.get('moeda') or '', 'registros': custo.get('n') or 0}}
+        item.update(_esteira_do_agente(ag_id, agora))
         if ag_id == 'agente6':
             try:
                 c6 = db.um('SELECT COALESCE(SUM(custo),0) AS s FROM thumbnail_jobs WHERE criado>?', agora - 30 * 86400)
@@ -1831,13 +2012,22 @@ def agentes() -> dict:
     ativas = db.um("SELECT COUNT(*) AS n FROM coordenador_ordens WHERE status IN ('em_execucao','aguardando_voce')") or {'n': 0}
     pend = db.um("SELECT COUNT(*) AS n FROM coordenador_aprovacoes WHERE decisao='pendente' AND revogado IS NULL") or {'n': 0}
     out.append({'id': 'agente7', 'nome': NOMES_AGENTE['agente7'], 'estado': 'coordenando' if ativas['n'] else 'parado', 'ordens_ativas': ativas['n'],
-                'esperando_voce': pend['n'], 'modo': config()['modo'], 'atual': [], 'na_fila': 0})
+                'esperando_voce': pend['n'], 'modo': config()['modo'], 'atual': [], 'na_fila': 0, **_esteira_do_agente('agente7', agora)})
     try:
         import orquestrador as oq
         central = oq.config()['estado']
     except Exception:  # noqa: BLE001
         central = ''
     return {'agentes': out, 'central': central, 'capacidade': fila.capacidade() if hasattr(fila, 'capacidade') else {}, 'medido_em': agora}
+
+
+def _esteira_do_agente(ag_id: str, agora: float) -> dict:
+    """Estado do agente pela esteira dos 7 agentes (o que o registro prova), separado do estado da fila de trabalhos."""
+    try:
+        import esteira as es
+        return {'esteira': es.situacao_agente(ag_id), 'esteira_24h': es.metricas_agente(ag_id, agora - 86400)}
+    except Exception:  # noqa: BLE001  (banco sem a migração)
+        return {}
 
 
 def _eta(ts: list) -> dict:
@@ -2116,6 +2306,7 @@ def pacote_kwai_do_dia(agora: float | None = None) -> dict | None:
 
 def _vigia():
     ultimo_link = 0.0
+    ultimo_esteira = 0.0
     while True:
         _ACORDAR.wait(INTERVALO)
         _ACORDAR.clear()
@@ -2133,6 +2324,13 @@ def _vigia():
             pacote_kwai_do_dia()
         except Exception as e:  # noqa: BLE001
             print('coordenador: kwai', e)
+        try:                    # esteira dos 7 agentes: segue A6 -> A7 -> A2 do que já foi provado (a cada ~20 s)
+            import esteira as es
+            if _agora() - ultimo_esteira >= 20:
+                ultimo_esteira = _agora()
+                es.varrer()
+        except Exception as e:  # noqa: BLE001
+            print('coordenador: esteira', e)
 
 
 def iniciar():

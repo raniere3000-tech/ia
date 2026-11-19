@@ -1,4 +1,6 @@
 """Gameplay Narrativa: destaques medidos de verdade (cena e som), ganchos sem inventar eventos, direitos obrigatórios. FFmpeg real."""
+import os
+os.environ.setdefault('ESTEIRA_COMPLETA', '0')  # fluxo anterior; a esteira obrigatória dos 7 agentes tem o teste próprio (teste_esteira_7.py)
 import os, sys, subprocess, tempfile
 from pathlib import Path
 TMP = Path(tempfile.mkdtemp(prefix='ec-gp-'))

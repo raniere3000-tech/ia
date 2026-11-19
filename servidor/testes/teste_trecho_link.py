@@ -4,6 +4,7 @@ Rodar:  python servidor/testes/teste_trecho_link.py
 Sem internet: o yt-dlp é simulado (aqui só se confere o pedido feito a ele).
 """
 import os
+os.environ.setdefault('ESTEIRA_COMPLETA', '0')  # fluxo anterior; a esteira obrigatória dos 7 agentes tem o teste próprio (teste_esteira_7.py)
 import sys
 import tempfile
 from pathlib import Path

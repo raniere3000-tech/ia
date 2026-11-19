@@ -7,6 +7,7 @@ mede o tempo por quadro, grava ~/teste3d.mp4 e diz se vale a pena ligar os estil
 """
 import math
 import os
+os.environ.setdefault('ESTEIRA_COMPLETA', '0')  # fluxo anterior; a esteira obrigatória dos 7 agentes tem o teste próprio (teste_esteira_7.py)
 import shutil
 import subprocess
 import sys

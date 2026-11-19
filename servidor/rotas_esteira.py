@@ -7,6 +7,7 @@ import time
 import agenda_postagem as ag2
 import capacidades as cap
 import contratos as ct
+import esteira as es
 import inteligencia_viral as iv
 import biblioteca_criativa as bc
 import integracoes as ig
@@ -15,7 +16,7 @@ import live as lv
 import orquestrador as oq
 import pipeline as pl
 
-PREFIXOS = ('/api/v1/alertas', '/api/v1/live', '/api/v1/pipeline', '/api/v1/quality', '/api/v1/capabilities', '/api/v1/viral', '/api/v1/agent2', '/api/v1/automacao', '/api/v1/linhas-conteudo', '/api/v1/biblioteca-criativa', '/api/v1/integracoes')
+PREFIXOS = ('/api/v1/esteira', '/api/v1/alertas', '/api/v1/live', '/api/v1/pipeline', '/api/v1/quality', '/api/v1/capabilities', '/api/v1/viral', '/api/v1/agent2', '/api/v1/automacao', '/api/v1/linhas-conteudo', '/api/v1/biblioteca-criativa', '/api/v1/integracoes')
 
 
 class ErroRota(Exception):
@@ -51,6 +52,8 @@ def tratar(metodo: str, caminho: str, q: dict, corpo, quem: str, cabecalhos=None
     except bc.ErroBiblioteca as e:
         raise ErroRota(e.status, str(e))
     except lv.ErroLive as e:
+        raise ErroRota(e.status, str(e))
+    except es.ErroEsteira as e:
         raise ErroRota(e.status, str(e))
     except Exception as e:  # noqa: BLE001
         import agente as _ag
@@ -177,8 +180,43 @@ def _linhas(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
     raise ErroRota(404, 'Rota não encontrada.')
 
 
+def _esteira7(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
+    """Esteira obrigatória dos 7 agentes: registro por vídeo, linha do tempo, diagnóstico, política e recuperação (com confirmação)."""
+    rota = (metodo, caminho)
+    if rota == ('GET', '/api/v1/esteira'):
+        return {'resumo': es.resumo(), 'politica': es.politica(),
+                'videos': es.lista(_q(q, 'estado'), int(_f(_q(q, 'limite', '30')) or 30), _q(q, 'ordem'))}
+    if rota == ('GET', '/api/v1/esteira/execucoes'):
+        return {'videos': es.lista(_q(q, 'estado'), int(_f(_q(q, 'limite', '50')) or 50), _q(q, 'ordem'))}
+    if rota == ('GET', '/api/v1/esteira/diagnostico'):
+        return es.diagnostico()
+    if rota == ('GET', '/api/v1/esteira/politica'):
+        return es.politica()
+    if rota in (('PUT', '/api/v1/esteira/politica'), ('PATCH', '/api/v1/esteira/politica')):
+        return es.salvar_politica(corpo(), quem)
+    if rota == ('POST', '/api/v1/esteira/conciliar/simular'):
+        return es.simular_conciliacao()
+    if rota == ('POST', '/api/v1/esteira/conciliar'):
+        d = corpo()
+        if d.get('confirmar') is not True:
+            raise ErroRota(400, 'Confirme a recuperação (confirmar: true). Veja antes a simulação.')
+        vids = d.get('videos')
+        return es.conciliar([str(x) for x in vids] if isinstance(vids, list) else None, quem)
+    m = re.fullmatch(r'/api/v1/esteira/execucoes/(corte|render)(?::|%3A|-)([A-Za-z0-9]{4,40})(/timeline|/avancar)?', caminho)
+    if m:
+        vid = f'{m.group(1)}:{m.group(2)}'
+        if m.group(3) == '/avancar' and metodo == 'POST':
+            es.avancar(vid)
+            return es.obter(vid)
+        if metodo == 'GET':
+            return es.timeline(vid) if m.group(3) == '/timeline' else es.obter(vid)
+    raise ErroRota(404, 'Rota não encontrada.')
+
+
 def _tratar(metodo: str, caminho: str, q: dict, corpo, quem: str, cab) -> dict:
     rota = (metodo, caminho)
+    if caminho.startswith('/api/v1/esteira'):
+        return _esteira7(metodo, caminho, q, corpo, quem)
     if caminho.startswith('/api/v1/automacao'):
         return _automacao(metodo, caminho, q, corpo, quem)
     if rota == ('GET', '/api/v1/alertas'):

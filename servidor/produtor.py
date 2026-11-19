@@ -1349,11 +1349,17 @@ def etapa_final(ctx, pid, p, b):
     clipes = [Path((c.get('clipe') or {}).get('arquivo', '')) for c in cenas]
     if not all(x.exists() for x in clipes):
         return {'proxima': True, 'recurso': 'pesado', 'etapa': 'Render'}       # algum clipe sumiu: refaz só os que faltam
+    if _esteira_ligada():
+        # esteira dos 7 agentes: o diretor (A4) avalia cenas e roteiro ANTES da montagem; reprovado não gasta render
+        r = decisao_pela_esteira(ctx, pid, b, None, '', 0, {}, so_cenas=True)
+        if r:
+            return r
     pasta = _pasta(pid, 'renders')
     trab = pasta / 'trabalho'
     shutil.rmtree(trab, ignore_errors=True)
     trab.mkdir()
     t0 = time.time()
+    _marcar_a3(pid, 'a5_edicao', 'executando', executor='produtor.etapa_final (montagem do Agente 3)')
     ctx.progresso(86, 'Juntando as cenas')
     junto = trab / 'junto.mp4'
     rd.concatenar(clipes, junto, trab, _cancelado(ctx))
@@ -1373,6 +1379,7 @@ def etapa_final(ctx, pid, p, b):
     conf = rd.conferir(final_tmp, trab, {'largura': W, 'altura': H, 'duracao': dur_esperada}, _cancelado(ctx))
     fila.medir('final', time.time() - t0, max(1, dur_esperada))
     if not conf['ok']:
+        _marcar_a3(pid, 'a5_edicao', 'falhou', erro='Montagem reprovada na conferência técnica: ' + '; '.join(conf['erros'])[:300])
         raise ErroProdutor('O vídeo final não passou na conferência: ' + '; '.join(conf['erros']))
     sha = rd.sha256(final_tmp)
     final = pasta / f'{sha[:16]}.mp4'
@@ -1402,6 +1409,10 @@ def etapa_final(ctx, pid, p, b):
     pj.mudar_dados(pid, lambda d, _p: d.update(qualidade=qd.resumo(((d.get('qualidade') or {}).get('problemas') or []) + visao, conf)))
     render = {'id': rid, 'sha': sha, 'versao': versao, 'duracao': conf['duracao'], 'validado': True, 'avisos': conf['avisos'], 'assets': ids,
               'tamanho': final.stat().st_size, 'criado': time.time(), 'codec': f'{conf["codec"]}/{conf["audio"]}', 'largura': W, 'altura': H}
+    # A5 nos vídeos próprios = a montagem final do Agente 3 (concat, mix, conferência técnica). Registrado com quem fez de verdade.
+    _marcar_a3(pid, 'a5_edicao', 'concluida', saida_sha=sha, executor='produtor.etapa_final (montagem do Agente 3)',
+               recibo={'render': rid, 'sha': sha, 'versao': versao, 'duracao': conf['duracao'], 'codec': render['codec'], 'tamanho': render['tamanho'],
+                       'conferencia': 'ok', 'avisos': conf['avisos'][:5]})
 
     return decisao_do_diretor(ctx, pid, b, render, sha, versao, conf)
 
@@ -1418,18 +1429,41 @@ def _hash_cenas(cenas: list) -> str:
     return hashlib.sha256(json.dumps(cenas, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
 
 
-def decisao_pela_esteira(ctx, pid: str, b: dict, render: dict, sha: str, versao: int, conf: dict) -> dict:
+def _marcar_a3(pid: str, etapa: str, estado: str, **kw):
+    try:
+        import esteira as es
+        if not es.completa() and not _esteira_ligada():
+            return None
+        vid = es.vid_de('render', pid)
+        if not __import__('banco').um('SELECT id FROM esteira_videos WHERE id=?', vid):
+            return None
+        return es.marcar_seguro(vid, etapa, estado, **kw)
+    except Exception as e:  # noqa: BLE001  (o registro nunca derruba a produção)
+        print('esteira (agente3):', e)
+        return None
+
+
+def decisao_pela_esteira(ctx, pid: str, b: dict, render: dict | None, sha: str, versao: int, conf: dict, so_cenas: bool = False) -> dict | None:
     """Esteira dos 5 agentes ligada: o diretor (Agente 4) dá duas notas de 0 a 100 com contadores separados de 5 correções:
     1) cenas e roteiro (creative_preedit) -> o Agente 3 refaz só as cenas apontadas;
     2) arquivo final exportado (final_release) -> certificado preso ao SHA-256; problema técnico -> monta de novo.
     Aprovado vai para a sua aprovação; esgotou as correções -> precisa da sua revisão (nada passa por cima de bloqueio)."""
     import diretor_qualidade as dq
+    import esteira as es
     import pipeline as pl
     p = pj.obter(pid)
     run = pl.criar('agente3', pid, p['titulo'][:120], chave=f'agente3:{pid}:{ctx.id}', estado='creative_qa_pending')
     rid = run['id']
     cenas = p['dados'].get('cenas') or []
     dados_run = pl.obter(rid)['dados']
+    evid = es.garantir('render', pid, p['titulo'], run=rid, ordem_id=es.ordem_do_projeto(pid))
+    e_prod = es._etapa(evid, 'producao')
+    if e_prod['estado'] not in es.OK or e_prod['estado'] == 'corrigindo' or (e_prod['recibo'] or {}).get('hash_cenas') != _hash_cenas(cenas):
+        jf = fila.obter(getattr(ctx, 'id', '') or '') or {}
+        gasto = float(jf.get('decorrido') or 0) + (time.time() - float(getattr(ctx, 'inicio', time.time())))   # tempo ATIVO medido pela fila (sem a espera)
+        es.marcar_seguro(evid, 'producao', 'concluida', executor='produtor (Agente 3: roteiro, narração, imagens, clipes)',
+                         inicio=time.time() - max(0.0, gasto - float(e_prod['segundos_ativos'] or 0)) if e_prod['estado'] not in es.ATIVOS else None, fim=time.time() if e_prod['estado'] not in es.ATIVOS else None,
+                         recibo={'projeto': pid, 'cenas': len(cenas), 'hash_cenas': _hash_cenas(cenas), 'job': getattr(ctx, 'id', None)})
     hist = list((p['dados'].get('diretor') or {}).get('historico') or [])[-19:]
 
     def parar(motivo: str, rel: dict | None, modalidade: str):
@@ -1444,6 +1478,8 @@ def decisao_pela_esteira(ctx, pid: str, b: dict, render: dict, sha: str, versao:
             return {'status': 'failed'}
         pj.mudar_dados(pid, rep)
         pl.mover(rid, 'manual_review_required', agente='pessoa', etapa=motivo[:200])
+        es.marcar_seguro(evid, 'a4_previo' if modalidade == 'creative_preedit' else 'a4_final', 'revisao_manual', motivo=motivo,
+                         recibo={'relatorio': (rel or {}).get('id'), 'nota': (rel or {}).get('score')})
         return {'resultado': {'render': None, 'diretor': 'revisao_manual', 'esteira': rid}, 'etapa': 'Precisa da sua revisão'}
 
     def refazer(alvo: dict, rel: dict, modalidade: str, dec: dict):
@@ -1460,6 +1496,13 @@ def decisao_pela_esteira(ctx, pid: str, b: dict, render: dict, sha: str, versao:
             d['render_reprovado'] = render
             return {'status': 'rendering'}
         pj.mudar_dados(pid, r_)
+        et = 'a4_previo' if modalidade == 'creative_preedit' else 'a4_final'
+        es.marcar_seguro(evid, et, 'reprovada', recibo={'relatorio': rel['id'], 'nota': rel['score'], 'bloqueios': len(rel['blocking_findings'])}, correcoes=n,
+                         motivo=f'Nota {rel["score"]}: ' + '; '.join(f['evidence'] for f in (rel['blocking_findings'] + rel['findings'])[:2]))
+        if modalidade == 'creative_preedit' or alvo.get('cenas'):
+            es.marcar_seguro(evid, 'producao', 'corrigindo', correcoes=n, motivo=f'Agente 3 refazendo cenas (correção {n} de {ct_max()}).')
+        else:
+            es.marcar_seguro(evid, 'a5_edicao', 'corrigindo', correcoes=n, motivo=f'Montagem de novo (correção {n} de {ct_max()}).')
         nome = 'cenas' if modalidade == 'creative_preedit' else 'vídeo final'
         pl.mover(rid, 'creative_correction_pending' if modalidade == 'creative_preedit' else 'edit_correction_pending', agente='agent3',
                  etapa=f'Correção {n} de {ct_max()} ({nome}): nota {rel["score"]}')
@@ -1468,6 +1511,7 @@ def decisao_pela_esteira(ctx, pid: str, b: dict, render: dict, sha: str, versao:
     # 1) cenas e roteiro
     if pl.etapa(rid, 'creative_preedit')['estado'] != 'aprovado':
         pl.mover(rid, 'creative_qa_pending', agente='agent4', etapa='Diretor conferindo as cenas')
+        es.marcar_seguro(evid, 'a4_previo', 'executando', executor='diretor_qualidade.avaliar_criativo')
         problemas = [x for x in ((p['dados'].get('qualidade') or {}).get('problemas') or []) if x.get('status') != 'resolvido']
         sem_lic = _sem_licenca(cenas)
         rel = dq.avaliar_criativo(cenas, b, p['dados'].get('roteiro') or {}, {'alertas': problemas, 'sem_licenca': sem_lic})
@@ -1482,9 +1526,17 @@ def decisao_pela_esteira(ctx, pid: str, b: dict, render: dict, sha: str, versao:
             alvo = dq.cenas_para_refazer(rel)
             return refazer({'cenas': alvo, 'motivos': [], 'tecnico': not alvo}, rel, 'creative_preedit', dec)
         pl.mover(rid, 'creative_approved', agente='agent5', etapa=f'Cenas aprovadas com nota {rel["score"]}')
+        es.marcar_seguro(evid, 'a4_previo', 'concluida', correcoes=dec['correcoes_usadas'],
+                         recibo={'relatorio': rel['id'], 'nota': rel['score'], 'bloqueios': 0, 'decisao': 'aprovado', 'hash_cenas': _hash_cenas(cenas)})
+    elif es._etapa(evid, 'a4_previo')['estado'] not in es.OK:
+        r0 = (db.um("SELECT id, nota FROM quality_reports WHERE run=? AND modalidade='creative_preedit' ORDER BY criado DESC LIMIT 1", rid) or {})
+        es.marcar_seguro(evid, 'a4_previo', 'concluida', recibo={'relatorio': r0.get('id'), 'nota': r0.get('nota'), 'decisao': 'aprovado'})
+    if so_cenas:
+        return None
     # 2) arquivo final
     arq = Path((db.um('SELECT arquivo FROM renders WHERE id=?', render['id']) or {}).get('arquivo') or '')
     pl.mover(rid, 'final_qa_pending', agente='agent4', etapa='Diretor conferindo o vídeo', arquivo=str(arq), sha=sha)
+    es.marcar_seguro(evid, 'a4_final', 'executando', entrada_sha=sha, executor='diretor_qualidade.avaliar_final')
     sem_lic = _sem_licenca(cenas)
     rel = dq.avaliar_final(arq, {'aspecto': b.get('formato') or '9:16', 'sha': sha, 'direitos_ok': not sem_lic,
                                  'direitos_motivo': 'Há imagem sem licença registrada nas cenas: ' + ', '.join(map(str, sem_lic))[:120] if sem_lic else '',
@@ -1504,6 +1556,8 @@ def decisao_pela_esteira(ctx, pid: str, b: dict, render: dict, sha: str, versao:
     cert = pl.emitir_certificado(pid, sha, rel, run=rid, revisao=versao)
     pl.mover(rid, 'awaiting_human_publish_approval', agente='pessoa', etapa=f'Aprovado pelo diretor com nota {rel["score"]}: falta a sua aprovação',
              dados={'certificado': cert['id']})
+    es.marcar_seguro(evid, 'a4_final', 'concluida', saida_sha=sha, entrada_sha=sha, correcoes=dec['correcoes_usadas'],
+                     recibo={'relatorio': rel['id'], 'nota': rel['score'], 'bloqueios': 0, 'decisao': 'aprovado', 'certificado': cert['id'], 'sha': sha})
 
     def f(d, _p):
         d['render'] = render

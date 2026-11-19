@@ -4,6 +4,7 @@ direitos que a revisão manual não libera, assinatura adulterada, plano de edi�
 Rodar: cd servidor && PYTHONPATH=. python3 testes/teste_pipeline_5_agentes.py
 """
 import os
+os.environ.setdefault('ESTEIRA_COMPLETA', '0')  # fluxo anterior; a esteira obrigatória dos 7 agentes tem o teste próprio (teste_esteira_7.py)
 import shutil
 import subprocess
 import sys

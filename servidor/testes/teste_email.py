@@ -3,6 +3,8 @@
 Rodar:  python servidor/testes/teste_email.py
 Pergunta o endereço e a senha de app (a senha não aparece na tela), tenta as portas 465 e 587 e diz em que passo cai.
 """
+import os
+os.environ.setdefault('ESTEIRA_COMPLETA', '0')  # fluxo anterior; a esteira obrigatória dos 7 agentes tem o teste próprio (teste_esteira_7.py)
 import getpass
 import smtplib
 import socket
