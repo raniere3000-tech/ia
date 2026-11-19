@@ -1103,3 +1103,4 @@ button.sm:not(.primary):not(.subtle):not(.link-btn):not(.icon-btn){display:inlin
 .thumbs .field{margin-top:12px}
 @media (max-width:820px){.page-head .sino{display:none}}
 html.celular .page-head .sino{display:none}
+.rodape-links{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:8px}.rodape-links a{color:#9b84ff;text-decoration:underline;text-underline-offset:2px}.rodape-links a:hover{color:#fff}
