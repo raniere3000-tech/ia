@@ -34,6 +34,7 @@ from email.utils import make_msgid
 from pathlib import Path
 
 import cofre
+import comparacao as cmp
 import modelos as mo
 import modo_render as mr
 import perfis as pf
@@ -952,6 +953,9 @@ def _tarjas(tpl: dict, A: int) -> tuple[bool, bool, int]:
 
 
 def montar_ass(palavras: list, ini: float, fim: float, tpl: dict, gancho: str, L: int, A: int) -> str:
+    comparar = tpl.get('enquadramento') == 'comparacao'
+    if comparar and tpl.get('legenda_pos') == 'meio':
+        tpl = dict(tpl, legenda_pos='baixo')       # no meio fica a divisa com o selo VS: a legenda desce
     esc = min(L, A) / 1080
     tam = {'pequeno': 62, 'medio': 78, 'grande': 96}.get(tpl['tamanho'], 78) * esc
     tem_topo, tem_base, alt_tarja = _tarjas(tpl, A)
@@ -970,10 +974,14 @@ def montar_ass(palavras: list, ini: float, fim: float, tpl: dict, gancho: str, L
         estilo('Gancho', 70 * esc, '&H00111111&', 16 * esc, 0, 8, (A * (0.10 if tpl['gancho_pos'] == 'topo' else 0.24)) + (alt_tarja if tem_topo else 0), 3),
         estilo('Tarja', alt_tarja * 0.42, _ass_cor(tpl['cor_tarja_texto']), 0, 0, 5, 0),
         estilo('Credito', min(L, A) * 0.032, '&H00FFFFFF&', 9 * esc, 0, 2, m * 1.2 + (alt_tarja if tem_base else 0), 3, contorno=_ass_cor(tpl.get('cor_marca', '#7758ef'))),
+        *(cmp.ass_estilos(tpl, L, A) if comparar else []),
         '', '[Events]', 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
     ]
     ev = lambda a, b, est, txt: linhas.append(f'Dialogue: 0,{_ass_t(a)},{_ass_t(b)},{est},,0,0,0,,{txt}')
     dur = fim - ini
+    if comparar:
+        for a, b, est, txt, camada in cmp.ass_eventos(tpl, L, A, dur):
+            linhas.append(f'Dialogue: {camada},{_ass_t(a)},{_ass_t(b)},{est},,0,0,0,,{txt}')
     if tem_topo and topo:
         ev(0, dur, 'Tarja', f'{{\\an5\\pos({L // 2},{alt_tarja // 2})}}{_ass_txt(topo)}')
     if tem_base and base:
@@ -1021,6 +1029,8 @@ def filtro_video(tpl: dict, L: int, A: int, dur: float, ass: Path, logo: Path | 
         h2 = A - h1
         fc = (f"[0:v]split=2[g][c];[g]{_recorte(tpl['jogo'])},scale={L}:{h1}:force_original_aspect_ratio=increase,crop={L}:{h1},setsar=1[top];"
               f"[c]{_recorte(tpl['camera'])},scale={L}:{h2}:force_original_aspect_ratio=increase,crop={L}:{h2},setsar=1[bot];[top][bot]vstack=inputs=2[v0]")
+    elif quadro == 'comparacao':
+        fc = cmp.filtro_quadro(tpl, L, A)
     elif quadro == 'cortar':
         fc = (f"[0:v]scale={par(L * z)}:{par(A * z)}:force_original_aspect_ratio=increase,"
               f"crop={L}:{A}:(iw-{L})*{tpl.get('pos_x', 0.5):.3f}:(ih-{A})*{tpl.get('pos_y', 0.5):.3f},setsar=1[v0]")
@@ -1031,7 +1041,7 @@ def filtro_video(tpl: dict, L: int, A: int, dur: float, ass: Path, logo: Path | 
     cor = '0x' + tpl['cor_tarja'].lstrip('#')
     etapas = ['fps=30']
     efeito = tpl.get('efeito', 'nenhum')
-    if efeito == 'zoom-acao' and quadro != 'gameplay-streamer':
+    if efeito == 'zoom-acao' and quadro not in ('gameplay-streamer', 'comparacao'):
         # aproxima devagar até 18%, como na prévia do site
         etapas.append(f"scale=w='trunc({L}*(1+0.18*min(1,t/{max(1.0, dur):.2f}))/2)*2':h='trunc({A}*(1+0.18*min(1,t/{max(1.0, dur):.2f}))/2)*2':eval=frame,crop={L}:{A}")
     estilo = ''

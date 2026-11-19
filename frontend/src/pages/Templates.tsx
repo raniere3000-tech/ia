@@ -6,7 +6,7 @@ import { TARJA_PADRAO, type Formato, type Tarja } from '../lib/analyze';
 import EstiloVisual from '../components/EstiloVisual';
 import { EFEITOS_MODELO, estiloDe, LAYOUTS, QUALIDADES, marcaDe, novoModelo, visualDe, type Modelo, type Qualidade } from '../lib/modelos';
 import { verAgente, salvarAgente } from '../lib/agente';
-import type { Regiao } from '../lib/render';
+import { COMP_PADRAO, type Comparacao, type Regiao } from '../lib/render';
 import ModelagemIA from '../components/ModelagemIA';
 
 const MAX_AGENTE=3;
@@ -18,6 +18,15 @@ function quadroFalso(m:Modelo){
   const g=c.createLinearGradient(0,0,1280,720); g.addColorStop(0,'#3b4a7a'); g.addColorStop(1,'#1c2033'); c.fillStyle=g; c.fillRect(0,0,1280,720);
   c.fillStyle='#ffffff18'; for(let i=0;i<6;i++){ c.fillRect(80+i*200,120+((i*97)%300),140,90); }
   c.fillStyle='#fff9'; c.font='700 64px sans-serif'; c.textAlign='center'; c.textBaseline='middle';
+  if(m.layout==='comparacao'){
+    // vídeo "lado a lado" de exemplo: as duas áreas marcadas no template ganham cores diferentes
+    const cp={...COMP_PADRAO,...(m.comp||{})};
+    ([[cp.a,'#2c5d7a','LADO A'],[cp.b,'#1f8fc9','LADO B']] as [Regiao,string,string][]).forEach(([r,cor,txt])=>{
+      const x=r.x*1280,y=r.y*720,w=r.w*1280,h=r.h*720; c.fillStyle=cor; c.fillRect(x,y,w,h);
+      c.fillStyle='#ffffff22'; for(let i=0;i<5;i++) c.fillRect(x+w*0.1+i*w*0.17,y+h*0.25+((i*53)%120),w*0.1,h*0.12);
+      c.fillStyle='#fffc'; c.fillText(txt,x+w/2,y+h/2);
+    });
+  }else
   c.fillText(m.layout==='gameplay-streamer'?'GAMEPLAY':'SEU VÍDEO',640*(m.layout==='gameplay-streamer'?0.8:1),330);
   if(m.layout==='gameplay-streamer'){
     const r=m.camera, x=r.x*1280, y=r.y*720, w=r.w*1280, h=r.h*720;
@@ -40,6 +49,37 @@ export function PreviaModelo({m,video}:{m:Modelo;video?:HTMLVideoElement|null}){
     drawFrame(cv.getContext('2d')!,video||quadroFalso(m),document.createElement('canvas'),1.2,10,{legenda,efeito:m.efeito,cues:[{start:0,end:4,text:'É assim que a legenda aparece'}],gancho:'Seu gancho aqui',accent:legenda?.highlightColor||m.cor,template:marca,logoImg:logo,tarja:m.tarja,visual:visualDe(m),estilo:estiloDe(m)},W,H);
   })(); return ()=>{ vivo=false; }; },[m,video,W,H]);
   return <canvas ref={ref} width={W} height={H} className={'preview-canvas f'+m.formato.replace(':','x')} aria-label={'Prévia do template '+m.nome}/>;
+}
+
+const ARRUMOS:[string,Regiao,Regiao][] = [
+  ['Lado a lado (esquerda x direita)',{x:0,y:0,w:0.5,h:1},{x:0.5,y:0,w:0.5,h:1}],
+  ['Um em cima do outro',{x:0,y:0,w:1,h:0.5},{x:0,y:0.5,w:1,h:0.5}],
+  ['Lado a lado, trocado (direita x esquerda)',{x:0.5,y:0,w:0.5,h:1},{x:0,y:0,w:0.5,h:1}],
+];
+const PARES:[string,string][] = [['ANTES','DEPOIS'],['JOGO ANTIGO','JOGO NOVO'],['ORIGINAL','REMAKE'],['PS4','PS5'],['2013','2026']];
+
+/** Campos do layout Comparação: de onde sai cada lado, o que está escrito em cada um e as cores. */
+function CamposComparacao({c,mudar}:{c:Comparacao;mudar:(p:Partial<Comparacao>)=>void}){
+  return <>
+    <div className="field"><span className="field-label">Como os dois lados estão no vídeo original</span>
+      <div className="chips">{ARRUMOS.map(([n,a,b])=><button key={n} className={'chip '+(JSON.stringify([c.a,c.b])===JSON.stringify([a,b])?'on':'')} onClick={()=>mudar({a,b})}>{n}</button>)}</div></div>
+    <div className="small-grid">
+      <label>Rótulo do lado A<input value={c.rotuloA} maxLength={24} placeholder="Ex.: JOGO ANTIGO" onChange={e=>mudar({rotuloA:e.target.value})}/></label>
+      <label>Cor do A<input type="color" value={c.corA} onChange={e=>mudar({corA:e.target.value})}/></label>
+      <label>Rótulo do lado B<input value={c.rotuloB} maxLength={24} placeholder="Ex.: JOGO NOVO" onChange={e=>mudar({rotuloB:e.target.value})}/></label>
+      <label>Cor do B<input type="color" value={c.corB} onChange={e=>mudar({corB:e.target.value})}/></label>
+    </div>
+    <div className="chips">{PARES.map(([a,b])=><button key={a} className="chip" onClick={()=>mudar({rotuloA:a,rotuloB:b})}>{a} x {b}</button>)}</div>
+    <div className="small-grid">
+      <label className="check"><input type="checkbox" checked={c.vs} onChange={e=>mudar({vs:e.target.checked})}/> Selo no meio</label>
+      {c.vs&&<label>Texto do selo<input value={c.textoVs} maxLength={4} onChange={e=>mudar({textoVs:e.target.value})}/></label>}
+    </div>
+    <details><summary>Ajuste fino das duas áreas</summary>
+      <CampoRegiao titulo="Lado A (em cima no vertical, à esquerda no 16:9)" r={c.a} mudar={r=>mudar({a:r})}/>
+      <CampoRegiao titulo="Lado B (embaixo no vertical, à direita no 16:9)" r={c.b} mudar={r=>mudar({b:r})}/>
+    </details>
+    <p className="hint">Serve para vídeos que já mostram as duas versões ao mesmo tempo (lado a lado ou um em cima do outro). Os dois lados saem do mesmo quadro, então ficam sempre sincronizados. No 9:16 e no 1:1 o A fica em cima e o B embaixo; no 16:9 ficam lado a lado.</p>
+  </>;
 }
 
 function CampoRegiao({titulo,r,mudar}:{titulo:string;r:Regiao;mudar:(r:Regiao)=>void}){
@@ -68,7 +108,11 @@ function FormModelo({m,set}:{m:Modelo;set:(p:Partial<Modelo>)=>void}){
     <h3>Composição e enquadramento</h3>
     <div className="tpl-layouts" role="radiogroup" aria-label="Composição">{LAYOUTS.map(([id,n,d])=><button key={id} role="radio" aria-checked={m.layout===id} className={'tpl-layout '+(m.layout===id?'on':'')} onClick={()=>set({layout:id})}><b>{n}</b><small>{d}</small></button>)}</div>
     <div className="field"><span className="field-label">Proporção</span><div className="seg">{(['9:16','1:1','16:9'] as Formato[]).map(f=><button key={f} className={m.formato===f?'on':''} onClick={()=>set({formato:f})}>{f}</button>)}</div></div>
-    {m.layout!=='gameplay-streamer'&&<label>Zoom: {Math.round(m.zoom*100)}%<input type="range" min={100} max={160} step={5} value={Math.round(m.zoom*100)} onChange={e=>set({zoom:+e.target.value/100})}/></label>}
+    {m.layout==='comparacao'&&<>
+      <label>Tamanho do lado A: {m.divisao}% (o B fica com {100-m.divisao}%)<input type="range" min={35} max={65} value={Math.max(35,Math.min(65,m.divisao))} onChange={e=>set({divisao:+e.target.value})}/></label>
+      <CamposComparacao c={{...COMP_PADRAO,...(m.comp||{})}} mudar={p=>set({comp:{...COMP_PADRAO,...(m.comp||{}),...p}})}/>
+    </>}
+    {m.layout!=='gameplay-streamer'&&m.layout!=='comparacao'&&<label>Zoom: {Math.round(m.zoom*100)}%<input type="range" min={100} max={160} step={5} value={Math.round(m.zoom*100)} onChange={e=>set({zoom:+e.target.value/100})}/></label>}
     {m.layout==='cheio'&&<div className="small-grid">
       <label>Olhar para: {m.posX<0.4?'esquerda':m.posX>0.6?'direita':'centro'}<input type="range" min={0} max={100} value={Math.round(m.posX*100)} onChange={e=>set({posX:+e.target.value/100})}/></label>
       <label>Altura: {m.posY<0.4?'em cima':m.posY>0.6?'embaixo':'centro'}<input type="range" min={0} max={100} value={Math.round(m.posY*100)} onChange={e=>set({posY:+e.target.value/100})}/></label>

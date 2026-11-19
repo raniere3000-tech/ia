@@ -1050,7 +1050,7 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         except th.ErroThumb as e:
             raise pj.ErroProjeto(e.status, str(e))
     # ---- pacote diário do Kwai (arquivos; abre também por link assinado, sem senha, para o link do WhatsApp)
-    m = re.fullmatch(r'/api/v1/kwai/(\d{4}-\d{2}-\d{2})/(pagina|texto)', caminho)
+    m = re.fullmatch(r'/api/v1/kwai/(\d{4}-\d{2}-\d{2})/(pagina|texto|zip)', caminho)
     if m and metodo == 'GET':
         import kwai_diario as kd
         try:
@@ -1059,6 +1059,8 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
             raise pj.ErroProjeto(400, str(e))
         if m.group(2) == 'pagina':
             raise Resposta(arq, 'text/html; charset=utf-8')
+        if m.group(2) == 'zip':
+            raise Resposta(arq, 'application/zip', arq.name, True)
         raise Resposta(arq, 'text/plain; charset=utf-8', arq.name, True)
     m = re.fullmatch(r'/api/v1/kwai/video/(\w+)', caminho)
     if m and metodo == 'GET':

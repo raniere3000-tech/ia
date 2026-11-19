@@ -324,14 +324,15 @@ function Kwai(){
   const p=r.dados;
   return <section className="panel">
     <h3><Package size={16}/> Pacote do Kwai</h3>
-    <p className="hint">O Kwai não aceita postagem automática. Aqui estão os vídeos do dia com o nome, a descrição pronta (com o link do vídeo original) e o vídeo para baixar. No fim do dia o Coordenador manda isto sozinho no seu WhatsApp e no e-mail (horário em Configurações).</p>
+    <p className="hint">O Kwai não aceita postagem automática. O ZIP traz todos os vídeos do dia e, ao lado de cada um, um texto (bloco de notas) com o nome, a descrição pronta (com o link do vídeo original) e o vídeo para baixar. No fim do dia o Coordenador manda isto sozinho no seu WhatsApp e no e-mail (horário em Configurações).</p>
     <div className="row-gap left"><label className="field"><span>Dia</span><input type="date" value={data} onChange={e=>e.target.value&&setData(e.target.value)}/></label></div>
     <Erro e={r.erro}/>
     {!p&&!r.erro&&<p className="muted"><Loader2 size={14} className="spin"/> Carregando…</p>}
     {p&&<>
       <div className="row-gap left">
-        <a className="primary sm btn" href={urlServidor(cfg,p.links.pagina)} target="_blank" rel="noopener"><FileText size={14}/> Abrir a página do dia</a>
-        <a className="subtle sm btn" href={urlServidor(cfg,p.links.texto)} target="_blank" rel="noopener"><Download size={14}/> Baixar em .txt</a>
+        {p.itens.length>0&&<a className="primary sm btn" href={urlServidor(cfg,p.links.zip)} download><Download size={14}/> Baixar tudo (ZIP com vídeos e textos)</a>}
+        <a className="subtle sm btn" href={urlServidor(cfg,p.links.pagina)} target="_blank" rel="noopener"><FileText size={14}/> Abrir a página do dia</a>
+        <a className="subtle sm btn" href={urlServidor(cfg,p.links.texto)} target="_blank" rel="noopener"><Download size={14}/> Só os textos (.txt)</a>
         <button className="subtle sm" disabled={busy} onClick={mandar}>{busy?<Loader2 size={14} className="spin"/>:<Send size={14}/>} Mandar agora no WhatsApp/e-mail</button>
       </div>
       {p.enviados.includes(p.data)&&<p className="hint ok"><CheckCircle2 size={13}/> O pacote deste dia já foi enviado no fim do dia.</p>}

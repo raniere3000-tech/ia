@@ -57,7 +57,7 @@ export const conferirHistorico=(c:CfgSrv)=>api<{ok:boolean;conferidos:number;que
 export const conferirLinks=(c:CfgSrv)=>api<{conferidos:number;colocados:string[];sem_link:string[]}>(c,'POST',`${B}/links/conferir`,{});
 export type KwaiItem={post:string;titulo:string;descricao:string;hashtags:string[];link_original:string;proprio:boolean;quando:number;hora:string;
   redes:Record<string,string>;links_redes:Record<string,string>;kwai_marcado:boolean;kwai_feito:boolean;tem_video:boolean;mb:number};
-export type KwaiPacote={data:string;itens:KwaiItem[];links:{pagina:string;texto:string;videos:Record<string,string>};endereco:string;enviados:string[]};
+export type KwaiPacote={data:string;itens:KwaiItem[];links:{pagina:string;texto:string;zip:string;videos:Record<string,string>};endereco:string;enviados:string[]};
 export const lerKwai=(c:CfgSrv,data='')=>api<KwaiPacote>(c,'GET',`${B}/kwai${data?`?data=${encodeURIComponent(data)}`:''}`);
 export const enviarKwai=(c:CfgSrv,data='')=>api<{ok:boolean;data:string;videos:number}>(c,'POST',`${B}/kwai/enviar`,{data});
 export const lerCfgCoord=(c:CfgSrv)=>api<CfgCoord>(c,'GET',`${B}/config`);

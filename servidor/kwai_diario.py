@@ -104,6 +104,7 @@ def _links(data: str, its: list) -> dict:
     return {
         'pagina': au.assinar_url(f'/api/v1/kwai/{data}/pagina', VALIDADE),
         'texto': au.assinar_url(f'/api/v1/kwai/{data}/texto', VALIDADE),
+        'zip': au.assinar_url(f'/api/v1/kwai/{data}/zip', VALIDADE),
         'videos': {i['post']: au.assinar_url(f'/api/v1/kwai/video/{i["post"]}', VALIDADE) for i in its if i['tem_video']},
     }
 
@@ -137,7 +138,63 @@ def texto(data: str, its: list, links: dict, base: str) -> str:
     if not its:
         linhas.append('Nenhum vídeo neste dia.')
     linhas.append(f'Os links valem até {time.strftime("%d/%m %H:%M", time.localtime(time.time() + VALIDADE))}, enquanto o servidor não trocar de endereço.')
-    return '\n'.join(linhas) + '\n'
+    return '\r\n'.join('\n'.join(linhas).split('\n')) + '\r\n'
+
+
+def _ascii(t: str) -> str:
+    import unicodedata
+    t = unicodedata.normalize('NFKD', str(t or '')).encode('ascii', 'ignore').decode()
+    return re.sub(r'\s+', ' ', re.sub(r'[^A-Za-z0-9\- ]+', '', t)).strip()
+
+
+def nome_base(n: int, titulo: str) -> str:
+    """'01 - Fuga insana no GTA 6': o vídeo e o texto dele ficam com o mesmo nome, um ao lado do outro."""
+    return f'{n:02d} - ' + (_ascii(titulo)[:50].strip() or 'video')
+
+
+def nota(n: int, i: dict) -> str:
+    """Texto de um vídeo, para abrir no bloco de notas e copiar: só o que vai no Kwai."""
+    linhas = [f'{n}. {i["titulo"]}', '',
+              'DESCRIÇÃO (copie tudo abaixo até a linha de traços):', i['descricao'], '-' * 30, '',
+              'Hashtags: ' + (' '.join(i['hashtags']) or '-'),
+              'Link original: ' + (i['link_original'] or ('vídeo próprio (não tem)' if i['proprio'] else 'não sei de qual vídeo saiu'))]
+    return '\r\n'.join('\r\n'.join(x.split('\n')) for x in linhas) + '\r\n'
+
+
+def montar_zip(data: str = '') -> Path:
+    """Um ZIP do dia: cada vídeo com o texto dele do lado (mesmo nome) e um '00 - LEIA PRIMEIRO.txt' com todos os textos.
+    Os vídeos entram sem recompressão (já são MP4). Só refaz se algo mudou; ZIPs com mais de 3 dias são apagados."""
+    import zipfile
+    data = data_valida(data)
+    its = itens(data)
+    PASTA.mkdir(parents=True, exist_ok=True)
+    for velho in PASTA.glob('kwai-*.zip'):
+        if velho.stat().st_mtime < time.time() - VALIDADE:
+            velho.unlink(missing_ok=True)
+    destino = PASTA / f'kwai-{data}.zip'
+    conteudo = [(nome_base(n, i['titulo']), i) for n, i in enumerate(its, 1)]
+    assinatura = repr([(b, i['descricao'], i['tem_video'], i['mb']) for b, i in conteudo])
+    marca = PASTA / f'kwai-{data}.zip.marca'
+    if destino.exists() and marca.exists() and marca.read_text(encoding='utf-8') == assinatura:
+        return destino
+    tmp = destino.with_suffix('.zip.tmp')
+    with zipfile.ZipFile(tmp, 'w') as z:
+        todos = [f'EstúdioClip - Kwai de {time.strftime("%d/%m/%Y", time.strptime(data, "%Y-%m-%d"))}', f'{len(its)} vídeo(s). Cada vídeo tem um .txt com o mesmo nome.', '']
+        for (base, i), n in zip(conteudo, range(1, len(conteudo) + 1)):
+            z.writestr(base + '.txt', nota(n, i).encode('utf-8'), zipfile.ZIP_DEFLATED)
+            todos += ['=' * 30, nota(n, i).replace('\r\n', '\n')]
+            if i['tem_video']:
+                try:
+                    arq = pg.video_path(next(p['video'] for p in pg.posts() if p['id'] == i['post']))
+                    z.write(arq, base + arq.suffix, zipfile.ZIP_STORED)
+                except (pg.ErroRede, OSError, StopIteration):
+                    pass
+        if not its:
+            todos.append('Nenhum vídeo neste dia.')
+        z.writestr('00 - LEIA PRIMEIRO.txt', '\r\n'.join('\n'.join(todos).split('\n')).encode('utf-8'), zipfile.ZIP_DEFLATED)
+    tmp.replace(destino)
+    marca.write_text(assinatura, encoding='utf-8')
+    return destino
 
 
 def pagina(data: str, its: list, links: dict) -> str:
@@ -169,6 +226,7 @@ button,.b{{font:inherit;font-size:14px;border:0;border-radius:8px;padding:8px 12
 a{{color:var(--a);word-break:break-all}}.bad{{color:#d33}}
 </style></head><body><h1>Pacote do Kwai · {dd}</h1>
 <p class="m">{len(its)} vídeo(s). Para cada um: baixe o vídeo, copie a descrição e poste no Kwai. Os links valem 3 dias.</p>
+{(f'<p><a class="b" href="{e(links["zip"])}" download>Baixar tudo (ZIP com vídeos e textos)</a></p>' if its else '')}
 {corpo}
 <script>document.querySelectorAll('button[data-c]').forEach(b=>b.onclick=async()=>{{const t=document.getElementById(b.dataset.c);
 try{{await navigator.clipboard.writeText(t.value)}}catch(_){{t.hidden=false;t.select();document.execCommand('copy')}}b.textContent='Copiado!'}});</script>
@@ -191,6 +249,8 @@ def montar(data: str = '') -> dict:
 def arquivo(data: str, tipo: str) -> Path:
     """Arquivo do dia para baixar/abrir. Monta na hora (os links dentro dele ficam novos)."""
     data = data_valida(data)
+    if tipo == 'zip':
+        return montar_zip(data)
     montar(data)
     return PASTA / (f'kwai-{data}.html' if tipo == 'pagina' else f'kwai-{data}.txt')
 
@@ -201,9 +261,7 @@ def video(pid: str) -> tuple[Path, str]:
         raise ErroKwai('Post não encontrado.')
     import descricao as ds
     arq = pg.video_path(p['video'])
-    import unicodedata
-    t = unicodedata.normalize('NFKD', ds.titulo_limpo(p.get('titulo') or '')).encode('ascii', 'ignore').decode()
-    nome = (re.sub(r'[^A-Za-z0-9\- ]+', '', t)[:60].strip() or 'video') + arq.suffix
+    nome = (_ascii(ds.titulo_limpo(p.get('titulo') or ''))[:60].strip() or 'video') + arq.suffix
     return arq, nome
 
 
@@ -212,16 +270,24 @@ def enviar(data: str = '', quem: str = 'agente7') -> dict:
     import agente as ag
     r = montar(data)
     its, base = r['itens'], r['endereco']
+    if its:
+        try:
+            montar_zip(r['data'])      # já deixa pronto: o download começa na hora
+        except OSError as e:
+            print('kwai: zip', e)
     dd = time.strftime('%d/%m', time.strptime(r['data'], '%Y-%m-%d'))
     site = __import__('os').getenv('SITE', 'https://raniere3000-tech.github.io/ia/').rstrip('/') + '/#coordenador/kwai'
     link_pag = (base + r['links']['pagina']) if base else ''
+    link_zip = (base + r['links']['zip']) if base and its else ''
     lista = '\n'.join(f'{n}. {i["titulo"][:70]}' for n, i in enumerate(its, 1))
     corpo = (f'{len(its)} vídeo(s) de hoje para postar à mão no Kwai. O arquivo anexo tem o nome, a descrição pronta, as hashtags, '
              f'o link original e o link para baixar cada vídeo.\n\n{lista}\n\n'
+             + (f'Baixar tudo de uma vez (ZIP com os vídeos e um texto para cada um, vale 3 dias):\n{link_zip}\n\n' if link_zip else '')
              + (f'Página para abrir no celular (vale 3 dias):\n{link_pag}\n\n' if link_pag else '')
              + f'Ou no site: Coordenador > Kwai\n{site}\n')
     zap = (f'*EstúdioClip — Kwai de {dd}*\n\n{len(its)} vídeo(s) para postar no Kwai:\n{lista}\n\n'
-           + (f'Abra para baixar os vídeos e copiar as descrições:\n{link_pag}\n\n' if link_pag else '')
+           + (f'Baixar tudo em ZIP (vídeos + texto de cada um):\n{link_zip}\n\n' if link_zip else '')
+           + (f'Ou abra a página para copiar as descrições:\n{link_pag}\n\n' if link_pag else '')
            + f'No site: {site}')
     ag.avisar('kwai', f'Pacote do Kwai de {dd} ({len(its)} vídeo(s))', corpo, Path(r['arquivos']['texto']), f'kwai-{r["data"]}.txt',
               zap=zap, zap_tipo='a7_kwai')
