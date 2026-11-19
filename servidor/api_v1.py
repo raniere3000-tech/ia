@@ -597,6 +597,18 @@ def _coord(metodo: str, caminho: str, q: dict, corpo, quem: str):
         return co.conferir_historico()
     if rota == ('POST', base + '/links/conferir'):
         return co.conferir_links()
+    if rota in (('GET', base + '/kwai'), ('POST', base + '/kwai/enviar')):
+        import kwai_diario as kd
+        try:
+            if metodo == 'GET':
+                r = kd.montar(v('data'))
+                r.pop('arquivos', None)
+                r['enviados'] = db.kv('agente7.kwai_enviados', []) or []
+                return r
+            d = corpo()
+            return kd.enviar(str(d.get('data') or ''), quem)
+        except kd.ErroKwai as e:
+            raise pj.ErroProjeto(400, str(e))
     if rota == ('GET', base + '/aprovacoes'):
         return co.aprovacoes(v('estado'))
     m = re.fullmatch(base + r'/aprovacoes/(\w+)/(decidir|capa)', caminho)
@@ -1037,6 +1049,25 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
             return _thumbs(metodo, caminho, q, corpo, quem)
         except th.ErroThumb as e:
             raise pj.ErroProjeto(e.status, str(e))
+    # ---- pacote diário do Kwai (arquivos; abre também por link assinado, sem senha, para o link do WhatsApp)
+    m = re.fullmatch(r'/api/v1/kwai/(\d{4}-\d{2}-\d{2})/(pagina|texto)', caminho)
+    if m and metodo == 'GET':
+        import kwai_diario as kd
+        try:
+            arq = kd.arquivo(m.group(1), m.group(2))
+        except kd.ErroKwai as e:
+            raise pj.ErroProjeto(400, str(e))
+        if m.group(2) == 'pagina':
+            raise Resposta(arq, 'text/html; charset=utf-8')
+        raise Resposta(arq, 'text/plain; charset=utf-8', arq.name, True)
+    m = re.fullmatch(r'/api/v1/kwai/video/(\w+)', caminho)
+    if m and metodo == 'GET':
+        import kwai_diario as kd
+        try:
+            arq, nome = kd.video(m.group(1))
+        except (kd.ErroKwai, pg.ErroRede) as e:
+            raise pj.ErroProjeto(404, str(e))
+        raise Resposta(arq, 'video/mp4' if arq.suffix == '.mp4' else 'video/' + arq.suffix[1:], nome, True)
     # ---- Agente 7: Coordenador-Geral
     if caminho.startswith('/api/v1/coordenador'):
         try:

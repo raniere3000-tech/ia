@@ -95,7 +95,8 @@ PADRAO = {
     'whatsapp': {'ligado': False, 'numero': '', 'avisos': {
         'a1_corte': True, 'a1_reprovado': False, 'a1_canal': False, 'a1_falha': True,
         'a2_agendado': False, 'a2_postado': True, 'a2_liberacao': True, 'a2_falha': True, 'a2_semana': True,
-        'a3_roteiro': True, 'a3_refazendo': False, 'a3_aprovacao': True, 'a3_falha': True}},
+        'a3_roteiro': True, 'a3_refazendo': False, 'a3_aprovacao': True, 'a3_falha': True,
+        'a7_kwai': True}},
     'orcamento': {'teto': 10.0, 'dolar': 5.6, 'preco_texto': 0.30, 'preco_audio': 1.00, 'preco_saida': 2.50},
     # qual chave do Gemini cada tarefa usa: 'gratis' (projeto sem cobrança) ou 'paga' (projeto com saldo)
     'chaves_uso': {'cortes': 'gratis', 'camera': 'gratis', 'roteiro': 'gratis', 'voz': 'gratis', 'imagens': 'paga', 'reserva': True},

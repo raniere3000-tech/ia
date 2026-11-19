@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Brain, CheckCircle2, History, Lightbulb, ListChecks, Loader2, MessageSquare, Pause, Play, Send, Settings2, ShieldCheck, Undo2, Users, XCircle } from 'lucide-react';
+import { Bot, Brain, CheckCircle2, Copy, Download, FileText, History, Package, Lightbulb, ListChecks, Loader2, MessageSquare, Pause, Play, Send, Settings2, ShieldCheck, Undo2, Users, XCircle } from 'lucide-react';
 import { useApp } from '../state';
 import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
 import Progresso from '../components/Progresso';
 import { urlServidor } from '../lib/api';
 import { tempoTexto } from '../lib/alertas';
-import { ESCOPOS, ESTADO_ORDEM, ESTADO_TAREFA, REDES, acaoMemoria, acaoOrdem, acaoSugestao, confirmarOrdem, conferirHistorico, conferirLinks, criarMemoria, decidir, escolherCapaPacote,
+import { ESCOPOS, ESTADO_ORDEM, ESTADO_TAREFA, REDES, acaoMemoria, acaoOrdem, acaoSugestao, confirmarOrdem, conferirHistorico, conferirLinks, criarMemoria, enviarKwai, lerKwai, decidir, escolherCapaPacote,
   interpretar, lerAgentes, lerAprovacoes, lerCfgCoord, lerConversa, lerEventos, lerMemoria, lerMemorias, lerOrdem, lerOrdens, lerSugestoes, mudarParametros, salvarCfgCoord,
   type Aprovacao, type CfgCoord, type Evento, type Memoria, type Ordem, type Resposta } from '../lib/coordenador';
 
-type Aba='conversar'|'ordens'|'aprovacoes'|'agentes'|'memoria'|'aprendizado'|'historico'|'config';
-const ABAS:[Aba,string,typeof Bot][]=[['conversar','Conversar',MessageSquare],['ordens','Ordens',ListChecks],['aprovacoes','Liberar',ShieldCheck],['agentes','Agentes',Users],
+type Aba='conversar'|'ordens'|'aprovacoes'|'agentes'|'kwai'|'memoria'|'aprendizado'|'historico'|'config';
+const ABAS:[Aba,string,typeof Bot][]=[['conversar','Conversar',MessageSquare],['ordens','Ordens',ListChecks],['aprovacoes','Liberar',ShieldCheck],['agentes','Agentes',Users],['kwai','Kwai',Package],
   ['memoria','Memória',Brain],['aprendizado','Aprendizado',Lightbulb],['historico','Histórico',History],['config','Configurações',Settings2]];
 const quando=(t?:number|null)=>t?new Date(t*1000).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
 const EXEMPLOS=['Faça 3 vídeos sobre a história do café, voz masculina, estilo documentário, 2 capas por vídeo, postar no YouTube amanhã às 18h',
@@ -33,6 +33,7 @@ export default function Coordenador(){
     {aba==='ordens'&&(ordemSel?<OrdemTela id={ordemSel} voltar={()=>{ setOrdemSel(''); trocar('ordens'); }} irLiberar={()=>trocar('aprovacoes')}/>:<Ordens abrir={abrirOrdem}/>)}
     {aba==='aprovacoes'&&<Liberar abrirOrdem={abrirOrdem}/>}
     {aba==='agentes'&&<Agentes/>}
+    {aba==='kwai'&&<Kwai/>}
     {aba==='memoria'&&<MemoriaTela/>}
     {aba==='aprendizado'&&<Aprendizado/>}
     {aba==='historico'&&<Historico/>}
@@ -310,6 +311,44 @@ function Historico(){
     <ListaEventos eventos={r.dados?.eventos||[]}/>
   </section>;
 }
+// ---------------------------------------------------------------- pacote diário do Kwai (o Kwai não tem API: você posta à mão)
+const REDE_NOME:Record<string,string>={youtube:'YouTube',tiktok:'TikTok',instagram:'Instagram',facebook:'Facebook',kwai:'Kwai'};
+const hojeISO=()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+function Kwai(){
+  const {toast}=useApp(); const cfg=useCfg(); const [data,setData]=useState(hojeISO()); const [busy,setBusy]=useState(false);
+  const r=useServidor(c=>lerKwai(c,data),0,[data]);
+  async function copiar(t:string,msg:string){ try{ await navigator.clipboard.writeText(t); toast(msg,'ok'); }catch{ toast('Não deu para copiar. Segure o texto e copie à mão.','erro'); } }
+  async function mandar(){ setBusy(true); try{ const x=await enviarKwai(cfg,data); toast(`Pacote enviado (${x.videos} vídeo(s)) para o seu WhatsApp/e-mail.`,'ok'); r.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(false); } }
+  const p=r.dados;
+  return <section className="panel">
+    <h3><Package size={16}/> Pacote do Kwai</h3>
+    <p className="hint">O Kwai não aceita postagem automática. Aqui estão os vídeos do dia com o nome, a descrição pronta (com o link do vídeo original) e o vídeo para baixar. No fim do dia o Coordenador manda isto sozinho no seu WhatsApp e no e-mail (horário em Configurações).</p>
+    <div className="row-gap left"><label className="field"><span>Dia</span><input type="date" value={data} onChange={e=>e.target.value&&setData(e.target.value)}/></label></div>
+    <Erro e={r.erro}/>
+    {!p&&!r.erro&&<p className="muted"><Loader2 size={14} className="spin"/> Carregando…</p>}
+    {p&&<>
+      <div className="row-gap left">
+        <a className="primary sm btn" href={urlServidor(cfg,p.links.pagina)} target="_blank" rel="noopener"><FileText size={14}/> Abrir a página do dia</a>
+        <a className="subtle sm btn" href={urlServidor(cfg,p.links.texto)} target="_blank" rel="noopener"><Download size={14}/> Baixar em .txt</a>
+        <button className="subtle sm" disabled={busy} onClick={mandar}>{busy?<Loader2 size={14} className="spin"/>:<Send size={14}/>} Mandar agora no WhatsApp/e-mail</button>
+      </div>
+      {p.enviados.includes(p.data)&&<p className="hint ok"><CheckCircle2 size={13}/> O pacote deste dia já foi enviado no fim do dia.</p>}
+      {!p.itens.length&&<p className="muted">Nenhum vídeo postado ou agendado neste dia.</p>}
+      <ol className="coord-kwai">{p.itens.map(i=><li key={i.post} className="card">
+        <b>{i.titulo}</b> <small className="muted">{i.hora} · {Object.entries(i.redes).map(([k,v])=>`${REDE_NOME[k]||k} (${v})`).join(', ')}</small>
+        <div><small>Link original: {i.link_original?<a href={i.link_original} target="_blank" rel="noopener">{i.link_original}</a>:i.proprio?'vídeo próprio (não tem)':<span className="bad">não sei de qual vídeo saiu</span>}</small></div>
+        <div><small>Hashtags: {i.hashtags.join(' ')||'-'}</small></div>
+        <textarea readOnly rows={5} value={i.descricao} style={{width:'100%'}}/>
+        <div className="row-gap left">
+          <button className="subtle sm" onClick={()=>copiar(i.descricao,'Descrição copiada.')}><Copy size={14}/> Copiar descrição</button>
+          {i.hashtags.length>0&&<button className="subtle sm" onClick={()=>copiar(i.hashtags.join(' '),'Hashtags copiadas.')}><Copy size={14}/> Copiar hashtags</button>}
+          {p.links.videos[i.post]?<a className="primary sm btn" href={urlServidor(cfg,p.links.videos[i.post])} download><Download size={14}/> Baixar vídeo ({i.mb} MB)</a>:<small className="bad">O arquivo do vídeo não está mais no servidor.</small>}
+        </div>
+      </li>)}</ol>
+    </>}
+  </section>;
+}
+
 function Config(){
   const {toast}=useApp(); const cfg=useCfg(); const r=useServidor(c=>lerCfgCoord(c),0); const [c,setC]=useState<CfgCoord|null>(null);
   useEffect(()=>{ if(r.dados) setC(r.dados); },[r.dados]);
@@ -324,6 +363,8 @@ function Config(){
     <label className="check"><input type="checkbox" checked={c.exigir_liberacao} onChange={e=>setC({...c,exigir_liberacao:e.target.checked})}/> O Agente 2 só posta vídeo liberado aqui (vale para todos os posts)</label>
     <label className="check"><input type="checkbox" checked={c.usar_ia} onChange={e=>setC({...c,usar_ia:e.target.checked})}/> Usar a IA para entender pedidos que as regras não entendem</label>
     <div className="thumb-grade">{num('max_videos','Máximo de vídeos por pedido',1,30)}{num('correcoes_por_etapa','Correções por etapa',1,10)}{num('capas_padrao','Capas por vídeo (padrão)',0,4)}{num('intervalo_horas','Horas entre posts do mesmo dia',1,12)}</div>
+    <label className="check"><input type="checkbox" checked={c.kwai_diario!==false} onChange={e=>setC({...c,kwai_diario:e.target.checked})}/> No fim do dia, me mandar o pacote do Kwai (nome, descrição, link original e vídeos do dia)</label>
+    <label className="field"><span>Horário do pacote do Kwai</span><input type="time" value={c.kwai_hora||'21:00'} onChange={e=>setC({...c,kwai_hora:e.target.value})}/></label>
     <label className="check"><input type="checkbox" checked={c.reposicao_automatica} onChange={e=>setC({...c,reposicao_automatica:e.target.checked})}/> Quando faltar vídeo para um horário, pedir mais cortes ao Agente 1 sozinho</label>
     <div className="thumb-grade">{num('reposicao_intervalo_min','Minutos entre pedidos de mais cortes',10,1440)}</div>
     <button className="primary sm" onClick={salvar}>Salvar</button>

@@ -152,3 +152,15 @@ Mem0, LangGraph, CrewAI e afins **não foram instalados**. O Coordenador usa só
 `servidor/testes/teste_coordenador.py` usa o servidor HTTP de verdade, o SQLite, o FFmpeg, o Pillow e o Agente 6 de verdade. O Agente 3 é trocado por um produtor falso, porque o de verdade precisa do Gemini. São 80 conferências, que cobrem os cenários da especificação que dá para testar sem celular e sem contas reais.
 
 **Não testado no celular, nem com o Gemini, o YouTube ou o TikTok de verdade.**
+
+## Pacote diário do Kwai (19/11/2026)
+
+O Kwai não tem API pública, então o Coordenador junta no fim do dia os vídeos do dia (pela hora marcada do post) para você postar à mão.
+
+- Módulo: `servidor/kwai_diario.py`. Para cada vídeo: nome, descrição pronta (com o link do vídeo original quando é corte), hashtags, link original, redes e link para baixar o vídeo.
+- Arquivos em `~/.estudioclip/kwai/`: `kwai-AAAA-MM-DD.html` (página com Copiar e Baixar) e `kwai-AAAA-MM-DD.txt` (vai anexado no e-mail).
+- Envio automático: `coordenador.pacote_kwai_do_dia()` no vigia; configurações `kwai_diario` (ligado) e `kwai_hora` (padrão 21:00). Uma vez por dia; dia sem vídeo não manda.
+- Aviso: WhatsApp (tipo `a7_kwai`, ligado por padrão) com o link da página; e-mail tipo `kwai` com o .txt.
+- Links assinados (3 dias) em `/api/v1/kwai/<data>/pagina|texto` e `/api/v1/kwai/video/<post>`, abrem sem senha só com a assinatura. Mudou o endereço do túnel, o link antigo para de funcionar: use o site.
+- Rotas: `GET /api/v1/coordenador/kwai?data=`, `POST /api/v1/coordenador/kwai/enviar`. Tela: Coordenador > Kwai. Chat: "manda o pacote do kwai".
+- Teste: `servidor/testes/teste_kwai_diario.py`.

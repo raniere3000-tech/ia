@@ -263,7 +263,8 @@ textarea{width:100%;background:#0d111b;border:1px solid var(--line2);border-radi
 .post-info{flex:1;min-width:220px;display:flex;flex-direction:column;gap:6px}.post-info .hint{margin:0}
 .post-redes{display:flex;gap:6px;flex-wrap:wrap}.post-redes a{color:inherit}
 .post-acoes{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-a.subtle.sm{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+a.subtle.sm,a.primary.sm{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+.coord-kwai{padding-left:18px;display:grid;gap:10px}.coord-kwai>li{display:grid;gap:6px}.coord-kwai a{word-break:break-all}
 
 /* Fluxo em etapas: opções antes do envio, edição em lote e postagem */
 .passo-titulo{font-family:'Space Grotesk',sans-serif;font-size:18px;margin:6px 0 12px}

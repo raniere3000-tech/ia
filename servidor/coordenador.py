@@ -32,7 +32,8 @@ _LOCK = threading.RLock()
 _ACORDAR = threading.Event()
 
 CONFIG_PADRAO = {'modo': 'supervisionado', 'exigir_liberacao': False, 'max_videos': 12, 'correcoes_por_etapa': 5, 'qualidade_minima': 70,
-                 'usar_ia': True, 'capas_padrao': 2, 'intervalo_horas': 3, 'reposicao_automatica': True, 'reposicao_intervalo_min': 60}
+                 'usar_ia': True, 'capas_padrao': 2, 'intervalo_horas': 3, 'reposicao_automatica': True, 'reposicao_intervalo_min': 60,
+                 'kwai_diario': True, 'kwai_hora': '21:00'}
 MODOS = ('supervisionado', 'automatico')
 REDES = ('youtube', 'tiktok', 'instagram', 'facebook', 'kwai')
 
@@ -49,9 +50,10 @@ CATALOGO = {
     'quanto_falta': {'agentes': [], 'confirma': False, 'descricao': 'Quanto falta para as ordens em andamento.'},
     'pendentes': {'agentes': [], 'confirma': False, 'descricao': 'O que espera a sua decisão.'},
     'ajuda': {'agentes': [], 'confirma': False, 'descricao': 'O que você pode pedir.'},
+    'kwai': {'agentes': ['Agente 7'], 'confirma': False, 'descricao': 'Mandar agora o pacote do Kwai de hoje (nome, descrição, link original e vídeos).'},
     'lembrar': {'agentes': ['Agente 7'], 'confirma': True, 'descricao': 'Guardar uma preferência (vira memória depois que você confirma).'},
 }
-SO_LEITURA = ('status', 'quanto_falta', 'pendentes', 'ajuda')
+SO_LEITURA = ('status', 'quanto_falta', 'pendentes', 'ajuda', 'kwai')
 ESTADOS_ORDEM = ('rascunho', 'aguardando_confirmacao', 'em_execucao', 'aguardando_voce', 'pausada', 'concluida', 'parcial', 'falhou', 'cancelada')
 FINAIS_TAREFA = ('concluida', 'falhou', 'cancelada', 'bloqueada', 'pulada')
 NOMES_AGENTE = {'agente1': 'Agente 1 · Cortes', 'agente2': 'Agente 2 · Postagem', 'agente3': 'Agente 3 · Vídeos', 'agente4': 'Agente 4 · Diretor',
@@ -69,6 +71,7 @@ AJUDA = ('Você pode me pedir, do seu jeito:\n'
          '• "Pausa tudo" / "Retoma a central"\n'
          '• "Como está?", "Quanto falta?", "O que espera por mim?"\n'
          '• "Lembre que eu prefiro voz masculina" (vira memória depois que você confirmar)\n'
+         '• "Manda o pacote do Kwai" (o de hoje; ele também chega sozinho no fim do dia)\n'
          'Tudo que muda alguma coisa vira uma proposta, e só começa quando você confirma.')
 
 
@@ -106,7 +109,12 @@ def salvar_config(d: dict, quem: str = 'site') -> dict:
         if d['modo'] not in MODOS:
             raise ErroCoord(400, 'Modo inválido (supervisionado ou automatico).')
         c['modo'] = d['modo']
-    for k in ('exigir_liberacao', 'usar_ia', 'reposicao_automatica'):
+    if 'kwai_hora' in d:
+        h = str(d['kwai_hora'] or '').strip()
+        if not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', h):
+            raise ErroCoord(400, 'Horário do pacote do Kwai inválido (use HH:MM, por exemplo 21:00).')
+        c['kwai_hora'] = h
+    for k in ('exigir_liberacao', 'usar_ia', 'reposicao_automatica', 'kwai_diario'):
         if k in d:
             c[k] = bool(d[k])
     for k, lo, hi in (('max_videos', 1, 30), ('correcoes_por_etapa', 1, 10), ('qualidade_minima', 50, 100), ('capas_padrao', 0, 4), ('intervalo_horas', 1, 12), ('reposicao_intervalo_min', 10, 1440)):
@@ -317,6 +325,8 @@ def _regras(texto: str) -> dict | None:
     b = s.lower()
     if re.fullmatch(r'(ajuda|help|menu|comandos|\?|o que (voc[eê] )?(faz|sabe fazer|posso pedir)\??)', b):
         return {'intencao': 'ajuda', 'parametros': {}}
+    if re.search(r'\b(kwai|kawai|kway|kuai)\b', b) and re.search(r'pacote|arquivo|lista|manda|envia|gera|faz|quero|cad[eê]|de hoje|do dia', b):
+        return {'intencao': 'kwai', 'parametros': {}}
     if re.search(r'quanto (tempo )?falta|quando (fica|termina|acaba)|previs[aã]o', b):
         return {'intencao': 'quanto_falta', 'parametros': {}}
     if re.search(r'(o que|tem algo|tem coisa).{0,20}(espera|esperando|aguarda|pendente).{0,15}(mim|eu|voc[eê])|^pendentes?\b|para (eu )?aprovar', b):
@@ -1926,6 +1936,14 @@ def interpretar(texto: str, quem: str = 'site', chave: str = '') -> dict:
         out = {'tipo': 'resposta', 'resposta': _quanto_falta_texto()}
     elif it == 'pendentes':
         out = {'tipo': 'resposta', 'resposta': _pendentes_texto()}
+    elif it == 'kwai':
+        try:
+            import kwai_diario as kd
+            r = kd.enviar(quem=quem)
+            out = {'tipo': 'resposta', 'resposta': f'Pacote do Kwai de hoje enviado: {r["videos"]} vídeo(s). Chega no WhatsApp/e-mail e fica em Coordenador > Kwai.'
+                   if r['videos'] else 'Hoje ainda não tem vídeo postado ou agendado. Mandei o aviso mesmo assim; o pacote fica em Coordenador > Kwai.'}
+        except Exception as e:  # noqa: BLE001
+            out = {'tipo': 'resposta', 'resposta': f'Não consegui montar o pacote do Kwai: {e}'}
     elif it == 'lembrar':
         if len(e['parametros'].get('texto') or '') < 3:
             out = {'tipo': 'resposta', 'resposta': 'O que devo lembrar?'}
@@ -2072,6 +2090,30 @@ def conferir_links(horas: float = 48) -> dict:
     return res
 
 
+def pacote_kwai_do_dia(agora: float | None = None) -> dict | None:
+    """No fim do dia (horário em Configurações, padrão 21:00), manda uma vez o pacote do Kwai do dia.
+    Dia sem nenhum vídeo: não manda nada."""
+    c = config()
+    if not c['kwai_diario']:
+        return None
+    agora = _agora() if agora is None else agora
+    data = _data_str(agora)
+    hora = _ts(data, c['kwai_hora'])
+    if hora is None or agora < hora:
+        return None
+    enviados = db.kv('agente7.kwai_enviados', []) or []
+    if data in enviados:
+        return None
+    import kwai_diario as kd
+    db.kv_gravar('agente7.kwai_enviados', (enviados + [data])[-60:])     # grava antes: uma falha não vira aviso repetido a cada minuto
+    if not kd.itens(data):
+        evento(None, None, 'agente7', 'kwai', {'data': data, 'acao': 'sem_videos'})
+        return {'data': data, 'videos': 0}
+    r = kd.enviar(data)
+    evento(None, None, 'agente7', 'kwai', {'data': data, 'acao': 'enviado', 'videos': r['videos']})
+    return r
+
+
 def _vigia():
     ultimo_link = 0.0
     while True:
@@ -2087,6 +2129,10 @@ def _vigia():
                 conferir_links()
             except Exception as e:  # noqa: BLE001
                 print('coordenador: links', e)
+        try:
+            pacote_kwai_do_dia()
+        except Exception as e:  # noqa: BLE001
+            print('coordenador: kwai', e)
 
 
 def iniciar():

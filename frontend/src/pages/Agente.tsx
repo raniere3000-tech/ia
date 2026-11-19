@@ -431,6 +431,7 @@ export default function Agente(){
           ['Agente 1 · Cortes do Radar',[['a1_corte','Corte aprovado pelo diretor, esperando você'],['a1_reprovado','Corte reprovado pelo diretor'],['a1_canal','Canais novos sugeridos'],['a1_falha','Vídeo que não deu para cortar']]],
           ['Agente 2 · Postagem',[['a2_liberacao','Post esperando a sua liberação'],['a2_falha','Post que falhou'],['a2_postado','Post enviado'],['a2_agendado','Post agendado'],['a2_semana','Resumo da semana']]],
           ['Agente 3 · Vídeos com IA',[['a3_roteiro','Roteiro pronto para conferir'],['a3_aprovacao','Vídeo aprovado pelo diretor, esperando você'],['a3_refazendo','Diretor mandou refazer'],['a3_falha','Produção que parou']]],
+          ['Agente 7 · Coordenador',[['a7_kwai','Pacote do Kwai no fim do dia']]],
         ] as [string,[string,string][]][]).map(([nome,itens])=><div key={nome} className="mt"><b>{nome}</b>
           <div className="chips">{itens.map(([k,t])=><button key={k} type="button" className={'chip '+(zap.avisos[k]?'on':'')} aria-pressed={!!zap.avisos[k]} onClick={()=>salvar({whatsapp:{avisos:{[k]:!zap.avisos[k]}}})}>{t}</button>)}</div></div>)}
         <p className="hint">Os pedidos de aprovação (corte e vídeo) trazem o código para você responder ali mesmo: <b>aprovar VID-…</b> ou <b>agendar corte 2</b>. Os avisos do e-mail continuam com as escolhas da parte de e-mail.</p>
