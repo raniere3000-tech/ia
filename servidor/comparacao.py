@@ -11,7 +11,10 @@ Só biblioteca padrão do Python + FFmpeg.
 from __future__ import annotations
 
 PADRAO = {'a': {'x': 0, 'y': 0, 'w': 0.5, 'h': 1}, 'b': {'x': 0.5, 'y': 0, 'w': 0.5, 'h': 1},
-          'rotuloA': 'ANTES', 'rotuloB': 'DEPOIS', 'corA': '#FF5A36', 'corB': '#2BB8FF', 'vs': True, 'textoVs': 'VS'}
+          'rotuloA': 'ANTES', 'rotuloB': 'DEPOIS', 'corA': '#FF5A36', 'corB': '#2BB8FF', 'vs': True, 'textoVs': 'VS', 'arranjo': 'sortear'}
+# Como os dois lados ficam no vídeo final. 'sortear': o Agente 1 escolhe um dos dois a cada corte (e anota qual foi,
+# para o painel de aprendizado comparar). Fora do Agente 1, 'sortear' vale como automático (pelo formato do vídeo).
+ARRANJOS = {'empilhado': 'um em cima do outro', 'lado': 'lado a lado'}
 COR_VS = '#FFD23F'          # selo amarelo com letra escura: aparece bem em cima de qualquer cor de jogo
 COR_DIVISA = '#FFFFFF'
 
@@ -30,7 +33,8 @@ def geometria(tpl: dict, L: int, A: int) -> dict:
     """Onde fica cada lado no vídeo final. Vertical e quadrado: A em cima, B embaixo. 16:9: A à esquerda, B à direita."""
     div = max(35, min(65, float(tpl.get('divisao') or 50))) / 100
     esp = max(6, _par(min(L, A) * 0.012))                     # espessura da faixa que separa os dois lados
-    if L > A:
+    arr = _comp(tpl).get('arranjo')
+    if arr == 'lado' or (arr != 'empilhado' and L > A):
         w1 = _par(L * div)
         return {'empilhado': False, 'pa': (w1, A), 'pb': (L - w1, A), 'corte': w1, 'esp': esp, 'centro': (w1, A // 2)}
     h1 = _par(A * div)
@@ -82,15 +86,30 @@ def ass_estilos(tpl: dict, L: int, A: int) -> list:
             f'Style: CompVs,Inter,{t * 1.05:.0f},&H00111111&,&H00111111&,&H00111111&,&H00000000&,-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1']
 
 
+def sortear_arranjo(tpl: dict, rnd, fixo: str = '') -> str:
+    """Agente 1: com arranjo 'sortear', escolhe um em cima do outro ou lado a lado para este corte. Devolve o escolhido ('' se não for comparação)."""
+    if tpl.get('enquadramento') != 'comparacao':
+        return ''
+    c = _comp(tpl)
+    arr = fixo if fixo in ARRANJOS else c['arranjo'] if c['arranjo'] in ARRANJOS else rnd.choice(sorted(ARRANJOS))
+    tpl['comp'] = dict(c, arranjo=arr)
+    return arr
+
+
 def ass_eventos(tpl: dict, L: int, A: int, dur: float) -> list:
-    """(início, fim, estilo, texto, camada) dos rótulos e do selo VS, com entrada animada nos primeiros instantes."""
+    """(início, fim, estilo, texto, camada) dos rótulos e do selo VS, com entrada animada nos primeiros instantes.
+    Com a legenda no meio, a divisa fica para a legenda: o selo VS só aparece na abertura e os rótulos vão para os cantos."""
     c, g = _comp(tpl), geometria(tpl, L, A)
+    meio = tpl.get('legenda_pos') == 'meio' and tpl.get('legenda', 'nenhuma') != 'nenhuma'
     t = min(L, A) * 0.05
     m = min(L, A) * 0.05                       # distância da borda
     folga = g['esp'] / 2 + t * 0.32 + t * 0.35  # rótulo encostado na faixa, sem tocar nela
     k = g['corte']
     ev = []
-    if g['empilhado']:
+    if g['empilhado'] and meio:
+        pos_a = ('\\an7', m, m, -L * 0.6)                 # A: canto de cima à esquerda (o gancho fica mais abaixo, no centro)
+        pos_b = ('\\an3', L - m, A - m * 1.4, L * 1.6)   # B: canto de baixo à direita
+    elif g['empilhado']:
         pos_a = ('\\an1', m, k - folga, -L * 0.6)        # A: canto de baixo à esquerda do lado de cima
         pos_b = ('\\an9', L - m, k + folga, L * 1.6)     # B: canto de cima à direita do lado de baixo
     else:
@@ -104,6 +123,10 @@ def ass_eventos(tpl: dict, L: int, A: int, dur: float) -> list:
         r = t * 1.15
         cx, cy = g['centro']
         pulo = '\\fscx0\\fscy0\\t(150,330,\\fscx118\\fscy118)\\t(330,430,\\fscx100\\fscy100)'
-        ev.append((0, dur, 'CompVs', f'{{\\an5\\pos({cx},{cy})\\bord{g["esp"] * 0.6:.0f}\\3c{_ass_cor(COR_DIVISA)}\\1c{_ass_cor(COR_VS)}{pulo}\\p1}}{_circulo(r)}{{\\p0}}', 3))
-        ev.append((0, dur, 'CompVs', f'{{\\an5\\pos({cx},{cy + t * 0.04:.0f}){pulo}}}{_ass_txt(c.get("textoVs") or "VS")[:4].upper()}', 4))
+        fim_vs = dur
+        if meio:                                   # sai de cena antes da primeira legenda: some encolhendo
+            fim_vs = min(dur, 1.0)
+            pulo += f'\\t({int(fim_vs * 1000) - 180},{int(fim_vs * 1000)},\\fscx0\\fscy0)'
+        ev.append((0, fim_vs, 'CompVs', f'{{\\an5\\pos({cx},{cy})\\bord{g["esp"] * 0.6:.0f}\\3c{_ass_cor(COR_DIVISA)}\\1c{_ass_cor(COR_VS)}{pulo}\\p1}}{_circulo(r)}{{\\p0}}', 3))
+        ev.append((0, fim_vs, 'CompVs', f'{{\\an5\\pos({cx},{cy + t * 0.04:.0f}){pulo}}}{_ass_txt(c.get("textoVs") or "VS")[:4].upper()}', 4))
     return ev

@@ -58,7 +58,7 @@ def _cor(v, padrao):
 # Comparação em tela dividida: duas partes do MESMO quadro (ex.: vídeo "lado a lado" de antes x depois),
 # uma em cima e outra embaixo (ou lado a lado no 16:9), cada uma com o seu rótulo e um selo "VS" na divisa.
 COMP_PADRAO = {'a': {'x': 0, 'y': 0, 'w': 0.5, 'h': 1}, 'b': {'x': 0.5, 'y': 0, 'w': 0.5, 'h': 1},
-               'rotuloA': 'ANTES', 'rotuloB': 'DEPOIS', 'corA': '#FF5A36', 'corB': '#2BB8FF', 'vs': True, 'textoVs': 'VS'}
+               'rotuloA': 'ANTES', 'rotuloB': 'DEPOIS', 'corA': '#FF5A36', 'corB': '#2BB8FF', 'vs': True, 'textoVs': 'VS', 'arranjo': 'sortear'}
 
 
 def _comp(c) -> dict:
@@ -66,7 +66,8 @@ def _comp(c) -> dict:
     return {'a': _regiao(c.get('a'), COMP_PADRAO['a']), 'b': _regiao(c.get('b'), COMP_PADRAO['b']),
             'rotuloA': str(c.get('rotuloA', COMP_PADRAO['rotuloA']))[:24], 'rotuloB': str(c.get('rotuloB', COMP_PADRAO['rotuloB']))[:24],
             'corA': _cor(c.get('corA'), COMP_PADRAO['corA']), 'corB': _cor(c.get('corB'), COMP_PADRAO['corB']),
-            'vs': bool(c.get('vs', True)), 'textoVs': (str(c.get('textoVs', 'VS')).strip() or 'VS')[:4]}
+            'vs': bool(c.get('vs', True)), 'textoVs': (str(c.get('textoVs', 'VS')).strip() or 'VS')[:4],
+            'arranjo': c.get('arranjo') if c.get('arranjo') in ('sortear', 'empilhado', 'lado') else 'sortear'}
 
 
 BASE = {
@@ -83,7 +84,7 @@ PADROES = [
          leg={'estilo': 'destaque', 'cor': '#FFFFFF', 'corDestaque': '#FF4D4D', 'maiusculas': True}),
     dict(BASE, id='gameplay-streamer', nome='Gameplay + Streamer', layout='gameplay-streamer', legenda='neon-gamer', legendaPos='meio',
          leg={'estilo': 'destaque', 'cor': '#FFFFFF', 'corDestaque': '#5CE1E6', 'maiusculas': True}),
-    dict(BASE, id='comparacao', nome='Comparação (tela dividida)', layout='comparacao', divisao=50, legenda='karaoke-amarelo', efeito='virada-cena',
+    dict(BASE, id='comparacao', nome='Comparação (tela dividida)', layout='comparacao', divisao=50, legenda='karaoke-amarelo', legendaPos='meio', efeito='virada-cena',
          leg={'estilo': 'destaque', 'cor': '#FFFFFF', 'corDestaque': '#FFE14D', 'maiusculas': True}),
 ]
 

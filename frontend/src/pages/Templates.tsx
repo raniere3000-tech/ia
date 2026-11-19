@@ -63,6 +63,10 @@ function CamposComparacao({c,mudar}:{c:Comparacao;mudar:(p:Partial<Comparacao>)=
   return <>
     <div className="field"><span className="field-label">Como os dois lados estão no vídeo original</span>
       <div className="chips">{ARRUMOS.map(([n,a,b])=><button key={n} className={'chip '+(JSON.stringify([c.a,c.b])===JSON.stringify([a,b])?'on':'')} onClick={()=>mudar({a,b})}>{n}</button>)}</div></div>
+    <div className="field"><span className="field-label">Como os dois lados aparecem no vídeo pronto</span>
+      <div className="seg" role="radiogroup" aria-label="Arranjo da tela dividida">{([['sortear','Sortear a cada corte'],['empilhado','Um em cima do outro'],['lado','Lado a lado']] as const).map(([id,n])=>
+        <button key={id} role="radio" aria-checked={(c.arranjo||'sortear')===id} className={(c.arranjo||'sortear')===id?'on':''} onClick={()=>mudar({arranjo:id})}>{n}</button>)}</div>
+      <small className="hint">{(c.arranjo||'sortear')==='sortear'?'O Agente 1 sorteia um dos dois em cada corte e anota qual usou. Depois o painel de Aprendizado mostra qual deu mais resultado. Aqui na prévia e na edição manual vale o automático: em cima/embaixo no vertical e lado a lado no 16:9.':'Todos os cortes com este template saem assim.'}</small></div>
     <div className="small-grid">
       <label>Rótulo do lado A<input value={c.rotuloA} maxLength={24} placeholder="Ex.: JOGO ANTIGO" onChange={e=>mudar({rotuloA:e.target.value})}/></label>
       <label>Cor do A<input type="color" value={c.corA} onChange={e=>mudar({corA:e.target.value})}/></label>

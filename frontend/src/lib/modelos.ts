@@ -52,7 +52,7 @@ export const MODELOS_PADRAO:Modelo[] = [
   {...BASE,id:'padrao',nome:'Fundo desfocado'},
   {...BASE,id:'tela-cheia',nome:'Tela cheia',layout:'cheio',legenda:'impacto-vermelho',efeito:'transicao-fade'},
   {...BASE,id:'gameplay-streamer',nome:'Gameplay + Streamer',layout:'gameplay-streamer',legenda:'neon-gamer',legendaPos:'meio'},
-  {...BASE,id:'comparacao',nome:'Comparação (tela dividida)',layout:'comparacao',divisao:50,efeito:'virada-cena',comp:{...COMP_PADRAO}},
+  {...BASE,id:'comparacao',nome:'Comparação (tela dividida)',layout:'comparacao',divisao:50,legendaPos:'meio',efeito:'virada-cena',comp:{...COMP_PADRAO}},
 ];
 export const novoId=()=> 'm'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 export const novoModelo=(base?:Modelo):Modelo=>({...(base||BASE),id:novoId(),nome:base?base.nome+' (cópia)':'Novo template'});
