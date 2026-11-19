@@ -159,6 +159,7 @@ O Kwai não tem API pública, então o Coordenador junta no fim do dia os vídeo
 
 - Módulo: `servidor/kwai_diario.py`. Para cada vídeo: nome, descrição pronta (com o link do vídeo original quando é corte), hashtags, link original, redes e link para baixar o vídeo.
 - Arquivos em `~/.estudioclip/kwai/`: `kwai-AAAA-MM-DD.html` (página com Copiar e Baixar) e `kwai-AAAA-MM-DD.txt` (vai anexado no e-mail).
+- ZIP do dia (`/api/v1/kwai/<data>/zip`, `kd.montar_zip`): cada vídeo `NN - titulo.mp4` com `NN - titulo.txt` (CRLF, bloco de notas) e `00 - LEIA PRIMEIRO.txt`; vídeos sem recompressão; só refaz se mudou; apaga ZIPs com mais de 3 dias. O link do ZIP vem primeiro no WhatsApp.
 - Envio automático: `coordenador.pacote_kwai_do_dia()` no vigia; configurações `kwai_diario` (ligado) e `kwai_hora` (padrão 21:00). Uma vez por dia; dia sem vídeo não manda.
 - Aviso: WhatsApp (tipo `a7_kwai`, ligado por padrão) com o link da página; e-mail tipo `kwai` com o .txt.
 - Links assinados (3 dias) em `/api/v1/kwai/<data>/pagina|texto` e `/api/v1/kwai/video/<post>`, abrem sem senha só com a assinatura. Mudou o endereço do túnel, o link antigo para de funcionar: use o site.

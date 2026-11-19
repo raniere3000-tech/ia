@@ -82,6 +82,20 @@ check(not au.url_assinada_ok('/api/v1/kwai/video/p2', q['exp'][0], q['sig'][0]),
 arq, nome = kd.video('p1')
 check(arq.name == 'v1.mp4' and nome == 'Fuga insana no GTA.mp4', f'baixar com o nome do vídeo: {nome}')
 check(kd.arquivo(hoje, 'pagina').suffix == '.html' and kd.arquivo(hoje, 'texto').suffix == '.txt', 'arquivos do dia')
+# ZIP: cada vídeo com o texto dele do lado + um texto com todos
+import zipfile  # noqa: E402
+zp = kd.arquivo(hoje, 'zip')
+with zipfile.ZipFile(zp) as z:
+    nomes = sorted(z.namelist())
+    check(nomes == ['00 - LEIA PRIMEIRO.txt', '01 - Fuga insana no GTA.mp4', '01 - Fuga insana no GTA.txt', '02 - Sem arquivo.txt', '03 - Historia do cafe.mp4', '03 - Historia do cafe.txt'],
+          f'ZIP com vídeo e texto de mesmo nome: {nomes}')
+    t1 = z.read('01 - Fuga insana no GTA.txt').decode('utf-8')
+    check('\r\n' in t1 and YT in t1 and '#gta #gameplay' in t1 and t1.count('Link original do vídeo [') == 1, 'texto do vídeo pronto para o bloco de notas: ' + repr(t1))
+    check(z.getinfo('01 - Fuga insana no GTA.mp4').compress_type == zipfile.ZIP_STORED, 'vídeo entra sem recompressão')
+    check('Historia do cafe' in z.read('00 - LEIA PRIMEIRO.txt').decode() or 'História do café' in z.read('00 - LEIA PRIMEIRO.txt').decode(), 'LEIA PRIMEIRO tem todos')
+mt = zp.stat().st_mtime_ns
+check(kd.arquivo(hoje, 'zip').stat().st_mtime_ns == mt, 'nada mudou: não refaz o ZIP')
+check('/api/v1/kwai/' + hoje + '/zip?exp=' in r['links']['zip'] and 'Baixar tudo' in Path(kd.arquivo(hoje, 'pagina')).read_text(), 'link do ZIP na página')
 for ruim in ('2026-13-45', '../etc', 'ontem'):
     try:
         kd.data_valida(ruim)
@@ -100,6 +114,7 @@ check(res and res['videos'] == 3 and len(AVISOS) == 1, f'às 21h manda o pacote:
 a, k = AVISOS[0]
 check(a[0] == 'kwai' and Path(a[3]).suffix == '.txt' and a[4] == f'kwai-{hoje}.txt', 'e-mail leva o .txt anexado')
 check(k['zap_tipo'] == 'a7_kwai' and 'https://tunel.exemplo.com/api/v1/kwai/' in k['zap'] and '#coordenador/kwai' in k['zap'], 'WhatsApp leva o link da página e do site')
+check('/zip?exp=' in k['zap'] and 'ZIP' in k['zap'], 'WhatsApp leva o link do ZIP')
 check(co.pacote_kwai_do_dia(noite + 600) is None and len(AVISOS) == 1, 'não repete no mesmo dia')
 check(any(e['categoria'] == 'kwai' for e in co.eventos()), 'fica no histórico do Coordenador')
 check(ag.PADRAO['whatsapp']['avisos']['a7_kwai'] is True, 'aviso do Kwai no WhatsApp ligado por padrão')
