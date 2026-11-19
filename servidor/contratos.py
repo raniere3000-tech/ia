@@ -57,6 +57,7 @@ ACOES = {
     'encurtar_pausa': {'ini_ms': (0, 3_600_000), 'fim_ms': (0, 3_600_000)},
     'aumentar_legenda': {},
     'subir_legenda': {},
+    'mover_legenda': {'altura': (0.15, 0.82)},       # pedido pelo Coordenador (texto do vídeo por baixo da legenda)
     'reduzir_zoom': {},
     'normalizar_audio': {},
     'trocar_enquadramento': {'modo': REENQUADRAR},

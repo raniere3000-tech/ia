@@ -20,7 +20,7 @@ import pipeline as pl
 
 TAMANHOS = {'pequeno': 62 / 1080, 'medio': 78 / 1080, 'grande': 96 / 1080}
 ORDEM_TAMANHO = ['pequeno', 'medio', 'grande']
-ALTURA = {'baixo': 0.78, 'meio': 0.5}
+ALTURA = {'baixo': 0.78, 'meio': 0.5, 'topo': 0.2}
 QUADRO_PARA_MODO = {'desfoque': 'desfocado', 'cortar': 'centro', 'gameplay-streamer': 'manter'}
 MODO_PARA_QUADRO = {'desfocado': 'desfoque', 'centro': 'cortar'}
 FOLGA_PAUSA_MS = 250
@@ -60,7 +60,8 @@ def tpl_do_plano(tpl: dict, plano: dict) -> dict:
     cap = _efeito(plano, 'caption')
     if cap and cap.get('ligado', 1):
         t['tamanho'] = _tamanho_nome(cap.get('tamanho', TAMANHOS['medio']))
-        t['legenda_pos'] = 'meio' if cap.get('altura', 0.78) < 0.65 else 'baixo'
+        alt = cap.get('altura', 0.78)
+        t['legenda_pos'] = 'topo' if alt < 0.35 else 'meio' if alt < 0.65 else 'baixo'
         if t.get('legenda', 'nenhuma') == 'nenhuma':
             t['legenda'] = 'destaque'
     rf = _efeito(plano, 'reframe')
@@ -146,6 +147,15 @@ def corrigir(plano: dict, acoes: list, dur_fonte: float | None = None) -> tuple[
             if cap and cap.get('altura', 0.78) > 0.6:
                 cap['altura'] = 0.5
                 feitas.append('Legenda subiu para o meio da tela.')
+        elif a['acao'] == 'mover_legenda':
+            # o Coordenador viu texto do vídeo original por baixo da legenda: ela vai para a faixa livre que ele indicou
+            cap = _efeito(p, 'caption')
+            alvo = round(float(a.get('altura', 0.5)), 3)
+            nome = 'topo' if alvo < 0.35 else 'meio' if alvo < 0.65 else 'baixo'
+            if cap and abs(cap.get('altura', 0.78) - alvo) > 0.05:
+                cap['altura'] = alvo
+                cap['ligado'] = 1
+                feitas.append(f'Legenda mudou de lugar ({nome} da tela) para não ficar em cima do texto do vídeo.')
         elif a['acao'] == 'reduzir_zoom':
             z = _efeito(p, 'zoom')
             if z and z['nivel'] > 1.0:

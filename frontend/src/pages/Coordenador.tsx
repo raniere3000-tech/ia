@@ -189,10 +189,12 @@ function Liberar({abrirOrdem}:{abrirOrdem:(id:string)=>void}){
 function Pacote({a,mudou,abrirOrdem}:{a:Aprovacao;mudou:()=>void;abrirOrdem:(id:string)=>void}){
   const {toast,go}=useApp(); const cfg=useCfg();
   const [busy,setBusy]=useState(false); const [semCapa,setSemCapa]=useState(false);
-  const [alvo,setAlvo]=useState<'video'|'capa'>('video'); const [com,setCom]=useState(''); const [reprovar,setReprovar]=useState(false);
+  const [alvo,setAlvo]=useState<'video'|'capa'|'legenda'>('video'); const [com,setCom]=useState(''); const [reprovar,setReprovar]=useState(false);
+  const [aceitarLeg,setAceitarLeg]=useState(false); const [pos,setPos]=useState<'baixo'|'meio'|'topo'>('meio');
   const rel=a.relatorio;
+  const legRuim=rel.itens.find(i=>i.item==='legenda_sobreposta'&&!i.ok);
   async function fazer(f:()=>Promise<unknown>,msg:string){ setBusy(true); try{ await f(); toast(msg,'ok'); mudou(); }catch(e){ toast(erroTexto(e),'erro'); mudou(); }finally{ setBusy(false); } }
-  const pode=rel.itens.every(i=>i.ok||(i.item==='capa'&&semCapa));
+  const pode=rel.itens.every(i=>i.ok||(i.item==='capa'&&semCapa)||(i.item==='legenda_sobreposta'&&aceitarLeg));
   return <div className="coord-pacote">
     <b>{rel.titulo}</b> <small className="muted">{a.origem==='corte'?'corte':rel.ref}{a.ordem_id?<> · <button className="link-btn" onClick={()=>abrirOrdem(a.ordem_id)}>{a.ordem_ref}</button></>:' · esteira dos 7 agentes'}{rel.projeto&&<> · <button className="link-btn" onClick={()=>go('revisar',rel.projeto)}>assistir</button></>}</small>
     <ul className="coord-conf">{rel.itens.map(i=><li key={i.item} className={i.ok?'ok':'bad'}>{i.ok?'✓':'✗'} {i.detalhe}</li>)}</ul>
@@ -203,15 +205,18 @@ function Pacote({a,mudou,abrirOrdem}:{a:Aprovacao;mudou:()=>void;abrirOrdem:(id:
       <img src={urlServidor(cfg,v.url)} alt={`Capa ${v.numero}`} className={v.formato==='9:16'?'vert':''} loading="lazy"/>
       <small>Nota {v.nota}{v.estado!=='aprovada'?' (abaixo do mínimo)':''}</small></button>)}</div>}
     {a.ordem_id&&rel.capas_pedidas>0&&!a.thumbnail_sha256&&<label className="check"><input type="checkbox" checked={semCapa} onChange={e=>setSemCapa(e.target.checked)}/> Liberar sem capa</label>}
+    {legRuim&&<label className="check"><input type="checkbox" checked={aceitarLeg} onChange={e=>setAceitarLeg(e.target.checked)}/> Liberar mesmo com a legenda perto do texto do vídeo</label>}
     <div className="row-gap left">
-      <button className="primary sm" disabled={busy||!pode} onClick={()=>fazer(()=>decidir(cfg,a.id,{decisao:'aprovar',pacote_hash:a.pacote_hash,sem_capa:semCapa}),'Pacote liberado.')}><CheckCircle2 size={14}/> Liberar</button>
+      <button className="primary sm" disabled={busy||!pode} onClick={()=>fazer(()=>decidir(cfg,a.id,{decisao:'aprovar',pacote_hash:a.pacote_hash,sem_capa:semCapa,aceitar_legenda:aceitarLeg||undefined}),'Pacote liberado.')}><CheckCircle2 size={14}/> Liberar</button>
       <button className="subtle sm" disabled={busy} onClick={()=>setReprovar(!reprovar)}><Undo2 size={14}/> Pedir correção</button>
     </div>
     {reprovar&&<div className="coord-falta">
-      <div className="seg" role="radiogroup">{([['video','Refazer o vídeo'],['capa','Refazer só a capa']] as const).map(([k,t])=>
+      <div className="seg" role="radiogroup">{([['video','Refazer o vídeo'],['capa','Refazer só a capa'],...(a.origem==='corte'?[['legenda','Mudar a legenda de lugar']]:[])] as ['video'|'capa'|'legenda',string][]).map(([k,t])=>
         <button key={k} role="radio" aria-checked={alvo===k} className={alvo===k?'on':''} onClick={()=>setAlvo(k)} disabled={k==='capa'&&!!a.ordem_id&&!rel.capas_pedidas}>{t}</button>)}</div>
-      <textarea rows={2} value={com} onChange={e=>setCom(e.target.value)} placeholder="O que precisa mudar?"/>
-      <button className="primary sm" disabled={busy||com.trim().length<3} onClick={()=>fazer(()=>decidir(cfg,a.id,{decisao:'reprovar',alvo,comentario:com,pacote_hash:a.pacote_hash}),'Correção pedida.')}>Mandar corrigir</button>
+      {alvo==='legenda'&&<div className="seg" role="radiogroup" aria-label="Para onde vai a legenda">{([['topo','Em cima'],['meio','No meio'],['baixo','Embaixo']] as const).map(([k,t])=>
+        <button key={k} role="radio" aria-checked={pos===k} className={pos===k?'on':''} onClick={()=>setPos(k)}>{t}</button>)}</div>}
+      <textarea rows={2} value={com} onChange={e=>setCom(e.target.value)} placeholder={alvo==='legenda'?'Por quê? (ex.: o vídeo já tem legenda embaixo)':'O que precisa mudar?'}/>
+      <button className="primary sm" disabled={busy||com.trim().length<3} onClick={()=>fazer(()=>decidir(cfg,a.id,{decisao:'reprovar',alvo,comentario:com,pacote_hash:a.pacote_hash,...(alvo==='legenda'?{posicao:pos}:{})}),'Correção pedida.')}>Mandar corrigir</button>
     </div>}
   </div>;
 }

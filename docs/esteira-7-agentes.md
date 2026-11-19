@@ -51,6 +51,16 @@ Fluxo de todo vídeo:
   - Capa: o Agente 6 faz um pedido novo de capa.
 - **Arquivo mudou depois da aprovação.** Capa e liberação voltam a esperar, e só o necessário é refeito.
 
+## Legenda em cima de texto do vídeo (pedido de 19/11)
+
+- Na liberação final, o Coordenador confere se o vídeo já tinha texto na tela: legenda embutida, letreiro, nome, placar ou marca d'água (`texto_tela.py`).
+- Ele tira 5 quadros do arquivo final e manda para a IA de imagem (Gemini), que diz onde fica cada texto. Uma conferência por versão do arquivo (tabela `texto_tela`, migração 13).
+- Se o texto fica por baixo ou encostado na nossa legenda, o corte volta sozinho para o editor (`editor.legenda`), com a posição livre: embaixo, no meio ou em cima.
+- O editor monta de novo a partir do trecho original guardado (sem a nossa legenda, em `agente_trabalho/esteira/legenda/`), o diretor confere, e só então o arquivo é trocado. Capa e liberação são refeitas.
+- No máximo 5 voltas. Sem lugar livre, sem trecho guardado (cortes antigos) ou no limite, o pacote espera você: em Coordenador > Aprovações dá para mudar a legenda de lugar ou liberar mesmo assim.
+- Se a IA falhar 3 vezes, o pacote segue com o aviso "não deu para conferir texto na tela".
+- Vídeos próprios (Agente 3) não levam legenda por cima: o item não se aplica.
+
 ## Travas de publicação (política "completa", ligada por padrão)
 
 - `postagem.criar_post` recusa o vídeo sem liberação do Coordenador e diz o que falta.

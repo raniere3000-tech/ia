@@ -327,6 +327,11 @@ def avancar(vid: str, posts: list | None = None) -> dict | None:
         ets = {e: _etapa(vid, e) for e in ORDEM}
     if ets['a4_final']['estado'] != 'concluida' or not sha:
         return v
+    c6 = ets['a6_capa']
+    if c6['estado'] == 'concluida' and c6['entrada_sha'] and c6['entrada_sha'] != sha:
+        # o editor trocou o arquivo (ex.: legenda mudou de lugar) e o diretor já aprovou a versão nova: capa e liberação são refeitas
+        invalidar_depois(vid, 'a4_final', 'O vídeo mudou: capa e liberação valem só para a versão aprovada.')
+        ets = {e: _etapa(vid, e) for e in ORDEM}
     if ets['a6_capa']['estado'] not in OK:
         _a6(v, ets['a6_capa'], sha)
         ets['a6_capa'] = _etapa(vid, 'a6_capa')
@@ -424,6 +429,13 @@ def revisar_pacote(v: dict, arq: Path, sha: str, extra: dict) -> dict:
         link = ag.link_original(c)
         item('link_original', bool(link) and link in legenda, 'Descrição com o link do vídeo original.' if link else
              'Não sei de qual vídeo este corte saiu: a descrição iria sem o link original.')
+        # pedido do Raniere (19/11): o vídeo já tinha texto/legenda? a nossa legenda não pode ficar em cima dele
+        import texto_tela as tt
+        plano = pl.ultimo_plano(c['esteira']) if c.get('esteira') else None
+        lg = tt.item_do_pacote(c, sha, plano)
+        itens.append({'item': 'legenda_sobreposta', 'ok': bool(lg['ok']), 'detalhe': lg['detalhe'], 'estado': lg['estado'],
+                      **({'nova_posicao': lg['nova_posicao']} if lg.get('nova_posicao') else {}),
+                      **({'textos': (lg.get('resultado') or {}).get('textos', [])[:6]} if lg.get('resultado') else {})})
     else:
         p = extra.get('projeto') or {}
         rot = (p.get('dados') or {}).get('roteiro') or {}
@@ -475,6 +487,8 @@ def _a7(v: dict, ets: dict, arq: Path, sha: str, extra: dict):
         if e['estado'] != 'reprovada':
             marcar(v['id'], 'a7_liberacao', 'reprovada', recibo={'aprovacao': a['id']}, motivo=a['motivo'] or 'Reprovado no Coordenador.')
         return
+    if _legenda_de_volta(v, a, rel):
+        return
     falta = [i['detalhe'] for i in rel.get('itens') or [] if not i['ok']]
     if falta:
         if e['motivo'] != ' '.join(falta)[:500] or e['estado'] != 'aguardando_dependencia':
@@ -490,6 +504,50 @@ def _a7(v: dict, ets: dict, arq: Path, sha: str, extra: dict):
         marcar(v['id'], 'a7_liberacao', 'aguardando_usuario', recibo={'aprovacao': a['id']},
                motivo='Pacote conferido: falta você liberar em Coordenador > Aprovações (ou ligue o modo automático).')
         co.avisar_pacote(a)
+
+
+def _legenda_de_volta(v: dict, a: dict, rel: dict) -> bool:
+    """Coordenador viu a nossa legenda em cima de texto do vídeo original: manda o corte de volta para o editor (Agente 5)
+    mudar a legenda de lugar. O diretor confere de novo; capa e liberação são refeitas para o arquivo novo. Até 5 voltas."""
+    if v['origem'] != 'corte':
+        return False
+    lg = next((i for i in rel.get('itens') or [] if i.get('item') == 'legenda_sobreposta'), None)
+    if not lg or lg['ok']:
+        if lg and lg.get('estado') in ('ok', 'nao_se_aplica'):
+            try:
+                import agente as ag
+                ag.apagar_bruto(v['ref'])          # conferido: o trecho guardado não é mais preciso
+            except Exception as e:  # noqa: BLE001
+                print('esteira: trecho guardado não apagado:', e)
+        return False
+    if lg.get('estado') != 'sobreposta' or not lg.get('nova_posicao'):
+        return False                               # ainda conferindo, ou sem lugar livre: fica para você (aguardando_usuario)
+    import agente as ag
+    import coordenador as co
+    c = next((x for x in ag.estado()['cortes'] if x['id'] == v['ref']), None) or {}
+    limite = co.config()['correcoes_por_etapa']
+    if ag.legenda_na_fila(v['ref']):
+        return True
+    if int(c.get('voltas_legenda') or 0) >= limite:
+        lg['detalhe'] += f' Já foram {limite} voltas ao editor por causa da legenda: precisa da sua decisão.'
+        return False
+    if not ag.pode_mover_legenda(v['ref']):
+        lg['detalhe'] += ' O trecho original não está mais guardado: o editor não consegue montar de novo sozinho.'
+        return False
+    try:
+        r = ag.mover_legenda(v['ref'], lg['nova_posicao'], lg['detalhe'][:200])
+    except ag.ErroAgente as e:
+        lg['detalhe'] += ' ' + str(e)
+        return False
+    db.executar('UPDATE coordenador_aprovacoes SET revogado=?, motivo=? WHERE id=? AND revogado IS NULL', _agora(),
+                'Legenda em cima de texto do vídeo: voltou para o editor.', a['id'])
+    co.evento(a['ordem_id'], a['tarefa_id'], 'agente7', 'correcao', {'aprovacao': a['id'], 'alvo': 'legenda', 'para': lg['nova_posicao'],
+                                                                     'job': r.get('job'), 'video': v['id']})
+    marcar(v['id'], 'a7_liberacao', 'reprovada', recibo={'aprovacao': a['id'], 'item': 'legenda_sobreposta', 'textos': lg.get('textos', [])},
+           motivo=lg['detalhe'][:400])
+    marcar(v['id'], 'a5_edicao', 'corrigindo', motivo=f'Coordenador pediu: legenda para {lg["nova_posicao"]} (volta {r.get("volta", 1)} de {limite}).',
+           recibo={'job': r.get('job'), 'posicao': lg['nova_posicao']})
+    return True
 
 
 def _a2(v: dict, ets: dict, sha: str, extra: dict, posts: list | None):

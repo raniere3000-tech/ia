@@ -648,6 +648,9 @@ def iniciar():
     fila.registrar('criativo.serie_completa', cri.job_serie_completa, 'leve')
     import agente as _ag
     fila.registrar('esteira.recebido', _ag.job_esteira_recebido, 'pesado')
+    fila.registrar('editor.legenda', _ag.job_mover_legenda, 'pesado')
+    import texto_tela
+    texto_tela.iniciar()
     rotas_esteira.ag2.iniciar()
     rotas_esteira.oq.iniciar()
     th.iniciar()

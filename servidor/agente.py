@@ -960,8 +960,14 @@ def montar_ass(palavras: list, ini: float, fim: float, tpl: dict, gancho: str, L
     topo, base = tpl['tarja_topo'].strip(), tpl['tarja_base'].strip()
     estilo = lambda nome, t, cor, borda, sombra, alin, mv, bs=1, fundo='&H00000000&', contorno='&H00000000&': (
         f'Style: {nome},Inter,{t:.0f},{cor},{cor},{contorno},{fundo},-1,0,0,0,100,100,0,0,{bs},{borda:.1f},{sombra:.1f},{alin},{int(L * 0.07)},{int(L * 0.07)},{int(mv)},1')
-    mv_leg = A * (0.20 if tpl['legenda_pos'] == 'baixo' else 0.0) + (alt_tarja if tem_base and tpl['legenda_pos'] == 'baixo' else 0)
-    alin_leg = 2 if tpl['legenda_pos'] == 'baixo' else 5
+    pos_leg = tpl['legenda_pos'] if tpl.get('legenda', 'nenhuma') != 'nenhuma' else ''
+    if pos_leg == 'topo':
+        # legenda no topo (o Coordenador viu texto do vídeo embaixo e no meio): faixa 8%-18% da altura; o gancho desce para não bater nela
+        mv_leg, alin_leg = A * 0.08 + (alt_tarja if tem_topo else 0), 8
+    else:
+        mv_leg = A * (0.20 if pos_leg == 'baixo' else 0.0) + (alt_tarja if tem_base and pos_leg == 'baixo' else 0)
+        alin_leg = 2 if pos_leg == 'baixo' else 5
+    gancho_alto = tpl['gancho_pos'] == 'topo' and pos_leg != 'topo'
     caixa = tpl['legenda'] == 'caixa'
     m = min(L, A) * 0.04
     linhas = [
@@ -969,7 +975,7 @@ def montar_ass(palavras: list, ini: float, fim: float, tpl: dict, gancho: str, L
         '[V4+ Styles]',
         'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
         estilo('Leg', tam, _ass_cor(tpl['cor']), 14 * esc if caixa else 7 * esc, 0 if caixa else 3 * esc, alin_leg, mv_leg, 3 if caixa else 1, '&H50000000&'),
-        estilo('Gancho', 70 * esc, '&H00111111&', 16 * esc, 0, 8, (A * (0.10 if tpl['gancho_pos'] == 'topo' else 0.24)) + (alt_tarja if tem_topo else 0), 3),
+        estilo('Gancho', 70 * esc, '&H00111111&', 16 * esc, 0, 8, (A * (0.10 if gancho_alto else 0.24)) + (alt_tarja if tem_topo else 0), 3),
         estilo('Tarja', alt_tarja * 0.42, _ass_cor(tpl['cor_tarja_texto']), 0, 0, 5, 0),
         estilo('Credito', min(L, A) * 0.032, '&H00FFFFFF&', 9 * esc, 0, 2, m * 1.2 + (alt_tarja if tem_base else 0), 3, contorno=_ass_cor(tpl.get('cor_marca', '#7758ef'))),
         *(cmp.ass_estilos(tpl, L, A) if comparar else []),
@@ -1603,7 +1609,147 @@ def corte_pela_esteira(arq: Path, c: dict, palavras: list, tpl: dict, vid: str, 
     c['ini'], c['fim'] = final['clips'][0]['in_ms'] / 1000, final['clips'][-1]['out_ms'] / 1000
     c['dur'] = round(ed.duracao_saida(final), 1)
     qa, vd = _qa_da_esteira(res, run['id'])
+    if tpl.get('legenda', 'nenhuma') != 'nenhuma':
+        try:
+            guardar_bruto(arq, cid, final, palavras, tpl, c, dur, co, v.get('nicho') or v.get('titulo', ''))
+        except Exception as e:  # noqa: BLE001 - sem o trecho guardado o Coordenador só não consegue mandar mudar a legenda sozinho
+            print('agente: trecho bruto não guardado:', e)
     return qa, vd, run['id']
+
+
+# ---------------------------------------------------------------- legenda em cima de texto do vídeo (Coordenador -> editor)
+BRUTOS = TRABALHO / 'esteira' / 'legenda'
+FOLGA_BRUTO = (5.0, 8.0)          # o mesmo que o diretor pode mexer no começo e no fim
+
+
+def guardar_bruto(arq: Path, cid: str, plano: dict, palavras: list, tpl: dict, c: dict, dur: float, co: dict, tema: str):
+    """Guarda o trecho original (sem a nossa legenda) e o necessário para o editor montar de novo com a legenda em outro lugar.
+    O vídeo inteiro é apagado depois do corte; este trecho fica até o Coordenador liberar (ou 7 dias)."""
+    limpar_brutos()
+    cl = plano['clips']
+    a = max(0.0, cl[0]['in_ms'] / 1000 - FOLGA_BRUTO[0])
+    b = min(dur, cl[-1]['out_ms'] / 1000 + FOLGA_BRUTO[1])
+    pasta = BRUTOS / cid
+    pasta.mkdir(parents=True, exist_ok=True)
+    destino = pasta / 'bruto.mp4'
+    r = subprocess.run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-ss', f'{a:.3f}', '-i', str(arq), '-t', f'{b - a:.3f}', '-map', '0:v:0', '-map', '0:a?',
+                        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', str(destino)],
+                       stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
+    if r.returncode != 0 or not destino.exists() or destino.stat().st_size < 2000:
+        shutil.rmtree(pasta, ignore_errors=True)
+        raise ErroAgente('não consegui guardar o trecho: ' + r.stderr.strip()[-200:])
+    pal = [[round(x - a, 3), round(y - a, 3), w] for x, y, w in palavras if y > a and x < b]
+    (pasta / 'refazer.json').write_text(json.dumps({'offset': a, 'dur': b - a, 'plano': plano, 'palavras': pal, 'tpl': tpl, 'gancho': c.get('gancho', ''),
+                                                    'co': {k: co.get(k) for k in ('dur_min', 'dur_max')}, 'tema': tema, 'criado': time.time()},
+                                                   ensure_ascii=False), encoding='utf-8')
+
+
+def apagar_bruto(cid: str):
+    shutil.rmtree(BRUTOS / cid, ignore_errors=True)
+
+
+def limpar_brutos(dias: float = 7):
+    if not BRUTOS.exists():
+        return
+    limite = time.time() - dias * 86400
+    for p in BRUTOS.iterdir():
+        try:
+            if p.is_dir() and p.stat().st_mtime < limite:
+                shutil.rmtree(p, ignore_errors=True)
+        except OSError:
+            pass
+
+
+def pode_mover_legenda(cid: str) -> bool:
+    return (BRUTOS / cid / 'bruto.mp4').exists() and (BRUTOS / cid / 'refazer.json').exists()
+
+
+def legenda_na_fila(cid: str) -> str:
+    import banco as db
+    r = db.um("SELECT id FROM jobs WHERE tipo='editor.legenda' AND status IN ('agendado','na_fila','rodando','aguardando_tentativa') AND dados LIKE ?",
+              f'%"corte": "{cid}"%')
+    return r['id'] if r else ''
+
+
+def mover_legenda(cid: str, posicao: str, motivo: str, quem: str = 'agente7') -> dict:
+    """O Coordenador manda o corte de volta para o editor (Agente 5) mudar a legenda de lugar. O diretor confere de novo."""
+    import fila
+    import texto_tela as tt
+    if posicao not in tt.ALTURAS:
+        raise ErroAgente('Posição de legenda desconhecida.')
+    c = next((x for x in estado()['cortes'] if x['id'] == cid), None)
+    if not c:
+        raise ErroAgente('Corte não encontrado.')
+    if not pode_mover_legenda(cid):
+        raise ErroAgente('O trecho original deste corte não está mais guardado: não dá para montar de novo com a legenda em outro lugar.')
+    ja = legenda_na_fila(cid)
+    if ja:
+        return {'ok': True, 'job': ja, 'ja_na_fila': True}
+    n = int(c.get('voltas_legenda') or 0) + 1
+    _mudar(lambda e: [x.update(voltas_legenda=n) for x in e['cortes'] if x['id'] == cid])
+    j = fila.enfileirar('editor.legenda', agente='agent5', dados={'corte': cid, 'posicao': posicao, 'motivo': motivo[:300], 'volta': n, 'quem': quem},
+                        recurso='pesado', titulo='Editor: legenda fora do texto do vídeo · ' + c['titulo'][:50], chave=f'legenda:{cid}:{n}')
+    anotar(f'"{c["titulo"][:60]}" voltou para o editor: {motivo[:120]}', 'ok')
+    return {'ok': True, 'job': j['id'], 'volta': n}
+
+
+def job_mover_legenda(ctx):
+    """Agente 5 monta o corte de novo a partir do trecho guardado, com a legenda na posição livre; o Agente 4 confere o arquivo.
+    O arquivo do corte só é trocado se o diretor aprovar a versão nova."""
+    import editor_ia as ed
+    import esteira as es
+    import pipeline as pl
+    import texto_tela as tt
+    d = ctx.dados
+    cid = d['corte']
+    c = next((x for x in estado()['cortes'] if x['id'] == cid), None)
+    if not c:
+        return {'etapa': 'O corte foi apagado.'}
+    if c['status'] in ('postado', 'descartado'):
+        return {'etapa': 'O corte já foi ' + c['status'] + '.'}
+    pasta = BRUTOS / cid
+    info = json.loads((pasta / 'refazer.json').read_text(encoding='utf-8'))
+    bruto = pasta / 'bruto.mp4'
+    off = float(info['offset'])
+    plano = json.loads(json.dumps(info['plano']))
+    for k in plano['clips']:                             # o plano passa a contar a partir do trecho guardado
+        k['in_ms'] = max(0, round(k['in_ms'] - off * 1000))
+        k['out_ms'] = max(k['in_ms'] + 1, round(k['out_ms'] - off * 1000))
+    dur = duracao(bruto) or float(info['dur'])
+    plano, feitas = ed.corrigir(plano, [{'acao': 'mover_legenda', 'altura': tt.ALTURAS[d['posicao']]}], dur)
+    if not feitas:
+        return {'etapa': 'A legenda já estava nessa posição.'}
+    plano['edit_reason'] = 'Coordenador: ' + d.get('motivo', '')[:200]
+    palavras = [tuple(p) for p in info['palavras']]
+    tpl = info['tpl']
+    cc = dict(c, ini=plano['clips'][0]['in_ms'] / 1000, fim=plano['clips'][-1]['out_ms'] / 1000, gancho=info.get('gancho', c.get('gancho', '')))
+    run = pl.criar('corte', cid, c.get('titulo', '')[:120], chave=f'legenda:{cid}:{d.get("volta", 1)}', dados={'video': c['video'], 'motivo': 'legenda'})
+    es.garantir('corte', cid, c.get('titulo', ''))
+    trab = pasta / 'trabalho'
+    trab.mkdir(exist_ok=True)
+    saida = pasta / 'saida.mp4'
+    ctx.progresso(10, 'Editor mudando a legenda de lugar')
+    res = ed.rodar(run['id'], cid, plano, lambda p: ed.executar_corte(p, bruto, cc, palavras, tpl, saida, trab),
+                   lambda p: _contexto_diretor(p, palavras, tpl, info.get('co') or {}, info.get('tema') or ''), dur_fonte=dur,
+                   avisar=lambda t: ctx.progresso(None, t))
+    qa, _vd = _qa_da_esteira(res, run['id'])
+    if res['resultado'] != 'aprovado' or not Path(res['arquivo'] or saida).exists():
+        anotar(f'Diretor não aprovou a legenda nova de "{c["titulo"][:50]}": o vídeo anterior continua.', 'erro')
+        return {'etapa': 'Diretor não aprovou a versão nova: ficou a anterior', 'resultado': {'run': run['id']}}
+    destino = pg.video_path(c['video'])
+    tmp = destino.with_suffix('.novo.mp4')
+    shutil.copyfile(res['arquivo'] or saida, tmp)
+    tmp.replace(destino)                                    # troca de uma vez: o arquivo novo já tem o certificado do diretor
+    saida.unlink(missing_ok=True)
+
+    def f(e):
+        for x in e['cortes']:
+            if x['id'] == cid:
+                x.update(qa=qa, esteira=run['id'], hash=_hash(destino), tamanho=destino.stat().st_size, legenda_pos=d['posicao'],
+                         legenda_movida={'posicao': d['posicao'], 'motivo': d.get('motivo', '')[:200], 't': time.time()})
+    _mudar(f)
+    anotar(f'Editor mudou a legenda de "{c["titulo"][:50]}" para {d["posicao"]}; diretor aprovou com nota {qa["nota"]}.', 'ok')
+    return {'etapa': f'Legenda mudou para {d["posicao"]}; diretor aprovou', 'resultado': {'run': run['id'], 'nota': qa['nota']}}
 
 
 def job_esteira_recebido(ctx):

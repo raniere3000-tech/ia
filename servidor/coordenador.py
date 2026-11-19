@@ -1764,15 +1764,21 @@ def _decidir_pacote(a: dict, d: dict, quem: str) -> dict:
     rel = _l(a['relatorio'], {}) or {}
     dec = d.get('decisao')
     if dec == 'aprovar':
-        ruins = [i for i in rel.get('itens') or [] if not i['ok']]
+        aceita_leg = bool(d.get('aceitar_legenda'))        # você viu o vídeo e aceita a legenda perto do texto original
+        ruins = [i for i in rel.get('itens') or [] if not i['ok'] and not (aceita_leg and i.get('item') == 'legenda_sobreposta')]
         if ruins:
             raise ErroCoord(409, 'Ainda não dá para liberar: ' + ' '.join(i['detalhe'] for i in ruins)[:400])
+        if aceita_leg:
+            for i in rel.get('itens') or []:
+                if i.get('item') == 'legenda_sobreposta' and not i['ok']:
+                    i.update(ok=True, aceito_por=str(quem)[:60], detalhe=i['detalhe'] + ' (Você liberou mesmo assim.)')
+            db.executar('UPDATE coordenador_aprovacoes SET relatorio=? WHERE id=?', _j(rel), a['id'])
         db.executar("UPDATE coordenador_aprovacoes SET decisao='aprovado', por=?, decidido=? WHERE id=?", str(quem)[:60], _agora(), a['id'])
         evento(None, None, quem, 'liberacao', {'aprovacao': a['id'], 'decisao': 'aprovado', 'video': rel.get('esteira')})
     elif dec == 'reprovar':
         alvo = d.get('alvo')
         com = str(d.get('comentario') or '').strip()[:1000]
-        if alvo not in ('video', 'capa'):
+        if alvo not in ('video', 'capa', 'legenda') or (alvo == 'legenda' and a['origem'] != 'corte'):
             raise ErroCoord(400, 'Diga o que refazer: o vídeo ou a capa.')
         if len(com) < 3:
             raise ErroCoord(400, 'Escreva o que precisa mudar.')
@@ -1781,7 +1787,15 @@ def _decidir_pacote(a: dict, d: dict, quem: str) -> dict:
         if n >= limite:
             raise ErroCoord(429, f'Já foram {n} correções para {"este vídeo" if alvo == "video" else "esta capa"} (limite {limite}).')
         feito = ''
-        if alvo == 'video':
+        if alvo == 'legenda':
+            import agente as ag
+            pos = str(d.get('posicao') or '')
+            try:
+                r = ag.mover_legenda(a['referencia'], pos, com, quem)
+            except ag.ErroAgente as e:
+                raise ErroCoord(409, str(e))
+            feito = f'editor muda a legenda para {pos} (job {r.get("job") or ""})'
+        elif alvo == 'video':
             if a['origem'] == 'corte':
                 import agente as ag
                 try:

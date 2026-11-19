@@ -111,12 +111,33 @@ import postagem as pg
 import produtor
 import projetos as pj
 import rotas_esteira
+import texto_tela as tt
 import thumbnails as th
 
 db.migrar()
 fila.registrar('agente6.thumbnail', th.job_thumbnail, 'pesado')
 fila.registrar('esteira.recebido', ag.job_esteira_recebido, 'pesado')
 fila.registrar('agente3.produzir', produtor.job_produzir, 'leve')
+fila.registrar('editor.legenda', ag.job_mover_legenda, 'pesado')
+tt.iniciar()
+
+# IA de imagem simulada para o Coordenador: o vídeo original tem uma legenda embutida FIXA, na faixa onde a nossa legenda foi parar
+# no primeiro corte. Ela continua lá nas versões novas (é do vídeo); só a nossa legenda pode mudar de lugar.
+TEXTO_ORIGINAL = {}
+VISTAS_IA = []
+
+
+def ia_quadros(quadros, info):
+    VISTAS_IA.append({'posicao': info['posicao'], 'quadros': len(quadros), 'bytes': sum(q.stat().st_size for q in quadros)})
+    if not TEXTO_ORIGINAL.get('ligado'):
+        return {'quadros': [{'n': i + 1, 'textos': []} for i in range(len(quadros))], 'sobreposta': False, 'explicacao': 'sem texto'}
+    a, b = TEXTO_ORIGINAL.setdefault('faixa', tt.FAIXAS[info['posicao']])
+    t = [{'y0': a + 0.02, 'y1': b - 0.02, 'tipo': 'legenda', 'texto': 'LEGENDA QUE JÁ VEIO NO VÍDEO'}]
+    return {'quadros': [{'n': i + 1, 'textos': t} for i in range(len(quadros))], 'sobreposta': tt._cruza((a, b), tt.FAIXAS[info['posicao']]),
+            'explicacao': 'o vídeo já tem legenda embutida'}
+
+
+tt.IA = ia_quadros
 ag.avisar = lambda *a, **k: True
 pg.status_contas = lambda: {k: {'conectado': True, 'erro': '', 'paginas': [], 'pagina': ''} for k in set(pg.PROV.values())}
 ENVIADOS = []
@@ -253,13 +274,51 @@ es.avancar(VC)
 confere(etapa(VC, 'a6_capa')['estado'] == 'na_fila', 'A6: pedido de capa criado e na fila (sem trabalho falso)')
 rodar_fila()
 es.avancar(VC)
+
+# A7 confere se o vídeo já tinha legenda/texto por baixo da nossa (pedido de 19/11): aqui o vídeo original TEM legenda embutida
+print('\n1b. Coordenador acha legenda do vídeo por baixo da nossa e manda de volta para o editor')
+c_atual = next(x for x in ag.estado()['cortes'] if x['id'] == c['id'])
+confere(c_atual.get('legendado') and ag.pode_mover_legenda(c['id']), 'corte com legenda nossa e trecho original guardado (sem a nossa legenda) para o editor')
+pos0 = tt.posicao_da_altura(tt._altura(pl.ultimo_plano(c_atual['esteira'])))
+sha0 = pl.sha_arquivo(pg.video_path(c['video']))
+TEXTO_ORIGINAL['ligado'] = True
+e7a = etapa(VC, 'a7_liberacao')
+confere(e7a['estado'] != 'concluida' and 'conferindo' in (e7a['motivo'] or '').lower(), f'A7 não libera enquanto confere o texto na tela: "{(e7a["motivo"] or "")[:90]}"')
+rodar_fila()                       # trabalho "coordenador.texto_tela" (quadros reais do arquivo, IA simulada)
+es.avancar(VC)
+chk = tt.resultado(sha0)
+confere(chk and chk['estado'] == 'pronto' and chk['resultado']['sobreposta'] and VISTAS_IA and VISTAS_IA[0]['quadros'] == 5,
+        f'Coordenador olhou 5 quadros reais do vídeo e achou a legenda embutida em cima da nossa (nossa: {pos0})')
+nova = chk['resultado']['nova_posicao'] if chk else None
+confere(nova and nova != pos0, f'escolheu um lugar livre para a nossa legenda: {nova}')
+e7b, e5b = etapa(VC, 'a7_liberacao'), etapa(VC, 'a5_edicao')
+confere(e7b['estado'] == 'reprovada' and e5b['estado'] == 'corrigindo', 'A7 reprovou pela legenda e o A5 ficou "corrigindo" (registro na esteira)')
+jl = db.um("SELECT * FROM jobs WHERE tipo='editor.legenda' ORDER BY criado DESC LIMIT 1")
+confere(jl and json.loads(jl['dados'])['posicao'] == nova, 'trabalho do editor na fila com a posição nova')
+confere(not db.um("SELECT id FROM coordenador_aprovacoes WHERE referencia=? AND decisao='aprovado' AND revogado IS NULL", c['id']), 'nada liberado para postar com a legenda sobreposta')
+rodar_fila()                       # editor monta de novo a partir do trecho guardado; diretor confere
+sha1 = pl.sha_arquivo(pg.video_path(c['video']))
+c_atual = next(x for x in ag.estado()['cortes'] if x['id'] == c['id'])
+confere(sha1 != sha0 and pl.certificado(sha1), 'arquivo novo no lugar do antigo, já com o certificado do diretor')
+confere((c_atual.get('legenda_movida') or {}).get('posicao') == nova, f'o corte registra que a legenda foi para {nova}')
+confere(tt.posicao_da_altura(tt._altura(pl.ultimo_plano(c_atual['esteira']))) == nova, 'o plano do editor tem a legenda na posição nova')
+for _ in range(8):                 # capa nova para o arquivo novo, conferência de novo, liberação
+    es.avancar(VC)
+    if etapa(VC, 'a7_liberacao')['estado'] == 'concluida':
+        break
+    rodar_fila()
+chk1 = tt.resultado(sha1)
+confere(chk1 and chk1['estado'] == 'pronto' and not chk1['resultado']['sobreposta'] and chk1['resultado']['tem_texto'],
+        'segunda conferência: o texto do vídeo continua lá, mas a nossa legenda não fica mais em cima dele')
+confere(etapa(VC, 'a6_capa')['saida_sha'] and etapa(VC, 'a6_capa')['entrada_sha'] == sha1, 'A6 refez a capa para o arquivo novo')
+confere(not ag.pode_mover_legenda(c['id']), 'trecho guardado apagado depois da conferência aprovada')
 e6 = etapa(VC, 'a6_capa')
 confere(e6['estado'] == 'concluida' and e6['recibo'].get('capa_sha') and e6['saida_sha'], f'A6: capa feita pelo Agente 6, escolhida ({e6["recibo"].get("escolha")}) e presa ao vídeo')
 e7 = etapa(VC, 'a7_liberacao')
 a7 = db.um('SELECT * FROM coordenador_aprovacoes WHERE id=?', (e7['recibo'] or {}).get('aprovacao') or '')
 rel7 = json.loads(a7['relatorio']) if a7 else {}
 confere(e7['estado'] == 'concluida' and a7 and a7['decisao'] == 'aprovado', 'A7: pacote conferido item por item e liberado')
-confere({i['item'] for i in rel7.get('itens', [])} >= {'diretor', 'avaliacao_inicial', 'capa', 'direitos', 'link_original', 'titulo'}, 'A7 conferiu diretor, avaliação inicial, capa, direitos, link original e título')
+confere({i['item'] for i in rel7.get('itens', [])} >= {'diretor', 'avaliacao_inicial', 'capa', 'direitos', 'link_original', 'titulo', 'legenda_sobreposta'}, 'A7 conferiu diretor, avaliação inicial, capa, direitos, link original, título e legenda sobreposta')
 confere(a7 and a7['thumbnail_sha256'] == e6['recibo'].get('capa_sha'), 'liberação presa ao hash do vídeo E da capa')
 confere(ag.a7_liberou(next(x for x in ag.estado()['cortes'] if x['id'] == c['id'])), 'agora o agendador do Agente 2 pode pegar o corte')
 

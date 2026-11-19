@@ -42,7 +42,7 @@ export const confirmarOrdem=(c:CfgSrv,id:string,versao_plano:number)=>api<Ordem>
 export const acaoOrdem=(c:CfgSrv,id:string,acao:'pausar'|'retomar'|'cancelar')=>api<Ordem>(c,'POST',`${B}/ordens/${id}/${acao}`,{});
 export const lerAgentes=(c:CfgSrv)=>api<{agentes:AgenteInfo[];central:string}>(c,'GET',`${B}/agentes`);
 export const lerAprovacoes=(c:CfgSrv,estado='')=>api<{aprovacoes:Aprovacao[]}>(c,'GET',`${B}/aprovacoes?estado=${estado}`);
-export const decidir=(c:CfgSrv,id:string,d:{decisao:'aprovar'|'reprovar';pacote_hash:string;alvo?:'video'|'capa';comentario?:string;sem_capa?:boolean})=>
+export const decidir=(c:CfgSrv,id:string,d:{decisao:'aprovar'|'reprovar';pacote_hash:string;alvo?:'video'|'capa'|'legenda';comentario?:string;sem_capa?:boolean;aceitar_legenda?:boolean;posicao?:'baixo'|'meio'|'topo'})=>
   api<{aprovacao:Aprovacao}>(c,'POST',`${B}/aprovacoes/${id}/decidir`,d);
 export const escolherCapaPacote=(c:CfgSrv,id:string,v:CapaOpcao,confirmacao=false)=>api<{aprovacao:Aprovacao}>(c,'POST',`${B}/aprovacoes/${id}/capa`,{variante_id:v.id,versao:v.versao,confirmacao});
 export const lerMemorias=(c:CfgSrv,status='')=>api<{memorias:Memoria[]}>(c,'GET',`${B}/memorias?status=${status}`);

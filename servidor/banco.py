@@ -242,6 +242,11 @@ ESQUEMA = [
         detalhe TEXT, t REAL NOT NULL);
     CREATE INDEX IF NOT EXISTS esteira_historico_video ON esteira_historico (video, n);
     """,
+    # 13: Coordenador confere se o vídeo já tinha texto/legenda por baixo da nossa legenda (uma conferência por versão do arquivo)
+    """
+    CREATE TABLE IF NOT EXISTS texto_tela (video_sha TEXT PRIMARY KEY, ref TEXT, estado TEXT NOT NULL, resultado TEXT, tentativas INTEGER NOT NULL DEFAULT 0,
+        criado REAL NOT NULL, atualizado REAL NOT NULL);
+    """,
 ]
 
 
