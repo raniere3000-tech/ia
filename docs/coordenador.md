@@ -165,3 +165,13 @@ O Kwai não tem API pública, então o Coordenador junta no fim do dia os vídeo
 - Links assinados (3 dias) em `/api/v1/kwai/<data>/pagina|texto` e `/api/v1/kwai/video/<post>`, abrem sem senha só com a assinatura. Mudou o endereço do túnel, o link antigo para de funcionar: use o site.
 - Rotas: `GET /api/v1/coordenador/kwai?data=`, `POST /api/v1/coordenador/kwai/enviar`. Tela: Coordenador > Kwai. Chat: "manda o pacote do kwai".
 - Teste: `servidor/testes/teste_kwai_diario.py`.
+
+## Custos (custo por corte e banco de trechos)
+
+Aba **Coordenador > Custos** (`#coordenador/custos`), rota `GET /api/v1/coordenador/custos?dias=7|30|90`.
+
+- Cada resposta boa do Gemini é registrada em `ia_uso` (servidor/custo_corte.py, tabelas criadas sozinhas): tokens que o Google devolve × preço de tabela do orçamento. Os valores em R$ são **estimados**; a cobrança real é a do Google. Chave grátis = R$ 0 (mas gasta cota).
+- As chamadas do Agente 1 ficam ligadas à análise do vídeo (`analise` no corte). Custo por corte = custo das análises ÷ cortes feitos (sem os reprovados).
+- **Banco de trechos** (`cortes.por_analise`, padrão 12, 0 desliga): a mesma análise pede mais trechos; os que não saem agora ficam guardados 21 dias (com a transcrição) e viram corte nas próximas rodadas sem chamar a IA para ouvir e escolher. O vídeo é baixado de novo (de graça). Editor, diretor e esteira continuam iguais.
+- Sugestões com botão "aplicar" (`POST /custos/sugestoes/<id>/aplicar`), resumo semanal no WhatsApp/e-mail (`a7_custos`, padrão domingo 20:00) e aviso único no mês ao passar de 80% do teto. No chat: "quanto custa cada corte?".
+- Teste: `servidor/testes/teste_custo_corte.py`.

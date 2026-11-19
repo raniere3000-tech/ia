@@ -609,6 +609,19 @@ def _coord(metodo: str, caminho: str, q: dict, corpo, quem: str):
             return kd.enviar(str(d.get('data') or ''), quem)
         except kd.ErroKwai as e:
             raise pj.ErroProjeto(400, str(e))
+    if rota == ('GET', base + '/custos'):
+        import custo_corte as cc
+        return cc.resumo(_int(v('dias', '30'), 30))
+    if rota == ('POST', base + '/custos/aviso'):
+        import custo_corte as cc
+        return cc.enviar_aviso(_int(str(corpo().get('dias') or 7), 7))
+    m = re.fullmatch(base + r'/custos/sugestoes/(\w+)/aplicar', caminho)
+    if m and metodo == 'POST':
+        import custo_corte as cc
+        try:
+            return cc.aplicar(m.group(1))
+        except ValueError as e:
+            raise pj.ErroProjeto(400, str(e))
     if rota == ('GET', base + '/aprovacoes'):
         return co.aprovacoes(v('estado'))
     m = re.fullmatch(base + r'/aprovacoes/(\w+)/(decidir|capa)', caminho)

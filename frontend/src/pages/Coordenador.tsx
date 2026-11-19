@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Brain, CheckCircle2, Copy, Download, FileText, History, Package, Lightbulb, ListChecks, Loader2, MessageSquare, Pause, Play, Send, Settings2, ShieldCheck, Undo2, Users, Workflow, XCircle } from 'lucide-react';
+import { Bot, Brain, CheckCircle2, Coins, Copy, Download, FileText, History, Package, Lightbulb, ListChecks, Loader2, MessageSquare, Pause, Play, Send, Settings2, ShieldCheck, Undo2, Users, Workflow, XCircle } from 'lucide-react';
 import { useApp } from '../state';
 import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
 import Progresso from '../components/Progresso';
 import EsteiraSete from '../components/EsteiraSete';
 import { urlServidor } from '../lib/api';
 import { tempoTexto } from '../lib/alertas';
-import { ESCOPOS, ESTADO_ORDEM, ESTADO_TAREFA, REDES, acaoMemoria, acaoOrdem, acaoSugestao, confirmarOrdem, conferirHistorico, conferirLinks, criarMemoria, enviarKwai, lerKwai, decidir, escolherCapaPacote,
+import { ESCOPOS, ESTADO_ORDEM, ESTADO_TAREFA, REDES, acaoMemoria, acaoOrdem, acaoSugestao, confirmarOrdem, conferirHistorico, conferirLinks, criarMemoria, enviarKwai, lerKwai, lerCustos, avisarCustos, aplicarSugestaoCusto, decidir, escolherCapaPacote,
   interpretar, lerAgentes, lerAprovacoes, lerCfgCoord, lerConversa, lerEventos, lerMemoria, lerMemorias, lerOrdem, lerOrdens, lerSugestoes, mudarParametros, salvarCfgCoord,
-  type Aprovacao, type CfgCoord, type Evento, type Memoria, type Ordem, type Resposta } from '../lib/coordenador';
+  type Aprovacao, type CfgCoord, type Custos as CustosT, type Evento, type Memoria, type Ordem, type Resposta } from '../lib/coordenador';
 
-type Aba='conversar'|'esteira'|'ordens'|'aprovacoes'|'agentes'|'kwai'|'memoria'|'aprendizado'|'historico'|'config';
-const ABAS:[Aba,string,typeof Bot][]=[['conversar','Conversar',MessageSquare],['esteira','Esteira',Workflow],['ordens','Ordens',ListChecks],['aprovacoes','Liberar',ShieldCheck],['agentes','Agentes',Users],['kwai','Kwai',Package],
+type Aba='conversar'|'esteira'|'ordens'|'aprovacoes'|'agentes'|'kwai'|'custos'|'memoria'|'aprendizado'|'historico'|'config';
+const ABAS:[Aba,string,typeof Bot][]=[['conversar','Conversar',MessageSquare],['esteira','Esteira',Workflow],['ordens','Ordens',ListChecks],['aprovacoes','Liberar',ShieldCheck],['agentes','Agentes',Users],['kwai','Kwai',Package],['custos','Custos',Coins],
   ['memoria','Memória',Brain],['aprendizado','Aprendizado',Lightbulb],['historico','Histórico',History],['config','Configurações',Settings2]];
 const quando=(t?:number|null)=>t?new Date(t*1000).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
 const EXEMPLOS=['Faça 3 vídeos sobre a história do café, voz masculina, estilo documentário, 2 capas por vídeo, postar no YouTube amanhã às 18h',
@@ -36,6 +36,7 @@ export default function Coordenador(){
     {aba==='aprovacoes'&&<Liberar abrirOrdem={abrirOrdem}/>}
     {aba==='agentes'&&<Agentes/>}
     {aba==='kwai'&&<Kwai/>}
+    {aba==='custos'&&<Custos/>}
     {aba==='memoria'&&<MemoriaTela/>}
     {aba==='aprendizado'&&<Aprendizado/>}
     {aba==='historico'&&<Historico/>}
@@ -357,6 +358,61 @@ function Kwai(){
   </section>;
 }
 
+// ---------------------------------------------------------------- custo por corte (quanto a IA gasta para cada corte e como gastar menos)
+const brl=(x:number|null|undefined)=>x==null?'—':x>0&&x<0.01?'menos de R$ 0,01':x.toLocaleString('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:2,maximumFractionDigits:x<1?3:2});
+const pct=(x:number)=>`${Math.round(x*100)}%`;
+function Custos(){
+  const {toast}=useApp(); const cfg=useCfg(); const [dias,setDias]=useState(30); const [busy,setBusy]=useState('');
+  const r=useServidor(c=>lerCustos(c,dias),0,[dias]);
+  const d:CustosT|null=r.dados;
+  async function aplicar(id:string){ setBusy(id); try{ const x=await aplicarSugestaoCusto(cfg,id); toast(`Feito: ${x.acao}.`,'ok'); r.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } }
+  async function avisar(){ setBusy('aviso'); try{ await avisarCustos(cfg,7); toast('Resumo da semana enviado no WhatsApp/e-mail.','ok'); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } }
+  return <section className="panel">
+    <h3><Coins size={16}/> Custo por corte</h3>
+    <p className="hint">Quanto a IA (Gemini) gasta para o Agente 1 tirar cada corte. O que custa é a <b>análise</b> do vídeo (ouvir e escolher os trechos); baixar e editar no celular não custa nada. Por isso, quanto mais cortes saem da mesma análise, mais barato fica cada corte.</p>
+    <div className="row-gap left">
+      <div className="seg" role="radiogroup">{[7,30,90].map(n=><button key={n} role="radio" aria-checked={dias===n} className={dias===n?'on':''} onClick={()=>setDias(n)}>{n} dias</button>)}</div>
+      <button className="subtle sm" disabled={busy==='aviso'} onClick={avisar}>{busy==='aviso'?<Loader2 size={14} className="spin"/>:<Send size={14}/>} Mandar o resumo agora</button>
+    </div>
+    <Erro e={r.erro}/>
+    {!d&&!r.erro&&<p className="muted"><Loader2 size={14} className="spin"/> Carregando…</p>}
+    {d&&<>
+      <div className="thumb-grade">
+        <div className="card"><small className="muted">Custo médio por corte (pago de verdade)</small><div style={{fontSize:'1.5em',fontWeight:700}}>{brl(d.por_corte.pago)}</div>
+          <small className="muted">pelo preço de tabela: {brl(d.por_corte.tabela)}</small></div>
+        <div className="card"><small className="muted">Cortes feitos ({d.dias} dias)</small><div style={{fontSize:'1.5em',fontWeight:700}}>{d.cortes.feitos}</div>
+          <small className="muted">{d.cortes.reprovados} reprovado(s) pelo diretor · {d.cortes.medidos} com custo medido</small></div>
+        <div className="card"><small className="muted">Cortes por vídeo analisado</small><div style={{fontSize:'1.5em',fontWeight:700}}>{d.analises.cortes_por_analise==null?'—':String(d.analises.cortes_por_analise).replace('.',',')}</div>
+          <small className="muted">{d.analises.total} análise(s) · a IA achou em média {d.analises.achados_media==null?'—':String(d.analises.achados_media).replace('.',',')} trecho(s)</small></div>
+        <div className="card"><small className="muted">Guardados para depois (sem gastar IA)</small><div style={{fontSize:'1.5em',fontWeight:700}}>{d.reserva.trechos}</div>
+          <small className="muted">de {d.reserva.videos} vídeo(s) · valem {d.reserva.dias_validade} dias</small></div>
+      </div>
+      <h4 className="mt"><Lightbulb size={14}/> Como tirar mais cortes gastando menos</h4>
+      {!d.sugestoes.length&&<p className="muted">Nenhuma sugestão agora: os números deste período estão bons.</p>}
+      <ul className="coord-kwai">{d.sugestoes.map(s=><li key={s.id} className="card">
+        <b>{s.titulo}</b><p className="hint" style={{margin:'4px 0'}}>{s.texto}</p>
+        {s.acao&&<button className="primary sm" disabled={busy===s.id} onClick={()=>aplicar(s.id)}>{busy===s.id?<Loader2 size={14} className="spin"/>:<CheckCircle2 size={14}/>} {s.acao.rotulo}</button>}
+      </li>)}</ul>
+      <h4 className="mt">Onde o dinheiro vai (Agente 1)</h4>
+      {!d.a1.etapas.length?<p className="muted">Nenhuma chamada à IA registrada neste período{d.medindo_desde?'':' (o registro começa com esta atualização)'}.</p>:
+      <div className="ag-tabela-rol"><table className="ag-tabela"><thead><tr><th>Etapa</th><th>Chamadas</th><th>Tabela</th><th>Pago</th><th>Parte</th></tr></thead>
+        <tbody>{d.a1.etapas.map(e=><tr key={e.etapa}><td>{e.nome}</td><td>{e.chamadas}</td><td>{brl(e.reais_tabela)}</td><td>{brl(e.reais_pago)}</td><td>{pct(e.parte)}</td></tr>)}
+        <tr><td><b>Total</b></td><td>{d.a1.chamadas}</td><td><b>{brl(d.a1.reais_tabela)}</b></td><td><b>{brl(d.a1.reais_pago)}</b></td><td/></tr></tbody></table></div>}
+      {d.a1.chave_gratis>0&&<p className="hint">{d.a1.chave_gratis} chamada(s) foram na chave grátis: não custam dinheiro, mas gastam a cota do dia do Google.</p>}
+      {d.analises.lista.length>0&&<><h4 className="mt">Últimos vídeos analisados</h4>
+        <ol className="coord-kwai">{d.analises.lista.map(a=><li key={a.id} className="card">
+          <b>{a.titulo||'vídeo'}</b> <small className="muted">{quando(a.t)} · {a.minutos} min · fala: {a.fonte}</small>
+          <div><small>A IA achou {a.achados} trecho(s) · {a.cortes} viraram corte{a.reprovados?` · ${a.reprovados} reprovado(s)`:''} · {a.guardados} guardado(s)</small></div>
+          <div><small>Custo da análise: {brl(a.reais_pago)} pago ({brl(a.reais_tabela)} tabela) · por corte: <b>{brl(a.por_corte)}</b></small></div>
+        </li>)}</ol></>}
+      {d.outros.length>0&&<><h4 className="mt">Outros agentes no mesmo período</h4>
+        <ul>{d.outros.map(o=><li key={o.uso}><small>{o.nome}: {o.chamadas} chamada(s) · {brl(o.reais_pago)} pago ({brl(o.reais_tabela)} tabela)</small></li>)}</ul></>}
+      <p className="hint">Neste mês (contador antigo, só a chave paga, todos os agentes): {brl(d.mes.reais_pago)} de {brl(d.mes.teto)} do teto, {d.mes.cortes} corte(s){d.mes.por_corte_antigo!=null?` → cerca de ${brl(d.mes.por_corte_antigo)} por corte`:''}.</p>
+      <p className="hint"><b>Os valores são estimados:</b> tokens que o Google devolve em cada resposta × preço de tabela (US$ {d.config.preco_texto} texto, US$ {d.config.preco_audio} áudio, US$ {d.config.preco_saida} resposta, por milhão de tokens; dólar a R$ {d.config.dolar}). A cobrança de verdade está em ai.studio/spend. Chave grátis = R$ 0.</p>
+    </>}
+  </section>;
+}
+
 function Config(){
   const {toast}=useApp(); const cfg=useCfg(); const r=useServidor(c=>lerCfgCoord(c),0); const [c,setC]=useState<CfgCoord|null>(null);
   useEffect(()=>{ if(r.dados) setC(r.dados); },[r.dados]);
@@ -373,6 +429,9 @@ function Config(){
     <div className="thumb-grade">{num('max_videos','Máximo de vídeos por pedido',1,30)}{num('correcoes_por_etapa','Correções por etapa',1,10)}{num('capas_padrao','Capas por vídeo (padrão)',0,4)}{num('intervalo_horas','Horas entre posts do mesmo dia',1,12)}</div>
     <label className="check"><input type="checkbox" checked={c.kwai_diario!==false} onChange={e=>setC({...c,kwai_diario:e.target.checked})}/> No fim do dia, me mandar o pacote do Kwai (nome, descrição, link original e vídeos do dia)</label>
     <label className="field"><span>Horário do pacote do Kwai</span><input type="time" value={c.kwai_hora||'21:00'} onChange={e=>setC({...c,kwai_hora:e.target.value})}/></label>
+    <label className="check"><input type="checkbox" checked={c.custos_aviso!==false} onChange={e=>setC({...c,custos_aviso:e.target.checked})}/> Toda semana, me mandar o custo médio por corte e as sugestões para gastar menos</label>
+    <div className="thumb-grade"><label className="field"><span>Dia do resumo de custos</span><select value={c.custos_dia??0} onChange={e=>setC({...c,custos_dia:Number(e.target.value)})}>{['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'].map((n,i)=><option key={i} value={i}>{n}</option>)}</select></label>
+      <label className="field"><span>Horário do resumo de custos</span><input type="time" value={c.custos_hora||'20:00'} onChange={e=>setC({...c,custos_hora:e.target.value})}/></label></div>
     <label className="check"><input type="checkbox" checked={c.reposicao_automatica} onChange={e=>setC({...c,reposicao_automatica:e.target.checked})}/> Quando faltar vídeo para um horário, pedir mais cortes ao Agente 1 sozinho</label>
     <div className="thumb-grade">{num('reposicao_intervalo_min','Minutos entre pedidos de mais cortes',10,1440)}</div>
     <button className="primary sm" onClick={salvar}>Salvar</button>

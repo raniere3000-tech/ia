@@ -293,6 +293,7 @@ export default function Agente(){
         <div className="ag-grade">
           <label>Cortes por semana<Campo tipo="number" min={1} max={21} valor={co.por_semana} salvar={x=>salvar({cortes:{por_semana:+x}})}/></label>
           <label>Cortes por vídeo<Campo tipo="number" min={1} max={6} valor={co.por_video} salvar={x=>salvar({cortes:{por_video:+x}})}/></label>
+          <label>Trechos por análise (banco de trechos, 0 = desligado){' '}<small className="muted">os que não saem agora viram corte depois, sem gastar IA</small><Campo tipo="number" min={0} max={20} valor={co.por_analise??12} salvar={x=>salvar({cortes:{por_analise:+x}})}/></label>
           <label>Cada corte dura no mínimo (em SEGUNDOS){' '}<small className="muted">= {tempo(co.dur_min)}</small><Campo tipo="number" min={10} max={175} valor={co.dur_min} salvar={x=>salvar({cortes:{dur_min:+x}})}/></label>
           <label>Cada corte dura no máximo (em SEGUNDOS){' '}<small className="muted">= {tempo(co.dur_max)}</small><Campo tipo="number" min={15} max={180} valor={co.dur_max} salvar={x=>salvar({cortes:{dur_max:+x}})}/></label>
           <label>Pontuação mínima (0 a 99)<Campo tipo="number" min={0} max={99} valor={co.nota_min} salvar={x=>salvar({cortes:{nota_min:+x}})}/></label>
@@ -431,7 +432,7 @@ export default function Agente(){
           ['Agente 1 · Cortes do Radar',[['a1_corte','Corte aprovado pelo diretor, esperando você'],['a1_reprovado','Corte reprovado pelo diretor'],['a1_canal','Canais novos sugeridos'],['a1_falha','Vídeo que não deu para cortar']]],
           ['Agente 2 · Postagem',[['a2_liberacao','Post esperando a sua liberação'],['a2_falha','Post que falhou'],['a2_postado','Post enviado'],['a2_agendado','Post agendado'],['a2_semana','Resumo da semana']]],
           ['Agente 3 · Vídeos com IA',[['a3_roteiro','Roteiro pronto para conferir'],['a3_aprovacao','Vídeo aprovado pelo diretor, esperando você'],['a3_refazendo','Diretor mandou refazer'],['a3_falha','Produção que parou']]],
-          ['Agente 7 · Coordenador',[['a7_kwai','Pacote do Kwai no fim do dia']]],
+          ['Agente 7 · Coordenador',[['a7_kwai','Pacote do Kwai no fim do dia'],['a7_custos','Custo por corte da semana']]],
         ] as [string,[string,string][]][]).map(([nome,itens])=><div key={nome} className="mt"><b>{nome}</b>
           <div className="chips">{itens.map(([k,t])=><button key={k} type="button" className={'chip '+(zap.avisos[k]?'on':'')} aria-pressed={!!zap.avisos[k]} onClick={()=>salvar({whatsapp:{avisos:{[k]:!zap.avisos[k]}}})}>{t}</button>)}</div></div>)}
         <p className="hint">Os pedidos de aprovação (corte e vídeo) trazem o código para você responder ali mesmo: <b>aprovar VID-…</b> ou <b>agendar corte 2</b>. Os avisos do e-mail continuam com as escolhas da parte de e-mail.</p>

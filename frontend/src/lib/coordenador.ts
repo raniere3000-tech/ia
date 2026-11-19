@@ -30,7 +30,21 @@ export type AgenteInfo={id:string;nome:string;estado:string;atual:{job:string;ti
   custo_30d?:{valor:number;moeda:string;registros:number};custo_capas_30d_usd?:number;posts_agendados?:number;ordens_ativas?:number;esperando_voce?:number;modo?:string};
 export type Sugestao={id:string;tipo:string;titulo:string;evidencia:Record<string,unknown>;confianca:number|null;proposta:{texto:string;escopo:string;chave:string}};
 export type CfgCoord={modo:'supervisionado'|'automatico';exigir_liberacao:boolean;max_videos:number;correcoes_por_etapa:number;qualidade_minima:number;
-  usar_ia:boolean;capas_padrao:number;intervalo_horas:number;reposicao_automatica:boolean;reposicao_intervalo_min:number;kwai_diario:boolean;kwai_hora:string};
+  usar_ia:boolean;capas_padrao:number;intervalo_horas:number;reposicao_automatica:boolean;reposicao_intervalo_min:number;kwai_diario:boolean;kwai_hora:string;
+  custos_aviso?:boolean;custos_dia?:number;custos_hora?:string};
+export type CustoEtapa={etapa:string;nome:string;chamadas:number;reais_tabela:number;reais_pago:number;parte:number};
+export type CustoAnalise={id:string;t:number;titulo:string;url:string;fonte:string;minutos:number;achados:number;cortes:number;reprovados:number;guardados:number;
+  reais_tabela:number;reais_pago:number;por_corte:number|null};
+export type CustoSugestao={id:string;prioridade:number;titulo:string;texto:string;acao?:{rotulo:string}};
+export type Custos={dias:number;desde:number;gerado:number;medindo_desde:number|null;
+  a1:{chamadas:number;reais_pago:number;reais_tabela:number;etapas:CustoEtapa[];chave_gratis:number};
+  cortes:{feitos:number;reprovados:number;medidos:number};por_corte:{pago:number|null;tabela:number|null};
+  analises:{total:number;cortes_por_analise:number|null;achados_media:number|null;lista:CustoAnalise[]};
+  reserva:{trechos:number;videos:number;dias_validade:number};
+  outros:{uso:string;nome:string;chamadas:number;reais_tabela:number;reais_pago:number}[];
+  mes:{reais_pago:number;chamadas_pagas:number;teto:number;cortes:number;por_corte_antigo:number|null};
+  config:{por_analise:number;por_video:number;por_semana:number;chave_cortes:string;dolar:number;preco_texto:number;preco_audio:number;preco_saida:number};
+  sugestoes:CustoSugestao[]};
 
 const B='/api/v1/coordenador';
 export const interpretar=(c:CfgSrv,texto:string,chave='')=>api<Resposta>(c,'POST',`${B}/interpretar`,{texto,chave});
@@ -60,6 +74,9 @@ export type KwaiItem={post:string;titulo:string;descricao:string;hashtags:string
 export type KwaiPacote={data:string;itens:KwaiItem[];links:{pagina:string;texto:string;zip:string;videos:Record<string,string>};endereco:string;enviados:string[]};
 export const lerKwai=(c:CfgSrv,data='')=>api<KwaiPacote>(c,'GET',`${B}/kwai${data?`?data=${encodeURIComponent(data)}`:''}`);
 export const enviarKwai=(c:CfgSrv,data='')=>api<{ok:boolean;data:string;videos:number}>(c,'POST',`${B}/kwai/enviar`,{data});
+export const lerCustos=(c:CfgSrv,dias=30)=>api<Custos>(c,'GET',`${B}/custos?dias=${dias}`);
+export const avisarCustos=(c:CfgSrv,dias=7)=>api<{ok:boolean;texto:string}>(c,'POST',`${B}/custos/aviso`,{dias});
+export const aplicarSugestaoCusto=(c:CfgSrv,id:string)=>api<{ok:boolean;aplicado:string;acao:string}>(c,'POST',`${B}/custos/sugestoes/${encodeURIComponent(id)}/aplicar`,{});
 export const lerCfgCoord=(c:CfgSrv)=>api<CfgCoord>(c,'GET',`${B}/config`);
 export const salvarCfgCoord=(c:CfgSrv,d:Partial<CfgCoord>)=>api<CfgCoord>(c,'POST',`${B}/config`,d);
 

@@ -33,7 +33,7 @@ _ACORDAR = threading.Event()
 
 CONFIG_PADRAO = {'modo': 'supervisionado', 'exigir_liberacao': False, 'max_videos': 12, 'correcoes_por_etapa': 5, 'qualidade_minima': 70,
                  'usar_ia': True, 'capas_padrao': 2, 'intervalo_horas': 3, 'reposicao_automatica': True, 'reposicao_intervalo_min': 60,
-                 'kwai_diario': True, 'kwai_hora': '21:00'}
+                 'kwai_diario': True, 'kwai_hora': '21:00', 'custos_aviso': True, 'custos_dia': 0, 'custos_hora': '20:00'}
 MODOS = ('supervisionado', 'automatico')
 REDES = ('youtube', 'tiktok', 'instagram', 'facebook', 'kwai')
 
@@ -51,9 +51,10 @@ CATALOGO = {
     'pendentes': {'agentes': [], 'confirma': False, 'descricao': 'O que espera a sua decisão.'},
     'ajuda': {'agentes': [], 'confirma': False, 'descricao': 'O que você pode pedir.'},
     'kwai': {'agentes': ['Agente 7'], 'confirma': False, 'descricao': 'Mandar agora o pacote do Kwai de hoje (nome, descrição, link original e vídeos).'},
+    'custos': {'agentes': ['Agente 7'], 'confirma': False, 'descricao': 'Quanto a IA está custando por corte e como tirar mais cortes gastando menos.'},
     'lembrar': {'agentes': ['Agente 7'], 'confirma': True, 'descricao': 'Guardar uma preferência (vira memória depois que você confirma).'},
 }
-SO_LEITURA = ('status', 'quanto_falta', 'pendentes', 'ajuda', 'kwai')
+SO_LEITURA = ('status', 'quanto_falta', 'pendentes', 'ajuda', 'kwai', 'custos')
 ESTADOS_ORDEM = ('rascunho', 'aguardando_confirmacao', 'em_execucao', 'aguardando_voce', 'pausada', 'concluida', 'parcial', 'falhou', 'cancelada')
 FINAIS_TAREFA = ('concluida', 'falhou', 'cancelada', 'bloqueada', 'pulada')
 NOMES_AGENTE = {'agente1': 'Agente 1 · Cortes', 'agente2': 'Agente 2 · Postagem', 'agente3': 'Agente 3 · Vídeos', 'agente4': 'Agente 4 · Diretor',
@@ -109,15 +110,20 @@ def salvar_config(d: dict, quem: str = 'site') -> dict:
         if d['modo'] not in MODOS:
             raise ErroCoord(400, 'Modo inválido (supervisionado ou automatico).')
         c['modo'] = d['modo']
+    if 'custos_hora' in d:
+        h = str(d['custos_hora'] or '').strip()
+        if not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', h):
+            raise ErroCoord(400, 'Horário do resumo de custos inválido (use HH:MM, por exemplo 20:00).')
+        c['custos_hora'] = h
     if 'kwai_hora' in d:
         h = str(d['kwai_hora'] or '').strip()
         if not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', h):
             raise ErroCoord(400, 'Horário do pacote do Kwai inválido (use HH:MM, por exemplo 21:00).')
         c['kwai_hora'] = h
-    for k in ('exigir_liberacao', 'usar_ia', 'reposicao_automatica', 'kwai_diario'):
+    for k in ('exigir_liberacao', 'usar_ia', 'reposicao_automatica', 'kwai_diario', 'custos_aviso'):
         if k in d:
             c[k] = bool(d[k])
-    for k, lo, hi in (('max_videos', 1, 30), ('correcoes_por_etapa', 1, 10), ('qualidade_minima', 50, 100), ('capas_padrao', 0, 4), ('intervalo_horas', 1, 12), ('reposicao_intervalo_min', 10, 1440)):
+    for k, lo, hi in (('max_videos', 1, 30), ('correcoes_por_etapa', 1, 10), ('qualidade_minima', 50, 100), ('capas_padrao', 0, 4), ('intervalo_horas', 1, 12), ('reposicao_intervalo_min', 10, 1440), ('custos_dia', 0, 6)):
         if k in d:
             try:
                 v = int(d[k])
@@ -327,6 +333,8 @@ def _regras(texto: str) -> dict | None:
         return {'intencao': 'ajuda', 'parametros': {}}
     if re.search(r'\b(kwai|kawai|kway|kuai)\b', b) and re.search(r'pacote|arquivo|lista|manda|envia|gera|faz|quero|cad[eê]|de hoje|do dia', b):
         return {'intencao': 'kwai', 'parametros': {}}
+    if re.search(r'\b(custo|custa|custando|gasto|gastando|gastei|gasta)\b', b) and re.search(r'corte|ia\b|intelig|gemini|m[eé]dia|por v[ií]deo|cada|quanto|economi', b):
+        return {'intencao': 'custos', 'parametros': {}}
     if re.search(r'quanto (tempo )?falta|quando (fica|termina|acaba)|previs[aã]o', b):
         return {'intencao': 'quanto_falta', 'parametros': {}}
     if re.search(r'(o que|tem algo|tem coisa).{0,20}(espera|esperando|aguarda|pendente).{0,15}(mim|eu|voc[eê])|^pendentes?\b|para (eu )?aprovar', b):
@@ -2148,6 +2156,12 @@ def interpretar(texto: str, quem: str = 'site', chave: str = '') -> dict:
                    if r['videos'] else 'Hoje ainda não tem vídeo postado ou agendado. Mandei o aviso mesmo assim; o pacote fica em Coordenador > Kwai.'}
         except Exception as e:  # noqa: BLE001
             out = {'tipo': 'resposta', 'resposta': f'Não consegui montar o pacote do Kwai: {e}'}
+    elif it == 'custos':
+        try:
+            import custo_corte as cc
+            out = {'tipo': 'resposta', 'resposta': cc.texto_aviso(cc.resumo(30)) + ' Para aplicar uma sugestão, abra Coordenador > Custos.'}
+        except Exception as e:  # noqa: BLE001
+            out = {'tipo': 'resposta', 'resposta': f'Não consegui calcular os custos: {e}'}
     elif it == 'lembrar':
         if len(e['parametros'].get('texto') or '') < 3:
             out = {'tipo': 'resposta', 'resposta': 'O que devo lembrar?'}
@@ -2318,6 +2332,37 @@ def pacote_kwai_do_dia(agora: float | None = None) -> dict | None:
     return r
 
 
+def resumo_custos_da_semana(agora: float | None = None) -> dict | None:
+    """Uma vez por semana (padrão domingo 20:00) manda no WhatsApp/e-mail o custo médio por corte e as melhores sugestões.
+    E avisa uma vez por mês quando o gasto pago passar de 80% do teto."""
+    c = config()
+    agora = _agora() if agora is None else agora
+    import custo_corte as cc
+    try:
+        import agente as ag
+        o, mes = ag.config()['orcamento'], ag.gasto_mes()
+        chave_mes = time.strftime('%Y-%m', time.localtime(agora))
+        if o['teto'] > 0 and mes['reais'] >= 0.8 * o['teto'] and db.kv('agente7.custos_teto_avisado') != chave_mes:
+            db.kv_gravar('agente7.custos_teto_avisado', chave_mes)
+            ag.avisar('custos', 'IA perto do teto do mês', f'O gasto com a IA (chave paga) já está em R$ {mes["reais"]:.2f} de R$ {o["teto"]:.2f} neste mês. '
+                      'Quando chegar no teto, a IA para até o mês virar. Veja as sugestões em Coordenador > Custos.', zap_tipo='a7_custos')
+    except Exception as e:  # noqa: BLE001
+        print('coordenador: teto', e)
+    if not c['custos_aviso']:
+        return None
+    lt = time.localtime(agora)
+    if (lt.tm_wday + 1) % 7 != c['custos_dia']:          # 0 = domingo ... 6 = sábado
+        return None
+    data = _data_str(agora)
+    hora = _ts(data, c['custos_hora'])
+    if hora is None or agora < hora or db.kv('agente7.custos_enviado') == data:
+        return None
+    db.kv_gravar('agente7.custos_enviado', data)
+    r = cc.enviar_aviso(7)
+    evento(None, None, 'agente7', 'custos', {'data': data, 'acao': 'enviado'})
+    return r
+
+
 def _vigia():
     ultimo_link = 0.0
     ultimo_esteira = 0.0
@@ -2338,6 +2383,10 @@ def _vigia():
             pacote_kwai_do_dia()
         except Exception as e:  # noqa: BLE001
             print('coordenador: kwai', e)
+        try:
+            resumo_custos_da_semana()
+        except Exception as e:  # noqa: BLE001
+            print('coordenador: custos', e)
         try:                    # esteira dos 7 agentes: segue A6 -> A7 -> A2 do que já foi provado (a cada ~20 s)
             import esteira as es
             if _agora() - ultimo_esteira >= 20:

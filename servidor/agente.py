@@ -74,7 +74,7 @@ PADRAO = {
     'cortes': {
         'ligado': False, 'nichos': ['Games'], 'temas': [], 'temas_outros': False, 'proibidos': ['conteúdo adulto', 'discurso de ódio', 'menores de idade'],
         'min_views': 500000, 'idioma': 'pt', 'regiao': 'BR',
-        'por_semana': 6, 'por_video': 2, 'dur_min': 60, 'dur_max': 65, 'dur_v': 0, 'nota_min': 60,
+        'por_semana': 6, 'por_video': 2, 'por_analise': 12, 'dur_min': 60, 'dur_max': 65, 'dur_v': 0, 'nota_min': 60,
         'video_min': 4, 'video_max': 120, 'dias_video': 14, 'hora_ini': 0, 'hora_fim': 24,
         'template': {'legenda': 'destaque', 'cor': '#FFFFFF', 'cor_destaque': '#FFE14D', 'maiusculas': True,
                      'tamanho': 'medio', 'legenda_pos': 'baixo', 'enquadramento': 'desfoque', 'zoom': 1.0,
@@ -97,7 +97,7 @@ PADRAO = {
         'a1_corte': True, 'a1_reprovado': False, 'a1_canal': False, 'a1_falha': True,
         'a2_agendado': False, 'a2_postado': True, 'a2_liberacao': True, 'a2_falha': True, 'a2_semana': True,
         'a3_roteiro': True, 'a3_refazendo': False, 'a3_aprovacao': True, 'a3_falha': True,
-        'a7_kwai': True}},
+        'a7_kwai': True, 'a7_custos': True}},
     'orcamento': {'teto': 10.0, 'dolar': 5.6, 'preco_texto': 0.30, 'preco_audio': 1.00, 'preco_saida': 2.50},
     # qual chave do Gemini cada tarefa usa: 'gratis' (projeto sem cobrança) ou 'paga' (projeto com saldo)
     'chaves_uso': {'cortes': 'gratis', 'camera': 'gratis', 'roteiro': 'gratis', 'voz': 'gratis', 'imagens': 'paga', 'reserva': True},
@@ -155,6 +155,8 @@ def _limpar_cfg(c: dict) -> dict:
     co['por_semana'] = max(1, min(21, co['por_semana']))
     co['exigir_aprovacao'] = co.get('exigir_aprovacao') is True
     co['por_video'] = max(1, min(6, co['por_video']))
+    # banco de trechos: quantos trechos a IA aponta numa análise (o que não sai agora fica guardado e vira corte depois, sem IA); 0 = desligado
+    co['por_analise'] = max(0, min(20, int(co.get('por_analise') or 0)))
     if co.get('dur_v', 0) < 2:          # versão 2: duração do corte passa a ter padrão de 1 min a 1 min e 5 s (pedido do dono)
         co['dur_min'], co['dur_max'], co['dur_v'] = 60, 65, 2
     co['dur_min'] = max(10, min(175, co['dur_min']))
@@ -330,6 +332,8 @@ def http_gemini(uso: str, caminho: str, corpo: dict, tempo: int = 300) -> tuple[
                 raise ErroAgente(f'O teto de R$ {o["teto"]:.2f} da IA neste mês foi atingido. Aumente o teto em Agentes > Avisos e chaves ou espere o mês virar.')
         st, j = _pedir_gemini(caminho, corpo, chave, tempo)
         if st < 300:
+            import custo_corte as cc      # cada chamada boa fica registrada (tokens reais × preço de tabela), ligada à análise do corte
+            cc.registrar(uso, caminho.split(':')[0], nome, corpo, (j or {}).get('usageMetadata'), _cobrada(nome))
             if k:
                 anotar(f'A chave {"grátis" if lista[0][0] == "gratis" else "com saldo"} estava sem cota; usei a outra para "{USOS.get(uso, uso)}".', 'aviso')
             return st, j, nome
@@ -690,8 +694,9 @@ def _mmss(t: float) -> str:
     return f'{int(t) // 60}:{int(t) % 60:02d}'
 
 
-def escolher(frs: list, titulo: str, n: int, co: dict) -> list:
-    """Pergunta fechada à IA: quais trechos, com nota, título, gancho e hashtags."""
+def escolher(frs: list, titulo: str, n: int, co: dict, sobra: list | None = None) -> list:
+    """Pergunta fechada à IA: quais trechos, com nota, título, gancho e hashtags.
+    sobra: lista que recebe os trechos bons além dos n de agora (banco de trechos: viram corte depois, sem pagar a IA de novo)."""
     if not frs:
         return []
     blocos, atual, base = [], [], frs[0]['ini']
@@ -702,6 +707,9 @@ def escolher(frs: list, titulo: str, n: int, co: dict) -> list:
         atual.append(f)
     blocos.append(atual)
     pedir = max(2, math.ceil(n * 2 / len(blocos)))
+    alvo = int(co.get('por_analise') or 0) if sobra is not None else 0
+    if alvo > n:          # a mesma análise aponta mais trechos: a resposta fica um pouco maior, mas não precisa ouvir/ler o vídeo de novo
+        pedir = min(25, max(pedir, math.ceil(alvo * 1.5 / len(blocos))))
     achados = []
     apoio, usadas = '', []
     try:
@@ -730,7 +738,10 @@ def escolher(frs: list, titulo: str, n: int, co: dict) -> list:
             + linhas)
         r = gemini([{'text': prompt}])
         achados += r if isinstance(r, list) else r.get('cortes', []) if isinstance(r, dict) else []
-    cortes = validar(achados, frs, co)[:n]
+    todos = validar(achados, frs, co)
+    cortes = todos[:n]
+    if sobra is not None and alvo > n:
+        sobra.extend(todos[n:alvo])
     if cortes and usadas:
         # K4: cada corte leva as skills que entraram na escolha; o registro de uso só existe porque há trechos reais com tempo
         for c in cortes:
@@ -1359,10 +1370,14 @@ def _link_do_video(v: dict) -> str:
     return ds.link_valido(v.get('url', ''))
 
 
-def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: dict | None = None, ajustes: dict | None = None) -> list:
+def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: dict | None = None, ajustes: dict | None = None,
+                    pre: dict | None = None) -> list:
     """Baixa um vídeo, escolhe e edita os cortes. Devolve os cortes criados.
     baixado=(arquivo, info, legenda): o arquivo já está no servidor (ex.: um bloco gravado da live), não baixa.
-    extra: campos que entram em cada corte criado (ex.: de qual live veio). ajustes: regras do Agente 1 só para esta vez."""
+    extra: campos que entram em cada corte criado (ex.: de qual live veio). ajustes: regras do Agente 1 só para esta vez.
+    pre: trechos do banco de trechos (custo_corte.tomar): a transcrição e a escolha já foram pagas numa análise anterior,
+    então não chama a IA para ouvir nem para escolher. A edição, o editor e o diretor de qualidade seguem iguais."""
+    import custo_corte as cc
     if BAIXAR is None and baixado is None:
         raise ErroAgente('Servidor sem a função de download.')
     cfg = config()
@@ -1370,6 +1385,9 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
     pasta = TRABALHO / uuid.uuid4().hex[:10]
     pasta.mkdir(parents=True, exist_ok=True)
     t_inicio = time.time()
+    ref = (pre or {}).get('ref') or cc.nova_ref()       # as chamadas à IA desta análise ficam ligadas a ela (custo por corte)
+    cc.definir_ref(ref)
+    sobras: list = []
     try:
         etapa(f'Baixando: {v["titulo"][:60]}', 2)
         if baixado:
@@ -1385,10 +1403,16 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             palavras = [p for p in palavras if p[1] <= dur]
             anotar(f'"{v.get("titulo") or info.get("title", "")[:60]}" passa do limite: cortei só dos primeiros {int(dur // 60)} minutos.')
         fonte = 'legenda do YouTube'
-        if len(palavras) < 40:
+        if pre:
+            palavras, fonte = [tuple(p) for p in pre['palavras'] if p[1] <= dur + 1], 'banco de trechos (análise já feita)'
+            escolhidos = [dict(c) for c in pre['itens'] if c['fim'] <= dur + 1][:max(1, quantos)]
+            etapa(f'{len(escolhidos)} trecho(s) guardado(s) de "{v["titulo"][:50]}": sem gastar IA para ouvir e escolher', 50)
+        elif len(palavras) < 40:
             fonte = 'IA'
             palavras = transcrever_ia(arq, dur, pasta, co['idioma'])
-        if len(palavras) < 40 and co.get('sem_fala'):
+        if pre:
+            pass
+        elif len(palavras) < 40 and co.get('sem_fala'):
             # gameplay / live de jogo: sem fala, os momentos vêm do que dá para medir (picos de som e trocas de cena)
             etapa(f'Procurando momentos de ação (som e imagem): {v["titulo"][:50]}', 40)
             fonte = 'som e imagem'
@@ -1398,11 +1422,14 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
         elif len(palavras) < 40:
             raise ErroAgente('Quase não há fala neste vídeo; sem fala não dá para escolher cortes.')
         else:
-            escolhidos = escolher(frases(palavras), v['titulo'], quantos, co)
+            guardar = bool(not baixado and v.get('url') and co.get('por_analise'))      # vídeo do YouTube: o que sobrar vai para o banco de trechos
+            escolhidos = escolher(frases(palavras), v['titulo'], quantos, co, **({'sobra': sobras} if guardar else {}))
         if not escolhidos:
             raise ErroAgente('Nenhum trecho passou nas suas regras (pontuação mínima, duração e assuntos proibidos).')
         criados = []
         memo_cam: dict = {}
+        if pre and pre.get('tem_cam'):
+            memo_cam['cam'] = pre.get('cam')          # a câmera do streamer já foi achada na análise: não pergunta à IA de novo
         t_corte = t_inicio
         for i, c in enumerate(escolhidos):
             etapa(f'Editando o corte {i + 1} de {len(escolhidos)}', 62 + 34 * i / len(escolhidos))
@@ -1479,7 +1506,7 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
                      variacoes=usadas, fala=fonte, tamanho=(pg.VIDEOS / (vid + '.mp4')).stat().st_size, email=False,
                      tipo='agente', modelo=modelo['id'], modelo_nome=modelo['nome'], hash=_hash(pg.VIDEOS / (vid + '.mp4')),
                      legendado=tpl['legenda'] != 'nenhuma', qa=qa, estilo_visual=tpl.get('estilo_visual', ''), formato=tpl.get('formato', ''),
-                     arranjo=arranjo)
+                     arranjo=arranjo, analise=ref, da_reserva=bool(pre))
             if perfil:
                 c.update(perfil=perfil['id'], perfil_nome=perfil['nome'], perfil_versao=perfil['versao'], redes=list(perfil['redes']))
                 if perfil['hashtags_base']:
@@ -1491,8 +1518,20 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             _mudar(lambda e, c=c: e['cortes'].append(c))
             criados.append(c)
             t_corte = time.time()
+        if not pre:
+            guardados = 0
+            if sobras:
+                try:
+                    guardados = cc.guardar(ref, v, sobras, palavras, memo_cam.get('cam') if memo_cam.get('cam') != 'erro' else None,
+                                           'cam' in memo_cam and memo_cam['cam'] != 'erro')
+                except (OSError, ValueError) as e:
+                    print('agente: banco de trechos', e)
+                if guardados:
+                    anotar(f'Banco de trechos: guardei mais {guardados} trecho(s) bons de "{v["titulo"][:60]}" para virar corte depois, sem gastar IA.')
+            cc.registrar_analise(ref, v, fonte, dur, len(escolhidos) + len(sobras), len(escolhidos), guardados)
         return criados
     finally:
+        cc.definir_ref('')
         shutil.rmtree(pasta, ignore_errors=True)
 
 
@@ -1849,6 +1888,17 @@ def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '', limit
         falta = co['por_semana'] - cortes_da_semana()
         if falta <= 0 and not forcar:
             return 'A meta de cortes desta semana já foi cumprida.'
+        quantos = max(1, min(co['por_video'], limite if limite > 0 else (falta if falta > 0 else co['por_video'])))
+        if co.get('por_analise'):
+            # banco de trechos primeiro: trechos que sobraram de uma análise já paga viram corte sem chamar a IA para ouvir e escolher
+            import custo_corte as cc
+            try:
+                reserva = cc.tomar(quantos, tema)
+            except Exception as e:  # noqa: BLE001 - banco de trechos com problema: segue procurando vídeo novo
+                print('agente: banco de trechos', e)
+                reserva = None
+            if reserva:
+                return _cortar_da_reserva(reserva)
         v = proximo_video(tema)
         if not v and (tema or co['temas']):
             return (f'Não achei vídeo novo sobre "{tema}".' if tema else 'Não achei vídeo novo sobre os seus temas (' + ', '.join(co['temas'][:4]) + ').') + \
@@ -1866,6 +1916,25 @@ def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '', limit
         return str(e)
     _marcar_visto(v['id'], f'{len(criados)} corte(s)')
     anotar(f'{len(criados)} corte(s) pronto(s) de "{v["titulo"][:80]}".', 'ok')
+    return _depois_de_cortar(v, criados)
+
+
+def _cortar_da_reserva(reserva: dict) -> str:
+    """Cortes a partir do banco de trechos: baixa o vídeo de novo (de graça) e edita os trechos já escolhidos."""
+    import custo_corte as cc
+    v = reserva['video']
+    try:
+        criados = processar_video(v, len(reserva['itens']), pre=reserva)
+    except (ErroAgente, pg.ErroRede) as e:
+        fora = bool(re.search(r'unavailable|private|removed|indispon|privado|removido|not available|404', str(e), re.I))
+        cc.devolver(reserva, descartar=fora or isinstance(e, ErroAgente))
+        anotar(f'Não deu para cortar os trechos guardados de "{v["titulo"][:60]}": {e}', 'erro')
+        return str(e)
+    anotar(f'{len(criados)} corte(s) pronto(s) de "{v["titulo"][:80]}" com trechos guardados (sem gastar IA para ouvir e escolher).', 'ok')
+    return _depois_de_cortar(v, criados)
+
+
+def _depois_de_cortar(v: dict, criados: list) -> str:
     reprovados = [c for c in criados if c['status'] == 'reprovado']
     if reprovados:
         anotar(f'O diretor de qualidade reprovou {len(reprovados)} corte(s) de "{v["titulo"][:60]}" mesmo depois de refazer: '
