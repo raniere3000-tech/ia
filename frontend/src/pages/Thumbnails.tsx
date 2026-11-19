@@ -238,7 +238,7 @@ function Config(){
     <section className="panel"><h3><Settings2 size={16}/> Como o Agente 6 trabalha</h3>
       <div className="seg big" role="radiogroup">{([['automatico','Automático','Escolhe sozinho a melhor capa aprovada pelo diretor.'],['supervisionado','Supervisionado','Faz as capas e espera você escolher.'],['manual','Manual','Só faz capa quando você pede.']] as const).map(([k,t,d])=>
         <button key={k} role="radio" aria-checked={c.modo===k} className={c.modo===k?'on':''} onClick={()=>m({modo:k})}><b>{t}</b><small>{d}</small></button>)}</div>
-      {c.modo==='automatico'&&<label className="check"><input type="checkbox" checked={c.criar_sozinho} onChange={e=>m({criar_sozinho:e.target.checked})}/> Criar capas sozinho para cortes prontos e vídeos do Agente 3 (até 2 por vez)</label>}
+      {c.modo!=='manual'&&<label className="check"><input type="checkbox" checked={c.criar_sozinho} onChange={e=>m({criar_sozinho:e.target.checked})}/> Criar capas sozinho para os cortes e os vídeos do Agente 3 (até 2 por vez, primeiro os que saem mais cedo)</label>}
       <div className="thumb-grade">
         <label className="field"><span>Jeito padrão</span><select value={c.metodo_padrao} onChange={e=>m({metodo_padrao:e.target.value as Metodo})}>{METODOS.map(([k,t])=><option key={k} value={k}>{t}</option>)}</select></label>
         <label className="field"><span>Capas por pedido</span><select value={c.variantes_padrao} onChange={e=>m({variantes_padrao:Number(e.target.value)})}>{[1,2,3,4].map(n=><option key={n}>{n}</option>)}</select></label>

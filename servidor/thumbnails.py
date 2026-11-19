@@ -60,7 +60,7 @@ CUSTO_IMAGEM_USD = 0.04                 # mesma estimativa usada pelo Agente 3 p
 
 CONFIG_PADRAO = {
     'modo': 'supervisionado',           # automatico: escolhe sozinho a melhor aprovada | supervisionado: você escolhe | manual: só quando você pede
-    'criar_sozinho': False,             # cria capas sozinho para cortes prontos e vídeos do Agente 3 (só no modo automático)
+    'criar_sozinho': True,              # cria capas sozinho para cortes e vídeos do Agente 3 (automático e supervisionado; no manual, não)
     'metodo_padrao': 'inteligente',
     'variantes_padrao': 3,
     'max_variantes': 4,
@@ -98,6 +98,10 @@ class _Definitivo(RuntimeError):
 # ---------------------------------------------------------------- configuração
 def config() -> dict:
     salvo = db.kv('agente6.config', {}) or {}
+    if salvo and not db.kv('agente6.criar_sozinho_v2'):      # 19/11: criar sozinho passa a ser o padrão (antes vinha desligado e nada era feito)
+        salvo['criar_sozinho'] = True
+        db.kv_gravar('agente6.config', salvo)
+        db.kv_gravar('agente6.criar_sozinho_v2', True)
     c = {**CONFIG_PADRAO, **{k: v for k, v in salvo.items() if k in CONFIG_PADRAO}}
     c['formato_por_rede'] = {**CONFIG_PADRAO['formato_por_rede'], **(salvo.get('formato_por_rede') or {})}
     return c
@@ -1283,21 +1287,35 @@ def desempenho() -> dict:
 
 # ---------------------------------------------------------------- automático
 def varrer() -> int:
-    """Modo automático com "criar sozinho": pede capas para até 2 vídeos novos por vez."""
+    """Cria capas sozinho (modos automático e supervisionado, com "criar sozinho" ligado): até 2 vídeos por vez,
+    primeiro os que vão ao ar mais cedo. Cortes já agendados também entram, enquanto o post ainda não saiu."""
     cfg = config()
-    if cfg['modo'] != 'automatico' or not cfg['criar_sozinho']:
+    if cfg['modo'] == 'manual' or not cfg['criar_sozinho']:
         return 0
+    if not PIL_OK:
+        if not db.kv('agente6.aviso_sem_pil'):
+            db.kv_gravar('agente6.aviso_sem_pil', _agora())
+            try:
+                import agente as ag
+                ag.avisar('falha', 'Agente 6 parado: falta o Pillow', SEM_PIL + '\n\nNo Termux: pkg install python-pillow (ou rode de novo: bash iniciar-termux.sh link).')
+            except Exception as e:  # noqa: BLE001
+                print('agente6: aviso', e)
+        return 0
+    import agente as ag
+    quando = {c['id']: c.get('quando') or 0 for c in ag.estado()['cortes']}
+    cand = [f for f in fontes(limite=200) if not f['job'] and
+            ((f['origem'] == 'corte' and f['status'] in ('pronto', 'agendado')) or (f['origem'] == 'render' and f['status'] in ('ready_for_review', 'approved', 'scheduled')))]
+    cand.sort(key=lambda f: (quando.get(f['referencia']) or float('inf')) if f['origem'] == 'corte' else float('inf'))
     n = 0
-    for f in fontes():
+    for f in cand:
         if n >= 2:
             break
-        if f['job'] or (f['origem'] == 'corte' and f['status'] != 'pronto') or (f['origem'] == 'render' and f['status'] != 'ready_for_review'):
-            continue
         try:
             criar({'origem': f['origem'], 'referencia': f['referencia'], 'metodo': cfg['metodo_padrao'] if cfg['metodo_padrao'] != 'ia' else 'inteligente',
                    'variantes': cfg['variantes_padrao'], 'formato': 'auto', 'texto_modo': 'auto'}, 'agente6-automatico')
             n += 1
-        except ErroThumb:
+        except ErroThumb as e:
+            print('agente6: não criei capa para', f['referencia'], e)
             continue
     return n
 
