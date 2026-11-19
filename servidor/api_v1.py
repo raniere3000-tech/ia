@@ -17,6 +17,7 @@ import agendador
 import aprovacoes as apv
 import autenticacao as au
 import backups
+import coordenador as co
 import criativo as cri
 import banco as db
 import emails
@@ -550,6 +551,82 @@ def _thumbs(metodo: str, caminho: str, q: dict, corpo, quem: str):
     raise pj.ErroProjeto(404, 'Rota não encontrada.')
 
 
+def _coord(metodo: str, caminho: str, q: dict, corpo, quem: str):
+    """Agente 7 (Coordenador-Geral): conversa, ordens, agentes, liberação final, memória e aprendizado."""
+    rota = (metodo, caminho)
+    base = '/api/v1/coordenador'
+    v = lambda k, p='': q.get(k, [p])[0]  # noqa: E731
+    if rota == ('POST', base + '/interpretar'):
+        d = corpo()
+        _limite_ia('coord:' + quem, 60)
+        return co.interpretar(str(d.get('texto') or ''), quem, str(d.get('chave') or ''))
+    if rota == ('GET', base + '/conversa'):
+        return {'mensagens': co.conversa(_int(v('limite', '60'), 60))}
+    if rota == ('GET', base + '/catalogo'):
+        return {'acoes': co.CATALOGO, 'ia': co.ia_disponivel()}
+    if rota == ('GET', base + '/config'):
+        return co.config()
+    if rota in (('POST', base + '/config'), ('PATCH', base + '/config')):
+        return co.salvar_config(corpo(), quem)
+    if rota == ('GET', base + '/ordens'):
+        return co.ordens(v('status'), _int(v('limite', '50'), 50))
+    if rota == ('POST', base + '/ordens'):
+        d = corpo()
+        return co.criar_ordem(str(d.get('intencao') or ''), d.get('parametros') or {}, str(d.get('texto') or ''), quem, str(d.get('chave') or ''))
+    m = re.fullmatch(base + r'/ordens/(\w+)(?:/(confirmar|pausar|retomar|cancelar|parametros))?', caminho)
+    if m:
+        oid, acao = m.group(1), m.group(2)
+        if metodo == 'GET' and not acao:
+            co.avancar(oid)
+            return co.obter_ordem(oid)
+        if metodo == 'POST' and acao == 'confirmar':
+            return co.confirmar(oid, corpo(), quem)
+        if metodo in ('POST', 'PATCH') and acao == 'parametros':
+            return co.atualizar_parametros(oid, corpo(), quem)
+        if metodo == 'POST' and acao == 'pausar':
+            return co.pausar_ordem(oid, quem)
+        if metodo == 'POST' and acao == 'retomar':
+            return co.retomar_ordem(oid, quem)
+        if metodo == 'POST' and acao == 'cancelar':
+            return co.cancelar_ordem(oid, quem)
+    if rota == ('GET', base + '/agentes'):
+        return co.agentes()
+    if rota == ('GET', base + '/eventos'):
+        return {'eventos': co.eventos(v('ordem'), v('categoria'), _int(v('limite', '100'), 100))}
+    if rota == ('GET', base + '/historico/conferir'):
+        return co.conferir_historico()
+    if rota == ('GET', base + '/aprovacoes'):
+        return co.aprovacoes(v('estado'))
+    m = re.fullmatch(base + r'/aprovacoes/(\w+)/(decidir|capa)', caminho)
+    if m and metodo == 'POST':
+        return co.decidir(m.group(1), corpo(), quem) if m.group(2) == 'decidir' else co.escolher_capa(m.group(1), corpo(), quem)
+    if rota == ('GET', base + '/memorias'):
+        return {'memorias': co.memorias(v('status'), v('escopo'))}
+    if rota == ('POST', base + '/memorias'):
+        return co.criar_memoria(corpo(), quem, 'voce')
+    m = re.fullmatch(base + r'/memorias/(\w+)(?:/(confirmar|desativar|reverter))?', caminho)
+    if m:
+        mid, acao = m.group(1), m.group(2)
+        if metodo == 'GET' and not acao:
+            return co.memoria(mid)
+        if metodo == 'PATCH' and not acao:
+            return co.editar_memoria(mid, corpo(), quem)
+        if metodo == 'POST' and acao == 'confirmar':
+            return co.confirmar_memoria(mid, quem, corpo().get('versao'))
+        if metodo == 'POST' and acao == 'desativar':
+            return co.desativar_memoria(mid, quem, corpo().get('versao'))
+        if metodo == 'POST' and acao == 'reverter':
+            return co.reverter_memoria(mid, _int(corpo().get('versao'), 0), quem)
+    if rota == ('POST', base + '/feedback'):
+        return co.feedback(corpo(), quem)
+    if rota == ('GET', base + '/aprendizado/sugestoes'):
+        return co.sugestoes()
+    m = re.fullmatch(base + r'/aprendizado/sugestoes/([\w.-]+)/(propor|dispensar)', caminho)
+    if m and metodo == 'POST':
+        return co.propor_sugestao(m.group(1), quem) if m.group(2) == 'propor' else co.dispensar_sugestao(m.group(1), quem)
+    raise pj.ErroProjeto(404, 'Rota não encontrada.')
+
+
 def iniciar():
     fila.registrar('estilo.demo', job_demo, 'pesado')
     fila.registrar('skills.instalar', job_skills, 'leve')
@@ -560,6 +637,7 @@ def iniciar():
     rotas_esteira.ag2.iniciar()
     rotas_esteira.oq.iniciar()
     th.iniciar()
+    co.iniciar()
     exportacao.iniciar()
     diretor.iniciar()
     storyboard.iniciar()
@@ -955,6 +1033,14 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     if caminho.startswith('/api/v1/thumbnails'):
         try:
             return _thumbs(metodo, caminho, q, corpo, quem)
+        except th.ErroThumb as e:
+            raise pj.ErroProjeto(e.status, str(e))
+    # ---- Agente 7: Coordenador-Geral
+    if caminho.startswith('/api/v1/coordenador'):
+        try:
+            return _coord(metodo, caminho, q, corpo, quem)
+        except co.ErroCoord as e:
+            raise pj.ErroProjeto(e.status, str(e))
         except th.ErroThumb as e:
             raise pj.ErroProjeto(e.status, str(e))
     # ---- esteira dos 5 agentes, diretor de qualidade, capacidades, referências virais e programação diária do Agente 2

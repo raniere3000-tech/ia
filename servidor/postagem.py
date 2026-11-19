@@ -861,6 +861,14 @@ def conferencia(p: dict, rede: str) -> list[dict]:
                      'Falta a capa aprovada para este arquivo (Agente 6). Escolha uma capa em Thumbnails ou desligue "exigir capa".')
         except Exception as e:  # noqa: BLE001
             item('capa', False, f'Não consegui conferir a capa: {str(e)[:120]}')
+    try:     # Agente 7: com "exigir liberação do coordenador" ligado, só sai o pacote que você liberou (vídeo + capa pelo hash)
+        import coordenador as co
+        if co.config()['exigir_liberacao']:
+            lib = co.liberado(arq)
+            item('liberacao', lib['ok'], 'Pacote liberado no Coordenador (Agente 7).' if lib['ok'] else
+                 'Falta liberar o pacote final no Coordenador (Agente 7), ou o vídeo/capa mudou depois da liberação.')
+    except Exception as e:  # noqa: BLE001
+        item('liberacao', False, f'Não consegui conferir a liberação do coordenador: {str(e)[:120]}')
     ag2 = p.get('agenda') or {}
     if ag2.get('ate') and ag2.get('politica') != 'publish_when_online' and agora() > ag2['ate'] and not p['redes'].get(rede, {}).get('tentativas'):
         item('horario', False, 'O horário da programação diária já passou (servidor estava desligado): não posto atrasado.')

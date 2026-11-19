@@ -202,6 +202,31 @@ ESQUEMA = [
     CREATE TABLE IF NOT EXISTS thumbnail_perfis (id TEXT PRIMARY KEY, nome TEXT NOT NULL, escopo TEXT NOT NULL, config TEXT NOT NULL,
         versao INTEGER NOT NULL DEFAULT 1, criado REAL NOT NULL, atualizado REAL NOT NULL);
     """,
+    # 11: Agente 7 (Coordenador-Geral): ordens, tarefas, eventos, feedback, memória versionada e liberação final do pacote
+    """
+    CREATE TABLE IF NOT EXISTS coordenador_ordens (id TEXT PRIMARY KEY, autor TEXT, texto TEXT, plano_json TEXT NOT NULL, versao_plano INTEGER NOT NULL DEFAULT 1,
+        status TEXT NOT NULL, criado REAL NOT NULL, atualizado REAL NOT NULL, chave TEXT UNIQUE);
+    CREATE INDEX IF NOT EXISTS coordenador_ordens_status ON coordenador_ordens (status, atualizado);
+    CREATE TABLE IF NOT EXISTS coordenador_tarefas (id TEXT PRIMARY KEY, ordem_id TEXT NOT NULL, agente TEXT NOT NULL, acao TEXT NOT NULL, parametros_json TEXT NOT NULL,
+        estado TEXT NOT NULL, deps_json TEXT NOT NULL DEFAULT '[]', job_id TEXT, criado REAL NOT NULL, atualizado REAL NOT NULL, chave TEXT UNIQUE,
+        resultado_json TEXT, memorias_json TEXT NOT NULL DEFAULT '[]', inicio REAL, fim REAL, erro TEXT);
+    CREATE INDEX IF NOT EXISTS coordenador_tarefas_ordem ON coordenador_tarefas (ordem_id, estado);
+    CREATE TABLE IF NOT EXISTS coordenador_eventos (id INTEGER PRIMARY KEY AUTOINCREMENT, ordem_id TEXT, tarefa_id TEXT, fonte TEXT NOT NULL, categoria TEXT NOT NULL,
+        evento_json TEXT NOT NULL, criado REAL NOT NULL, hash TEXT);
+    CREATE INDEX IF NOT EXISTS coordenador_eventos_ordem ON coordenador_eventos (ordem_id, criado);
+    CREATE TABLE IF NOT EXISTS coordenador_feedback (id TEXT PRIMARY KEY, ordem_id TEXT, tarefa_id TEXT, autor TEXT, alvo TEXT, avaliacao INTEGER, comentario TEXT,
+        antes_ref TEXT, depois_ref TEXT, criado REAL NOT NULL);
+    CREATE TABLE IF NOT EXISTS coordenador_memorias (id TEXT PRIMARY KEY, tipo TEXT NOT NULL, escopo TEXT NOT NULL, chave TEXT NOT NULL, texto TEXT NOT NULL,
+        dados_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL, confianca REAL NOT NULL DEFAULT 1, confirmada_por TEXT, versao INTEGER NOT NULL DEFAULT 1,
+        criada REAL NOT NULL, atualizada REAL NOT NULL, origem TEXT, travada INTEGER NOT NULL DEFAULT 0);
+    CREATE INDEX IF NOT EXISTS coordenador_memorias_escopo ON coordenador_memorias (status, escopo);
+    CREATE TABLE IF NOT EXISTS coordenador_memoria_versoes (memoria_id TEXT NOT NULL, versao INTEGER NOT NULL, antes_json TEXT, depois_json TEXT NOT NULL, motivo TEXT,
+        autor TEXT, criado REAL NOT NULL, PRIMARY KEY (memoria_id, versao));
+    CREATE TABLE IF NOT EXISTS coordenador_memoria_evidencias (memoria_id TEXT NOT NULL, evento_id INTEGER, feedback_id TEXT, relacao TEXT, peso REAL);
+    CREATE TABLE IF NOT EXISTS coordenador_aprovacoes (id TEXT PRIMARY KEY, ordem_id TEXT, tarefa_id TEXT, origem TEXT, referencia TEXT, video_sha256 TEXT NOT NULL,
+        thumbnail_sha256 TEXT, pacote_hash TEXT NOT NULL, relatorio TEXT, decisao TEXT NOT NULL, por TEXT, criado REAL NOT NULL, decidido REAL, revogado REAL, motivo TEXT);
+    CREATE INDEX IF NOT EXISTS coordenador_aprovacoes_video ON coordenador_aprovacoes (video_sha256, decisao, revogado);
+    """,
 ]
 
 
