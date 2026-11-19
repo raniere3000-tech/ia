@@ -953,9 +953,7 @@ def _tarjas(tpl: dict, A: int) -> tuple[bool, bool, int]:
 
 
 def montar_ass(palavras: list, ini: float, fim: float, tpl: dict, gancho: str, L: int, A: int) -> str:
-    comparar = tpl.get('enquadramento') == 'comparacao'
-    if comparar and tpl.get('legenda_pos') == 'meio':
-        tpl = dict(tpl, legenda_pos='baixo')       # no meio fica a divisa com o selo VS: a legenda desce
+    comparar = tpl.get('enquadramento') == 'comparacao'   # legenda no meio: o selo VS só abre o vídeo (ver comparacao.ass_eventos)
     esc = min(L, A) / 1080
     tam = {'pequeno': 62, 'medio': 78, 'grande': 96}.get(tpl['tamanho'], 78) * esc
     tem_topo, tem_base, alt_tarja = _tarjas(tpl, A)
@@ -1421,6 +1419,9 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             if perfil:
                 usadas.append(f'Perfil {perfil["nome"]}: ' + ('; '.join(pf.aplicar_ao_tpl(tpl, perfil, rnd)) or 'sem mudanças de identidade'))
             usadas += _sortear_estilo(tpl, co, rnd)
+            arranjo = cmp.sortear_arranjo(tpl, rnd)       # comparação: um em cima do outro ou lado a lado, sorteado por corte
+            if arranjo:
+                usadas.append(f'Tela dividida: {cmp.ARRANJOS[arranjo]}')
             modo = co.get('modo') or (perfil or {}).get('modo_qualidade', '')
             co = dict(co, modo=modo)
             if modo:
@@ -1454,6 +1455,7 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
                     if c.get('sem_legenda'):
                         tpl['legenda'] = 'nenhuma'
                     tpl['estilo_visual'], tpl['estilo_forca'], tpl['estilo_off'], tpl['estilo_texto'] = estilo_ant
+                    cmp.sortear_arranjo(tpl, rnd, arranjo)        # refazer não troca o arranjo sorteado (a comparação fica justa)
                     if co.get('modo'):
                         mr.aplicar(tpl, co['modo'])
                     ajustar_camera(tpl, arq, c, pasta, memo_cam)
@@ -1470,7 +1472,8 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
                      origem=v['id'], origem_url=_link_do_video(v), origem_titulo=v['titulo'][:150], canal=v.get('canal', ''), canal_nome=v.get('canal_nome', ''),
                      variacoes=usadas, fala=fonte, tamanho=(pg.VIDEOS / (vid + '.mp4')).stat().st_size, email=False,
                      tipo='agente', modelo=modelo['id'], modelo_nome=modelo['nome'], hash=_hash(pg.VIDEOS / (vid + '.mp4')),
-                     legendado=tpl['legenda'] != 'nenhuma', qa=qa, estilo_visual=tpl.get('estilo_visual', ''), formato=tpl.get('formato', ''))
+                     legendado=tpl['legenda'] != 'nenhuma', qa=qa, estilo_visual=tpl.get('estilo_visual', ''), formato=tpl.get('formato', ''),
+                     arranjo=arranjo)
             if perfil:
                 c.update(perfil=perfil['id'], perfil_nome=perfil['nome'], perfil_versao=perfil['versao'], redes=list(perfil['redes']))
                 if perfil['hashtags_base']:

@@ -16,8 +16,9 @@ import { posicao, type Trilha } from './rosto';
 export type Regiao = {x:number;y:number;w:number;h:number};
 /** Composição vinda de um template: enquadramento, zoom e posição. Sem isso vale o comportamento antigo (pelo efeito). */
 /** Comparação em tela dividida: duas partes do mesmo quadro, cada uma com um rótulo, e o selo VS na divisa. */
-export type Comparacao = {a:Regiao; b:Regiao; rotuloA:string; rotuloB:string; corA:string; corB:string; vs:boolean; textoVs:string};
-export const COMP_PADRAO:Comparacao = {a:{x:0,y:0,w:0.5,h:1},b:{x:0.5,y:0,w:0.5,h:1},rotuloA:'ANTES',rotuloB:'DEPOIS',corA:'#FF5A36',corB:'#2BB8FF',vs:true,textoVs:'VS'};
+/** arranjo: 'sortear' = o Agente 1 sorteia por corte (no site vale como automático: empilhado no vertical, lado a lado no 16:9). */
+export type Comparacao = {a:Regiao; b:Regiao; rotuloA:string; rotuloB:string; corA:string; corB:string; vs:boolean; textoVs:string; arranjo?:'sortear'|'empilhado'|'lado'};
+export const COMP_PADRAO:Comparacao = {a:{x:0,y:0,w:0.5,h:1},b:{x:0.5,y:0,w:0.5,h:1},rotuloA:'ANTES',rotuloB:'DEPOIS',corA:'#FF5A36',corB:'#2BB8FF',vs:true,textoVs:'VS',arranjo:'sortear'};
 export type Visual = {layout:'desfoque'|'cheio'|'gameplay-streamer'|'comparacao'; zoom:number; posX:number; posY:number; jogo:Regiao; camera:Regiao; divisao:number; gancho:boolean; ganchoPos:'topo'|'alto'; comp?:Comparacao};
 export type RenderOpts = {legenda:Preset|null; efeito:string; cues:Cue[]; gancho:string; accent:string; template:Template; logoImg?:HTMLImageElement|null; rosto?:Trilha|null; tarja?:Tarja|null; visual?:Visual|null; estilo?:EstiloUso|null};
 /** Tamanho e peso do arquivo exportado. escala 1 = 1080p; 2/3 = 720p. */
@@ -34,7 +35,8 @@ function drawRegiao(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,r:Regiao,vw:
 /** Mesma conta do servidor (servidor/comparacao.py): A em cima e B embaixo no vertical; lado a lado no 16:9. */
 function geoComparacao(vis:Visual,W:number,H:number){
   const div=Math.max(35,Math.min(65,vis.divisao||50))/100, esp=Math.max(6,Math.floor(Math.min(W,H)*0.012/2)*2);
-  if(W>H){ const w1=Math.floor(W*div/2)*2; return {empilhado:false,corte:w1,esp,a:[0,0,w1,H],b:[w1,0,W-w1,H],cx:w1,cy:H/2}; }
+  const arr=vis.comp?.arranjo;
+  if(arr==='lado'||(arr!=='empilhado'&&W>H)){ const w1=Math.floor(W*div/2)*2; return {empilhado:false,corte:w1,esp,a:[0,0,w1,H],b:[w1,0,W-w1,H],cx:w1,cy:H/2}; }
   const h1=Math.floor(H*div/2)*2; return {empilhado:true,corte:h1,esp,a:[0,0,W,h1],b:[0,h1,W,H-h1],cx:W/2,cy:h1};
 }
 function desenharComparacaoFundo(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,vis:Visual,vw:number,vh:number,W:number,H:number){
@@ -45,7 +47,7 @@ function desenharComparacaoFundo(ctx:CanvasRenderingContext2D,v:HTMLVideoElement
   if(g.empilhado) ctx.fillRect(0,g.corte-g.esp/2,W,g.esp); else ctx.fillRect(g.corte-g.esp/2,0,g.esp,H);
 }
 /** Rótulos que entram deslizando e o selo VS que aparece com um pulinho (por cima de estilo e tarjas). */
-function desenharComparacaoTextos(ctx:CanvasRenderingContext2D,vis:Visual,t:number,W:number,H:number){
+function desenharComparacaoTextos(ctx:CanvasRenderingContext2D,vis:Visual,t:number,W:number,H:number,meio=false){
   const c={...COMP_PADRAO,...(vis.comp||{})}, g=geoComparacao(vis,W,H);
   const fs=Math.min(W,H)*0.05, m=Math.min(W,H)*0.05, pad=fs*0.32, folga=g.esp/2+pad+fs*0.35;
   const ease=(x:number)=>1-Math.pow(1-Math.max(0,Math.min(1,x)),3);
@@ -58,10 +60,12 @@ function desenharComparacaoTextos(ctx:CanvasRenderingContext2D,vis:Visual,t:numb
     ctx.fillStyle=cor; ctx.fillRect(bx,by,w,h); ctx.fillStyle='#FFFFFF'; ctx.fillText(txt,bx+pad,by+h/2+fs*0.04);
   };
   ctx.save();
-  if(g.empilhado){ rotulo(c.rotuloA,c.corA,'esq','baixo',m,g.corte-folga+pad,0); rotulo(c.rotuloB,c.corB,'dir','cima',W-m,g.corte+folga-pad,0.12); }
+  if(g.empilhado&&meio){ rotulo(c.rotuloA,c.corA,'esq','cima',m,m,0); rotulo(c.rotuloB,c.corB,'dir','baixo',W-m,H-m*1.4+pad,0.12); }
+  else if(g.empilhado){ rotulo(c.rotuloA,c.corA,'esq','baixo',m,g.corte-folga+pad,0); rotulo(c.rotuloB,c.corB,'dir','cima',W-m,g.corte+folga-pad,0.12); }
   else { rotulo(c.rotuloA,c.corA,'esq','baixo',m,H-m*1.4+pad,0); rotulo(c.rotuloB,c.corB,'dir','baixo',W-m,H-m*1.4+pad,0.12); }
   if(c.vs){
-    const k=t<0.15?0:t<0.33?1.18*(t-0.15)/0.18:t<0.43?1.18-0.18*(t-0.33)/0.1:1;
+    // com a legenda no meio o selo só abre o vídeo e some encolhendo em 1 s (igual ao servidor)
+    const k=t<0.15?0:t<0.33?1.18*(t-0.15)/0.18:t<0.43?1.18-0.18*(t-0.33)/0.1:!meio?1:t<0.82?1:t<1?1-(t-0.82)/0.18:0;
     if(k>0){
       const r=fs*1.15*k; ctx.beginPath(); ctx.arc(g.cx,g.cy,r,0,Math.PI*2); ctx.fillStyle='#FFD23F'; ctx.fill();
       ctx.lineWidth=g.esp*0.6*k; ctx.strokeStyle='#FFFFFF'; ctx.stroke();
@@ -119,9 +123,8 @@ export function drawFrame(ctx:CanvasRenderingContext2D,v:HTMLVideoElement,small:
   }
   desenharEstilo(ctx,o.estilo,W,H,t);   // estilo visual: depois do enquadramento, antes de tarjas, legenda e gancho (mesma ordem do servidor)
   const hTarja=o.tarja?drawTarjas(ctx,o.tarja,W,H):0;
-  if(vis?.layout==='comparacao') desenharComparacaoTextos(ctx,vis,t,W,H);
-  // na comparação o meio é a divisa com o selo VS: legenda "no meio" desce (igual ao servidor)
-  const leg=o.legenda&&vis?.layout==='comparacao'&&o.legenda.position==='center'?{...o.legenda,position:'center-bottom' as Preset['position']}:o.legenda;
+  const leg=o.legenda;
+  if(vis?.layout==='comparacao') desenharComparacaoTextos(ctx,vis,t,W,H,leg?.position==='center');
   if(leg){ const cue=o.cues.find(c=>t>=c.start&&t<c.end); if(cue) drawCaption(ctx,leg,cue.text,t-cue.start,cue.end-cue.start,W,H); }
   if(!vis||vis.gancho) drawHook(ctx,o.gancho,o.accent,W,o.tarja?.topo?hTarja:0,vis?.ganchoPos==='alto'?H*0.14:0);
   if(o.template.ativo) drawTemplate(ctx,o.template,o.logoImg||null,W,H);

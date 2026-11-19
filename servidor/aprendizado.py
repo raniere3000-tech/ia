@@ -24,7 +24,8 @@ from datetime import datetime, timezone
 import banco as db
 import modelos as mo
 
-VARIAVEIS = {'estilo': 'Estilo visual', 'modelo': 'Template', 'faixa': 'Dia e hora', 'duracao': 'Duração', 'gancho': 'Tipo de gancho', 'formato': 'Formato', 'perfil': 'Perfil'}
+VARIAVEIS = {'estilo': 'Estilo visual', 'modelo': 'Template', 'faixa': 'Dia e hora', 'duracao': 'Duração', 'gancho': 'Tipo de gancho', 'formato': 'Formato', 'perfil': 'Perfil',
+             'arranjo': 'Tela dividida (comparação)'}
 APLICAVEIS = ('estilo',)                 # onde já existe um sorteio que pode usar os pesos; o template tem os pesos próprios do Agente 1
 REDES = ('youtube', 'instagram', 'facebook', 'kwai', 'tiktok')
 MIN_AMOSTRAS = 5                         # vídeos medidos por valor antes de dizer qualquer coisa
@@ -124,7 +125,8 @@ def variaveis_do_corte(c: dict) -> dict:
     ini, fim = c.get('ini'), c.get('fim')
     return {'estilo': c.get('estilo_visual') or '', 'modelo': c.get('modelo_nome') or c.get('modelo') or '', 'faixa': c.get('faixa') or '',
             'duracao': faixa_duracao((fim - ini) if isinstance(ini, (int, float)) and isinstance(fim, (int, float)) else None),
-            'gancho': tipo_gancho(c.get('gancho') or ''), 'formato': c.get('formato') or '', 'perfil': c.get('perfil_nome') or c.get('perfil') or ''}
+            'gancho': tipo_gancho(c.get('gancho') or ''), 'formato': c.get('formato') or '', 'perfil': c.get('perfil_nome') or c.get('perfil') or '',
+            'arranjo': {'empilhado': 'Um em cima do outro', 'lado': 'Lado a lado'}.get(c.get('arranjo') or '', '')}
 
 
 def capturar() -> dict:
@@ -148,7 +150,7 @@ _ALIAS = {'rede': 'rede', 'network': 'rede', 'plataforma': 'rede', 'id': 'item',
           'views': 'views', 'visualizacoes': 'views', 'visualizações': 'views', 'curtidas': 'curtidas', 'likes': 'curtidas', 'comentarios': 'comentarios',
           'comentários': 'comentarios', 'comments': 'comentarios', 'compartilhamentos': 'compartilhamentos', 'shares': 'compartilhamentos',
           'estilo': 'estilo', 'modelo': 'modelo', 'template': 'modelo', 'faixa': 'faixa', 'horario': 'faixa', 'horário': 'faixa', 'duracao': 'duracao',
-          'duração': 'duracao', 'gancho': 'gancho', 'formato': 'formato', 'perfil': 'perfil'}
+          'duração': 'duracao', 'gancho': 'gancho', 'formato': 'formato', 'perfil': 'perfil', 'arranjo': 'arranjo', 'tela dividida': 'arranjo'}
 
 
 def _linhas(formato: str, conteudo: str) -> list:
@@ -201,7 +203,7 @@ def importar(nome: str, formato: str, conteudo: str) -> dict:
             if d is None:
                 raise ValueError('sem data (o período é obrigatório)')
             dur = reg.get('duracao')
-            var = {'estilo': reg.get('estilo'), 'modelo': reg.get('modelo'), 'faixa': reg.get('faixa'), 'formato': reg.get('formato'), 'perfil': reg.get('perfil'),
+            var = {'estilo': reg.get('estilo'), 'modelo': reg.get('modelo'), 'faixa': reg.get('faixa'), 'formato': reg.get('formato'), 'perfil': reg.get('perfil'), 'arranjo': reg.get('arranjo'),
                    'duracao': faixa_duracao(dur) if re.fullmatch(r'\d+([.,]\d+)?', _txt(dur, 12).replace(',', '.') or 'x') else _txt(dur),
                    'gancho': tipo_gancho(reg.get('gancho')) if len(_txt(reg.get('gancho'), 300).split()) > 2 else _txt(reg.get('gancho'))}
             if _gravar_retrato('importado', rede, _txt(reg.get('item'), 80) or f'linha {n}', var, m, d, d, imp):
