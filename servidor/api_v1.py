@@ -1055,6 +1055,10 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
             return _skills(metodo, caminho, q, corpo, quem)
         except skcat.ErroSkill as e:
             raise pj.ErroProjeto(e.status, str(e))
+    # ---- painel do Início e da Central de Agentes (só leitura)
+    if rota == ('GET', '/api/v1/dashboard/resumo'):
+        import painel
+        return painel.resumo(q.get('periodo', ['7d'])[0])
     if rota == ('GET', '/api/v1/eventos'):
         n = max(1, min(_int(q.get('limite', ['50'])[0], 50), 300))
         return {'eventos': db.todos('SELECT * FROM eventos ORDER BY n DESC LIMIT ?', n)}

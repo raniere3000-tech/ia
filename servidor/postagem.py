@@ -787,21 +787,21 @@ def postar_tiktok(p: dict, arq: Path) -> str:
         corpo = {'source_info': fonte}
         rota = '/v2/post/publish/inbox/video/init/'
     st, _, j = http('POST', URL['tiktok_api'] + rota, js=corpo, cab=cab)
-    erro = (j.get('error') or {})
-    if direto and priv != 'SELF_ONLY' and (st >= 300 or erro.get('code') not in (None, 'ok')) and _tiktok_nao_auditado(erro):
+    erro = _erro_dict(j)
+    if direto and priv != 'SELF_ONLY' and _falhou(st, erro) and _tiktok_nao_auditado(erro, j):
         # App ainda não aprovado pelo TikTok: só aceita "Só eu" (SELF_ONLY) em conta privada. Tenta assim primeiro.
         priv = 'SELF_ONLY'
         corpo['post_info']['privacy_level'] = priv
         st, _, j = http('POST', URL['tiktok_api'] + rota, js=corpo, cab=cab)
-        erro = (j.get('error') or {})
-    if direto and (st >= 300 or erro.get('code') not in (None, 'ok')) and _tiktok_nao_auditado(erro):
-        # Nem assim (conta pública?): manda como rascunho.
+        erro = _erro_dict(j)
+    if direto and _falhou(st, erro) and 400 <= st < 500 and _erro_codigo(erro) not in ('access_token_invalid', 'scope_not_authorized', 'spam_risk_user_banned_from_posting'):
+        # Postagem direta recusada (app não aprovado, conta pública...): manda como rascunho.
         direto, rota = False, '/v2/post/publish/inbox/video/init/'
         st, _, j = http('POST', URL['tiktok_api'] + rota, js={'source_info': fonte}, cab=cab)
-        erro = (j.get('error') or {})
+        erro = _erro_dict(j)
         caiu_rascunho = True
-    if st >= 300 or (erro.get('code') not in (None, 'ok')):
-        raise ErroRede(_erro_tiktok(erro, j))
+    if _falhou(st, erro):
+        raise ErroRede(_erro_tiktok(erro, j, st, rota))
     dados = j['data']
     with open(arq, 'rb') as f:
         for i in range(n):
@@ -822,30 +822,56 @@ def postar_tiktok(p: dict, arq: Path) -> str:
     return 'Está nos rascunhos/notificações do TikTok: abra o app e toque em Postar'
 
 
-def _tiktok_nao_auditado(erro: dict) -> bool:
-    cod = str(erro.get('code') or '')
-    return cod.startswith('unaudited_client') or 'integration guidelines' in str(erro.get('message') or '').lower()
+def _erro_dict(j) -> dict:
+    """O TikTok às vezes manda o erro como texto ou fora do formato: deixa sempre {'code','message'}."""
+    if not isinstance(j, dict):
+        return {'code': '', 'message': str(j)[:300]}
+    e = j.get('error')
+    if isinstance(e, dict):
+        return e
+    if isinstance(e, str):
+        return {'code': e, 'message': j.get('error_description') or j.get('message') or ''}
+    if j.get('_texto'):
+        return {'code': '', 'message': j['_texto']}
+    return {}
 
 
-def _erro_tiktok(erro: dict, j) -> str:
+def _erro_codigo(erro: dict) -> str:
+    return str(erro.get('code') or '')
+
+
+def _falhou(st: int, erro: dict) -> bool:
+    return st >= 300 or _erro_codigo(erro) not in ('', 'ok')
+
+
+def _tiktok_nao_auditado(erro: dict, j=None) -> bool:
+    texto = (str(erro.get('message') or '') + ' ' + json.dumps(j or {}, ensure_ascii=False)[:2000]).lower()
+    return _erro_codigo(erro).startswith('unaudited_client') or 'integration guidelines' in texto or 'content-sharing-guidelines' in texto
+
+
+def _erro_tiktok(erro: dict, j, st: int = 0, rota: str = '') -> str:
     """Traduz os erros mais comuns do TikTok para algo que dá para resolver."""
-    cod = str(erro.get('code') or '')
+    cod = _erro_codigo(erro)
     msg = erro.get('message') or _msg(j)
+    onde = 'rascunho' if 'inbox' in rota else 'postagem direta'
+    rastro = f' [HTTP {st}, {onde}, servidor v2]'
     dicas = {
-        'unaudited_client_can_only_post_to_private_accounts': 'o app ainda não foi aprovado pelo TikTok. Até a aprovação, deixe a sua conta do TikTok como privada ou use o modo rascunho',
+        'unaudited_client_can_only_post_to_private_accounts': 'o app ainda não foi aprovado pelo TikTok. Até a aprovação, a conta precisa estar privada na hora de postar',
         'spam_risk_too_many_posts': 'limite diário de postagens pelo app atingido. Tente amanhã',
+        'spam_risk_too_many_pending_share': 'já há 5 vídeos esperando nos rascunhos do TikTok nas últimas 24 h. Publique ou apague os rascunhos no app e tente de novo',
         'spam_risk_user_banned_from_posting': 'esta conta está impedida de postar pelo TikTok no momento',
+        'reached_active_user_cap': 'o app atingiu o limite diário de contas que podem postar',
         'scope_not_authorized': 'a permissão de envio de vídeo não foi concedida. Desconecte e entre de novo, aceitando todas as permissões',
         'access_token_invalid': 'o login do TikTok expirou. Desconecte e entre de novo',
         'privacy_level_option_mismatch': 'a privacidade escolhida não está disponível para esta conta',
         'url_ownership_unverified': 'o endereço do vídeo não foi verificado no TikTok',
     }
     if cod in dicas:
-        return f'TikTok recusou ({cod}): {dicas[cod]}.'
-    if _tiktok_nao_auditado(erro):
-        return ('TikTok recusou: o app ainda não foi aprovado pelo TikTok. Até a aprovação, use o modo rascunho '
-                'ou deixe a sua conta do TikTok como privada. Detalhe: ' + msg)
-    return 'TikTok recusou' + (f' ({cod})' if cod else '') + ': ' + msg
+        return f'TikTok recusou ({cod}): {dicas[cod]}.' + rastro
+    if _tiktok_nao_auditado(erro, j):
+        return ('TikTok recusou: o app ainda não foi aprovado pelo TikTok e ele barrou o envio. Confira: conta do TikTok privada, '
+                'a mesma conta que está em "Usuários de teste" do Sandbox, e as chaves do Sandbox no EstúdioClip. Detalhe: ' + msg + rastro)
+    return 'TikTok recusou' + (f' ({cod})' if cod else '') + ': ' + msg + rastro
 
 
 def _conferir_tiktok(publish_id, cab):

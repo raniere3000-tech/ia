@@ -1,37 +1,17 @@
 import InstalarApp from '../components/InstalarApp';
-import { Search, Upload, Sparkles, Download, KeyRound, CheckCircle2, Circle, ArrowRight, ShieldCheck, Clock, Clapperboard, Mic, Film, PlayCircle, Workflow, Bot } from 'lucide-react';
+import { Search, Upload, Sparkles, Download, KeyRound, CheckCircle2, Circle, ArrowRight, ShieldCheck, Clock, Clapperboard, Mic, Film } from 'lucide-react';
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import { useServidor } from '../components/Servidor2';
-import { lerFila, pendentes, catalogo } from '../lib/api';
+import { catalogo } from '../lib/api';
 import { Prontidao, CriarRapido } from '../components/Prontidao';
-import PainelAgentes from '../components/PainelAgentes';
+import PainelInicio from '../components/PainelInicio';
+import Continuar from '../components/Continuar';
 
 function CriarNoInicio(){ const cat=useServidor(catalogo); return <><Prontidao cat={cat.dados}/><CriarRapido compacto/></>; }
 
-// Resumo do servidor do celular: só números que o servidor informou (nada inventado).
-function ResumoServidor(){
-  const {go}=useApp();
-  const f=useServidor(c=>lerFila(c),30); const p=useServidor(pendentes,30);
-  const n=f.dados?.contagem||{};
-  const itens:[string,number|undefined,'fila'|'revisar'][]= [['Produzindo agora',n.produzindo,'fila'],['Agendados',n.agendados,'fila'],['Esperando sua aprovação',p.dados?.pendentes.length,'fila'],['Com erro',n.erros,'fila']];
-  return <section className="panel">
-   <div className="section-head"><h2><Clock size={18}/> Servidor do celular</h2>{f.erro?<span className="tag warn">sem resposta</span>:f.dados?<span className="tag ok">ligado</span>:null}</div>
-   {(p.dados?.pendentes.length||0)>0&&<button className="proximo-passo" onClick={()=>go('fila')}><b>{p.dados!.pendentes.length===1?'1 vídeo esperando você':`${p.dados!.pendentes.length} vídeos esperando você`}</b><span>Toque para assistir e decidir</span><ArrowRight size={16}/></button>}
-   {f.erro?<p className="hint bad">{f.erro} Confira se o Termux está aberto no celular servidor.</p>:<div className="inicio-resumo">{itens.map(([t,v,to])=><button key={t} onClick={()=>go(to)}><b>{v??'...'}</b>{t}</button>)}</div>}
-   <div className="row-gap left mt"><button className="subtle sm" onClick={()=>go('automatico')}><Film size={14}/> Fazer vários vídeos (automático)</button><button className="subtle sm" onClick={()=>go('projetos')}><Download size={14}/> Meus projetos</button></div>
-  </section>;
-}
-
 export default function Inicio(){
-  const {settings,go,projeto}=useApp();
-  // Trabalhos guardados neste navegador, para continuar de onde parou.
-  const ler=(k:string)=>{ try{ return JSON.parse(localStorage.getItem(k)||'null'); }catch{ return null; } };
-  const continuar:{t:string;d:string;to:'cortes'|'manual'|'vozes'|'video'}[]=[];
-  const nCortes=projeto.clips.filter(c=>!c.descartado).length; if(nCortes) continuar.push({t:'Cortes',d:`${nCortes} corte(s) prontos para editar`,to:'cortes'});
-  const man=ler('studio_manual'); if(man?.texto?.trim()) continuar.push({t:'Montagem manual',d:man.sinc?.quadros?.length?`${man.sinc.quadros.length} quadros sincronizados`:'Roteiro de quadros salvo',to:'manual'});
-  if(localStorage.getItem('studio_vozes_projeto')) continuar.push({t:'Estúdio de vozes',d:'Projeto de vozes aberto por último',to:'vozes'});
-  const vc=ler('studio_video_codigo'); if(vc?.cenas?.length) continuar.push({t:'Vídeo animado',d:`${vc.titulo||'Roteiro'} • ${vc.cenas.length} cenas`,to:'video'});
+  const {settings,go}=useApp();
   const entradas=[
     {icon:Clapperboard,t:'Criar cortes',d:'Envie um vídeo longo e receba os melhores trechos com nota, legenda e efeito.',onde:'Roda no seu navegador',to:'cortes' as const},
     {icon:Mic,t:'Montar episódio',d:'Roteiro, vozes dos personagens e montagem com imagens, trilha e efeitos.',onde:'Vozes pelo Gemini, montagem no navegador',to:'vozes' as const},
@@ -49,15 +29,10 @@ export default function Inicio(){
     {ok:true,t:'Legendas automáticas (Whisper)',d:'Já funciona, sem chave. O modelo é baixado na primeira vez.',help:'whisper' as const,need:'Sem chave'},
   ];
   return <>
-   <button className="proximo-passo central-atalho" onClick={()=>go('coordenador','conversar','automacao')}><b><Bot size={16}/> Falar com o Coordenador</b><span>Peça em português: "faça 3 vídeos sobre…", "como está?", "quanto falta?"</span><ArrowRight size={16}/></button>
-   <button className="proximo-passo central-atalho" onClick={()=>go('central','geral','automacao')}><b><Workflow size={16}/> Central de Automação</b><span>Linhas de conteúdo, estoque, calendário e o que os agentes estão fazendo</span><ArrowRight size={16}/></button>
-   {settings.servidor?<><PainelAgentes/><CriarNoInicio/><ResumoServidor/></>:<section className="panel"><div className="section-head"><h2><Film size={18}/> Vídeos feitos sozinhos pelo celular</h2></div>
+   {settings.servidor?<><PainelInicio/><CriarNoInicio/></>:<section className="panel"><div className="section-head"><h2><Film size={18}/> Vídeos feitos sozinhos pelo celular</h2></div>
     <p className="subtitle">Com o servidor do celular ligado, você escreve um assunto e o celular faz o vídeo inteiro (roteiro, fotos, narração e montagem). Falta conectar este aparelho ao servidor.</p>
     <button className="primary" onClick={()=>go('config')}>Conectar o servidor do celular</button></section>}
-   {continuar.length>0&&<section className="panel">
-    <div className="section-head"><h2><PlayCircle size={18}/> Continuar projeto</h2></div>
-    <div className="inicio-cont">{continuar.map(c=><button key={c.t} className="inicio-cont-item" onClick={()=>go(c.to)}><b>{c.t}</b><small>{c.d}</small><ArrowRight size={15}/></button>)}</div>
-   </section>}
+   <Continuar/>
    <div className="inicio-entradas">{entradas.map(e=><button key={e.t} className="inicio-entrada" onClick={()=>go(e.to)}><span className="step-icon"><e.icon size={22}/></span><h3>{e.t}</h3><p>{e.d}</p><small>{e.onde}</small></button>)}</div>
    <InstalarApp/>
    <details className="inicio-ajuda"><summary>Ajuda: como configurar e usar, passo a passo</summary>
