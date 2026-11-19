@@ -35,7 +35,10 @@ export type CfgCoord={modo:'supervisionado'|'automatico';exigir_liberacao:boolea
 export type CustoEtapa={etapa:string;nome:string;chamadas:number;reais_tabela:number;reais_pago:number;parte:number};
 export type CustoAnalise={id:string;t:number;titulo:string;url:string;fonte:string;minutos:number;achados:number;cortes:number;reprovados:number;guardados:number;
   reais_tabela:number;reais_pago:number;por_corte:number|null};
-export type CustoSugestao={id:string;prioridade:number;titulo:string;texto:string;acao?:{rotulo:string}};
+export type CustoSugestao={id:string;prioridade:number;titulo:string;texto:string;feito:boolean;fonte:string;acao?:{rotulo:string}};
+export type CustoHistorico={dias:number;analises:number;cortes:number;reprovados:number;cortes_por_analise:number|null;ouvidos_pela_ia:number;parte_ouvidos:number;
+  videos_com_erro:number;trocas_para_paga:number;meses:Record<string,{reais_pago:number;chamadas_pagas:number}>;reais_pago_meses:number;por_corte_contador:number|null;
+  agente3:{reais_estimado:number;videos:number};lista:{video:string;titulo:string;fala:string;t:number;cortes:number;reprovados:number}[]};
 export type Custos={dias:number;desde:number;gerado:number;medindo_desde:number|null;
   a1:{chamadas:number;reais_pago:number;reais_tabela:number;etapas:CustoEtapa[];chave_gratis:number};
   cortes:{feitos:number;reprovados:number;medidos:number};por_corte:{pago:number|null;tabela:number|null};
@@ -44,7 +47,7 @@ export type Custos={dias:number;desde:number;gerado:number;medindo_desde:number|
   outros:{uso:string;nome:string;chamadas:number;reais_tabela:number;reais_pago:number}[];
   mes:{reais_pago:number;chamadas_pagas:number;teto:number;cortes:number;por_corte_antigo:number|null};
   config:{por_analise:number;por_video:number;por_semana:number;chave_cortes:string;dolar:number;preco_texto:number;preco_audio:number;preco_saida:number};
-  sugestoes:CustoSugestao[]};
+  historico:CustoHistorico;sugestoes:CustoSugestao[]};
 
 const B='/api/v1/coordenador';
 export const interpretar=(c:CfgSrv,texto:string,chave='')=>api<Resposta>(c,'POST',`${B}/interpretar`,{texto,chave});
@@ -76,7 +79,7 @@ export const lerKwai=(c:CfgSrv,data='')=>api<KwaiPacote>(c,'GET',`${B}/kwai${dat
 export const enviarKwai=(c:CfgSrv,data='')=>api<{ok:boolean;data:string;videos:number}>(c,'POST',`${B}/kwai/enviar`,{data});
 export const lerCustos=(c:CfgSrv,dias=30)=>api<Custos>(c,'GET',`${B}/custos?dias=${dias}`);
 export const avisarCustos=(c:CfgSrv,dias=7)=>api<{ok:boolean;texto:string}>(c,'POST',`${B}/custos/aviso`,{dias});
-export const aplicarSugestaoCusto=(c:CfgSrv,id:string)=>api<{ok:boolean;aplicado:string;acao:string}>(c,'POST',`${B}/custos/sugestoes/${encodeURIComponent(id)}/aplicar`,{});
+export const aplicarSugestaoCusto=(c:CfgSrv,id:string)=>api<{ok:boolean;aplicadas:string[];acao:string}>(c,'POST',`${B}/custos/sugestoes/${encodeURIComponent(id)}/aplicar`,{});
 export const lerCfgCoord=(c:CfgSrv)=>api<CfgCoord>(c,'GET',`${B}/config`);
 export const salvarCfgCoord=(c:CfgSrv,d:Partial<CfgCoord>)=>api<CfgCoord>(c,'POST',`${B}/config`,d);
 

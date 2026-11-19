@@ -131,21 +131,52 @@ check(rs['analises']['total'] == 1 and rs['analises']['lista'][0]['guardados'] =
 check(abs(sum(e['parte'] for e in rs['a1']['etapas']) - 1) < 0.01 and rs['a1']['etapas'][0]['etapa'] == 'ouvir', 'ouvir aparece como a parte mais cara')
 check(rs['cortes']['feitos'] == 4 and rs['analises']['cortes_por_analise'] == 4, f'4 cortes de 1 análise ({rs["analises"]["cortes_por_analise"]})')
 ids = [s['id'] for s in rs['sugestoes']]
-check('preferir_legenda' in ids, f'sugere preferir vídeos com legenda ({ids})')
+check('so_com_legenda' in ids, f'sugere só vídeos com legenda ({ids})')
+check('mais_por_analise' in ids, f'4 cortes por vídeo: sugere pedir mais trechos por análise ({ids})')
 check('chave_gratis' not in ids, 'sem chave grátis guardada, não sugere trocar')
 ag.salvar_segredos({'gemini': 'chave-gratis-falsa'})
 check('chave_gratis' in [s['id'] for s in cc.resumo(30)['sugestoes']], 'com chave grátis guardada, sugere usar nos cortes')
 check(cc.aplicar('chave_gratis')['ok'] and ag.config()['chaves_uso']['cortes'] == 'gratis', 'aplicar troca a chave dos cortes')
 ag.salvar_config({'cortes': {'por_analise': 0}})
-ids = [s['id'] for s in cc.resumo(30)['sugestoes']]
-check('ligar_reserva' in ids, f'banco desligado: sugere ligar ({ids})')
-cc.aplicar('ligar_reserva')
-check(ag.config()['cortes']['por_analise'] == 12, 'aplicar liga o banco com 12 por análise')
+cc.aplicar('mais_por_analise')
+check(ag.config()['cortes']['por_analise'] == 16, f'aplicar pede 16 trechos por análise ({ag.config()["cortes"]["por_analise"]})')
+check(next(x for x in cc.resumo(30)['sugestoes'] if x['id'] == 'mais_por_analise')['feito'], 'depois de aplicar, a sugestão aparece como feita')
 try:
-    cc.aplicar('preferir_legenda')
-    check(False, 'sugestão sem ação não aplica nada')
+    cc.aplicar('nao_existe')
+    check(False, 'sugestão que não existe não aplica nada')
 except ValueError:
     check(True, '')
+
+# histórico de antes do registro: cortes antigos, troca para a chave paga e contador do mês
+antigo = time.time() - 3 * 86400
+def _hist(e):
+    for k, (vid, fala) in enumerate([('v1', 'IA'), ('v1', 'IA'), ('v2', 'IA'), ('v2', 'IA'), ('v3', 'legenda do YouTube'), ('v3', 'legenda do YouTube')]):
+        e['cortes'].append({'id': f'h{k}', 'criado': antigo + k, 'status': 'postado', 'tipo': 'agente', 'video': f'hv{k}', 'origem': vid, 'origem_titulo': vid, 'fala': fala})
+    e['log'].append({'t': antigo, 'tipo': 'aviso', 'texto': 'A chave grátis estava sem cota; usei a outra para "Agente 1: ouvir e escolher os cortes".'})
+ag._mudar(_hist)
+h = cc.historico(30)
+check(h['analises'] == 4 and h['cortes'] == 10, f'histórico junta os cortes por vídeo de origem ({h["analises"]} vídeos, {h["cortes"]} cortes)')
+check(h['ouvidos_pela_ia'] == 3 and h['trocas_para_paga'] == 1, f'histórico conta vídeos ouvidos pela IA e trocas para a paga ({h})')
+check(h['por_corte_contador'] and h['reais_pago_meses'] > 0, 'histórico divide o contador da chave paga pelos cortes')
+ids = [x['id'] for x in cc.resumo(30)['sugestoes'] if not x['feito']]
+check('sem_reserva_paga' in ids, f'histórico com troca para a paga: sugere não usar a paga ({ids})')
+r = cc.aplicar('todas')
+cfg = ag.config()
+check(r['ok'] and cfg['chaves_uso']['reserva'] is False and cfg['cortes']['so_com_legenda'] is True, f'"aplicar todas" faz todas as configurações ({r["acao"]})')
+check(not [x for x in cc.resumo(30)['sugestoes'] if x.get('acao') and not x['feito']], 'depois de aplicar todas, nada pendente')
+try:
+    cc.aplicar('todas')
+    check(False, 'nada pendente: aplicar todas avisa')
+except ValueError:
+    check(True, '')
+check(any(e['categoria'] == 'custos' for e in co.eventos(categoria='custos')), 'o Coordenador registra o que aplicou no histórico')
+
+# só com legenda: vídeo sem legenda é pulado antes de gastar IA
+n0 = len(CHAMADAS)
+r = ag.trabalhar_cortes(link='https://www.youtube.com/watch?v=zzzzzzzzzzz')
+check('sem legenda' in r and len(CHAMADAS) == n0, f'vídeo sem legenda pulado sem chamar a IA ({r})')
+ag.salvar_config({'cortes': {'so_com_legenda': False}})
+
 txt = cc.texto_aviso(rs)
 check('Custo médio da IA por corte' in txt and 'estimado' in txt, 'texto do aviso diz o custo médio e que é estimado')
 

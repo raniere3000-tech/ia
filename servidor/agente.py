@@ -74,7 +74,7 @@ PADRAO = {
     'cortes': {
         'ligado': False, 'nichos': ['Games'], 'temas': [], 'temas_outros': False, 'proibidos': ['conteúdo adulto', 'discurso de ódio', 'menores de idade'],
         'min_views': 500000, 'idioma': 'pt', 'regiao': 'BR',
-        'por_semana': 6, 'por_video': 2, 'por_analise': 12, 'dur_min': 60, 'dur_max': 65, 'dur_v': 0, 'nota_min': 60,
+        'por_semana': 6, 'por_video': 2, 'por_analise': 12, 'so_com_legenda': False, 'dur_min': 60, 'dur_max': 65, 'dur_v': 0, 'nota_min': 60,
         'video_min': 4, 'video_max': 120, 'dias_video': 14, 'hora_ini': 0, 'hora_fim': 24,
         'template': {'legenda': 'destaque', 'cor': '#FFFFFF', 'cor_destaque': '#FFE14D', 'maiusculas': True,
                      'tamanho': 'medio', 'legenda_pos': 'baixo', 'enquadramento': 'desfoque', 'zoom': 1.0,
@@ -157,6 +157,7 @@ def _limpar_cfg(c: dict) -> dict:
     co['por_video'] = max(1, min(6, co['por_video']))
     # banco de trechos: quantos trechos a IA aponta numa análise (o que não sai agora fica guardado e vira corte depois, sem IA); 0 = desligado
     co['por_analise'] = max(0, min(20, int(co.get('por_analise') or 0)))
+    co['so_com_legenda'] = co.get('so_com_legenda') is True     # vídeo sem legenda do YouTube: pula em vez de pagar a IA para ouvir
     if co.get('dur_v', 0) < 2:          # versão 2: duração do corte passa a ter padrão de 1 min a 1 min e 5 s (pedido do dono)
         co['dur_min'], co['dur_max'], co['dur_v'] = 60, 65, 2
     co['dur_min'] = max(10, min(175, co['dur_min']))
@@ -1407,6 +1408,9 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             palavras, fonte = [tuple(p) for p in pre['palavras'] if p[1] <= dur + 1], 'banco de trechos (análise já feita)'
             escolhidos = [dict(c) for c in pre['itens'] if c['fim'] <= dur + 1][:max(1, quantos)]
             etapa(f'{len(escolhidos)} trecho(s) guardado(s) de "{v["titulo"][:50]}": sem gastar IA para ouvir e escolher', 50)
+        elif len(palavras) < 40 and co.get('so_com_legenda') and not baixado:
+            if not co.get('sem_fala'):
+                raise ErroAgente('Vídeo sem legenda no YouTube: pulei para não gastar IA ouvindo o áudio (opção "Só vídeos com legenda" no Agente 1).')
         elif len(palavras) < 40:
             fonte = 'IA'
             palavras = transcrever_ia(arq, dur, pasta, co['idioma'])

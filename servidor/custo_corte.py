@@ -231,6 +231,44 @@ def _cortes_periodo(desde: float) -> list:
     return [c for c in ag.estado()['cortes'] if c.get('criado', 0) >= desde and c.get('tipo', 'agente') == 'agente' and c.get('video')]
 
 
+def historico(dias: int = 30) -> dict:
+    """O que já estava guardado ANTES do registro por chamada: os cortes feitos (de qual vídeo saíram e se a IA
+    precisou ouvir o áudio), o contador de gasto do mês (só a chave paga), os vídeos que deram erro, as vezes em que a
+    chave grátis acabou e a paga entrou, e o gasto estimado do Agente 3. Tudo dado real; nada inventado."""
+    import agente as ag
+    agora = time.time()
+    desde = agora - dias * 86400
+    e = ag.estado()
+    grupos: dict = {}
+    for c in e['cortes']:
+        if c.get('criado', 0) < desde or c.get('tipo', 'agente') != 'agente' or not c.get('origem'):
+            continue
+        g = grupos.setdefault(c.get('analise') or c['origem'], {'video': c['origem'], 'titulo': c.get('origem_titulo') or c.get('titulo') or '',
+                                                                 'fala': c.get('fala') or '', 't': c['criado'], 'cortes': 0, 'reprovados': 0, 'live': bool(c.get('live'))})
+        g['t'] = min(g['t'], c['criado'])
+        g['reprovados' if c.get('status') in ('reprovado', 'descartado') else 'cortes'] += 1
+    lista = sorted(grupos.values(), key=lambda g: -g['t'])
+    ouvidos = [g for g in lista if g['fala'] == 'IA']
+    feitos = sum(g['cortes'] for g in lista)
+    erros = [v for v in e['vistos'].values() if v.get('t', 0) >= desde and str(v.get('r', '')).startswith('erro')]
+    trocas = [x for x in e['log'] if x.get('t', 0) >= desde and 'sem cota; usei a outra' in str(x.get('texto', ''))]
+    meses = {}
+    for m, g in sorted(e['gasto'].items()):
+        if m >= time.strftime('%Y-%m', time.localtime(desde)):
+            meses[m] = {'reais_pago': round(g.get('reais', 0), 2), 'chamadas_pagas': g.get('chamadas', 0)}
+    a3 = db.um('SELECT COALESCE(SUM(estimado),0) AS s, COUNT(DISTINCT job) AS n FROM custos WHERE t >= ?', desde) or {'s': 0, 'n': 0}
+    pago = sum(m['reais_pago'] for m in meses.values())
+    return {
+        'dias': dias, 'analises': len(lista), 'cortes': feitos, 'reprovados': sum(g['reprovados'] for g in lista),
+        'cortes_por_analise': round(feitos / len(lista), 1) if lista else None,
+        'ouvidos_pela_ia': len(ouvidos), 'parte_ouvidos': round(len(ouvidos) / len(lista), 2) if lista else 0,
+        'videos_com_erro': len(erros), 'trocas_para_paga': len(trocas), 'meses': meses, 'reais_pago_meses': round(pago, 2),
+        'por_corte_contador': round(pago / feitos, 3) if feitos and pago > 0 else None,
+        'agente3': {'reais_estimado': round(a3['s'] or 0, 2), 'videos': a3['n'] or 0},
+        'lista': lista[:15],
+    }
+
+
 def resumo(dias: int = 30) -> dict:
     import agente as ag
     _tabelas()
@@ -314,6 +352,7 @@ def resumo(dias: int = 30) -> dict:
                    'por_semana': ag.config()['cortes']['por_semana'], 'chave_cortes': ag.config()['chaves_uso'].get('cortes', 'gratis'),
                    'dolar': o['dolar'], 'preco_texto': o['preco_texto'], 'preco_audio': o['preco_audio'], 'preco_saida': o['preco_saida']},
     }
+    r['historico'] = historico(dias)
     r['sugestoes'] = sugestoes(r)
     return r
 
@@ -327,92 +366,131 @@ def _brl(x) -> str:
 
 
 def sugestoes(r: dict) -> list:
-    """Sugestões concretas para tirar mais cortes gastando menos. Só as que os números deste período sustentam."""
+    """Sugestões concretas para tirar mais cortes gastando menos, lidas do histórico dos últimos dias e do registro por chamada.
+    Cada uma diz de onde veio o número. `feito`: a configuração já está como a sugestão pede (aparece para você saber)."""
     import agente as ag
     out = []
     cfg = r['config']
+    cu = ag.config()['chaves_uso']
+    co = ag.config()['cortes']
     s = ag.segredos()
-    an = r['analises']
-    cpa = an['cortes_por_analise']
+    an, h = r['analises'], r['historico']
+    medido = an['total'] >= 2
+    cpa = an['cortes_por_analise'] if medido else h['cortes_por_analise']
+    n_an = an['total'] if medido else h['analises']
+    base = 'registro por chamada' if medido else f'histórico dos últimos {h["dias"]} dias'
     etapas = {e['etapa']: e for e in r['a1']['etapas']}
 
-    if cfg['por_analise'] <= 0:
-        out.append({'id': 'ligar_reserva', 'prioridade': 1, 'titulo': 'Aproveitar a mesma análise para muitos cortes',
+    if cpa is not None and n_an >= 1 and cpa < 6:
+        alvo = 12 if cpa < 3 else 16
+        feito = cfg['por_analise'] >= alvo
+        out.append({'id': 'mais_por_analise', 'prioridade': 1, 'feito': feito, 'fonte': base,
+                    'titulo': f'Cada vídeo analisado rendeu só {str(cpa).replace(".", ",")} corte(s) ({n_an} vídeo(s))',
+                    'texto': f'O que custa é a análise do vídeo, não o corte. Pedindo {alvo} trechos na mesma análise, a análise custa quase o mesmo '
+                             '(só a resposta da IA fica um pouco maior) e os trechos que não saem na hora ficam guardados para virar corte depois, '
+                             f'sem pagar a IA de novo. Com {alvo} por análise, o custo de cada corte cai para cerca de 1/{max(2, round(alvo / max(cpa, 1)))} '
+                             'do que era.' + (' Já está ligado.' if feito else ''),
+                    'acao': {'rotulo': f'Pedir {alvo} trechos por análise', 'cortes': {'por_analise': alvo}}})
+    elif cfg['por_analise'] <= 0:
+        out.append({'id': 'mais_por_analise', 'prioridade': 1, 'feito': False, 'fonte': 'configuração',
+                    'titulo': 'Banco de trechos desligado',
                     'texto': f'Hoje cada vídeo analisado rende no máximo {cfg["por_video"]} corte(s) e o resto que a IA achou é jogado fora. '
-                             'Ligando o banco de trechos, a IA aponta até 12 trechos na mesma análise: os que não saem agora ficam guardados '
-                             f'por {DIAS_RESERVA} dias e viram corte nas próximas rodadas sem pagar a IA de novo para ouvir e escolher.',
-                    'acao': {'rotulo': 'Ligar (12 por análise)', 'cortes': {'por_analise': 12}}})
-    elif cpa is not None and an['total'] >= 2 and cpa < 4 and cfg['por_analise'] < 20:
-        novo = min(20, max(cfg['por_analise'] + 6, 12))
-        out.append({'id': 'mais_por_analise', 'prioridade': 1, 'titulo': f'Cada vídeo analisado está rendendo só {cpa:g} corte(s)'.replace('.', ','),
-                    'texto': f'O que custa é a análise, não o corte. Peça {novo} trechos por análise: a análise custa quase o mesmo '
-                             '(só a resposta da IA fica um pouco maior) e o custo se divide por muito mais cortes.',
-                    'acao': {'rotulo': f'Pedir {novo} por análise', 'cortes': {'por_analise': novo}}})
+                             f'Ligando, os trechos que sobram ficam guardados {DIAS_RESERVA} dias e viram corte sem pagar a IA de novo.',
+                    'acao': {'rotulo': 'Pedir 12 trechos por análise', 'cortes': {'por_analise': 12}}})
 
     ouvir = etapas.get('ouvir')
-    if ouvir and ouvir['parte'] >= 0.5:
-        out.append({'id': 'preferir_legenda', 'prioridade': 2, 'titulo': f'Ouvir o áudio é {round(ouvir["parte"] * 100)}% do custo dos cortes',
-                    'texto': 'Isso acontece quando o vídeo não tem legenda no YouTube e a IA precisa ouvir tudo (áudio custa cerca de 3 vezes o texto). '
-                             'Vídeos com legenda saem quase de graça para ouvir. Prefira canais que têm legenda e evite vídeos muito longos sem legenda '
-                             '(diminua "Duração máxima do vídeo" no Agente 1).'})
+    parte = ouvir['parte'] if ouvir and medido else h['parte_ouvidos']
+    if parte >= 0.3 and (ouvir or h['ouvidos_pela_ia']):
+        txt = (f'Ouvir o áudio foi {round(parte * 100)}% do custo dos cortes' if ouvir and medido
+               else f'{h["ouvidos_pela_ia"]} de {h["analises"]} vídeo(s) não tinham legenda e a IA teve que ouvir o áudio inteiro')
+        out.append({'id': 'so_com_legenda', 'prioridade': 2, 'feito': bool(co.get('so_com_legenda')), 'fonte': base, 'titulo': txt,
+                    'texto': 'Ouvir é a parte mais cara: áudio custa cerca de 3 vezes o texto e a IA ouve o vídeo todo, em pedaços de 8 minutos. '
+                             'Vídeo com legenda do YouTube sai quase de graça para ouvir. Ligando "Só vídeos com legenda", o Agente 1 pula o vídeo sem '
+                             'legenda e pega o próximo (gameplay sem fala continua funcionando, pelo som e pela imagem).',
+                    'acao': {'rotulo': 'Só cortar vídeos com legenda', 'cortes': {'so_com_legenda': True}}})
+
+    if h['trocas_para_paga']:
+        out.append({'id': 'sem_reserva_paga', 'prioridade': 1, 'feito': not cu.get('reserva', True), 'fonte': f'histórico dos últimos {h["dias"]} dias',
+                    'titulo': f'A chave grátis acabou {h["trocas_para_paga"]} vez(es) e a paga entrou no lugar',
+                    'texto': 'É aí que o dinheiro sai: quando a cota grátis do dia acaba, a reserva passa o trabalho para a chave com saldo. '
+                             'Desligando a reserva, o trabalho espera a cota grátis voltar no dia seguinte em vez de gastar.',
+                    'acao': {'rotulo': 'Não usar a chave paga quando a grátis acabar', 'chaves_uso': {'reserva': False}}})
 
     if cfg['chave_cortes'] == 'paga' and s.get('gemini'):
-        out.append({'id': 'chave_gratis', 'prioridade': 2, 'titulo': 'Os cortes estão usando a chave com saldo',
-                    'texto': 'Você tem a chave grátis guardada. Usando a grátis para os cortes o gasto em dinheiro vai a zero; se a cota acabar, '
-                             'a reserva troca para a paga sozinha (se estiver ligada).',
-                    'acao': {'rotulo': 'Usar a chave grátis nos cortes', 'chaves_uso': {'cortes': 'gratis'}}})
+        out.append({'id': 'chave_gratis', 'prioridade': 1, 'feito': False, 'fonte': 'configuração',
+                    'titulo': 'Os cortes estão usando a chave com saldo',
+                    'texto': 'Você tem a chave grátis guardada. Usando a grátis para ouvir e escolher os trechos, o gasto em dinheiro dos cortes vai a zero.',
+                    'acao': {'rotulo': 'Usar a chave grátis nos cortes', 'chaves_uso': {'cortes': 'gratis', 'camera': 'gratis'}}})
 
     tot = r['cortes']['feitos'] + r['cortes']['reprovados']
-    if tot >= 5 and r['cortes']['reprovados'] / tot >= 0.25:
-        out.append({'id': 'reprovados', 'prioridade': 3, 'titulo': f'{round(r["cortes"]["reprovados"] / tot * 100)}% dos cortes foram reprovados pelo diretor',
+    rep, tot = (r['cortes']['reprovados'], tot) if tot >= 5 else (h['reprovados'], h['cortes'] + h['reprovados'])
+    if tot >= 5 and rep / tot >= 0.25:
+        out.append({'id': 'reprovados', 'prioridade': 3, 'feito': False, 'fonte': base, 'titulo': f'{round(rep / tot * 100)}% dos cortes foram reprovados pelo diretor',
                     'texto': 'Corte reprovado é análise paga que não vira vídeo. Veja os motivos em Agente 1 e ajuste a duração ou a nota mínima.'})
+    if h['videos_com_erro'] >= 3:
+        out.append({'id': 'erros', 'prioridade': 3, 'feito': False, 'fonte': f'histórico dos últimos {h["dias"]} dias',
+                    'titulo': f'{h["videos_com_erro"]} vídeo(s) deram erro no Agente 1',
+                    'texto': 'Quando o erro vem depois de a IA ouvir ou escolher, a análise foi paga e não virou corte. Os motivos estão em Agente 1 > Agora.'})
 
     res = r['reserva']['trechos']
     if res >= 10:
-        out.append({'id': 'reserva_cheia', 'prioridade': 3, 'titulo': f'{res} trechos guardados esperando para virar corte',
+        out.append({'id': 'reserva_cheia', 'prioridade': 3, 'feito': False, 'fonte': 'banco de trechos', 'titulo': f'{res} trechos guardados esperando para virar corte',
                     'texto': f'Eles saem sem gastar IA para escolher. Com {cfg["por_semana"]} cortes por semana, alguns vão vencer '
                              f'({DIAS_RESERVA} dias). Se quiser postar mais, suba os cortes por semana.',
                     'acao': {'rotulo': f'Subir para {min(21, cfg["por_semana"] + 4)} por semana', 'cortes': {'por_semana': min(21, cfg['por_semana'] + 4)}}})
 
     m = r['mes']
     if m['teto'] > 0 and m['reais_pago'] >= 0.8 * m['teto']:
-        out.append({'id': 'teto', 'prioridade': 0, 'titulo': f'Já foram {_brl(m["reais_pago"])} dos {_brl(m["teto"])} do teto do mês',
-                    'texto': 'Quando chegar no teto a IA para até o mês virar. As sugestões acima reduzem o gasto por corte.'})
+        out.append({'id': 'teto', 'prioridade': 0, 'feito': False, 'fonte': 'contador do mês', 'titulo': f'Já foram {_brl(m["reais_pago"])} dos {_brl(m["teto"])} do teto do mês',
+                    'texto': 'Quando chegar no teto a IA para até o mês virar. As sugestões abaixo reduzem o gasto por corte.'})
 
-    if not r['a1']['chamadas']:
-        out.append({'id': 'sem_dados', 'prioridade': 9, 'titulo': 'Ainda não há chamadas registradas neste período',
-                    'texto': 'O registro por corte começou com esta atualização. Assim que o Agente 1 cortar um vídeo, os números aparecem aqui.'})
-    out.sort(key=lambda x: x['prioridade'])
+    if not out and not r['a1']['chamadas'] and not h['analises']:
+        out.append({'id': 'sem_dados', 'prioridade': 9, 'feito': False, 'fonte': '', 'titulo': 'Ainda não há cortes nem chamadas neste período',
+                    'texto': 'Assim que o Agente 1 cortar um vídeo, os números aparecem aqui.'})
+    out.sort(key=lambda x: (x['feito'], x['prioridade']))
     return out
 
 
 def aplicar(sid: str) -> dict:
-    """Aplica a sugestão (só mudanças de configuração já previstas acima)."""
+    """Aplica a sugestão (só mudanças de configuração previstas acima). sid='todas': aplica todas as que ainda faltam."""
     import agente as ag
-    sug = next((x for x in resumo(30)['sugestoes'] if x['id'] == sid), None)
-    if not sug or not sug.get('acao'):
-        raise ValueError('Esta sugestão não tem nada para aplicar agora.')
-    a = sug['acao']
-    novo = {}
-    if a.get('cortes'):
-        novo['cortes'] = {k: v for k, v in a['cortes'].items() if k in ('por_analise', 'por_semana')}
-    if a.get('chaves_uso'):
-        novo['chaves_uso'] = {k: v for k, v in a['chaves_uso'].items() if k == 'cortes' and v in ('gratis', 'paga')}
-    ag.salvar_config(novo)
-    return {'ok': True, 'aplicado': sug['titulo'], 'acao': a['rotulo']}
+    sugs = resumo(30)['sugestoes']
+    alvo = [x for x in sugs if x.get('acao') and not x.get('feito')] if sid == 'todas' else [x for x in sugs if x['id'] == sid and x.get('acao')]
+    if not alvo:
+        raise ValueError('Não há nada para aplicar agora.' if sid == 'todas' else 'Esta sugestão não tem nada para aplicar agora.')
+    novo: dict = {'cortes': {}, 'chaves_uso': {}}
+    for sug in alvo:
+        a = sug['acao']
+        novo['cortes'].update({k: v for k, v in (a.get('cortes') or {}).items() if k in ('por_analise', 'por_semana', 'so_com_legenda')})
+        novo['chaves_uso'].update({k: v for k, v in (a.get('chaves_uso') or {}).items()
+                                   if (k in ('cortes', 'camera') and v in ('gratis', 'paga')) or (k == 'reserva' and isinstance(v, bool))})
+    ag.salvar_config({k: v for k, v in novo.items() if v})
+    try:
+        import coordenador as co
+        co.evento(None, None, 'agente7', 'custos', {'acao': 'aplicou', 'sugestoes': [x['id'] for x in alvo]})
+    except Exception as e:  # noqa: BLE001
+        print('custo_corte: evento', e)
+    return {'ok': True, 'aplicadas': [x['titulo'] for x in alvo], 'acao': '; '.join(x['acao']['rotulo'] for x in alvo)}
 
 
 # ---------------------------------------------------------------- aviso (WhatsApp/e-mail)
 def texto_aviso(r: dict) -> str:
     pc = r['por_corte']
-    linhas = [f'Últimos {r["dias"]} dias: {r["cortes"]["feitos"]} corte(s) feitos, {r["analises"]["total"]} vídeo(s) analisado(s).']
+    linhas = [f'Últimos {r["dias"]} dias: {max(r["cortes"]["feitos"], r["historico"]["cortes"])} corte(s) feitos, '
+              f'{max(r["analises"]["total"], r["historico"]["analises"])} vídeo(s) analisado(s).']
     if pc['tabela'] is not None:
         linhas.append(f'Custo médio da IA por corte: {_brl(pc["pago"])} pago de verdade (chave paga) — {_brl(pc["tabela"])} pelo preço de tabela.')
     if r['analises']['cortes_por_analise'] is not None:
         linhas.append(f'Cada análise rendeu em média {str(r["analises"]["cortes_por_analise"]).replace(".", ",")} corte(s).')
     if r['reserva']['trechos']:
         linhas.append(f'Guardados para os próximos cortes (sem gastar IA): {r["reserva"]["trechos"]} trecho(s).')
-    sug = [s for s in r['sugestoes'] if s['id'] != 'sem_dados'][:2]
+    h = r['historico']
+    if pc['tabela'] is None and h['analises']:
+        linhas.append(f'Histórico: {h["analises"]} vídeo(s) viraram {h["cortes"]} corte(s) ({str(h["cortes_por_analise"]).replace(".", ",")} por vídeo); '
+                      f'{h["ouvidos_pela_ia"]} precisaram da IA para ouvir o áudio.')
+        if h['por_corte_contador'] is not None:
+            linhas.append(f'Pelo contador da chave paga: {_brl(h["reais_pago_meses"])} → cerca de {_brl(h["por_corte_contador"])} por corte.')
+    sug = [s for s in r['sugestoes'] if s['id'] != 'sem_dados' and not s.get('feito')][:3]
     if sug:
         linhas.append('')
         linhas += [f'Sugestão: {s["titulo"]}.' for s in sug]

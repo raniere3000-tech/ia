@@ -366,6 +366,7 @@ function Custos(){
   const r=useServidor(c=>lerCustos(c,dias),0,[dias]);
   const d:CustosT|null=r.dados;
   async function aplicar(id:string){ setBusy(id); try{ const x=await aplicarSugestaoCusto(cfg,id); toast(`Feito: ${x.acao}.`,'ok'); r.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } }
+  const pendentes=(d?.sugestoes||[]).filter(s=>s.acao&&!s.feito);
   async function avisar(){ setBusy('aviso'); try{ await avisarCustos(cfg,7); toast('Resumo da semana enviado no WhatsApp/e-mail.','ok'); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } }
   return <section className="panel">
     <h3><Coins size={16}/> Custo por corte</h3>
@@ -387,11 +388,22 @@ function Custos(){
         <div className="card"><small className="muted">Guardados para depois (sem gastar IA)</small><div style={{fontSize:'1.5em',fontWeight:700}}>{d.reserva.trechos}</div>
           <small className="muted">de {d.reserva.videos} vídeo(s) · valem {d.reserva.dias_validade} dias</small></div>
       </div>
+      {d.historico.analises>0&&<div className="card mt"><b>O que o Coordenador leu do histórico ({d.historico.dias} dias)</b>
+        <ul style={{margin:'6px 0 0',paddingLeft:18}}>
+          <li><small>{d.historico.analises} vídeo(s) analisado(s) viraram {d.historico.cortes} corte(s): <b>{String(d.historico.cortes_por_analise).replace('.',',')} por vídeo</b>{d.historico.reprovados?` (+${d.historico.reprovados} reprovado(s))`:''}.</small></li>
+          <li><small>{d.historico.ouvidos_pela_ia} vídeo(s) sem legenda: a IA teve que ouvir o áudio inteiro ({pct(d.historico.parte_ouvidos)}).</small></li>
+          {d.historico.trocas_para_paga>0&&<li><small>A chave grátis acabou {d.historico.trocas_para_paga} vez(es) e a paga entrou no lugar.</small></li>}
+          {d.historico.videos_com_erro>0&&<li><small>{d.historico.videos_com_erro} vídeo(s) deram erro no Agente 1.</small></li>}
+          <li><small>Contador da chave paga: {brl(d.historico.reais_pago_meses)} ({Object.entries(d.historico.meses).map(([m,g])=>`${m.slice(5)}/${m.slice(0,4)}: ${brl(g.reais_pago)}, ${g.chamadas_pagas} chamada(s)`).join(' · ')||'nada'}){d.historico.por_corte_contador!=null?` → cerca de ${brl(d.historico.por_corte_contador)} por corte`:''}.</small></li>
+          {d.historico.agente3.videos>0&&<li><small>Agente 3 (vídeos com IA): {d.historico.agente3.videos} vídeo(s), cerca de {brl(d.historico.agente3.reais_estimado)} estimados.</small></li>}
+        </ul></div>}
       <h4 className="mt"><Lightbulb size={14}/> Como tirar mais cortes gastando menos</h4>
+      {pendentes.length>1&&<button className="primary" disabled={busy==='todas'} onClick={()=>aplicar('todas')}>{busy==='todas'?<Loader2 size={14} className="spin"/>:<CheckCircle2 size={14}/>} Aplicar todas as sugestões ({pendentes.length})</button>}
       {!d.sugestoes.length&&<p className="muted">Nenhuma sugestão agora: os números deste período estão bons.</p>}
       <ul className="coord-kwai">{d.sugestoes.map(s=><li key={s.id} className="card">
-        <b>{s.titulo}</b><p className="hint" style={{margin:'4px 0'}}>{s.texto}</p>
-        {s.acao&&<button className="primary sm" disabled={busy===s.id} onClick={()=>aplicar(s.id)}>{busy===s.id?<Loader2 size={14} className="spin"/>:<CheckCircle2 size={14}/>} {s.acao.rotulo}</button>}
+        <b>{s.titulo}</b>{s.fonte&&<small className="muted"> · {s.fonte}</small>}<p className="hint" style={{margin:'4px 0'}}>{s.texto}</p>
+        {s.feito?<small className="ok"><CheckCircle2 size={13}/> Já está aplicado.</small>:
+          s.acao&&<button className="primary sm" disabled={busy===s.id} onClick={()=>aplicar(s.id)}>{busy===s.id?<Loader2 size={14} className="spin"/>:<CheckCircle2 size={14}/>} {s.acao.rotulo}</button>}
       </li>)}</ul>
       <h4 className="mt">Onde o dinheiro vai (Agente 1)</h4>
       {!d.a1.etapas.length?<p className="muted">Nenhuma chamada à IA registrada neste período{d.medindo_desde?'':' (o registro começa com esta atualização)'}.</p>:
