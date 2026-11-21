@@ -130,13 +130,13 @@ function Agentes({conf,est,esteira,salvo}:{conf:ConfigCentral;est:import('../lib
   return <>
     <section className="panel">
       <h3>Agente 1 · Cortes</h3>
+      <p className="hint tight">A busca de canais novos (ligar, desligar e de quanto em quanto tempo) fica em Agentes &gt; Agente 1 &gt; aba "1 · Busca de canais".</p>
       <label className="check"><input type="checkbox" checked={c.controle_estoque} onChange={e=>setC({...c,controle_estoque:e.target.checked})}/> Cortar só quando o estoque precisar (desmarcado: segue a meta de cortes por semana)</label>
       <div className="row">{(['economico','equilibrado','intensivo'] as const).map(m=><button key={m} className={(conf.modo===m?'primary':'subtle')+' sm'} disabled={busy} onClick={()=>salvar({modo:m})}>{({economico:'Econômico',equilibrado:'Equilibrado',intensivo:'Intensivo'})[m]}</button>)}
         {conf.modo==='personalizado'&&<span className="tag">Personalizado</span>}</div>
       <div className="grid2">
         {num('minimo','Estoque mínimo','Abaixo disso o Agente 1 volta a trabalhar.')}
         {num('alvo','Estoque alvo','Chegou aqui, ele para.')}
-        {num('busca_horas','Procurar canais a cada (horas)','Só quando está repondo.')}
         {num('cooldown_min','Intervalo entre rodadas (min)','Evita cortar sem parar.')}
         <label>Quando trabalhar<select value={c.frequencia||'estoque'} onChange={e=>setC({...c,frequencia:e.target.value as typeof c.frequencia})}>
           <option value="estoque">Pelo estoque (mínimo e alvo)</option><option value="agenda">Só pela meta de cortes por semana (Agentes 1, 2 e 3)</option>

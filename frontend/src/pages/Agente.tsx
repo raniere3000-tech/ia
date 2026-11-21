@@ -13,7 +13,7 @@ import { useServidor } from '../components/Servidor2';
 import { lerFila, pendentes, listarProjetos, catalogo, horaTexto } from '../lib/api';
 import { verAgente, salvarAgente, salvarChaves, acaoCanal, rodarAgente, pararAgente, testarEmail, testarWhatsapp, acaoCorte, videoDoCorte, salvarPesos, aprenderAgora, DIAS, MOTIVOS, type VisaoAgente, type ConfigAgente, type Uso, type Canal, type CorteAgente } from '../lib/agente';
 
-type Parte = 'cortes'|'postagem'|'programacao'|'agente3'|'esteira'|'desempenho'|'avisos'|'fila';
+type Parte = 'cortes'|'busca'|'postagem'|'programacao'|'agente3'|'esteira'|'desempenho'|'avisos'|'fila';
 const num=(n:number)=>n.toLocaleString('pt-BR');
 const tempo=(s:number)=>s<60?`${s} s`:`${Math.floor(s/60)} min${s%60?` e ${s%60} s`:''}`;
 const quando=(ts:number)=>new Date(ts*1000).toLocaleString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
@@ -249,9 +249,29 @@ export default function Agente(){
       {erro&&<p className="hint bad"><AlertTriangle size={13}/> {erro}</p>}
     </section>
 
-    <div className="ag-abas" role="tablist">{([['cortes','1 · Cortes'],['postagem','2 · Postagem'],['programacao','2 · Programação diária'],['agente3','3 · Vídeos com IA'],['esteira','4 e 5 · Diretor e editor'],['desempenho','Desempenho'],['avisos','Avisos e chaves'],['fila',`Cortes feitos e histórico${v.cortes.length?` (${v.cortes.length})`:''}`]] as [Parte,string][]).map(([k,t])=><button key={k} role="tab" aria-selected={parte===k} className={parte===k?'active':''} onClick={()=>setParte(k)}>{t}</button>)}</div>
+    <div className="ag-abas" role="tablist">{([['cortes','1 · Cortes'],['busca','1 · Busca de canais'],['postagem','2 · Postagem'],['programacao','2 · Programação diária'],['agente3','3 · Vídeos com IA'],['esteira','4 e 5 · Diretor e editor'],['desempenho','Desempenho'],['avisos','Avisos e chaves'],['fila',`Cortes feitos e histórico${v.cortes.length?` (${v.cortes.length})`:''}`]] as [Parte,string][]).map(([k,t])=><button key={k} role="tab" aria-selected={parte===k} className={parte===k?'active':''} onClick={()=>setParte(k)}>{t}</button>)}</div>
 
     {parte==='agente3'&&<Agente3Aba/>}
+    {parte==='busca'&&<section className="panel">
+      <h3>Busca automática de canais novos</h3>
+      <p className="hint tight">O Agente 1 procura canais em alta nos seus nichos e deixa como sugestão para você aprovar (aba 1 · Cortes). Nada é cortado de canal que você não aprovou.</p>
+      <div className="row-gap left">
+        <span className={'tag '+(co.busca_auto!==false?'ok':'')}>{co.busca_auto!==false?'Ligada':'Desligada'}</span>
+        <button className={co.busca_auto!==false?'subtle sm':'primary sm'} onClick={()=>salvar({cortes:{busca_auto:co.busca_auto===false}})}>{co.busca_auto!==false?<><Square size={13}/> Desativar busca automática</>:<><Play size={13}/> Ativar busca automática</>}</button>
+        <button className="subtle sm" disabled={ocupado} onClick={()=>run(()=>rodarAgente(settings,'buscar'),'Procurando canais em alta.')}><Search size={13}/> Procurar agora (uma vez)</button>
+      </div>
+      <div className="ag-grade mt">
+        <label>Procurar a cada quantas HORAS (1 a 168)<Campo tipo="number" min={1} max={168} valor={co.busca_horas??24} salvar={x=>salvar({cortes:{busca_horas:+x}})}/></label>
+        <label>Sugerir no máximo quantos canais por busca (1 a 50)<Campo tipo="number" min={1} max={50} valor={co.busca_max??25} salvar={x=>salvar({cortes:{busca_max:+x}})}/></label>
+        <label>Média mínima de visualizações na semana<Campo tipo="number" min={0} step={50000} valor={co.min_views} salvar={x=>salvar({cortes:{min_views:+x}})}/></label>
+      </div>
+      <p className="hint">Os nichos, o idioma e o país da busca ficam na aba 1 · Cortes, em "O que procurar". Cada busca gasta cota da chave do YouTube.</p>
+      {v.busca&&<ul className="ag-faltas">
+        <li>Última busca: {v.busca.ultima?quando(v.busca.ultima):'nunca'}{v.busca.achados!=null&&v.busca.ultima_ok?` · ${v.busca.achados} canal(is) novo(s) na última que deu certo`:''}</li>
+        <li>Próxima busca automática: {v.busca.ligada?(v.busca.proxima&&v.busca.proxima>v.agora?quando(v.busca.proxima):'na próxima volta do agente (dentro do horário de trabalho)'):'desativada'}</li>
+        {v.busca.erro&&<li><AlertTriangle size={13}/> Último erro: {v.busca.erro}</li>}
+      </ul>}
+    </section>}
     {parte==='esteira'&&<Esteira/>}
     {parte==='programacao'&&<ProgramacaoDiaria/>}
 

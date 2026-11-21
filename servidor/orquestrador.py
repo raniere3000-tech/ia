@@ -277,6 +277,15 @@ def decidir_cortes(cfg: dict, est: dict, repondo: bool, agora: float, ultima_rod
             'motivo': f'Estoque de {est["disponiveis"]} abaixo do alvo {c["alvo"]}: corto até {falta_cortar} (taxa de aprovação {int(est["taxa_aprovacao"] * 100)}%).'}
 
 
+def _com_busca_do_agente1(cfg: dict, marcas: dict, agora: float) -> tuple[dict, float]:
+    """A busca de canais segue a configuração do Agente 1 (Agentes > Agente 1 > Busca de canais): desligada, a Central
+    nunca manda procurar; ligada, vale o intervalo escolhido lá."""
+    import agente as ag
+    co = ag.config()['cortes']
+    cfg = dict(cfg, cortes=dict(cfg['cortes'], busca_horas=co['busca_horas']))
+    return cfg, (agora if not co['busca_auto'] else float(marcas.get('busca') or 0))
+
+
 def decisao_cortes() -> dict | None:
     """Chamado pelo relógio do Agente 1. None = central desligada ou sem controle por estoque (regra antiga da meta semanal)."""
     cfg = config()
@@ -289,7 +298,8 @@ def decisao_cortes() -> dict | None:
     m = _mem()
     est = estoque_cortes()
     agora = time.time()
-    d = decidir_cortes(cfg, est, bool(m['repondo'].get('cortes')), agora, marcas.get('tentativa', 0), marcas.get('busca', 0),
+    cfg, ult_busca = _com_busca_do_agente1(cfg, marcas, agora)
+    d = decidir_cortes(cfg, est, bool(m['repondo'].get('cortes')), agora, marcas.get('tentativa', 0), ult_busca,
                        bool(marcas.get('rodada_vazia')))
     if cfg['cortes']['frequencia'] == 'hibrido' and d['acao'] == 'nada':
         d = meta_semanal(d, ag.cortes_da_semana(), ag.config()['cortes']['por_semana'], cfg, agora, marcas.get('tentativa', 0))
@@ -337,7 +347,8 @@ def situacao_agente1() -> dict:
     marcas = ag.estado()['marcas']
     est = estoque_cortes()
     agora = time.time()
-    d = decidir_cortes(cfg, est, bool(_mem()['repondo'].get('cortes')), agora, marcas.get('tentativa', 0), marcas.get('busca', 0),
+    cfg, ult_busca = _com_busca_do_agente1(cfg, marcas, agora)
+    d = decidir_cortes(cfg, est, bool(_mem()['repondo'].get('cortes')), agora, marcas.get('tentativa', 0), ult_busca,
                        bool(marcas.get('rodada_vazia')))
     if cfg['cortes']['frequencia'] == 'hibrido' and d['acao'] == 'nada':
         d = meta_semanal(d, ag.cortes_da_semana(), co['por_semana'], cfg, agora, marcas.get('tentativa', 0))

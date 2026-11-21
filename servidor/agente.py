@@ -83,6 +83,8 @@ PADRAO = {
         'variar': ['cor_destaque', 'gancho_pos', 'zoom'],
         'modelos': [], 'estilos': [], 'modo': '', 'perfil': '', 'aprender': True,
         'exigir_aprovacao': False,     # False (escolha do Raniere em 18/11): certificado do diretor basta; True: espera o seu ok
+        # busca automática de canais novos (pedido do Raniere em 21/11: dá para desligar e escolher de quanto em quanto tempo)
+        'busca_auto': True, 'busca_horas': 24, 'busca_max': 25,
     },
     'postagem': {
         'ligado': False, 'redes': ['youtube', 'instagram', 'facebook', 'tiktok', 'kwai'],
@@ -140,6 +142,14 @@ def config() -> dict:
         return _limpar_cfg(_mesclar(PADRAO, pg._ler(ARQ_CFG, {})))
 
 
+def _n(v, padrao):
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return padrao
+    return x if math.isfinite(x) else padrao
+
+
 def _limpar_cfg(c: dict) -> dict:
     co, po = c['cortes'], c['postagem']
     co['nichos'] = [str(x).strip()[:40] for x in co['nichos'] if str(x).strip()][:8]
@@ -154,6 +164,9 @@ def _limpar_cfg(c: dict) -> dict:
     co['regiao'] = co['regiao'].upper() if re.fullmatch(r'[A-Za-z]{2}', co['regiao']) else ''
     co['por_semana'] = max(1, min(21, co['por_semana']))
     co['exigir_aprovacao'] = co.get('exigir_aprovacao') is True
+    co['busca_auto'] = co.get('busca_auto') is not False
+    co['busca_horas'] = max(1, min(168, int(_n(co.get('busca_horas'), 24))))
+    co['busca_max'] = max(1, min(50, int(_n(co.get('busca_max'), 25))))
     co['por_video'] = max(1, min(6, co['por_video']))
     # banco de trechos: quantos trechos a IA aponta numa análise (o que não sai agora fica guardado e vira corte depois, sem IA); 0 = desligado
     co['por_analise'] = max(0, min(20, int(co.get('por_analise') or 0)))
@@ -435,9 +448,36 @@ def _ficha(vs: list, co: dict, media: float) -> dict:
     }
 
 
-def buscar_canais() -> int:
-    """Procura canais em alta nos nichos e guarda como sugestão (você aprova na tela)."""
+def busca_situacao() -> dict:
+    """Busca automática de canais: ligada?, quando foi a última, quando é a próxima e o último erro."""
+    co, m = config()['cortes'], estado()['marcas']
+    ult = float(m.get('busca') or 0)
+    return {'ligada': co['busca_auto'], 'horas': co['busca_horas'], 'max': co['busca_max'], 'ultima': ult or None,
+            'ultima_ok': float(m.get('busca_ok') or 0) or None, 'achados': m.get('busca_achados'),
+            'proxima': (ult + co['busca_horas'] * 3600) if co['busca_auto'] else None, 'erro': m.get('busca_erro') or ''}
+
+
+def busca_vencida() -> bool:
     co = config()['cortes']
+    return co['busca_auto'] and time.time() - float(estado()['marcas'].get('busca') or 0) > co['busca_horas'] * 3600
+
+
+def buscar_canais() -> int:
+    """Procura canais em alta nos nichos e guarda como sugestão (você aprova na tela).
+    A marca da busca é gravada ANTES: se der erro (cota do YouTube, internet), a próxima tentativa respeita o intervalo
+    em vez de repetir sem parar."""
+    co = config()['cortes']
+    _mudar(lambda e: e['marcas'].update(busca=time.time()))
+    try:
+        n = _buscar_canais(co)
+    except Exception as e:
+        _mudar(lambda x, msg=str(e)[:200]: x['marcas'].update(busca_erro=msg))
+        raise
+    _mudar(lambda e: e['marcas'].update(busca=time.time(), busca_ok=time.time(), busca_achados=n, busca_erro=''))
+    return n
+
+
+def _buscar_canais(co: dict) -> int:
     desde = (datetime.utcnow() - timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%SZ')
     por_canal: dict[str, list] = {}
     for nicho in co['nichos']:
@@ -463,7 +503,7 @@ def buscar_canais() -> int:
                           'media': round(media), 'videos': len(vs), 'inscritos': 0, 'achado': time.time(),
                           'exemplo': max(vs, key=lambda v: v['views'])['titulo'][:120], 'ficha': _ficha(vs, co, media)})
     novos.sort(key=lambda c: -c['media'])
-    novos = novos[:25]
+    novos = novos[:co.get('busca_max', 25)]
     if novos:
         for i in range(0, len(novos), 50):
             j = yt('channels', part='statistics', id=','.join(c['id'] for c in novos[i:i + 50]), maxResults=50)
@@ -475,7 +515,6 @@ def buscar_canais() -> int:
         avisar('canal', f'{len(novos)} canal(is) novo(s) para aprovar',
                'O agente achou estes canais em alta. Abra a aba Agente para aprovar ou recusar:\n\n' +
                '\n'.join(f'- {c["nome"]} ({c["nicho"]}): média de {c["media"]:,} visualizações em {c["videos"]} vídeo(s) da semana'.replace(',', '.') for c in novos), zap_tipo='a1_canal')
-    _mudar(lambda e: e['marcas'].update(busca=time.time()))
     return len(novos)
 
 
@@ -2645,7 +2684,7 @@ def ver() -> dict:
         'cortes': [dict({k: v for k, v in x.items() if k != 'chave'}, conferencia=conferir(x, e) if x['status'] == 'pronto' else None)
                    for x in sorted(e['cortes'], key=lambda x: -x['criado'])][:80],
         'modelos': mo.resumo(), 'ativos': [m['id'] for m in mo.ativos(c['cortes']['modelos'])], 'desempenho': desempenho(e),
-        'log': e['log'][-40:][::-1], 'gasto': gasto_mes(), 'semana': cortes_da_semana(),
+        'log': e['log'][-40:][::-1], 'gasto': gasto_mes(), 'semana': cortes_da_semana(), 'busca': busca_situacao(),
         'horarios': e['horarios'], 'atual': dict(ATUAL, ocupado=OCUPADO.locked() or bool(PENDENTES and PENDENTES())),
         'opcoes': {'idiomas': IDIOMAS, 'paises': PAISES, 'nichos': NICHOS, 'proibidos': PROIBIDOS, 'variacoes': VARIACOES, 'motivos': MOTIVOS},
         'ffmpeg': bool(shutil.which('ffmpeg')), 'agora': time.time(),
@@ -3017,13 +3056,13 @@ def passo():
         dec = None
     if dec is not None:
         if dec['acao'] == 'buscar_canais':          # procura canais e já emenda a rodada de cortes (não espera a próxima volta)
-            _mudar(lambda e: e['marcas'].update(busca=time.time(), tentativa=time.time()))
+            _mudar(lambda e: e['marcas'].update(tentativa=time.time()))
             _em_fundo('Busca de canais e cortes', lambda q=dec['quantos'], f=dec.get('fontes', 1): (buscar_canais(), rodada_estoque(q, f)))
         elif dec['acao'] == 'cortar':
             _mudar(lambda e: e['marcas'].update(tentativa=time.time()))
             _em_fundo('Agente de cortes', lambda q=dec['quantos'], f=dec.get('fontes', 1): rodada_estoque(q, f))
         return
-    if time.time() - m.get('busca', 0) > 86400:
+    if busca_vencida():
         _em_fundo('Busca de canais', buscar_canais)
     elif cortes_da_semana() < co['por_semana'] and time.time() - m.get('tentativa', 0) > float(os.getenv('INTERVALO_CORTES', '3600')):
         _mudar(lambda e: e['marcas'].update(tentativa=time.time()))

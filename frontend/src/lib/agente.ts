@@ -5,7 +5,7 @@ import { cabAuth } from './api';
 export type Template = {legenda:'destaque'|'simples'|'caixa'|'nenhuma';cor:string;cor_destaque:string;maiusculas:boolean;tamanho:'pequeno'|'medio'|'grande';legenda_pos:'baixo'|'meio';enquadramento:'desfoque'|'cortar';zoom:number;gancho:boolean;gancho_pos:'topo'|'alto';tarja_topo:string;tarja_base:string;cor_tarja:string;cor_tarja_texto:string;qualidade:number};
 export type Faixa = {dia:number;hora:string};
 export type ConfigAgente = {
-  cortes:{ligado:boolean;nichos:string[];temas:string[];temas_outros:boolean;proibidos:string[];min_views:number;idioma:string;regiao:string;por_semana:number;por_video:number;por_analise?:number;so_com_legenda?:boolean;dur_min:number;dur_max:number;nota_min:number;video_min:number;video_max:number;dias_video:number;hora_ini:number;hora_fim:number;template:Template;variar:string[];modelos:string[];estilos?:string[];modo?:string;perfil?:string;aprender:boolean;exigir_aprovacao?:boolean};
+  cortes:{ligado:boolean;nichos:string[];temas:string[];temas_outros:boolean;proibidos:string[];min_views:number;idioma:string;regiao:string;por_semana:number;por_video:number;por_analise?:number;so_com_legenda?:boolean;dur_min:number;dur_max:number;nota_min:number;video_min:number;video_max:number;dias_video:number;hora_ini:number;hora_fim:number;template:Template;variar:string[];modelos:string[];estilos?:string[];modo?:string;perfil?:string;aprender:boolean;exigir_aprovacao?:boolean;busca_auto?:boolean;busca_horas?:number;busca_max?:number};
   postagem:{ligado:boolean;redes:Rede[];faixas:Faixa[];youtube_privacidade:string;tiktok_modo:string;antecedencia:number};
   email:{para:string;de:string;smtp:string;porta:number;anexar:boolean;avisos:Record<string,boolean>};
   whatsapp:{ligado:boolean;numero:string;avisos:Record<string,boolean>};
@@ -23,9 +23,10 @@ export type Desempenho = {
   sem_modelo:{cortes:number;postados:number;manuais:number}; chances:Record<string,number>; pesos:Record<string,Record<string,number>>; definidos:string[];
   filas:Record<string,{fila:number;postados:number;erros:number;manual:number;ultimo_erro:string}>; canais:Record<string,{n:number;views:number}>; medidos:number; indisponivel:string;
 };
+export type BuscaCanais={ligada:boolean;horas:number;max:number;ultima:number|null;ultima_ok:number|null;achados:number|null|undefined;proxima:number|null;erro:string};
 export type VisaoAgente = {
   config:ConfigAgente; chaves:{gemini:boolean;gemini_pago?:boolean;youtube:boolean;email_senha:boolean;pexels?:boolean;pixabay?:boolean;callmebot?:boolean}; whatsapp_ponte?:boolean; canais:Canal[]; cortes:CorteAgente[];
-  log:{t:number;tipo:string;texto:string}[]; gasto:{reais:number;chamadas:number}; semana:number; horarios:Record<string,{n:number;views:number}>;
+  log:{t:number;tipo:string;texto:string}[]; gasto:{reais:number;chamadas:number}; semana:number; busca?:BuscaCanais; horarios:Record<string,{n:number;views:number}>;
   modelos:{id:string;nome:string;layout:string;formato:string}[]; ativos:string[]; desempenho:Desempenho;
   atual:{etapa:string;pct:number;ocupado:boolean}; opcoes:{idiomas:Record<string,string>;paises:Record<string,string>;nichos:string[];proibidos:string[];variacoes:Record<string,string>;motivos:string[]}; ffmpeg:boolean; agora:number;
 };
