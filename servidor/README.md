@@ -70,6 +70,17 @@ Teste: `PYTHONPATH=. python3 testes/teste_site_lote1.py` (FFmpeg de verdade; nã
 - Ajustes > Servidor do celular mostra os números do servidor (`GET /api/v1/metricas`) e "Testar restauração" de um projeto
   (restaura numa pasta separada, sem mexer no original). Backup no mesmo celular não protege contra perda do aparelho.
 
+### Entrar no servidor de outro Android
+No celular que é o servidor:
+```bash
+cd ~/ia/servidor
+bash acesso-remoto.sh servidor   # liga o servidor dentro do tmux "estudioclip" (Ctrl+B e depois D sai sem desligar)
+bash acesso-remoto.sh            # liga o SSH (pede uma senha na 1ª vez) e mostra usuário, IP e o comando pronto
+```
+No outro Android (Termux, mesmo Wi-Fi): `pkg install -y openssh`, depois `ssh -p 8022 USUARIO@IP` e `tmux attach -t estudioclip`.
+Fora do Wi-Fi, use o site: `bash iniciar-termux.sh parear` gera um link de uso único para o outro aparelho.
+`bash acesso-remoto.sh senha` troca a senha; `bash acesso-remoto.sh desligar` desliga o SSH.
+
 ## Agendar posts (YouTube, Instagram, Facebook, TikTok, Kwai)
 
 O mesmo servidor guarda os cortes e publica nas **suas** contas na hora marcada, mesmo com o site fechado

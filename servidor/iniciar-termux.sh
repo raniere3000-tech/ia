@@ -7,6 +7,7 @@
 #          bash iniciar-termux.sh diagnostico -> mede o celular (ficha + render de 5 s + prévia leve); não instala nada
 #          bash iniciar-termux.sh linkfixo TOKEN https://estudio.seudominio.com.br -> endereço que nunca muda (túnel com nome da Cloudflare)
 #          bash iniciar-termux.sh whatsapp 5511912345678 -> liga o seu WhatsApp (comandos e avisos na conversa com você mesmo)
+# Para entrar de outro Android (site ou terminal):  bash acesso-remoto.sh   (veja o começo daquele arquivo)
 set -e
 cd "$(dirname "$0")"
 if [ "$1" = "senha" ]; then
