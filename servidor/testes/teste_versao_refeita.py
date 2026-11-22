@@ -73,5 +73,14 @@ pg.salvar_posts(pg.posts() + [p2])
 confere(pg.arquivo_trocado(vid, 'teste') == 1, 'arquivo_trocado atualiza só o post não enviado')
 confere(next(x for x in pg.posts() if x['id'] == 'p2')['hash'] == pg.assinatura(vid), 'post agendado aponta para a versão nova')
 
+# 4) vídeo que sai da agenda para ser refeito: o horário dele fica livre para outro vídeo pronto
+import agenda_postagem as a2  # noqa: E402
+a2.acordar = lambda: None
+db.executar("INSERT INTO posting_slots (id, agenda, conta, rede, data_local, hora_local, quando_utc, tipo, estado, ref, sha256, post, criado, atualizado) "
+            "VALUES ('s1','a','c','youtube','2099-01-01','10:00',?,'corte','agendado','corte1','x','p2',0,0)", pg.agora() + 7200)
+confere(a2.devolver_horario_do_post('p2', 'teste') == 1, 'devolve o horário do post')
+sl = db.um("SELECT * FROM posting_slots WHERE id='s1'")
+confere(sl['estado'] == 'vazio' and not sl['post'] and not sl['ref'], 'horário fica livre para o próximo vídeo pronto')
+
 print('\n' + ('TUDO OK' if not falhas else f'{falhas} FALHA(S)'))
 sys.exit(1 if falhas else 0)

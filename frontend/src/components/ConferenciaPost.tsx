@@ -20,7 +20,7 @@ export default function ConferenciaPost({id,onLiberado}:{id:string;onLiberado?:(
   const [enviado,setEnviado]=useState('');
   const semCert=!!res&&Object.values(res).some(i=>i.some(x=>x.item==='certificado'&&!x.ok));
   const permitir=async()=>{ if(!window.confirm(AVISO_PERMITIR)) return; setBusy(true); setErro(''); try{ await permitirPost(cfg,id); setEnviado('Liberado por você. Se o horário já passou, o Agente 2 dá um horário novo.'); onLiberado?.(); }catch(e){ setErro(erroTexto(e)); }finally{ setBusy(false); } };
-  const editor=async()=>{ setBusy(true); setErro(''); try{ const r=await mandarEditorPost(cfg,id); setEnviado(r.ja_na_fila?'Já está no editor. Acompanhe em Agentes > Central > Agora.':'Mandado para o editor e o diretor. Se o diretor aprovar, este post volta a valer.'); }catch(e){ setErro(erroTexto(e)); }finally{ setBusy(false); } };
+  const editor=async()=>{ setBusy(true); setErro(''); try{ const r=await mandarEditorPost(cfg,id); setEnviado(r.ja_na_fila?'Já está no editor. Acompanhe em Agentes > Central > Agora.':'Mandado para o editor e o diretor. Este post saiu da agenda; quando o diretor aprovar, o vídeo ganha um horário novo sozinho.'); }catch(e){ setErro(erroTexto(e)); }finally{ setBusy(false); } };
   return <div className="conf-post">
    <button className="link-btn" disabled={busy} onClick={conferir}>{busy?<Loader2 size={13} className="spin"/>:<ShieldCheck size={13}/>} Conferir antes de postar</button>
    {erro&&<p className="hint bad">{erro}</p>}

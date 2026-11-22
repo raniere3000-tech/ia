@@ -461,6 +461,8 @@ def elegiveis(rede: str) -> list:
             continue
         if c.get('live_fila'):
             continue            # corte da Live: a parte Live posta na hora, a programação não pega
+        if ag.em_edicao(c['id']):
+            continue            # o editor/diretor ainda está refazendo este vídeo: só agenda depois de terminar
         if not ag.liberado_para_postar(c):
             continue            # mesma regra da postagem antiga: espera o seu ok (se a exigência estiver ligada)
         sha = _sha(c)
@@ -573,6 +575,22 @@ def _liberar_ref(s: dict, post_id: str):
         return
     import agente as ag
     ag._mudar(lambda e: [x.update(status='pronto', post='', quando=None) for x in e['cortes'] if x['id'] == s['ref'] and x.get('post') == post_id])
+
+
+def devolver_horario_do_post(post_id: str, motivo: str) -> int:
+    """O vídeo saiu da agenda para ser refeito (editor/diretor): o horário dele fica livre para o próximo vídeo pronto.
+    Quando o vídeo refeito for aprovado, ele entra de novo num horário livre como qualquer vídeo pronto."""
+    agora = time.time()
+    n = 0
+    for s in db.todos("SELECT * FROM posting_slots WHERE post=? AND estado IN ('agendado','aguardando_aprovacao')", post_id):
+        futuro = s['quando_utc'] > agora + 60
+        db.executar("UPDATE posting_slots SET estado=?, post=NULL, ref=NULL, sha256=NULL, motivo=?, atualizado=? WHERE id=?",
+                    'vazio' if futuro else 'cancelado', motivo[:200], agora, s['id'])
+        db.evento('agente2', 'slot_liberado', 'slot:' + s['id'], {'post': post_id, 'motivo': motivo[:120]})
+        n += 1
+    if n:
+        acordar()
+    return n
 
 
 def liberar_horario(sid: str, post_id: str) -> bool:
