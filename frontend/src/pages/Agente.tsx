@@ -196,6 +196,20 @@ export default function Agente(){
   useEffect(()=>{ carregar(); const t=setInterval(carregar,ocupado?3000:12000); return ()=>clearInterval(t); },[carregar,ocupado]);
   const run=async(f:()=>Promise<unknown>,ok?:string)=>{ try{ const r=await f(); if(r&&typeof r==='object'&&'config' in r) setV(r as VisaoAgente); else carregar(); if(ok) toast(ok,'ok'); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } };
   const salvar=(p:Parameters<typeof salvarAgente>[1])=>run(()=>salvarAgente(settings,p));
+  /** Liga/desliga a busca automática e confere se o servidor guardou mesmo (servidor antigo ignora a opção sem avisar). */
+  const trocarBusca=async()=>{
+    if(!v) return;
+    if(!v.busca){ toast('O servidor do celular está desatualizado. No Termux: git checkout main && git pull, depois reinicie o servidor.','erro'); return; }
+    const quer=v.config.cortes.busca_auto===false;
+    try{
+      const r=await salvarAgente(settings,{cortes:{busca_auto:quer}}) as unknown;
+      if(r&&typeof r==='object'&&'config' in r){
+        const nv=r as VisaoAgente; setV(nv);
+        if((nv.config.cortes.busca_auto!==false)!==quer){ toast('O servidor não guardou a mudança. Atualize o servidor (git checkout main && git pull) e reinicie.','erro'); return; }
+      } else carregar();
+      toast(quer?'Busca automática ligada.':'Busca automática desligada.','ok');
+    }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
+  };
 
   if(!settings.servidor) return <section className="panel empty-state"><Bot size={34}/><strong>Os agentes rodam no seu servidor</strong><p>Ligue o servidor no celular ou no computador e conecte o aplicativo a ele. Depois volte aqui para configurar os agentes.</p><button className="primary" onClick={()=>go('config')}>Abrir Chaves e ajustes</button></section>;
   if(!v) return <section className="panel empty-state">{erro?<><AlertTriangle size={30}/><strong>Não consegui abrir os agentes</strong><p>{erro}</p><button className="subtle" onClick={carregar}><RefreshCw size={14}/> Tentar de novo</button></>:<><Loader2 size={26} className="spin"/><p>Falando com o servidor...</p></>}</section>;
@@ -255,9 +269,10 @@ export default function Agente(){
     {parte==='busca'&&<section className="panel">
       <h3>Busca automática de canais novos</h3>
       <p className="hint tight">O Agente 1 procura canais em alta nos seus nichos e deixa como sugestão para você aprovar (aba 1 · Cortes). Nada é cortado de canal que você não aprovou.</p>
+      {!v.busca&&<p className="hint" role="alert"><AlertTriangle size={13}/> <b>O servidor do celular está desatualizado</b> e ainda não sabe desligar a busca automática. No Termux, rode <code>git checkout main && git pull</code> e depois desligue e ligue o servidor de novo.</p>}
       <div className="row-gap left">
         <span className={'tag '+(co.busca_auto!==false?'ok':'')}>{co.busca_auto!==false?'Ligada':'Desligada'}</span>
-        <button className={co.busca_auto!==false?'subtle sm':'primary sm'} onClick={()=>salvar({cortes:{busca_auto:co.busca_auto===false}})}>{co.busca_auto!==false?<><Square size={13}/> Desativar busca automática</>:<><Play size={13}/> Ativar busca automática</>}</button>
+        <button className={co.busca_auto!==false?'subtle sm':'primary sm'} onClick={()=>trocarBusca()}>{co.busca_auto!==false?<><Square size={13}/> Desativar busca automática</>:<><Play size={13}/> Ativar busca automática</>}</button>
         <button className="subtle sm" disabled={ocupado} onClick={()=>run(()=>rodarAgente(settings,'buscar'),'Procurando canais em alta.')}><Search size={13}/> Procurar agora (uma vez)</button>
       </div>
       <div className="ag-grade mt">
