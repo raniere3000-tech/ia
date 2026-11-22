@@ -1213,3 +1213,46 @@ body.sem-rolar{overflow:hidden}
 .esteira7-etapa.ok{border-left-color:var(--ok,#3fb950)}.esteira7-etapa.warn{border-left-color:var(--warn,#d29922)}.esteira7-etapa.bad{border-left-color:var(--bad,#f85149)}.esteira7-etapa.info{border-left-color:var(--accent,#7aa2ff)}
 .esteira7-hist{max-height:240px;overflow:auto;font-size:12px}
 .esteira7-rec li{margin:6px 0}
+
+/* Faixa "Espera a sua decisão" (topo de todas as telas) */
+.faixa-dec{position:sticky;top:8px;z-index:40;margin:0 0 18px;border-radius:14px;color:#fff;box-shadow:0 10px 30px #0009}
+.faixa-dec.urgente{background:linear-gradient(100deg,#d11a2a,#f0442c 55%,#ff7a1a);border:2px solid #ffd0c4;animation:fd-alarme 1.6s ease-in-out infinite}
+.faixa-dec.calma{background:linear-gradient(100deg,#7a4a06,#a8670a);border:1px solid #f5b94a}
+@keyframes fd-alarme{0%,100%{box-shadow:0 0 0 0 #ff3b3baa,0 10px 30px #0009}50%{box-shadow:0 0 0 9px #ff3b3b00,0 10px 30px #0009}}
+.faixa-dec-topo{display:flex;align-items:center;gap:14px;padding:14px 16px}
+.fd-icone{display:grid;place-items:center;width:46px;height:46px;border-radius:50%;background:#fff;color:#d11a2a;flex:none}
+.faixa-dec.urgente .fd-icone{animation:fd-sacode 2.4s ease-in-out infinite}.faixa-dec.calma .fd-icone{color:#a8670a}
+@keyframes fd-sacode{0%,80%,100%{transform:rotate(0)}84%{transform:rotate(-14deg)}88%{transform:rotate(12deg)}92%{transform:rotate(-8deg)}96%{transform:rotate(5deg)}}
+.fd-frase{flex:1;min-width:0;display:grid;gap:3px}
+.fd-frase strong{font-family:'Space Grotesk',sans-serif;font-size:19px;letter-spacing:-.3px;line-height:1.2}
+.fd-frase strong b{display:inline-block;background:#fff;color:#c4121f;border-radius:9px;padding:0 9px;margin-right:4px;font-size:21px}
+.faixa-dec.calma .fd-frase strong b{color:#8a5408}
+.fd-frase small{font-size:12.5px;color:#ffe9e2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fd-acoes{display:flex;gap:8px;flex:none;align-items:center}
+.fd-ir{display:inline-flex;align-items:center;gap:6px;background:#fff;color:#b3101c;border:0;border-radius:10px;padding:10px 15px;font-weight:800;font-size:13.5px;white-space:nowrap}
+.fd-ir:hover{background:#ffe8e3}
+.fd-depois{background:transparent;border:1px solid #ffffff88;color:#fff;border-radius:10px;padding:9px 12px;font-weight:700;font-size:12.5px}
+.fd-depois:hover{background:#ffffff22}
+.faixa-dec-lista{background:#140c10;border-top:1px solid #ffb4a8;border-radius:0 0 12px 12px;padding:6px 14px 12px;max-height:min(60vh,520px);overflow:auto}
+.faixa-dec-lista ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.faixa-dec-lista li{display:flex;align-items:center;gap:12px;background:#1d1217;border:1px solid #3d2028;border-radius:11px;padding:11px 12px}
+.faixa-dec-lista li.urg{border-left:5px solid #ff4b3e}
+.fd-txt{flex:1;min-width:0;display:grid;gap:3px}
+.fd-txt b{font-size:14px;color:#fff}.fd-txt>span{font-size:12.5px;color:#e5c9cf;overflow-wrap:anywhere}
+.fd-txt small{font-size:11.5px;color:#b9939b;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.fd-novo{font-style:normal;background:#ffd23f;color:#3a2600;font-size:10px;font-weight:900;border-radius:6px;padding:1px 6px;margin-left:8px;vertical-align:middle}
+.fd-grupo{font-size:10.5px;font-weight:900;letter-spacing:1.8px;text-transform:uppercase;color:#ff9c8f;margin:12px 0 8px}
+.fd-grupo.calmo{color:#f5c26b}
+.fd-nota{font-size:12px;color:#f5c26b;margin:10px 0 0}
+.faixa-dec.mini{border-width:1px;box-shadow:0 6px 18px #0008}
+.faixa-dec-mini{display:flex;align-items:center;gap:9px;width:100%;background:transparent;border:0;color:#fff;padding:9px 14px;font-size:13.5px;text-align:left}
+.faixa-dec-mini span{flex:1}.faixa-dec-mini b{background:#fff;color:#c4121f;border-radius:7px;padding:0 7px;margin-right:3px}
+@media(max-width:760px){
+ .faixa-dec{top:4px;margin:0 0 14px}
+ .faixa-dec-topo{flex-wrap:wrap;gap:10px;padding:12px}
+ .fd-icone{width:38px;height:38px}
+ .fd-frase{flex:1 1 calc(100% - 52px)}.fd-frase strong{font-size:16.5px}.fd-frase strong b{font-size:18px}
+ .fd-acoes{width:100%}.fd-acoes .fd-ir{flex:1;justify-content:center;padding:12px}
+ .faixa-dec-lista li{flex-direction:column;align-items:stretch}.faixa-dec-lista li .fd-ir,.faixa-dec-lista li .subtle{justify-content:center}
+}
+@media(prefers-reduced-motion:reduce){.faixa-dec.urgente,.faixa-dec.urgente .fd-icone{animation:none}}

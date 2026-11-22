@@ -137,6 +137,10 @@ def resumo(periodo: str = '7d') -> dict:
 
     # ---- decisões que dependem de você (unidade = item para decidir)
     def decisao():
+        import decisoes      # mesma conta da faixa vermelha do topo do site (só os itens que travam algo)
+        n = decisoes.contar_urgentes()
+        if n is not None:
+            return n
         import aprovacoes as apv
         n = len(apv.pendentes())
         n += _seguro(lambda: _n("SELECT COUNT(*) AS n FROM coordenador_aprovacoes WHERE decisao='pendente' AND revogado IS NULL"), 0)
@@ -200,7 +204,7 @@ def resumo(periodo: str = '7d') -> dict:
             'agendados': 'Envios marcados para uma rede e ainda não feitos (cada rede conta 1). Agora, não no período.',
             'publicados': 'Envios feitos com sucesso no período (cada rede conta 1).',
             'em_producao': 'Trabalhos rodando ou na fila agora (tarefas, não vídeos).',
-            'esperando_decisao': 'Vídeos e roteiros para revisar + pacotes do Coordenador + revisões manuais da esteira.',
+            'esperando_decisao': 'Itens parados esperando você (os mesmos da faixa vermelha do topo): vídeos e roteiros, planos e pacotes do Coordenador, revisões da esteira, capas para escolher e posts barrados.',
             'falhas': 'Trabalhos da fila que falharam no período (tarefas).',
         },
         'agentes': agentes, 'proxima_publicacao': proxima, 'alertas': alertas,

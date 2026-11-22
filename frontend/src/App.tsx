@@ -12,6 +12,7 @@ import { useTrabalhos } from './lib/gravador';
 import { definirSessao } from './lib/api';
 import Tour from './components/Tour';
 import Sino from './components/Sino';
+import FaixaDecisoes from './components/FaixaDecisoes';
 import CoordenadorRapido from './components/CoordenadorRapido';
 import { AREAS, INICIOS, lerRota, enderecoDe, areaPreferida, menuDa, secaoAtiva, type Area, type Secao } from './navigation/rotas';
 
@@ -271,6 +272,7 @@ export default function App(){
       <button className="icon-btn" onClick={abrirCoordenador} aria-label="Falar com o Coordenador" title="Coordenador"><MessagesSquare size={19}/></button>
       <Sino/><button className="icon-btn so-largo" onClick={()=>setTour(true)} aria-label="Tutorial"><HelpCircle size={19}/></button>
       <button className="icon-btn" data-tour="ajustes-movel" onClick={()=>go('config')} aria-label="Ajustes"><Gear size={19}/></button></div>
+     <FaixaDecisoes/>
      <header className="page-head"><div><div className="eyebrow">{tab==='config'?'AJUSTES':area==='inicio'?'PAINEL DE PRODUÇÃO':areaInfo.nome.toUpperCase()}{area!=='inicio'&&tab!=='config'&&ativa&&ativa.nome!==areaInfo.nome&&<> › {ativa.nome.toUpperCase()}</>}</div><h1>{t}</h1><p className="subtitle">{sub}</p></div>
       <button className="coord-rapido" onClick={abrirCoordenador} title="Abrir o chat do Coordenador sem sair desta tela"><MessagesSquare size={15}/><span>Coordenador</span></button>
       <button className={'sinc-chip grande '+sitCls} onClick={()=>go('projetos')} title={sincR.detalhe||sitTexto}>{sincR.situacao==='offline'?<CloudOff size={15}/>:sincR.situacao==='sincronizando'?<RefreshCw size={15} className="spin"/>:<Cloud size={15}/>}<span>{sitTexto}</span></button><Sino/></header>
