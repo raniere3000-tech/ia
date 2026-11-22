@@ -785,7 +785,8 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
             r = p['dados'].get('render')
             redes = (p['dados']['briefing'].get('destinos') or {}).get('redes') or [] if p['tipo'] == 'agente3' else []
             ok, faltam = apv.contas_ok(redes)
-            return {'projeto': p, 'ref': apv.ref(pid), 'links': links_render(r), 'historico': apv.historico(pid),
+            return {'projeto': p, 'ref': apv.ref(pid), 'links': links_render(r),
+                    'parecer': apv.diretor_ok(p, r.get('sha')) if r else None, 'historico': apv.historico(pid),
                     'contas': {'ok': ok, 'faltam': faltam}, 'estados': produtor.ESTADOS,
                     'job': db.um("SELECT * FROM jobs WHERE projeto=? ORDER BY criado DESC LIMIT 1", pid)}
         if acao == 'descricao':

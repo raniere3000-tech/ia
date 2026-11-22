@@ -110,7 +110,7 @@ def etapa(rid: str, modalidade: str) -> dict:
     return s
 
 
-def registrar_avaliacao(rid: str, modalidade: str, rel: dict, *, mudou: bool = True) -> dict:
+def registrar_avaliacao(rid: str, modalidade: str, rel: dict, *, mudou: bool = True, continuo: bool = False) -> dict:
     """Aplica a política a um relatório do diretor e devolve a decisão:
     {'decisao': 'aprovado'|'corrigir'|'revisao_manual', 'tentativa', 'restam', 'motivo'}.
     `mudou` = o reenvio trouxe plano/arquivo diferente do anterior (se não, não adianta repetir)."""
@@ -123,10 +123,10 @@ def registrar_avaliacao(rid: str, modalidade: str, rel: dict, *, mudou: bool = T
     if aprovado:
         dec, est = 'aprovado', 'aprovado'
         motivo = f'Nota {rel["score"]} sem bloqueios.'
-    elif avaliacoes > 1 and not mudou:
+    elif not continuo and avaliacoes > 1 and not mudou:
         dec, est = 'revisao_manual', 'revisao_manual'
         motivo = 'A correção não mudou nada no vídeo (mesmo plano e mesmo arquivo): não adianta repetir.'
-    elif correcoes >= s['limite']:
+    elif not continuo and correcoes >= s['limite']:
         dec, est = 'revisao_manual', 'revisao_manual'
         motivo = f'Reprovado depois de {correcoes} correções (limite {s["limite"]}).'
     else:
