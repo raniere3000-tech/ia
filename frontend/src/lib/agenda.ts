@@ -1,4 +1,5 @@
-// Cliente do agendador que roda no servidor (celular/PC): contas, envio do vídeo e posts.
+export const publicarEmOutrasRedes=(c:Cfg,id:string,redes:Rede[])=>chamar<Post>(c,'POST',`/posts/${id}/outras-redes`,{redes});
+export const editarPost=// Cliente do agendador que roda no servidor (celular/PC): contas, envio do vídeo e posts.
 import { cabAuth } from './api';
 export type Prov = 'google'|'meta'|'tiktok';
 export type Rede = 'youtube'|'facebook'|'instagram'|'tiktok'|'kwai';
