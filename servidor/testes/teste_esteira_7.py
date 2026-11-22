@@ -74,13 +74,14 @@ class IAFalsa(BaseHTTPRequestHandler):
         self.wfile.write(b)
 
     def do_POST(self):
-        json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        pedido = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         if 'image' in self.path:
             return self._json({'candidates': [{'content': {'parts': [{'inlineData': {'mimeType': 'image/jpeg', 'data': base64.b64encode(FOTO.read_bytes()).decode()}}]}}]})
         if 'tts' in self.path:
             pcm = b''.join(struct.pack('<h', int(8000 * math.sin(2 * math.pi * 220 * i / 24000))) for i in range(int(24000 * 1.6)))
             return self._json({'candidates': [{'content': {'parts': [{'inlineData': {'mimeType': 'audio/pcm', 'data': base64.b64encode(pcm).decode()}}]}}]})
-        return self._json({'candidates': [{'content': {'parts': [{'text': json.dumps(ROTEIRO, ensure_ascii=False)}]}}], 'usageMetadata': {}})
+        resposta = {'pontos': []} if 'REVISOR DE ROTEIRO' in json.dumps(pedido) else ROTEIRO
+        return self._json({'candidates': [{'content': {'parts': [{'text': json.dumps(resposta, ensure_ascii=False)}]}}], 'usageMetadata': {}})
 
 
 def livre():
