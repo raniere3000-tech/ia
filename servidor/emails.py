@@ -121,16 +121,16 @@ def zap_pronto(pid: str, sha: str) -> bool:
 
 def enviar_pronto(pid: str, sha: str) -> bool:
     """E-mail do vídeo pronto: resumo, link para revisar no site, código de aprovação e a prévia leve anexada."""
+    p = _projeto(pid)
+    r = p['dados'].get('render') or {}
+    if p['status'] != 'ready_for_review' or r.get('sha') != sha or not apv.diretor_ok(p, sha)['aprovado']:
+        return False
     try:
         zap_pronto(pid, sha)
     except Exception as e:  # noqa: BLE001
         print('emails: WhatsApp do vídeo pronto', e)
     cfg = ag.config()['email']
     if not cfg['para']:
-        return False
-    p = _projeto(pid)
-    r = p['dados'].get('render') or {}
-    if not sha or r.get('sha') != sha:
         return False
     codigo = apv.novo_desafio(pid, sha)
     referencia = apv.ref(pid)

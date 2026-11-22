@@ -1,14 +1,14 @@
 """Diretor de Qualidade do Agente 3: confere o storyboard antes do render e cada plano depois do render.
 
-Complementa a conferência técnica de `renderizador.conferir` (codec, duração, tela preta, congelado, silêncio), que continua
-sendo a única que REPROVA o vídeo. Aqui tudo vira alerta com evidência (cena, plano, instante e quadro), para a pessoa decidir.
+Complementa a conferência técnica de `renderizador.conferir` (codec, duração, tela preta, congelado, silêncio), com apontamentos por cena e plano.
+A aprovação final exige um parecer favorável e todas as pendências resolvidas.
 Correções automáticas são localizadas, seguras e limitadas (QA_MAX_CORRECOES, padrão 2 por defeito):
 - documentário: plano com foto própria escura ou lisa volta a usar a foto da cena;
 - desenho animado: close em quem anda e sai do quadro vira plano aberto; personagens empilhados no mesmo lugar
   (sem caminhada) são afastados para um lado livre.
 Cada correção só é aplicada se muda algo; se o defeito continuar depois do limite, vai para revisão humana (sem laço infinito).
 Laudo: cada achado tem status, cena_id, plano_id, timecode, evidencia, tipo, severidade, proposta, tentativas e natureza
-("objetivo" = medido; "julgamento" = opinião estética, por exemplo da IA de visão, que nunca bloqueia).
+("objetivo" = medido; "julgamento" = opinião estética, por exemplo da IA de visão).
 
 Leve para o celular: cada plano vira um quadro de 16x16 em tons de cinza (256 bytes) e as contas são feitas em Python puro.
 """
@@ -213,7 +213,7 @@ def correcao(c: dict, achados: list, eid: str) -> dict | None:
 
 
 def resumo(problemas: list, tecnico: dict | None) -> dict:
-    """Situação final: só a conferência técnica reprova; o resto é alerta para a revisão humana."""
+    """Situação final: reúne a conferência técnica e os apontamentos para a decisão do diretor."""
     for p in problemas:          # laudos antigos: completa os campos novos sem mudar o que já estava
         p.setdefault('proposta', p.get('correcao', ''))
         p.setdefault('status', 'aberto')
@@ -235,23 +235,20 @@ def resumo(problemas: list, tecnico: dict | None) -> dict:
 
 
 # ---------------------------------------------------------------- veredito do diretor (antes da sua aprovação)
-# Defeitos de IMAGEM medidos no vídeo pronto: estes o diretor reprova e manda refazer. Observações de roteiro, ritmo e
-# direção (e opiniões da IA de visão) não reprovam: vão junto para você ler na revisão.
-REPROVA = {'quadro_escuro', 'sem_detalhe', 'sai_do_quadro', 'cabeca_cortada', 'sobreposicao'}
-
-
 def veredito(q: dict | None) -> dict:
     """{aprovado, motivos, cenas}: o vídeo só vai para a sua aprovação quando o diretor aprova."""
     q = q or {}
     if q.get('status') == 'falha_tecnica':
         erros = (q.get('tecnico') or {}).get('erros') or ['falha técnica no arquivo']
         return {'aprovado': False, 'motivos': ['Falha técnica: ' + '; '.join(erros)[:300]], 'cenas': [], 'tecnico': True}
-    ruins = [p for p in q.get('problemas') or [] if p.get('tipo') in REPROVA and p.get('natureza') != 'julgamento'
-             and p.get('severidade') in ('media', 'alta') and p.get('status') != 'resolvido']
-    if not q.get('status'):
-        return {'aprovado': False, 'motivos': ['O vídeo ainda não passou pela conferência do diretor de qualidade.'], 'cenas': [], 'tecnico': False}
-    return {'aprovado': not ruins, 'motivos': [p['descricao'] for p in ruins][:8],
-            'cenas': sorted({p.get('cena_id') for p in ruins if p.get('cena_id')}), 'tecnico': False}
+    problemas = q.get('problemas') or []
+    ruins = [p for p in problemas if p.get('status') != 'resolvido']
+    if ruins:
+        return {'aprovado': False, 'motivos': [p.get('descricao') or 'Pendência de qualidade.' for p in ruins][:8],
+                'cenas': sorted({p['cena_id'] for p in ruins if p.get('cena_id')}), 'tecnico': False}
+    ok = q.get('status') == 'apto_para_revisao_humana' or (q.get('status') == 'alerta_visual' and bool(problemas))
+    return {'aprovado': ok, 'motivos': [] if ok else ['Falta concluir a conferência do diretor de qualidade.'],
+            'cenas': [], 'tecnico': False}
 
 
 def correcao_forte(c: dict) -> dict | None:

@@ -115,6 +115,8 @@ def pendentes() -> list:
                       "AND status IN ('ready_for_review','waiting_brief_approval','changes_requested') ORDER BY atualizado DESC LIMIT 100"):
         full = pj.obter(p['id'])
         r = full['dados'].get('render') or {}
+        if p['status'] == 'ready_for_review' and not diretor_ok(full, r.get('sha'))['aprovado']:
+            continue
         out.append({'projeto': p['id'], 'ref': ref(p['id']), 'titulo': p['titulo'], 'status': p['status'], 'atualizado': p['atualizado'],
                     'tipo': 'video' if p['status'] == 'ready_for_review' else 'roteiro',
                     'render': {k: r.get(k) for k in ('sha', 'versao', 'duracao', 'avisos', 'assets', 'largura', 'altura')} if r else None,
@@ -182,16 +184,16 @@ def descricao(p: dict, dest: dict | None = None) -> dict:
 
 
 def diretor_ok(p: dict, sha: str) -> dict:
-    """O diretor de qualidade aprovou ESTE arquivo? Vídeos feitos antes do diretor existir são julgados pelo laudo guardado."""
+    """Exige parecer explícito para o arquivo atual e relatório sem pendências."""
     import qualidade as qd
     import pipeline as pl
-    if pl.ligado():          # esteira ligada: vale o certificado assinado do diretor para ESTE arquivo
-        c = pl.certificado(sha)
-        return {'aprovado': bool(c), 'motivos': [] if c else ['Este arquivo não tem o certificado do diretor de qualidade (nota 70 sem bloqueios).']}
     d = p['dados'].get('diretor') or {}
-    if d.get('sha') == sha and d.get('veredito') in ('aprovado', 'reprovado'):
-        return {'aprovado': d['veredito'] == 'aprovado', 'motivos': d.get('motivos') or []}
-    return qd.veredito(p['dados'].get('qualidade'))
+    if not sha or d.get('sha') != sha or d.get('veredito') != 'aprovado':
+        return {'aprovado': False, 'motivos': d.get('motivos') or ['Falta o parecer favorável do diretor para esta versão.']}
+    parecer = qd.veredito(p['dados'].get('qualidade'))
+    if parecer['aprovado'] and pl.ligado() and not pl.certificado(sha):
+        return {'aprovado': False, 'motivos': ['Falta um certificado válido para este arquivo.']}
+    return parecer
 
 
 def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: str, chave: str = '') -> dict:
@@ -208,7 +210,7 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
     ja = db.um('SELECT * FROM aprovacoes WHERE chave=?', chave)
     if ja:
         return {'ok': True, 'repetido': True, 'aprovacao': ja, 'posts': db.todos('SELECT * FROM publicacoes WHERE aprovacao=?', ja['id'])}
-    if p['status'] not in ('ready_for_review', 'changes_requested'):
+    if p['status'] != 'ready_for_review':
         raise ErroAprovacao(409, f'Este vídeo não está esperando aprovação (situação: {p["status"]}).')
     dr = diretor_ok(p, render_sha)
     if not dr['aprovado']:

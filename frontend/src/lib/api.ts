@@ -171,7 +171,7 @@ export const apagarRotina=(cfg:CfgSrv,id:string)=>api(cfg,'DELETE','/api/v1/roti
 
 // ---------------------------------------------------------------- revisão e aprovação
 export type Render={id:string;sha:string;versao:number;duracao:number;validado:boolean;avisos:string[];assets:Record<string,string>;tamanho:number;criado:number;codec:string;largura:number;altura:number};
-export type Revisao={projeto:ProjetoSrv;ref:string;links:Record<string,string>;historico:{id:string;render_sha:string;decisao:string;origem:string;por:string;texto:string;criado:number}[];
+export type Revisao={parecer?:{aprovado:boolean;motivos:string[]}|null;projeto:ProjetoSrv;ref:string;links:Record<string,string>;historico:{id:string;render_sha:string;decisao:string;origem:string;por:string;texto:string;criado:number}[];
   contas:{ok:string[];faltam:string[]};estados:Record<string,string>;job:Job|null};
 export type Pendente={projeto:string;ref:string;titulo:string;status:string;atualizado:number;tipo:'video'|'roteiro';render:Partial<Render>|null;destinos:Briefing['destinos']};
 export const pendentes=(cfg:CfgSrv)=>api<{pendentes:Pendente[]}>(cfg,'GET','/api/v1/aprovacoes');
