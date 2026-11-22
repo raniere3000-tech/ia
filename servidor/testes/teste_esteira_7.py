@@ -399,6 +399,19 @@ es.avancar(VR)
 vr = registro(VR, 'Vídeo original do Agente 3')
 confere(vr['estado'] == 'publicado', 'vídeo próprio: as 8 etapas concluídas')
 
+# ---------------------------------------------------------------- 2b. liberação caiu depois de agendado (mesmo arquivo): a esteira libera de novo
+print('\n2b. Liberação caiu depois (capa ou pacote mudou): o Coordenador confere e libera de novo sozinho')
+arq_b = pg.video_path(c['video'])
+sha_b = pl.sha_arquivo(arq_b)
+db.executar("UPDATE esteira_videos SET estado='em_andamento' WHERE id=?", VC)
+db.executar("UPDATE esteira_etapas SET estado='na_fila' WHERE video=? AND etapa='a2_publicacao'", VC)
+db.executar("UPDATE coordenador_aprovacoes SET revogado=?, motivo='A capa mudou ou caiu depois da liberação.' WHERE video_sha256=? AND revogado IS NULL",
+            time.time(), sha_b)
+confere(not co.liberado(arq_b)['ok'] and etapa(VC, 'a7_liberacao')['estado'] == 'concluida', 'antes: liberação revogada, mas a etapa dizia "concluída" (post travado)')
+es.avancar(VC)
+es.avancar(VC)
+confere(co.liberado(arq_b)['ok'] and etapa(VC, 'a7_liberacao')['estado'] == 'concluida', 'depois: o Agente 7 conferiu o pacote de novo e liberou (o post segue)')
+
 # ---------------------------------------------------------------- 3. arquivo mudou depois da liberação: só o necessário cai
 print('\n3. Arquivo mudou depois da liberação')
 c2 = dict(c)
