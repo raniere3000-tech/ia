@@ -222,6 +222,9 @@ def _tratar(metodo: str, caminho: str, q: dict, corpo, quem: str, cab) -> dict:
     if rota == ('GET', '/api/v1/alertas'):
         import alertas
         return alertas.listar(int(_f(_q(q, 'desde', '0')) or 0), int(_f(_q(q, 'limite', '50')) or 50))
+    if rota == ('GET', '/api/v1/alertas/decisoes'):
+        import decisoes
+        return decisoes.listar()
     if rota == ('POST', '/api/v1/alertas/lidas'):
         import alertas
         ate = corpo().get('ate')
