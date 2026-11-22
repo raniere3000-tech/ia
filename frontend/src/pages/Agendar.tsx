@@ -4,7 +4,7 @@ import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import AgendarPost from '../components/AgendarPost';
 import ConferenciaPost from '../components/ConferenciaPost';
-import { REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, editarPost, cancelarPost, marcarFeito, baixarVideoPost, enderecoRetorno, type Contas, type Prov, type Post, type Rede, type StatusRede, liberarPost, AVISO_LIBERAR } from '../lib/agenda';
+import { REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, editarPost, publicarEmOutrasRedes, cancelarPost, marcarFeito, baixarVideoPost, enderecoRetorno, type Contas, type Prov, type Post, type Rede, type StatusRede, liberarPost, AVISO_LIBERAR } from '../lib/agenda';
 
 const PROVS:{id:Prov;nome:string;redes:string;icone:typeof Youtube;help:'app_google'|'app_meta'|'app_tiktok';idLabel:string;segLabel:string}[] = [
   {id:'google',nome:'YouTube',redes:'Shorts no seu canal',icone:Youtube,help:'app_google',idLabel:'ID do cliente OAuth',segLabel:'Chave secreta do cliente'},
@@ -71,14 +71,27 @@ export function ContasPainel({aoMudar,onContas}:{aoMudar?:()=>void;onContas?:(c:
    </section>;
 }
 
-const EV:Record<string,string>={enviando:'conferido e enviando',postado:'publicado',tentar_de_novo:'falhou, vai tentar de novo',erro:'falhou',bloqueado:'barrado na conferência',pede_liberacao:'esperando sua liberação especial',liberado:'liberado por você'};
+const EV:Record<string,string>={outra_rede:'incluído para publicação',enviando:'conferido e enviando',postado:'publicado',tentar_de_novo:'falhou, vai tentar de novo',erro:'falhou',bloqueado:'barrado na conferência',pede_liberacao:'esperando sua liberação especial',liberado:'liberado por você'};
 const paraInput=(ts:number)=>{ const d=new Date(ts*1000); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
 const pendente=(p:Post)=>Object.values(p.redes).some(s=>s&&(s.status==='agendado'||s.status==='erro'||s.status==='postando'||s.status==='manual'||s.status==='liberacao'));
 
 /** Uma linha da agenda: hora, redes e o que dá para fazer com o post (postar agora, mudar hora e redes, baixar, cancelar). */
-function PostLinha({p,acao}:{p:Post;acao:(f:()=>Promise<unknown>,ok:string)=>void}){
+function PostLinha({p,acao}:{p:Post;acao:(f:()=>Promise<unknown>,ok:string)=>Promise<void>}){
   const {settings}=useApp();
   const [editar,setEditar]=useState(false);
+  const [outras,setOutras]=useState<Rede[]|null>(null);
+  const [enviando,setEnviando]=useState(false);
+  const disponiveis=REDES.filter(r=>!p.redes[r.id]);
+  const publicar=async()=>{
+    if(!outras?.length||enviando) return;
+    setEnviando(true);
+    try{
+      await acao(async()=>{
+        await publicarEmOutrasRedes(settings,p.id,outras);
+        setOutras(null);
+      },'Redes adicionadas. Acompanhe o envio em Para postar.');
+    }finally{ setEnviando(false); }
+  };
   const [hora,setHora]=useState(paraInput(p.quando));
   const [redes,setRedes]=useState<Rede[]>(Object.keys(p.redes) as Rede[]);
   const feitas=(Object.entries(p.redes) as [Rede,StatusRede][]).filter(([,s])=>s.status==='postado').map(([r])=>r);
@@ -95,6 +108,17 @@ function PostLinha({p,acao}:{p:Post;acao:(f:()=>Promise<unknown>,ok:string)=>voi
        {s!.status==='erro'&&<> <button className="subtle sm" onClick={()=>acao(()=>postarAgora(settings,p.id,r),`Tentando de novo no ${REDES.find(x=>x.id===r)?.nome}...`)}><RefreshCw size={13}/> Tentar de novo no {REDES.find(x=>x.id===r)?.nome.replace(' (manual)','')}</button></>}</p>)}
      {settings.servidor&&pendente(p)&&<ConferenciaPost id={p.id} onLiberado={()=>acao(async()=>{},'Liberado. Postando...')}/>}
      {!!p.relatorio?.length&&<details className="post-rel"><summary>Relatório da publicação</summary><ul>{p.relatorio.slice().reverse().map((e,k)=><li key={k}><small className="muted">{fmtData(e.t)}</small> <b>{REDES.find(x=>x.id===e.rede)?.nome.replace(' (manual)','')||e.rede}</b>: {EV[e.evento]||e.evento}{e.detalhe&&e.evento!=='postado'?` — ${e.detalhe}`:''}{e.evento==='postado'&&e.detalhe.startsWith('http')&&<a href={e.detalhe} target="_blank" rel="noreferrer"> abrir</a>}</li>)}</ul></details>}
+     {outras&&<div className="post-editar">
+       <div className="field-label">Escolha as redes para este vídeo</div>
+       <div className="chips">{disponiveis.map(r=><button key={r.id} type="button" disabled={enviando}
+         className={'chip '+(outras.includes(r.id)?'on':'')} aria-pressed={outras.includes(r.id)}
+         onClick={()=>setOutras(outras.includes(r.id)?outras.filter(x=>x!==r.id):[...outras,r.id])}>{r.nome}</button>)}</div>
+       <p className="hint">As redes escolhidas recebem o vídeo agora. No Kwai, baixe o vídeo e publique pelo app.</p>
+       <div className="row-gap left mt">
+        <button className="primary sm" disabled={enviando||!outras.some(r=>!p.redes[r])} onClick={()=>void publicar()}><Send size={14}/> Confirmar redes</button>
+        <button className="subtle sm" disabled={enviando} onClick={()=>setOutras(null)}><X size={14}/> Fechar</button>
+       </div>
+     </div>}
      {editar&&<div className="post-editar">
        <label>Novo dia e hora<input type="datetime-local" value={hora} onChange={e=>setHora(e.target.value)}/></label>
        <div className="field-label">Redes</div>
@@ -105,7 +129,8 @@ function PostLinha({p,acao}:{p:Post;acao:(f:()=>Promise<unknown>,ok:string)=>voi
     <div className="post-acoes">
      {Object.values(p.redes).some(s=>s?.status==='agendado'||s?.status==='erro')&&<button className="primary sm" onClick={()=>acao(()=>postarAgora(settings,p.id),'Postando agora...')}>{Object.values(p.redes).some(s=>s?.status==='erro')?<><RefreshCw size={14}/> Tentar de novo em todas</>:<><Send size={14}/> Postar agora</>}</button>}
      {Object.values(p.redes).some(s=>s?.status==='liberacao'||(s?.status==='erro'&&s.erro.includes('de quem é o vídeo')))&&<button className="primary sm" onClick={()=>{ if(window.confirm(AVISO_LIBERAR)) acao(()=>liberarPost(settings,p.id),'Liberado. Postando...'); }}><ShieldCheck size={14}/> Liberar e postar</button>}
-     {pendente(p)&&!editar&&<button className="subtle sm" onClick={abrir}><Pencil size={14}/> Mudar hora ou redes</button>}
+     {feitas.length>0&&disponiveis.length>0&&!editar&&!outras&&!p.preparando&&<button className="subtle sm" onClick={()=>setOutras([])}><Send size={14}/> Publicar em outras redes</button>}
+     {pendente(p)&&!editar&&!outras&&<button className="subtle sm" onClick={abrir}><Pencil size={14}/> Mudar hora ou redes</button>}
      <button className="subtle sm" onClick={()=>acao(()=>baixarVideoPost(settings,p.id,p.titulo||'corte'),'Vídeo baixado.')}><Download size={14}/> Baixar</button>
      {p.redes.kwai?.status==='manual'&&<button className="subtle sm" onClick={()=>acao(()=>marcarFeito(settings,p.id,'kwai'),'Kwai marcado como postado.')}><CheckCircle2 size={14}/> Já postei no Kwai</button>}
      <button className="icon-btn" title="Cancelar e apagar" aria-label="Cancelar post" onClick={()=>{ if(window.confirm('Cancelar este post e apagar o vídeo do servidor?')) acao(()=>cancelarPost(settings,p.id),'Post cancelado.'); }}><Trash2 size={15}/></button>
