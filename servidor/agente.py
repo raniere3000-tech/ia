@@ -1823,6 +1823,7 @@ def job_mover_legenda(ctx):
     shutil.copyfile(res['arquivo'] or saida, tmp)
     tmp.replace(destino)                                    # troca de uma vez: o arquivo novo já tem o certificado do diretor
     saida.unlink(missing_ok=True)
+    pg.arquivo_trocado(c['video'], 'legenda mudada de lugar e aprovada pelo diretor')    # o post agendado passa a usar a versão nova
 
     def f(e):
         for x in e['cortes']:
@@ -2832,11 +2833,7 @@ def _reativar_post(cid: str):
     if p and any(d['status'] in ('postado', 'postando') for d in p['redes'].values()):
         return
     if p and p['quando'] > pg.agora() and not any(d['status'] == 'erro' for d in p['redes'].values()):
-        nova = pg.assinatura(p['video'])
-        try:
-            pg._mudar(p['id'], lambda q: q.update(hash=nova or q.get('hash', '')))      # é a versão aprovada agora
-        except pg.ErroRede:
-            pass
+        pg.arquivo_trocado(p['video'], 'aprovada pelo diretor')      # é a versão aprovada agora
         _mudar(lambda e: [x.update(status='agendado') for x in e['cortes'] if x['id'] == cid])
         return
     if p:
