@@ -605,6 +605,35 @@ def liberar(pid: str, quem: str = 'site') -> dict:
     return p
 
 
+def publicar_em_outras_redes(pid: str, redes: list) -> dict:
+    """Acrescenta destinos ao mesmo post e conserva o histórico de cada rede."""
+    if not isinstance(redes, list) or not redes or any(not isinstance(r, str) or r not in REDES for r in redes):
+        raise ErroRede('Escolha pelo menos uma rede válida.')
+    redes = list(dict.fromkeys(redes))
+
+    def adicionar(p):
+        if not any(r['status'] == 'postado' for r in p['redes'].values()):
+            raise ErroRede('O post ainda não foi publicado em nenhuma rede.')
+        novas = [r for r in redes if r not in p['redes']]
+        if not novas:
+            return
+        if not video_pronto(p['video']) or not video_path(p['video']).is_file():
+            raise ErroRede('O vídeo ainda precisa estar disponível no servidor.')
+        marca = assinatura(p['video'])
+        duplicadas = {r for outro in posts() if outro['id'] != pid
+                      and (outro.get('video') == p['video'] or (marca and outro.get('hash') == marca))
+                      for r in novas if r in outro['redes']}
+        if duplicadas:
+            raise ErroRede('Uma das redes escolhidas já tem este vídeo em outro post. Confira a aba Posts.')
+        for r in novas:
+            p['redes'][r] = {'status': 'manual' if r == 'kwai' else 'agendado', 'link': '', 'erro': '', 'outra_rede': True}
+            _anotar(p, r, 'outra_rede', 'Destino acrescentado depois da primeira publicação.')
+
+    p = _mudar(pid, adicionar)
+    acordar()
+    return p
+
+
 def editar_post(pid: str, d: dict) -> dict:
     """Muda a hora, as redes, o título ou a legenda de um post que ainda não saiu.
     Redes que já postaram ficam como estão; tirar uma rede só vale para as que ainda não foram."""
@@ -621,7 +650,7 @@ def editar_post(pid: str, d: dict) -> dict:
             p['quando'] = q
             for r in p['redes'].values():
                 if r['status'] in ('agendado', 'erro'):
-                    r.update(status='agendado', erro='', tentativas=0, proxima=0)
+                    r.update(status='agendado', erro='', tentativas=0, proxima=q if r.get('outra_rede') else 0)
         if isinstance(d.get('redes'), list):
             novas = [r for r in d['redes'] if r in REDES]
             feitas = [r for r, s in p['redes'].items() if s['status'] == 'postado']
@@ -1016,7 +1045,7 @@ def conferencia(p: dict, rede: str) -> list[dict]:
     except Exception as e:  # noqa: BLE001
         item('liberacao', False, f'Não consegui conferir a liberação do coordenador: {str(e)[:120]}')
     ag2 = p.get('agenda') or {}
-    if ag2.get('ate') and ag2.get('politica') != 'publish_when_online' and agora() > ag2['ate'] and not p['redes'].get(rede, {}).get('tentativas'):
+    if not p['redes'].get(rede, {}).get('outra_rede') and ag2.get('ate') and ag2.get('politica') != 'publish_when_online' and agora() > ag2['ate'] and not p['redes'].get(rede, {}).get('tentativas'):
         item('horario', False, 'O horário da programação diária já passou (servidor estava desligado): não posto atrasado.')
     if p.get('hash'):
         atual = assinatura(p['video'])
@@ -1177,7 +1206,7 @@ def _garantir_link(pid: str) -> str | None:
 def _publicar_um(pid: str, rede: str):
     _garantir_link(pid)
     atual = next((x for x in posts() if x['id'] == pid), None)
-    if atual is None:
+    if not atual or atual['redes'].get(rede, {}).get('status') != 'agendado':
         return
     conf = conferencia(atual, rede)
     bloqueios = [x['detalhe'] for x in conf if x['bloqueia']]
@@ -1283,9 +1312,11 @@ def ciclo(esperar: bool = True):
     (ex.: TikTok), as outras (ex.: YouTube) são postadas do mesmo jeito. esperar=False: não espera os envios acabarem."""
     fios = []
     for p in lista_posts():
-        if p['quando'] > agora() or not video_pronto(p['video']):
+        if not video_pronto(p['video']):
             continue
         for rede, r in p['redes'].items():
+            if p['quando'] > agora() and not r.get('outra_rede'):
+                continue
             if r['status'] == 'agendado':
                 if agora() < r.get('proxima', 0):
                     continue
