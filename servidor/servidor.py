@@ -846,9 +846,11 @@ def _rotas_agenda(self, caminho: str):
         return pg.finalizar_video(m.group(1))
     if caminho == '/posts':
         return pg.criar_post(d)
-    m = re.fullmatch(r'/posts/(\w+)/(agora|cancelar|feito|editar|liberar)', caminho)
+    m = re.fullmatch(r'/posts/(\w+)/(agora|cancelar|feito|editar|liberar|outras-redes)', caminho)
     if m:
         pid, acao = m.groups()
+        if acao == 'outras-redes':
+            return pg.publicar_em_outras_redes(pid, d.get('redes'))
         if acao == 'editar':
             return pg.editar_post(pid, d)
         if acao == 'liberar':
