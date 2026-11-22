@@ -1318,8 +1318,11 @@ def _acompanhar(o: dict, t: dict):
                                        "WHERE v.estado='descartado' AND e.recibo LIKE ?", f'%"job": "{t["job_id"]}"%')
                 res.update(cortes=[c['id'] for c in cortes], esteira=ids, descartados_na_avaliacao=len(descartados))
                 if not cortes:
+                    r_job = res.get('resultado') if isinstance(res.get('resultado'), dict) else {}
+                    disse = str(r_job.get('mensagem') or '').strip()
                     _set_tarefa(t['id'], estado='falhou', fim=_agora(), resultado=res,
-                                erro='O Agente 1 terminou sem nenhum corte aprovado' + (f' ({len(descartados)} trecho(s) descartado(s) pelo diretor).' if descartados else '.'))
+                                erro='O Agente 1 terminou sem nenhum corte aprovado' + (f' ({len(descartados)} trecho(s) descartado(s) pelo diretor).' if descartados else '.')
+                                + (f' O Agente 1 disse: {disse}' if disse and not disse[:1].isdigit() else ''))
                     evento(o['id'], t['id'], 'agente1', 'sem_resultado', {'job': t['job_id'], 'descartados': len(descartados)})
                     return
                 evento(o['id'], t['id'], 'agente1', 'concluida', {'job': t['job_id'], 'cortes': len(cortes)})
