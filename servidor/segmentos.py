@@ -76,7 +76,7 @@ def renderizar(eid: str, cena: dict, W: int, H: int, dur: float, pasta: Path, im
         t_ini = time.time()
         try:
             rd.rodar(ec.montar(eid, cena, W, H, dur, trab, img, audio, tmp, paleta, imgs_pl, janela=(t0, t1)), cancelado,
-                     tempo_max=max(600, dur * 120))
+                     tempo_max=max(600, dur * 120), etapa=f'plano {k + 1} de {len(ks)}')
         except BaseException:
             tmp.unlink(missing_ok=True)
             raise

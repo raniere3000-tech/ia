@@ -1259,6 +1259,9 @@ def _render_cena(ctx, pid, i, c, cenas, b, W, H, dur, pasta, feito, total):
     except InterruptedError:
         tmp.unlink(missing_ok=True)
         raise fila.Cancelado()
+    except rd.ErroRender as e:      # diz em qual cena foi (antes a mensagem não dizia onde o FFmpeg parou)
+        tmp.unlink(missing_ok=True)
+        raise rd.ErroRender(f'Cena {i + 1} de {len(cenas)}: {e}') from e
     tmp.replace(saida)
     shutil.rmtree(trab, ignore_errors=True)
     fila.medir('render_cena', time.time() - t0, dur)
