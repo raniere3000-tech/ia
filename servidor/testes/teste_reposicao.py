@@ -136,6 +136,41 @@ try:
 except co.ErroCoord:
     check(True, 'intervalo menor que 10 minutos não é aceito')
 
+print('4b. Reposição que só falha: não avisa a cada hora e espera cada vez mais')
+AVISOS_R = []
+_av_orig = ag.avisar
+ag.avisar = lambda tipo, assunto, corpo, *a, **k: AVISOS_R.append((assunto, corpo)) or True
+db.kv_gravar('agente7.reposicao_falhas', {'n': 0, 'motivo': ''})
+
+
+def falha_repo(motivo):
+    oid = 'rf' + str(len(AVISOS_R)) + str(time.time())[-5:]
+    db.executar('INSERT INTO coordenador_ordens (id, autor, texto, plano_json, versao_plano, status, criado, atualizado, chave) VALUES (?,?,?,?,?,?,?,?,?)',
+                oid, 'agente2', 'repo', '{"intencao": "fazer_cortes", "reposicao": true, "resposta": "Reposição automática: x"}', 1, 'em_execucao',
+                time.time(), time.time(), None)
+    tid = co._nova_tarefa(oid, 'cortar', 'agente1', 'a1.rodar', {'oque': 'cortar'}, [])
+    co._set_tarefa(tid, estado='falhou', erro=motivo, fim=time.time())
+    db.executar("UPDATE coordenador_ordens SET status='falhou' WHERE id=?", oid)
+    co._avisar(oid, 'falhou')
+
+
+falha_repo('O Agente 1 terminou sem nenhum corte aprovado.')
+check(len(AVISOS_R) == 1 and 'sem nenhum corte' in AVISOS_R[0][1], 'primeira falha: avisa com o motivo de verdade')
+falha_repo('O Agente 1 terminou sem nenhum corte aprovado.')
+falha_repo('O Agente 1 terminou sem nenhum corte aprovado.')
+check(len(AVISOS_R) == 1, 'mesma falha de novo: não avisa outra vez')
+check(co._intervalo_reposicao(co.config()) == 60 * 8, 'depois de 3 falhas seguidas, espera 8 h para pedir de novo')
+falha_repo('O Agente 1 não entrou na fila.')
+check(len(AVISOS_R) == 2, 'motivo novo: avisa')
+for _ in range(10):
+    falha_repo('O Agente 1 não entrou na fila.')
+check(co._intervalo_reposicao(co.config()) == 24 * 60, 'no máximo 1 pedido por dia enquanto só falha')
+co._reposicao_terminou({'id': 'nada'}, 'concluida')
+check(co._intervalo_reposicao(co.config()) == 60, 'deu certo: volta ao intervalo normal')
+ag.avisar = _av_orig
+db.executar("DELETE FROM coordenador_tarefas WHERE ordem_id LIKE 'rf%'")
+db.executar("DELETE FROM coordenador_ordens WHERE id LIKE 'rf%'")
+
 print('5. O Agente 1 entregou um corte novo: ele vai para o mesmo horário')
 corte_certificado('k3', 'red', 3)
 res = a2.ciclo()

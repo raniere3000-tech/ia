@@ -288,6 +288,13 @@ def _ordem_cuida(v: dict, acao: str) -> bool:
     return bool(db.um('SELECT id FROM coordenador_tarefas WHERE ordem_id=? AND acao=? AND estado NOT IN (\'cancelada\')', v['ordem_id'], acao))
 
 
+def _ordem_ja_liberou(v: dict) -> bool:
+    """A tarefa de liberar da ordem já terminou (e não vai rodar de novo): se a liberação caiu, quem refaz é a esteira."""
+    t = db.um("SELECT estado FROM coordenador_tarefas WHERE ordem_id=? AND acao='a7.liberar' AND estado NOT IN ('cancelada') ORDER BY rowid DESC LIMIT 1",
+              v['ordem_id'])
+    return bool(t and t['estado'] == 'concluida')
+
+
 # ---------------------------------------------------------------- condutor: A6 -> A7 -> A2 a partir do que já foi provado
 def avancar(vid: str, posts: list | None = None) -> dict | None:
     v = db.um('SELECT * FROM esteira_videos WHERE id=?', vid)
@@ -337,8 +344,23 @@ def avancar(vid: str, posts: list | None = None) -> dict | None:
         ets['a6_capa'] = _etapa(vid, 'a6_capa')
     if ets['a6_capa']['estado'] not in OK:
         return v
+    reaberta = False
+    if ets['a7_liberacao']['estado'] == 'concluida' and not _liberacao_vale(sha):
+        # a liberação caiu depois (capa trocada/apagada ou pacote revogado): sem isto o post ficava esperando para sempre
+        import thumbnails as th
+        sem_capa = politica()['capa_obrigatoria'] and th.capa_para_video(arq) is None
+        invalidar_depois(vid, 'a4_final' if sem_capa else 'a6_capa',
+                         'A liberação do Coordenador caiu (capa ou pacote mudou): ' + ('a capa é refeita e o pacote é conferido de novo.' if sem_capa
+                                                                                       else 'o pacote é conferido e liberado de novo.'))
+        ets = {e: _etapa(vid, e) for e in ORDEM}
+        reaberta = True
+        if ets['a6_capa']['estado'] not in OK:
+            _a6(v, ets['a6_capa'], sha)
+            ets['a6_capa'] = _etapa(vid, 'a6_capa')
+            if ets['a6_capa']['estado'] not in OK:
+                return v
     if ets['a7_liberacao']['estado'] != 'concluida':
-        _a7(v, ets, arq, sha, extra)
+        _a7(v, ets, arq, sha, extra, sem_ordem=reaberta)
         ets['a7_liberacao'] = _etapa(vid, 'a7_liberacao')
     if ets['a7_liberacao']['estado'] != 'concluida':
         return v
@@ -461,12 +483,22 @@ def _sem_licenca(p: dict) -> list:
         return []
 
 
-def _a7(v: dict, ets: dict, arq: Path, sha: str, extra: dict):
+def _liberacao_vale(sha: str) -> bool:
+    try:
+        import coordenador as co
+        return bool(co.liberado_sha(sha)['ok'])
+    except Exception as e:  # noqa: BLE001  (sem conseguir conferir, não reabre nada)
+        print('esteira: conferir liberação', e)
+        return True
+
+
+def _a7(v: dict, ets: dict, arq: Path, sha: str, extra: dict, sem_ordem: bool = False):
+    """sem_ordem: a liberação caiu depois que a ordem do Coordenador já tinha terminado: a esteira refaz o pacote sozinha."""
     import coordenador as co
     e = ets['a7_liberacao']
     a = db.um('SELECT * FROM coordenador_aprovacoes WHERE referencia=? AND video_sha256=? AND revogado IS NULL ORDER BY criado DESC LIMIT 1', v['ref'], sha)
     if not a:
-        if _ordem_cuida(v, 'a7.liberar'):
+        if not sem_ordem and _ordem_cuida(v, 'a7.liberar') and not _ordem_ja_liberou(v):
             if e['estado'] != 'pendente':
                 marcar(v['id'], 'a7_liberacao', 'pendente', motivo='O Coordenador libera pela ordem.')
             return
