@@ -13,7 +13,7 @@ const DECISAO:Record<string,string>={aprovado:'Aprovado',alterar:'Correção ped
 
 const ST_Q:Record<Qualidade['status'],[string,string,string]>={
   apto_para_revisao_humana:['Tudo certo','ok','Nenhum problema encontrado. Falta só você assistir e decidir.'],
-  alerta_visual:['Vale olhar','warn','O vídeo está pronto, mas o diretor de qualidade achou pontos para você conferir. Nada disso bloqueia a aprovação.'],
+  alerta_visual:['Apontamentos','warn','Confira abaixo as cenas e as correções indicadas pelo diretor.'],
   analise_indisponivel:['Não conferido','','Não deu para analisar os quadros desta vez.'],
   falha_tecnica:['Falha técnica','bad','O arquivo final tem um problema técnico.'],
 };
@@ -157,13 +157,15 @@ export default function Revisar(){
   if(!pid) return <ListaAprovacoes/>;
   const r=rev.dados;
   if(!r) return <section className="panel">{rev.erro?<p className="hint bad">{rev.erro}</p>:<p className="hint"><Loader2 size={14} className="spin"/> Abrindo...</p>}</section>;
-  const p=r.projeto; const d=p.dados as {briefing:Briefing;cenas:Cena[];render:Render|null;roteiro:{titulo:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[]}|null;producao?:{erro?:string};qualidade?:Qualidade;diretor?:{veredito:string;motivos:string[];tentativas:number};renders?:{id:string;versao:number}[];correcoes?:Correcao[]};
+  const p=r.projeto; const d=p.dados as {briefing:Briefing;cenas:Cena[];render:Render|null;roteiro:{titulo:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[]}|null;producao?:{erro?:string};qualidade?:Qualidade;pareceres_etapas?:Record<string,{aprovado:boolean;motivos:string[];reprovacoes:number}>;diretor?:{veredito:string;motivos:string[];tentativas:number};renders?:{id:string;versao:number}[];correcoes?:Correcao[]};
   const render=d.render; const b=d.briefing;
   const destinos=redes??(b?.destinos?.redes||[]);
   const fazer=async(nome:string,f:()=>Promise<unknown>,ok:string)=>{ setBusy(nome); try{ await f(); toast(ok,'ok'); setTexto(''); rev.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } };
   const esperandoVideo=p.status==='ready_for_review';
   const esperandoRoteiro=p.status==='waiting_brief_approval'||(p.status==='storyboard_ready'&&!render);
-  const st=r.estados[p.status]||p.status;
+  const liberado=esperandoVideo && r.parecer?.aprovado===true;
+  const bloqueado=esperandoVideo && !liberado;
+  const st=bloqueado?'Aguardando o Diretor de Qualidade':r.estados[p.status]||p.status;
   return <div className="revisar">
    <button className="link-btn" onClick={()=>go('fila')}><ArrowLeft size={14}/> Fila e aprovações</button>
    <section className="panel">
@@ -172,7 +174,8 @@ export default function Revisar(){
     {!render&&!esperandoRoteiro&&!['failed','cancelled','rejected'].includes(p.status)&&<p className="hint">O celular está trabalhando. Pode fechar esta tela: quando o vídeo ficar pronto ele aparece aqui e em Fila e aprovações{' '}(e chega um e-mail, se estiver configurado).</p>}
     {p.status==='failed'&&<div className="row-gap left"><button className="primary sm" onClick={()=>go('fila')}>Abrir a fila para tentar de novo</button></div>}
     {d.producao?.erro&&p.status==='failed'&&<p className="hint bad"><AlertTriangle size={14}/> {d.producao.erro}</p>}
-    {d.diretor?.veredito==='aprovado'&&render&&<p className="hint ok"><ShieldCheck size={14}/> Aprovado pelo diretor de qualidade{d.diretor.tentativas>0?` depois de refazer ${d.diretor.tentativas} vez(es)`:''}. Agora falta a sua aprovação final.</p>}
+    {bloqueado&&<p className="hint warn"><Lock size={14}/> Aprovação final bloqueada. {r.parecer?.motivos.join(' ')||'Falta confirmar a aprovação do diretor para esta versão.'}</p>}
+    {liberado&&d.diretor&&render&&<p className="hint ok"><ShieldCheck size={14}/> Aprovado pelo diretor de qualidade{d.diretor.tentativas>0?` depois de refazer ${d.diretor.tentativas} vez(es)`:''}. Agora falta a sua aprovação final.</p>}
     {d.diretor?.veredito==='refazendo'&&<p className="hint warn"><ShieldCheck size={14}/> O diretor de qualidade mandou refazer (tentativa {d.diretor.tentativas}): {d.diretor.motivos.join(' · ')}</p>}
     {render&&<div className="rev-video">
      {r.links.video?<video src={urlServidor(cfg,r.links.preview||r.links.video)} controls playsInline preload="metadata" poster={r.links.thumb?urlServidor(cfg,r.links.thumb):undefined} className={render.altura>render.largura?'vertical':''}/>:<p className="hint">Prévia indisponível.</p>}
@@ -185,9 +188,16 @@ export default function Revisar(){
     </div>}
    </section>
 
+   {d.pareceres_etapas&&<section className="panel"><h2>Revisões do Diretor de Qualidade</h2>
+    <ul>{Object.entries(d.pareceres_etapas).map(([etapa,parecer])=><li key={etapa}>
+     <b>{({pauta:'Pauta',roteiro:'Roteiro e storyboard',narracao:'Narração',visual:'Imagens',render:'Cenas renderizadas',creative_preedit:'Revisão criativa',final:'Vídeo final'} as Record<string,string>)[etapa]||etapa}</b>
+     {' • '}{parecer.aprovado?'Aprovado':'Aguardando correção'}{parecer.reprovacoes>0&&` • Reprovações: ${parecer.reprovacoes}`}
+     {parecer.motivos.length>0&&<p>{parecer.motivos.join(' · ')}</p>}
+    </li>)}</ul></section>}
+
    {render&&d.qualidade&&<QualidadePainel q={d.qualidade} cenas={d.cenas||[]} pid={pid} render={render} renders={d.renders||[]} correcoes={d.correcoes||[]} podeCorrigir={esperandoVideo} corrigido={()=>rev.recarregar()}/>}
 
-   {esperandoVideo&&render&&<section className="panel decisao">
+   {liberado&&render&&<section className="panel decisao">
     <div className="section-head"><h2>Sua decisão</h2></div>
     <p className="subtitle">Assista ao vídeo acima. Gostou? Toque em Aprovar. Quer mudar algo? Escreva o que mudar e toque em Pedir correção. Nada é publicado antes de você aprovar.</p>
     <div className="field-label">Publicar em</div>
