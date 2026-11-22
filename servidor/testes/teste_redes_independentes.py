@@ -120,5 +120,20 @@ pg.ciclo()
 s = st(p4)
 confere(s == {'tiktok': 'erro', 'youtube': 'postado'}, f'erro inesperado só no TikTok: YouTube postado ({s})')
 
+# Um post que já saiu pode receber destinos sem perder o link ou repetir o primeiro envio.
+p5 = post(5, ['youtube'])
+pg.ciclo()
+original = next(p for p in pg.posts() if p['id'] == p5)
+pg.publicar_em_outras_redes(p5, ['youtube', 'instagram', 'kwai'])
+pg.publicar_em_outras_redes(p5, ['instagram', 'kwai'])
+pg.ciclo()
+atual = next(p for p in pg.posts() if p['id'] == p5)
+confere(st(p5) == {'youtube': 'postado', 'instagram': 'postado', 'kwai': 'manual'},
+        'Instagram é enviado e Kwai fica manual no mesmo post')
+confere(atual['redes']['youtube'] == original['redes']['youtube'] and atual['quando'] == original['quando'],
+        'o histórico e o horário original são preservados')
+confere(enviados.count(('youtube', p5)) == enviados.count(('instagram', p5)) == 1,
+        'repetir a solicitação não duplica envios')
+
 print(f'\n{ok} ok, {falhas} falha(s)')
 sys.exit(1 if falhas else 0)
