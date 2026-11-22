@@ -1,5 +1,4 @@
-export const publicarEmOutrasRedes=(c:Cfg,id:string,redes:Rede[])=>chamar<Post>(c,'POST',`/posts/${id}/outras-redes`,{redes});
-export const editarPost=// Cliente do agendador que roda no servidor (celular/PC): contas, envio do vídeo e posts.
+// Cliente do agendador que roda no servidor (celular/PC): contas, envio do vídeo e posts.
 import { cabAuth } from './api';
 export type Prov = 'google'|'meta'|'tiktok';
 export type Rede = 'youtube'|'facebook'|'instagram'|'tiktok'|'kwai';
@@ -69,6 +68,7 @@ export const criarPost=(c:Cfg,d:{video:string;redes:Rede[];titulo:string;legenda
 export const listarPosts=(c:Cfg)=>chamar<{posts:Post[];agora:number}>(c,'GET','/posts');
 export const postarAgora=(c:Cfg,id:string,rede?:string)=>chamar(c,'POST',`/posts/${id}/agora`,rede?{rede}:{});
 export const cancelarPost=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/cancelar`,{});
+export const publicarEmOutrasRedes=(c:Cfg,id:string,redes:Rede[])=>chamar<Post>(c,'POST',`/posts/${id}/outras-redes`,{redes});
 export const editarPost=(c:Cfg,id:string,d:{quando?:number;redes?:Rede[];titulo?:string;legenda?:string})=>chamar<Post>(c,'POST',`/posts/${id}/editar`,d);
 export const liberarPost=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/liberar`,{});
 export const AVISO_LIBERAR='Postar mesmo sem registrar de quem é o vídeo? Fica registrado que você deu esta liberação especial, só para este arquivo. A responsabilidade pelos direitos do vídeo fica com você.';
