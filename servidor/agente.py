@@ -1768,6 +1768,7 @@ def mover_legenda(cid: str, posicao: str, motivo: str, quem: str = 'agente7') ->
     if ja:
         return {'ok': True, 'job': ja, 'ja_na_fila': True}
     n = int(c.get('voltas_legenda') or 0) + 1
+    _tirar_da_agenda(cid, 'legenda mudando de lugar')
     _mudar(lambda e: [x.update(voltas_legenda=n) for x in e['cortes'] if x['id'] == cid])
     j = fila.enfileirar('editor.legenda', agente='agent5', dados={'corte': cid, 'posicao': posicao, 'motivo': motivo[:300], 'volta': n, 'quem': quem},
                         recurso='pesado', titulo='Editor: legenda fora do texto do vídeo · ' + c['titulo'][:50], chave=f'legenda:{cid}:{n}')
@@ -1817,6 +1818,7 @@ def job_mover_legenda(ctx):
     qa, _vd = _qa_da_esteira(res, run['id'])
     if res['resultado'] != 'aprovado' or not Path(res['arquivo'] or saida).exists():
         anotar(f'Diretor não aprovou a legenda nova de "{c["titulo"][:50]}": o vídeo anterior continua.', 'erro')
+        _reagendar_depois(cid)          # ficou a versão anterior (já aprovada): volta para a agenda
         return {'etapa': 'Diretor não aprovou a versão nova: ficou a anterior', 'resultado': {'run': run['id']}}
     destino = pg.video_path(c['video'])
     tmp = destino.with_suffix('.novo.mp4')
@@ -1832,6 +1834,7 @@ def job_mover_legenda(ctx):
                          legenda_movida={'posicao': d['posicao'], 'motivo': d.get('motivo', '')[:200], 't': time.time()})
     _mudar(f)
     anotar(f'Editor mudou a legenda de "{c["titulo"][:50]}" para {d["posicao"]}; diretor aprovou com nota {qa["nota"]}.', 'ok')
+    _reagendar_depois(cid)
     return {'etapa': f'Legenda mudou para {d["posicao"]}; diretor aprovou', 'resultado': {'run': run['id'], 'nota': qa['nota']}}
 
 
@@ -1886,11 +1889,13 @@ def job_esteira_recebido(ctx):
     _mudar(f)
     if vd['aprovado'] and c.get('post'):
         _reativar_post(cid)
+    if vd['aprovado']:
+        _reagendar_depois(cid)          # tinha saído da agenda para ser refeito: ganha um horário novo agora
     if res['resultado'] == 'aprovado':
         fonte.unlink(missing_ok=True)
-        if c.get('espera_fila'):
+        if c.get('espera_fila') and any(x['id'] == cid and x['status'] == 'pronto' for x in estado()['cortes']):
             try:
-                agendar_corte(cid)
+                agendar_corte(cid, fim_da_edicao=True)
             except (ErroAgente, pg.ErroRede) as err:
                 anotar(f'"{c["titulo"][:50]}" foi aprovado, mas ficou sem horário: {err}', 'erro')
     anotar(f'Diretor: "{c.get("titulo", "")[:50]}" ' + (f'aprovado com nota {qa["nota"]}.' if vd['aprovado'] else 'precisa da sua revisão: ' + '; '.join(vd['motivos'][:2])),
@@ -2270,7 +2275,8 @@ def legenda_do_corte(c: dict) -> str:
     return ds.compor(c.get('titulo') or 'Corte', c.get('hashtags') or [], link)
 
 
-def agendar_corte(cid: str, liberado: bool = False, quem: str = 'site', quando: float | None = None, redes_live: list | None = None) -> dict:
+def agendar_corte(cid: str, liberado: bool = False, quem: str = 'site', quando: float | None = None, redes_live: list | None = None,
+                  fim_da_edicao: bool = False) -> dict:
     """liberado=True: você decidiu agendar mesmo com restrições de direitos/repetição (as técnicas continuam barrando).
     quando/redes_live: a parte Live posta na hora (ou logo depois do post anterior), nas redes escolhidas para a live."""
     cfg = config()
@@ -2278,6 +2284,8 @@ def agendar_corte(cid: str, liberado: bool = False, quem: str = 'site', quando: 
     c = next((x for x in estado()['cortes'] if x['id'] == cid), None)
     if not c or c['status'] != 'pronto':
         raise ErroAgente('Este corte não está na fila de prontos.')
+    if em_edicao(cid) and not fim_da_edicao:      # fim_da_edicao: chamado pelo próprio editor/diretor ao terminar
+        raise ErroAgente('O editor e o diretor ainda estão refazendo este vídeo. Ele é agendado sozinho quando terminarem.')
     if redes_live is not None:
         po = dict(po, redes=[r for r in redes_live if r in pg.REDES])
     if not po['redes']:
@@ -2357,7 +2365,8 @@ def trabalhar_postagem() -> str:
             return 'A programação diária cuida dos horários.'
     except Exception as e:  # noqa: BLE001
         print('agente: programação diária', e)
-    for c in [x for x in estado()['cortes'] if x['status'] == 'pronto' and not x.get('espera') and liberado_para_postar(x) and a7_liberou(x)]:
+    for c in [x for x in estado()['cortes'] if x['status'] == 'pronto' and not x.get('espera') and liberado_para_postar(x) and a7_liberou(x)
+              and not em_edicao(x['id'])]:
         problemas = conferir(c)['bloqueios']
         if problemas:       # fica parado esperando você, sem travar o resto da fila
             _mudar(lambda e, cid=c['id']: [x.update(espera=True) for x in e['cortes'] if x['id'] == cid])
@@ -2768,7 +2777,7 @@ def rodar_agora(oque: str, link: str = '') -> dict:
 
 def mandar_para_editor(cid: str, quem: str = 'site') -> dict:
     """Você manda um corte para o editor (Agente 5) e o diretor (Agente 4) de novo: por exemplo, corte feito antes da esteira,
-    sem certificado, que o Agente 2 não deixa postar. Não mexe no post: se o diretor aprovar, o mesmo post passa a valer."""
+    sem certificado, que o Agente 2 não deixa postar. Se já estava agendado, sai da agenda agora e ganha um horário novo quando o diretor aprovar."""
     if not _esteira_ligada():
         raise ErroAgente('A esteira dos 5 agentes está desligada: sem ela não há editor nem diretor para mandar.')
     c = next((x for x in estado()['cortes'] if x['id'] == cid), None)
@@ -2785,6 +2794,7 @@ def mandar_para_editor(cid: str, quem: str = 'site') -> dict:
         return {'ok': True, 'job': ja, 'ja_na_fila': True}
     rodada = uuid.uuid4().hex[:6]
     sozinho = quem == 'automático'
+    _tirar_da_agenda(cid, 'mandado para o editor e o diretor')
 
     def marcar(e):
         for x in e['cortes']:
@@ -2805,6 +2815,58 @@ def db_fila_aberta(cid: str) -> str:
     r = db.um("SELECT id FROM jobs WHERE tipo='esteira.recebido' AND status IN ('agendado','na_fila','rodando','aguardando_tentativa') AND dados LIKE ?",
               f'%"corte": "{cid}"%')
     return r['id'] if r else ''
+
+
+def em_edicao(cid: str) -> bool:
+    """O editor/diretor está refazendo este corte agora (volta ao editor ou legenda mudando de lugar)?"""
+    try:
+        return bool(db_fila_aberta(cid) or legenda_na_fila(cid))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _tirar_da_agenda(cid: str, motivo: str) -> bool:
+    """Só agenda vídeo pronto: se o corte já estava agendado e vai ser refeito, ele sai da agenda AGORA (o horário fica livre)
+    e, quando o diretor aprovar a versão nova, ganha um horário novo. Assim nunca há post agendado com um arquivo que ainda vai mudar."""
+    c = next((x for x in estado()['cortes'] if x['id'] == cid), None)
+    if not c or (not c.get('post') and c['status'] != 'agendado'):
+        return False
+    p = next((x for x in pg.posts() if x['id'] == c['post']), None) if c.get('post') else None
+    if p and any(d['status'] in ('postado', 'postando') for d in p['redes'].values()):
+        return False                  # já saiu em alguma rede: não mexe
+    if p:
+        try:
+            pg.cancelar_post(p['id'], manter_video=True)
+        except pg.ErroRede:
+            return False
+        try:
+            import agenda_postagem as ag2
+            ag2.devolver_horario_do_post(p['id'], 'O vídeo voltou para o editor: o horário ficou livre. ' + motivo)
+        except Exception as e:  # noqa: BLE001
+            print('agente: devolver horário', e)
+    _mudar(lambda e: [x.update(status='pronto', post='', quando=None, links={}, erros={}, reagendar=True) for x in e['cortes'] if x['id'] == cid])
+    anotar(f'"{c["titulo"][:50]}" saiu da agenda enquanto é refeito ({motivo[:80]}). Ganha um horário novo quando o diretor aprovar.', 'info')
+    return True
+
+
+def _reagendar_depois(cid: str):
+    """O vídeo que saiu da agenda para ser refeito foi aprovado: volta para a agenda num horário livre.
+    Com a programação diária ligada, ela mesma escolhe o horário; senão, o Agente 2 agenda no próximo horário livre."""
+    c = next((x for x in estado()['cortes'] if x['id'] == cid), None)
+    if not c or not c.pop('reagendar', None) or c['status'] != 'pronto' or c.get('post'):
+        return
+    _mudar(lambda e: [x.pop('reagendar', None) for x in e['cortes'] if x['id'] == cid])
+    try:
+        import agenda_postagem as ag2
+        if ag2.tem_programacao():
+            ag2.acordar()
+            return
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        agendar_corte(cid, quem='automático', fim_da_edicao=True)
+    except (ErroAgente, pg.ErroRede) as e:
+        anotar(f'"{c["titulo"][:50]}" foi aprovado mas não consegui agendar de novo: {e}', 'erro')
 
 
 TXT_SEM_CERT = 'não tem a aprovação do diretor'
@@ -2945,6 +3007,7 @@ def permitir_postar(cid: str, quem: str = 'você') -> dict:
     _mudar(f)
     if c.get('post'):
         _reativar_post(cid)
+    _reagendar_depois(cid)
     anotar(f'"{c["titulo"][:50]}": você permitiu postar sem a aprovação do diretor.', 'aviso')
     return {'ok': True}
 

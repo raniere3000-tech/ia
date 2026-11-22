@@ -465,7 +465,9 @@ check(r['enviados'] >= 1 and j and j['agente'] == 'agent5', 'mandar para o edito
 check(oq.mandar_sem_certificado('teste')['enviados'] == 0, 'mandar de novo não duplica (já está na fila)')
 check(any(t['agente'] == 'Agente 5 (editor)' for t in oq.resumo()['trabalhos']), 'a Central mostra o editor com o vídeo na fila')
 c18 = next(x for x in ag.estado()['cortes'] if x['id'] == 'sc1')
-check(c18['status'] == 'agendado' and c18['post'] == 'p18', 'mandar para o editor não mexe no post já agendado')
+check(c18['status'] == 'pronto' and not c18['post'] and c18.get('reagendar') and not any(p['id'] == 'p18' for p in pg.posts()),
+      'mandar para o editor tira o vídeo da agenda (só volta a ser agendado depois de aprovado)')
+check('Ele é agendado sozinho' in str(erro(ag.agendar_corte, 'sc1')), 'enquanto o editor trabalha, não dá para agendar o vídeo')
 
 print('19. Post barrado volta sozinho para o editor; sem aprovação: aviso e "permitir postar"')
 avisos19 = []
@@ -511,19 +513,21 @@ class H19:
     path, corpo, headers = '/api/v1/posts/p19/permitir', b'{}', {}
 
 
-rp = api_v1.tratar(H19(), 'POST', '/api/v1/posts/p19/permitir', {'nome': 'teste', 'id': 's1'})
+check(not any(p['id'] == 'p19' for p in pg.posts()) and not next(x for x in ag.estado()['cortes'] if x['id'] == 'sc19')['post'],
+      'o post barrado saiu da agenda quando o vídeo foi para o editor')
+rp = ag.permitir_postar('sc19', 'teste')
 c19 = next(x for x in ag.estado()['cortes'] if x['id'] == 'sc19')
 cert = pl.certificado(sha19)
 check(rp['ok'] and cert and cert['manual'], 'permitir postar: certificado MANUAL só para este arquivo')
-check(c19['status'] == 'pronto' and not c19['post'] and not any(p['id'] == 'p19' for p in pg.posts()),
-      'o post barrado sai da agenda e o corte volta aos prontos para ganhar um horário novo')
+check(c19['status'] in ('pronto', 'agendado') and not c19.get('reagendar') and not any(p['id'] == 'p19' for p in pg.posts()),
+      'depois de aprovado, o corte volta para a agenda com um horário novo')
 check(not any(x['id'] == 'sc19' for x in ag.sem_certificado()), 'some da lista de travados')
 # corte antigo marcado como "postado" sem ter saído: o botão conserta
 ag._mudar(lambda e: e['cortes'].append(dict(base, id='sc19b', titulo='Antigo', chave='k19b', criado=time.time(), status='postado', post='', video=vid18,
                                             links={}, erros={'youtube': TXT})))
 check(any(x['id'] == 'sc19b' for x in ag.sem_certificado()), 'corte marcado como postado mas barrado aparece como travado')
 ag.mandar_para_editor('sc19b', 'teste')
-check(next(x for x in ag.estado()['cortes'] if x['id'] == 'sc19b')['status'] == 'agendado' and ag.db_fila_aberta('sc19b'), 'e pode voltar para o editor')
+check(next(x for x in ag.estado()['cortes'] if x['id'] == 'sc19b')['status'] == 'pronto' and ag.db_fila_aberta('sc19b'), 'e pode voltar para o editor')
 # post ainda no futuro: depois da aprovação continua no mesmo horário, com a versão nova
 post20 = dict(post19, id='p20', quando=time.time() + 3600, redes={'youtube': {'status': 'agendado', 'link': '', 'erro': ''}}, hash='antigo')
 pg.salvar_posts(pg.posts() + [post20])
