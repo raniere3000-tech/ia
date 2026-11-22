@@ -1380,10 +1380,43 @@ def avancar(oid: str) -> dict | None:
         return _ordem(oid)
 
 
+REPOSICAO_MAX_MIN = 24 * 60       # reposição que só falha: espera cada vez mais, até 1 vez por dia
+
+
+def _reposicao_terminou(o: dict, st: str) -> bool:
+    """Pedido automático de reposição terminou: guarda se deu certo. Falhou de novo pelo MESMO motivo: não avisa outra vez
+    (o aviso repetido a cada hora não ajuda) e o próximo pedido espera mais. Devolve True se é para avisar você."""
+    erros = [t['erro'] for t in _tarefas(o['id']) if t['estado'] == 'falhou' and t.get('erro')]
+    motivo = (erros[0] if erros else '')[:300]
+    if st != 'falhou':
+        db.kv_gravar('agente7.reposicao_falhas', {'n': 0, 'motivo': ''})
+        return True
+    ant = db.kv('agente7.reposicao_falhas', {}) or {}
+    n = int(ant.get('n') or 0) + 1
+    db.kv_gravar('agente7.reposicao_falhas', {'n': n, 'motivo': motivo, 't': _agora()})
+    return n == 1 or motivo != ant.get('motivo')
+
+
+def _intervalo_reposicao(cfg: dict) -> float:
+    """Minutos até o próximo pedido: o normal, dobrando a cada falha seguida (60, 120, 240... até 24 h)."""
+    n = int((db.kv('agente7.reposicao_falhas', {}) or {}).get('n') or 0)
+    return min(cfg['reposicao_intervalo_min'] * (2 ** min(n, 10)), max(REPOSICAO_MAX_MIN, cfg['reposicao_intervalo_min']))
+
+
 def _avisar(oid: str, st: str):
     try:
         import agente as ag
         o = _ordem(oid)
+        if o['plano'].get('reposicao'):
+            if not _reposicao_terminou(o, st):
+                return
+            if st == 'falhou':
+                f = db.kv('agente7.reposicao_falhas', {}) or {}
+                prox = _intervalo_reposicao(config())
+                ag.avisar('coordenador', 'Reposição automática não conseguiu cortes',
+                          f'{o["plano"].get("resposta", "")[:300]}\n\nMotivo: {f.get("motivo") or "sem detalhe"}\n\n'
+                          f'Enquanto o motivo for o mesmo, não aviso de novo. Próxima tentativa em {prox / 60:.0f} h. Veja em Central > Coordenador.')
+                return
         ag.avisar('coordenador', f'Ordem {_ref_ordem(oid)}: {st}', f'{o["plano"].get("resposta", "")[:300]}\nSituação final: {st}. Veja em Central > Coordenador.')
     except Exception:  # noqa: BLE001  (aviso é extra; não atrapalha)
         pass
@@ -2199,7 +2232,7 @@ def pedir_reposicao(motivo: str, detalhes: dict | None = None, origem: str = 'ag
             if (_l(r['plano_json'], {}) or {}).get('reposicao'):
                 return {'ok': False, 'motivo': 'Já há um pedido de reposição em andamento.', 'ordem': r['id']}
         ult = db.kv('agente7.ultima_reposicao', 0) or 0
-        if _agora() - ult < cfg['reposicao_intervalo_min'] * 60:
+        if _agora() - ult < _intervalo_reposicao(cfg) * 60:
             return {'ok': False, 'motivo': 'Pedi mais cortes há pouco; espero o Agente 1 terminar.'}
         db.kv_gravar('agente7.ultima_reposicao', _agora())
         oid = secrets.token_hex(6)
