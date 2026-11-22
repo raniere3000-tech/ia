@@ -203,6 +203,38 @@ def _resumo(vid: str):
     db.executar('UPDATE esteira_videos SET estado=?, etapa_atual=?, motivo=?, atualizado=? WHERE id=?', est, atual or 'a2_publicacao', (mot or '')[:300], _agora(), vid)
 
 
+MOTIVO_SUMIU = 'O vídeo foi apagado ou descartado.'
+
+
+def reabrir_cancelados_por_engano() -> int:
+    """Conserto de 22/11: cortes recém-aprovados eram cancelados porque o Agente 1 ainda não tinha salvo o corte na lista.
+    Se o corte existe agora, com arquivo e sem ter sido descartado ou postado, o registro volta a andar (A6 -> A7 -> A2)."""
+    import agente as ag
+    import postagem as pg
+    cortes = {c['id']: c for c in ag.estado()['cortes']}
+    n = 0
+    for v in db.todos("SELECT * FROM esteira_videos WHERE estado='cancelado' AND origem='corte' AND motivo=?", MOTIVO_SUMIU):
+        c = cortes.get(v['ref'])
+        if not c or not c.get('video') or c.get('status') in ('descartado', 'postado'):
+            continue
+        try:
+            if not pg.video_path(c['video']).exists():
+                continue
+        except pg.ErroRede:
+            continue
+        with _LOCK:
+            for e in ORDEM:
+                x = _etapa(vid := v['id'], e)
+                if x and x['estado'] == 'cancelada':
+                    db.executar("UPDATE esteira_etapas SET estado='aguardando_dependencia', motivo=?, fim=NULL, atualizado=? WHERE id=?",
+                                'Reaberto: o corte não tinha sumido (só ainda não estava salvo).', _agora(), x['id'])
+            db.executar('INSERT INTO esteira_historico (video, etapa, estado, detalhe, t) VALUES (?,?,?,?,?)', vid, 'a6_capa', 'aguardando_dependencia',
+                        _j({'motivo': 'Reaberto: cancelado por engano enquanto o Agente 1 salvava o corte.'}), _agora())
+            _resumo(vid)
+        n += 1
+    return n
+
+
 def cancelar(vid: str, motivo: str):
     with _LOCK:
         for e in ORDEM:
@@ -254,7 +286,11 @@ def arquivo_atual(v: dict) -> tuple[Path | None, str, dict]:
         import postagem as pg
         c = next((x for x in ag.estado()['cortes'] if x['id'] == v['ref']), None)
         if not c or not c.get('video'):
-            return None, '', {'sumiu': True}
+            # o Agente 1 só grava o corte na lista DEPOIS do diretor aprovar o arquivo (e de guardar o trecho para o editor):
+            # nesse intervalo o corte ainda não existe, mas não sumiu
+            return None, '', {'sumiu': True, 'nao_salvo': True}
+        if c.get('status') == 'descartado':
+            return None, '', {'sumiu': True, 'corte': c, 'descartado': True}
         try:
             arq = pg.video_path(c['video'])
         except pg.ErroRede:
@@ -304,8 +340,10 @@ def avancar(vid: str, posts: list | None = None) -> dict | None:
     arq, sha, extra = arquivo_atual(v)
     if extra.get('sumiu'):
         # só cancela o que já estava pronto (ou parado há muito tempo): durante a produção o corte ainda não está salvo
-        if ets['a2_publicacao']['estado'] not in OK and (ets['a4_final']['estado'] in OK or _agora() - float(v['atualizado'] or 0) > 6 * 3600):
-            cancelar(vid, 'O vídeo foi apagado ou descartado.')
+        # corte ainda não salvo pelo Agente 1 (acabou de ser aprovado): espera; só cancela se continuar sem existir por 6 h
+        parado = _agora() - float(v['atualizado'] or 0) > 6 * 3600
+        if ets['a2_publicacao']['estado'] not in OK and (parado or (not extra.get('nao_salvo') and ets['a4_final']['estado'] in OK)):
+            cancelar(vid, MOTIVO_SUMIU)
         return v
     import pipeline as pl
     cert = pl.certificado(sha) if sha else None
@@ -680,6 +718,10 @@ def varrer() -> int:
     """Passa por todos os vídeos que ainda não terminaram (a cada poucos segundos, em segundo plano)."""
     import postagem as pg
     posts = pg.posts()       # mesmo com a política desligada o registro segue (só a postagem deixa de exigir)
+    try:
+        reabrir_cancelados_por_engano()
+    except Exception as e:  # noqa: BLE001
+        print('esteira: reabrir cancelados', e)
     n = 0
     for r in db.todos("SELECT id FROM esteira_videos WHERE estado NOT IN ('publicado','cancelado','descartado') ORDER BY atualizado LIMIT 200"):
         try:
