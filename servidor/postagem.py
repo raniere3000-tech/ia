@@ -930,6 +930,45 @@ DONOS = ('meu', 'autorizado', 'regra')       # de quem é o vídeo (mesma lista 
 LIBERAVEIS = ('direitos',)                  # bloqueios que VOCÊ pode liberar (liberação especial); os técnicos continuam barrando
 
 
+def versao_aprovada(arq: Path) -> str:
+    """O arquivo que está no servidor agora tem aprovação própria? (certificado do diretor ou liberação do Coordenador
+    para ESTE arquivo). Devolve o texto da aprovação ou '' se não tem. Arquivo trocado sem aprovação continua barrado."""
+    try:
+        import pipeline as pl
+        sha = pl.sha_arquivo(arq)
+        c = pl.certificado(sha)
+        if c:
+            return f'aprovada pelo diretor (nota {c["nota"]}{", revisão manual" if c.get("manual") else ""})'
+        import coordenador as co
+        if co.liberado_sha(sha)['ok']:
+            return 'liberada por você no Coordenador'
+    except Exception as e:  # noqa: BLE001  (sem conseguir conferir, não aceita a troca)
+        print('postagem: versão aprovada', e)
+    return ''
+
+
+def arquivo_trocado(vid: str, motivo: str = '') -> int:
+    """Um agente trocou o arquivo do vídeo por uma versão nova aprovada: os posts ainda não enviados passam a
+    apontar para esta versão (senão a conferência acha que o arquivo "mudou depois de agendado")."""
+    nova = assinatura(vid)
+    if not nova:
+        return 0
+    n = 0
+    with LOCK:
+        ps = posts()
+        for p in ps:
+            if p.get('video') != vid or not p.get('hash') or p['hash'] == nova:
+                continue
+            if any(r['status'] in ('postado', 'postando') for r in p['redes'].values()):
+                continue
+            p['hash'] = nova
+            _anotar(p, '', 'versao_nova', 'Arquivo trocado por uma versão nova' + (f' ({motivo})' if motivo else '') + ': o post usa a versão nova.')
+            n += 1
+        if n:
+            salvar_posts(ps)
+    return n
+
+
 def liberacao_valida(p: dict) -> dict | None:
     """Liberação especial dada por você, presa ao arquivo: se o vídeo mudar, precisa liberar de novo."""
     lib = p.get('liberacao') or {}
@@ -980,8 +1019,17 @@ def conferencia(p: dict, rede: str) -> list[dict]:
     if ag2.get('ate') and ag2.get('politica') != 'publish_when_online' and agora() > ag2['ate'] and not p['redes'].get(rede, {}).get('tentativas'):
         item('horario', False, 'O horário da programação diária já passou (servidor estava desligado): não posto atrasado.')
     if p.get('hash'):
-        igual = assinatura(p['video']) in ('', p['hash'])
-        item('versao', igual, 'É o mesmo arquivo que foi agendado.' if igual else 'O arquivo mudou depois de agendado (não é a versão que você aprovou). Agende de novo.')
+        atual = assinatura(p['video'])
+        if atual in ('', p['hash']):
+            item('versao', True, 'É o mesmo arquivo que foi agendado.')
+        else:
+            aprov = versao_aprovada(arq)
+            if aprov:      # o editor/diretor refez o vídeo depois de agendado e o arquivo novo foi aprovado: vale o novo
+                item('versao', True, f'O vídeo foi refeito depois de agendado e a versão nova foi {aprov}. Vai postar esta versão.')
+                out[-1]['nova_versao'] = atual
+            else:
+                item('versao', False, 'O arquivo mudou depois de agendado e esta versão nova ainda não foi aprovada pelo diretor '
+                     'nem liberada no Coordenador. Mande para o editor e o diretor (ou agende de novo).')
     prov = PROV.get(rede)
     if prov:
         c = status_contas()[prov]
@@ -1160,8 +1208,15 @@ def _publicar_um(pid: str, rede: str):
         _avisar_falha(pid, rede, msg)
         return
 
+    nova = next((x.get('nova_versao') for x in conf if x.get('nova_versao')), '')
+
     def iniciar(p):
         p['redes'][rede].update(status='postando', erro='', inicio=agora())
+        if nova and p.get('hash') != nova:       # passa a valer a versão nova aprovada (evita postar a mesma de novo depois)
+            _anotar(p, rede, 'versao_nova', 'O vídeo foi refeito depois de agendado; a versão nova tem aprovação própria e é a que vai.')
+            if p.get('liberacao', {}).get('hash') == p['hash']:
+                p['liberacao']['hash'] = nova
+            p['hash'] = nova
         _anotar(p, rede, 'enviando', 'Conferência ok: ' + ', '.join(x['item'] for x in conf if x['ok']) +
                 ''.join(f' Aviso: {x["detalhe"]}' for x in conf if not x['ok'] and not x['bloqueia']))
     p = _mudar(pid, iniciar)
