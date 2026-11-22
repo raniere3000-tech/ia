@@ -167,6 +167,16 @@ for _ in range(10):
 check(co._intervalo_reposicao(co.config()) == 24 * 60, 'no máximo 1 pedido por dia enquanto só falha')
 co._reposicao_terminou({'id': 'nada'}, 'concluida')
 check(co._intervalo_reposicao(co.config()) == 60, 'deu certo: volta ao intervalo normal')
+# o motivo que o Agente 1 deu (ex.: nenhum vídeo novo) aparece na tarefa, em vez de só "sem nenhum corte"
+jx = fila.enfileirar('agente1.pesado', agente='agente1', dados={'oque': 'cortar', 'teste': 'msg'})['id']
+db.executar("UPDATE jobs SET status='concluido', resultado=? WHERE id=?", '{"ok": true, "mensagem": "Nenhum vídeo novo nos canais aprovados."}', jx)
+db.executar('INSERT INTO coordenador_ordens (id, autor, texto, plano_json, versao_plano, status, criado, atualizado, chave) VALUES (?,?,?,?,?,?,?,?,?)',
+            'rfmsg', 'agente2', 'repo', '{"intencao": "fazer_cortes", "reposicao": true}', 1, 'em_execucao', time.time(), time.time(), None)
+tx = co._nova_tarefa('rfmsg', 'cortar', 'agente1', 'a1.rodar', {'oque': 'cortar'}, [])
+co._set_tarefa(tx, estado='executando', job_id=jx, resultado={})
+co._acompanhar(co._ordem('rfmsg'), next(t for t in co._tarefas('rfmsg') if t['id'] == tx))
+tf = next(t for t in co._tarefas('rfmsg') if t['id'] == tx)
+check(tf['estado'] == 'falhou' and 'Nenhum vídeo novo nos canais aprovados' in (tf['erro'] or ''), f'a tarefa mostra o motivo do Agente 1: {tf["erro"]}')
 ag.avisar = _av_orig
 db.executar("DELETE FROM coordenador_tarefas WHERE ordem_id LIKE 'rf%'")
 db.executar("DELETE FROM coordenador_ordens WHERE id LIKE 'rf%'")
