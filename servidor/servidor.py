@@ -873,15 +873,16 @@ def _job_agente1(ctx):
     ag.JOB_ATUAL = ctx.id                     # cada corte guarda de qual trabalho saiu (o Coordenador acompanha por ele)
     ctx.progresso(5, {'buscar': 'Buscando canais', 'cortar': 'Fazendo cortes', 'link': 'Cortando o link', 'tema': 'Procurando vídeo pelo tema', 'postar': 'Agendando cortes'}.get(oque, oque))
     nome = {'buscar': 'Busca de canais', 'cortar': 'Agente de cortes', 'link': 'Corte do link', 'tema': 'Corte por tema', 'postar': 'Agente de postagem'}.get(oque, oque)
+    msg = ''
     try:
         if oque == 'buscar':
             ag.buscar_canais()
         elif oque == 'cortar':
-            ag.trabalhar_cortes(True)
+            msg = ag.trabalhar_cortes(True)
         elif oque == 'link':
-            ag.trabalhar_cortes(True, link)
+            msg = ag.trabalhar_cortes(True, link)
         elif oque == 'tema':
-            ag.trabalhar_cortes(True, '', link)
+            msg = ag.trabalhar_cortes(True, '', link)
         elif oque == 'postar':
             ag.trabalhar_postagem()
     except (ag.ErroAgente, pg.ErroRede) as e:
@@ -893,7 +894,8 @@ def _job_agente1(ctx):
         ag.JOB_ATUAL = ''
         ag.etapa('')
         ag.depois_do_trabalho()      # Central ligada: continua repondo o estoque logo depois do seu pedido
-    return {'resultado': {'ok': True}, 'etapa': 'Concluído'}
+    # o que o Agente 1 disse no fim (ex.: "Nenhum vídeo novo nos canais aprovados."): o Coordenador mostra isso quando não sai corte
+    return {'resultado': {'ok': True, 'mensagem': str(msg or '')[:300]}, 'etapa': (str(msg)[:120] if msg else 'Concluído')}
 
 
 def _enfileirar_agente1(oque: str, link: str = '') -> dict:
