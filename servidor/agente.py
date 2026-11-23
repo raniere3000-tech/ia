@@ -74,7 +74,7 @@ PADRAO = {
     'cortes': {
         'ligado': False, 'nichos': ['Games'], 'temas': [], 'temas_outros': False, 'proibidos': ['conteúdo adulto', 'discurso de ódio', 'menores de idade'],
         'min_views': 500000, 'idioma': 'pt', 'regiao': 'BR',
-        'por_semana': 6, 'por_video': 2, 'por_analise': 12, 'so_com_legenda': False, 'dur_min': 60, 'dur_max': 65, 'dur_v': 0, 'nota_min': 60,
+        'por_semana': 6, 'por_video': 2, 'por_analise': 12, 'priorizar_legendas': True, 'dur_min': 60, 'dur_max': 65, 'dur_v': 0, 'nota_min': 60,
         'video_min': 4, 'video_max': 120, 'dias_video': 14, 'hora_ini': 0, 'hora_fim': 24,
         'template': {'legenda': 'destaque', 'cor': '#FFFFFF', 'cor_destaque': '#FFE14D', 'maiusculas': True,
                      'tamanho': 'medio', 'legenda_pos': 'baixo', 'enquadramento': 'desfoque', 'zoom': 1.0,
@@ -170,7 +170,6 @@ def _limpar_cfg(c: dict) -> dict:
     co['por_video'] = max(1, min(6, co['por_video']))
     # banco de trechos: quantos trechos a IA aponta numa análise (o que não sai agora fica guardado e vira corte depois, sem IA); 0 = desligado
     co['por_analise'] = max(0, min(20, int(co.get('por_analise') or 0)))
-    co['so_com_legenda'] = co.get('so_com_legenda') is True     # vídeo sem legenda do YouTube: pula em vez de pagar a IA para ouvir
     if co.get('dur_v', 0) < 2:          # versão 2: duração do corte passa a ter padrão de 1 min a 1 min e 5 s (pedido do dono)
         co['dur_min'], co['dur_max'], co['dur_v'] = 60, 65, 2
     co['dur_min'] = max(10, min(175, co['dur_min']))
@@ -415,9 +414,10 @@ def _detalhes(ids: list) -> dict:
         j = yt('videos', part='snippet,statistics,contentDetails', id=','.join(ids[i:i + 50]), maxResults=50)
         for it in j.get('items', []):
             sn, stt = it.get('snippet', {}), it.get('statistics', {})
+            cd = it.get('contentDetails', {})
             out[it['id']] = {'id': it['id'], 'titulo': sn.get('title', ''), 'canal': sn.get('channelId', ''), 'canal_nome': sn.get('channelTitle', ''),
-                             'views': int(stt.get('viewCount') or 0), 'dur': _iso_dur(it.get('contentDetails', {}).get('duration', '')),
-                             'publicado': sn.get('publishedAt', ''),
+                             'views': int(stt.get('viewCount') or 0), 'dur': _iso_dur(cd.get('duration', '')),
+                             'tem_legenda': cd.get('caption') == 'true', 'publicado': sn.get('publishedAt', ''),
                              'idioma': (sn.get('defaultAudioLanguage') or sn.get('defaultLanguage') or '').lower()[:2]}
     return out
 
@@ -593,7 +593,7 @@ def _casa_tema(titulo: str, temas: list) -> str:
 
 
 def proximo_video(tema: str = '') -> dict | None:
-    """Vídeo novo mais visto, ainda não usado. Sem tema: entre os canais aprovados. Com os temas da configuração (ou um tema
+    """Vídeo novo, priorizando canais aprovados, depois legenda quando configurado e, por fim, visualizações. Sem tema: entre os canais aprovados. Com os temas da configuração (ou um tema
     pedido na hora): só vídeos que falam do tema. Tema pedido na hora, ou 'também outros canais' ligado, busca no YouTube todo;
     o corte de canal não aprovado fica sem origem registrada e só posta com a sua liberação especial."""
     co = config()['cortes']
@@ -642,7 +642,8 @@ def proximo_video(tema: str = '') -> dict | None:
             v['tema'] = casou
         v['fora_aprovados'] = v['canal'] not in ok_canais
         bons.append(v)
-    return max(bons, key=lambda v: (not v['fora_aprovados'], v['views'])) if bons else None
+    return max(bons, key=lambda v: (not v['fora_aprovados'],
+                                    co['priorizar_legendas'] and v['tem_legenda'], v['views']), default=None)
 
 
 # ---------------------------------------------------------------- fala: legenda do YouTube ou IA
@@ -1447,10 +1448,8 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             palavras, fonte = [tuple(p) for p in pre['palavras'] if p[1] <= dur + 1], 'banco de trechos (análise já feita)'
             escolhidos = [dict(c) for c in pre['itens'] if c['fim'] <= dur + 1][:max(1, quantos)]
             etapa(f'{len(escolhidos)} trecho(s) guardado(s) de "{v["titulo"][:50]}": sem gastar IA para ouvir e escolher', 50)
-        elif len(palavras) < 40 and co.get('so_com_legenda') and not baixado:
-            if not co.get('sem_fala'):
-                raise ErroAgente('Vídeo sem legenda no YouTube: pulei para não gastar IA ouvindo o áudio (opção "Só vídeos com legenda" no Agente 1).')
         elif len(palavras) < 40:
+            etapa(f'Sem legenda aproveitável: transcrevendo o áudio de "{v["titulo"][:50]}"', 20)
             fonte = 'IA'
             palavras = transcrever_ia(arq, dur, pasta, co['idioma'])
         if pre:
