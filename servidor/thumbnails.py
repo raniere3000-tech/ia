@@ -46,13 +46,16 @@ FORMATOS = {'16:9': (1280, 720), '9:16': (1080, 1920), '4:5': (1080, 1350), '1:1
 METODOS = ('frame', 'editorial', 'ia', 'inteligente')
 TEXTO_MODOS = ('auto', 'exato', 'sem')
 ORIGENS = ('corte', 'render', 'post')
-ESTADOS = ('aguardando_video', 'na_fila', 'analisando', 'criando', 'validando', 'aguardando_escolha', 'pronto', 'falhou', 'cancelado', 'revisao_manual')
+ESTADOS = ('aguardando_video', 'na_fila', 'analisando', 'criando', 'validando', 'aguardando_escolha', 'pronto', 'falhou', 'cancelado', 'revisao_manual', 'recusado', 'substituido')
 LAYOUTS = {         # três ou quatro composições DIFERENTES por método (não só outra cor)
     'frame': ['cheia', 'moldura', 'cheia_topo', 'dividido'],
     'editorial': ['faixa', 'dividido', 'moldura', 'cheia'],
     'inteligente': ['cheia', 'faixa', 'dividido', 'moldura'],
     'ia': ['cheia', 'faixa', 'dividido', 'moldura'],
 }
+_PEDIDOS_LOCK = threading.RLock()
+ENCERRADOS = ('cancelado', 'recusado', 'substituido')
+MUDOU_VIDEO = 'Este pedido é de uma versão anterior. Use as capas da versão atual do vídeo.'
 MAX_BYTES = 2 * 1024 * 1024             # limite do YouTube para capa (2 MB); vale para todas
 LIMIAR_CONTRASTE = 4.5
 TEXTO_MIN_PX_120 = 7                    # altura mínima da letra quando a capa aparece com 120 px de largura
@@ -236,6 +239,11 @@ def _ultimo_job(origem: str, ref: str) -> dict | None:
     return db.um('SELECT * FROM thumbnail_jobs WHERE origem=? AND referencia=? ORDER BY criado DESC LIMIT 1', origem, ref)
 
 
+def pedido_da_versao(origem: str, ref: str, sha: str) -> dict | None:
+    return db.um('SELECT * FROM thumbnail_jobs WHERE origem=? AND referencia=? AND video_sha=? ORDER BY criado DESC LIMIT 1',
+                 origem, ref, sha)
+
+
 def fontes(origem: str = '', termo: str = '', limite: int = 80) -> list:
     """Vídeos que podem ganhar capa: cortes do Agente 1 (prontos/agendados), vídeos finais do Agente 3 e posts."""
     import agente as ag
@@ -261,6 +269,11 @@ def fontes(origem: str = '', termo: str = '', limite: int = 80) -> list:
     out = out[:max(1, min(200, limite))]
     for x in out:
         j = _ultimo_job(x['origem'], x['referencia'])
+        if j:
+            sha = _video_atual_sha(j)
+            j = pedido_da_versao(x['origem'], x['referencia'], sha) if sha else None
+            if j and j['estado'] == 'substituido':
+                j = None
         x['job'] = {'id': j['id'], 'estado': j['estado']} if j else None
     return out
 
@@ -281,10 +294,9 @@ def _job(tid: str) -> dict:
 
 
 def _estado(tid: str, estado: str, erro: str | None = None):
-    if erro is None:
-        db.executar('UPDATE thumbnail_jobs SET estado=?, atualizado=? WHERE id=?', estado, _agora(), tid)
-    else:
-        db.executar('UPDATE thumbnail_jobs SET estado=?, erro=?, atualizado=? WHERE id=?', estado, erro[:500], _agora(), tid)
+    db.executar("UPDATE thumbnail_jobs SET estado=?, erro=COALESCE(?, erro), atualizado=? "
+                "WHERE id=? AND estado NOT IN ('cancelado','recusado','substituido')",
+                estado, erro[:500] if erro is not None else None, _agora(), tid)
 
 
 def _limpar_texto(t: str, n: int = 60) -> str:
@@ -328,6 +340,8 @@ def criar(d: dict, quem: str = 'site') -> dict:
     sha = pl.sha_arquivo(info['arquivo'])
     if not sha:
         raise ErroThumb(404, 'Não consegui ler o vídeo.')
+    if d.get('video_sha_esperado') and d['video_sha_esperado'] != sha:
+        raise ErroThumb(409, 'A versão do vídeo mudou. Aguarde a atualização do pedido de capa.')
     aviso = ''
     if metodo == 'ia':
         ok, motivo = ia_disponivel()
@@ -338,25 +352,40 @@ def criar(d: dict, quem: str = 'site') -> dict:
                 raise ErroThumb(503, motivo + ' Escolha "Quadro do vídeo" ou "Editorial", ou marque "usar o jeito local se a IA não der".')
     conf = {'metodo': metodo, 'variantes': n, 'formato': formato, 'texto_modo': texto_modo, 'texto': texto, 'descricao': descricao,
             'perfil_id': perfil_id, 'aviso': aviso, 'destino': d.get('destino') if d.get('destino') in REDES_CAPA else ''}
-    chave = str(d.get('chave_idempotencia') or '')[:80] or hashlib.sha256(json.dumps([origem, ref, sha, conf], sort_keys=True).encode()).hexdigest()[:40]
-    ja = db.um('SELECT id FROM thumbnail_jobs WHERE chave=?', chave)
-    if ja:                          # duplo clique ou pedido repetido: devolve o mesmo
-        return dict(obter(ja['id']), repetido=True)
-    tid = secrets.token_hex(6)
-    agora = _agora()
-    db.executar('INSERT INTO thumbnail_jobs (id, origem, referencia, video_sha, config, estado, criado, atualizado, chave, titulo, metodo, por) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', tid, origem, ref, sha, json.dumps(conf, ensure_ascii=False), 'na_fila', agora, agora, chave,
-                info['titulo'][:150], metodo, str(quem)[:60])
-    fj = fila.enfileirar('agente6.thumbnail', agente='agente6', dados={'job': tid}, titulo='Capa: ' + info['titulo'][:80], chave='thumb:' + tid,
-                         prioridade=5, max_tentativas=3)
-    db.executar('UPDATE thumbnail_jobs SET fila_job=? WHERE id=?', fj['id'], tid)
-    db.evento(quem, 'thumbnail_pedido', 'thumb:' + tid, {'origem': origem, 'ref': ref, 'metodo': metodo, 'variantes': n})
+    chave_externa = str(d.get('chave_idempotencia') or '')[:80]
+    chave = hashlib.sha256(json.dumps([origem, ref, sha, chave_externa or conf], sort_keys=True).encode()).hexdigest()[:40]
+    with _PEDIDOS_LOCK:
+        if _video_atual_sha({'origem': origem, 'referencia': ref}) != sha:
+            raise ErroThumb(409, 'A versão do vídeo mudou. Aguarde a atualização do pedido de capa.')
+        for antigo in db.todos("SELECT * FROM thumbnail_jobs WHERE origem=? AND referencia=? AND video_sha<>? "
+                                "AND estado NOT IN ('cancelado','recusado','substituido')", origem, ref, sha):
+            _substituir(antigo)
+        atual = pedido_da_versao(origem, ref, sha)
+        if d.get('reusar_versao') and atual and atual['estado'] != 'substituido':
+            return dict(obter(atual['id']), repetido=True)
+        ja = db.um('SELECT id, estado FROM thumbnail_jobs WHERE chave=? OR (chave=? AND origem=? AND referencia=? AND video_sha=?) ORDER BY criado DESC LIMIT 1',
+                   chave, chave_externa, origem, ref, sha)
+        while ja and (ja['estado'] == 'substituido' or
+                      (ja['estado'] in ('recusado', 'cancelado') and not quem.startswith('agente'))):
+            chave = hashlib.sha256(f'{chave}:{ja["id"]}'.encode()).hexdigest()[:40]
+            ja = db.um('SELECT id, estado FROM thumbnail_jobs WHERE chave=?', chave)
+        if ja:
+            return dict(obter(ja['id']), repetido=True)
+        tid = secrets.token_hex(6)
+        agora = _agora()
+        db.executar('INSERT INTO thumbnail_jobs (id, origem, referencia, video_sha, config, estado, criado, atualizado, chave, titulo, metodo, por) '
+                    'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', tid, origem, ref, sha, json.dumps(conf, ensure_ascii=False), 'na_fila', agora, agora, chave,
+                    info['titulo'][:150], metodo, str(quem)[:60])
+        fj = fila.enfileirar('agente6.thumbnail', agente='agente6', dados={'job': tid}, titulo='Capa: ' + info['titulo'][:80],
+                             chave='thumb:' + tid, prioridade=5, max_tentativas=3)
+        db.executar('UPDATE thumbnail_jobs SET fila_job=? WHERE id=?', fj['id'], tid)
+        db.evento(quem, 'thumbnail_pedido', 'thumb:' + tid, {'origem': origem, 'ref': ref, 'metodo': metodo, 'variantes': n})
     return obter(tid)
 
 
 def cancelar(tid: str, quem: str = 'site') -> dict:
     j = _job(tid)
-    if j['estado'] in ('pronto', 'falhou', 'cancelado'):
+    if j['estado'] in ('pronto', 'falhou', *ENCERRADOS):
         raise ErroThumb(409, 'Este pedido já terminou.')
     if j['fila_job']:
         try:
@@ -368,26 +397,55 @@ def cancelar(tid: str, quem: str = 'site') -> dict:
     return obter(tid)
 
 
+def recusar(tid: str, quem: str = 'site') -> dict:
+    with _PEDIDOS_LOCK:
+        j = _job(tid)
+        if j['estado'] == 'recusado':
+            return obter(tid)
+        if j['estado'] not in ('aguardando_escolha', 'revisao_manual', 'pronto', 'falhou'):
+            raise ErroThumb(409, 'O pedido precisa estar disponível para recusa.')
+        _estado(tid, 'recusado', 'Capas recusadas por você. Gere outro pedido quando quiser.')
+        for s in db.todos('SELECT id FROM thumbnail_selecoes WHERE job=? AND revogado IS NULL', tid):
+            _revogar(s['id'], 'Capas recusadas pelo usuário.')
+        db.evento(quem, 'thumbnail_recusado', 'thumb:' + tid)
+    return obter(tid)
+
+
+def nova_versao(tid: str, quem: str = 'site') -> dict:
+    j = _job(tid)
+    sha = _video_atual_sha(j)
+    if not sha:
+        raise ErroThumb(409, 'Aguarde o vídeo ficar pronto.')
+    atual = pedido_da_versao(j['origem'], j['referencia'], sha)
+    if atual and atual['estado'] != 'substituido' and (quem.startswith('agente') or atual['estado'] not in ENCERRADOS):
+        return obter(atual['id'])
+    return criar({**j['config'], 'origem': j['origem'], 'referencia': j['referencia'],
+                  'video_sha_esperado': sha, 'chave_idempotencia': f'novo:{tid}:{(atual or {}).get("id", "")}'}, quem)
+
+
 def refazer(tid: str, d: dict, quem: str = 'site') -> dict:
     """Refaz SÓ uma variante (nova versão), com texto novo se quiser. Conta como correção criativa (máx. configurado)."""
-    j = _job(tid)
-    cfg = config()
-    try:
-        numero = int(d.get('numero') or 0)
-    except (TypeError, ValueError):
-        numero = 0
-    if not 1 <= numero <= j['config']['variantes']:
-        raise ErroThumb(400, 'Diga qual capa refazer (número da variante).')
-    if j['estado'] in ('na_fila', 'analisando', 'criando', 'validando'):
-        raise ErroThumb(409, 'Espere terminar o que está rodando.')
-    if j['correcoes'] >= cfg['max_correcoes'] + 3:
-        raise ErroThumb(429, 'Limite de refações deste pedido atingido. Crie um pedido novo.')
-    texto = _limpar_texto(d.get('texto'), 60) if 'texto' in d else None
-    j2 = fila.enfileirar('agente6.thumbnail', agente='agente6', dados={'job': tid, 'refazer': numero, 'texto': texto},
-                         titulo=f'Capa {numero}: refazer', prioridade=6, max_tentativas=2)
-    db.executar('UPDATE thumbnail_jobs SET fila_job=?, estado=?, atualizado=?, erro=NULL WHERE id=?', j2['id'], 'na_fila', _agora(), tid)
-    db.evento(quem, 'thumbnail_refazer', 'thumb:' + tid, {'numero': numero})
-    return obter(tid)
+    with _PEDIDOS_LOCK:
+        j = _job(tid)
+        if j['estado'] in ENCERRADOS or _video_atual_sha(j) != j['video_sha']:
+            raise ErroThumb(409, MUDOU_VIDEO if j['estado'] != 'recusado' else 'Capas recusadas. Gere um novo pedido.')
+        cfg = config()
+        try:
+            numero = int(d.get('numero') or 0)
+        except (TypeError, ValueError):
+            numero = 0
+        if not 1 <= numero <= j['config']['variantes']:
+            raise ErroThumb(400, 'Diga qual capa refazer (número da variante).')
+        if j['estado'] in ('na_fila', 'analisando', 'criando', 'validando'):
+            raise ErroThumb(409, 'Espere terminar o que está rodando.')
+        if j['correcoes'] >= cfg['max_correcoes'] + 3:
+            raise ErroThumb(429, 'Limite de refações deste pedido atingido. Crie um pedido novo.')
+        texto = _limpar_texto(d.get('texto'), 60) if 'texto' in d else None
+        j2 = fila.enfileirar('agente6.thumbnail', agente='agente6', dados={'job': tid, 'refazer': numero, 'texto': texto},
+                             titulo=f'Capa {numero}: refazer', prioridade=6, max_tentativas=2)
+        db.executar('UPDATE thumbnail_jobs SET fila_job=?, estado=?, atualizado=?, erro=NULL WHERE id=?', j2['id'], 'na_fila', _agora(), tid)
+        db.evento(quem, 'thumbnail_refazer', 'thumb:' + tid, {'numero': numero})
+        return obter(tid)
 
 
 # ---------------------------------------------------------------- vídeo e quadros
@@ -977,16 +1035,16 @@ def job_thumbnail(ctx) -> dict:
     if not PIL_OK:
         raise _Definitivo(SEM_PIL)
     j = _job(tid)
-    if j['estado'] == 'cancelado':
-        return {'etapa': 'Cancelado'}
+    if j['estado'] in ENCERRADOS:
+        return {'etapa': 'Pedido encerrado'}
     conf = j['config']
     cfg = config()
     info = resolver(j['origem'], j['referencia'])
     import pipeline as pl
     arq = info['arquivo']
     if pl.sha_arquivo(arq) != j['video_sha']:
-        _estado(tid, 'falhou', 'O vídeo mudou depois do pedido (outra versão). Peça a capa de novo para a versão nova.')
-        raise _Definitivo('O vídeo mudou depois do pedido.')
+        _substituir(j)
+        return {'etapa': MUDOU_VIDEO}
     ok, motivo = _certificado_ok(arq)
     if not ok:
         _estado(tid, 'aguardando_video', motivo)
@@ -1055,11 +1113,22 @@ def job_thumbnail(ctx) -> dict:
                                    metodo, fundo_arq)
             if layout == 'caixa' and not rel['aprovado'] and len(t_corr.split()) <= 2:
                 break
+        if refazer_n:
+            # Só com a nova imagem gravada a versão anterior deixa de poder ser escolhida.
+            db.executar("UPDATE thumbnail_variantes SET estado='substituida' WHERE job=? AND numero=? AND versao<?",
+                        tid, numero, v['versao'])
+            for s in db.todos("SELECT s.id FROM thumbnail_selecoes s JOIN thumbnail_variantes v ON v.id=s.variante "
+                              "WHERE s.job=? AND s.revogado IS NULL AND v.estado='substituida'", tid):
+                _revogar(s['id'], 'A variante escolhida foi refeita.')
         feitas.append({'numero': numero, 'versao': v['versao'], 'nota': v['nota'], 'aprovada': v['estado'] == 'aprovada'})
     if avisos or conf.get('aviso'):
         conf['avisos'] = list(dict.fromkeys([*(conf.get('avisos') or []), *avisos, *([conf['aviso']] if conf.get('aviso') else [])]))[:10]
         db.executar('UPDATE thumbnail_jobs SET config=? WHERE id=?', json.dumps(conf, ensure_ascii=False), tid)
     shutil.rmtree(pasta, ignore_errors=True) if not refazer_n else None
+    atual_sha = _video_atual_sha(j)
+    if atual_sha and atual_sha != j['video_sha']:
+        _substituir(j)
+        return {'etapa': MUDOU_VIDEO}
     ativas = db.todos("SELECT * FROM thumbnail_variantes WHERE job=? AND estado IN ('aprovada','reprovada') ORDER BY numero, versao DESC", tid)
     aprovadas = [x for x in ativas if x['estado'] == 'aprovada']
     if not aprovadas:
@@ -1078,7 +1147,7 @@ def _ao_falhar(job: dict, msg: str):
         return
     try:
         tid = json.loads(job.get('dados') or '{}').get('job')
-        if tid:
+        if tid and _job(tid)['estado'] not in ENCERRADOS:
             _estado(tid, 'falhou', msg)
             import agente as ag
             ag.avisar('falha', 'Capa não saiu', f'O Agente 6 não conseguiu fazer a capa.\n\nMotivo: {msg[:300]}\n')
@@ -1112,6 +1181,17 @@ def _revogar(sid: str, motivo: str):
         db.evento('agente6', 'thumbnail_selecao_revogada', 'thumbsel:' + sid, {'motivo': motivo[:200]})
 
 
+def _substituir(j: dict):
+    with _PEDIDOS_LOCK:
+        _estado(j['id'], 'substituido', MUDOU_VIDEO)
+        for s in db.todos('SELECT id FROM thumbnail_selecoes WHERE job=? AND revogado IS NULL', j['id']):
+            _revogar(s['id'], MUDOU_VIDEO)
+        if j['fila_job']:
+            em_fila = fila.obter(j['fila_job'])
+            if em_fila and em_fila['status'] in fila.ATIVOS:
+                fila.cancelar(j['fila_job'])
+
+
 def revalidar(tid: str) -> dict | None:
     """A escolha só vale para o MESMO vídeo e a MESMA capa. Mudou o vídeo: cai a escolha. Mudou a capa: cai a aprovação."""
     s = selecao_ativa(tid)
@@ -1119,19 +1199,24 @@ def revalidar(tid: str) -> dict | None:
         return None
     j = db.um('SELECT * FROM thumbnail_jobs WHERE id=?', tid)
     v = db.um('SELECT * FROM thumbnail_variantes WHERE id=?', s['variante'])
-    if not j or _video_atual_sha(j) != s['video_sha']:
-        _revogar(s['id'], 'O vídeo mudou depois da escolha da capa.')
-        db.executar("UPDATE thumbnail_jobs SET estado='aguardando_escolha', erro=?, atualizado=? WHERE id=?", 'O vídeo mudou: peça capas para a versão nova.', _agora(), tid)
+    if not j or j['estado'] in ENCERRADOS:
+        return None
+    sha = _video_atual_sha(j)
+    if sha != s['video_sha']:
+        if sha:
+            _substituir(j)
         return None
     if not v or _arquivo_sha(v['arquivo']) != s['thumb_sha']:
         _revogar(s['id'], 'A capa mudou depois da aprovação.')
-        db.executar("UPDATE thumbnail_jobs SET estado='aguardando_escolha', atualizado=? WHERE id=?", _agora(), tid)
+        _estado(tid, 'aguardando_escolha')
         return None
     return s
 
 
 def selecionar(tid: str, d: dict, quem: str = 'site') -> dict:
     j = _job(tid)
+    if j['estado'] in ENCERRADOS:
+        raise ErroThumb(409, 'Este pedido de capa foi encerrado.')
     vid = str(d.get('variante_id') or '')
     v = db.um('SELECT * FROM thumbnail_variantes WHERE id=? AND job=?', vid, tid)
     if not v:
@@ -1142,7 +1227,9 @@ def selecionar(tid: str, d: dict, quem: str = 'site') -> dict:
         raise ErroThumb(409, 'Esta versão foi substituída por uma correção.')
     video_sha = _video_atual_sha(j)
     if video_sha != j['video_sha']:
-        raise ErroThumb(409, 'O vídeo mudou depois que as capas foram feitas. Peça capas para a versão nova.')
+        if video_sha:
+            _substituir(j)
+        raise ErroThumb(409, MUDOU_VIDEO)
     sha = _arquivo_sha(v['arquivo'])
     if sha != v['sha256']:
         raise ErroThumb(409, 'O arquivo da capa mudou. Refaça esta capa.')
@@ -1152,12 +1239,15 @@ def selecionar(tid: str, d: dict, quem: str = 'site') -> dict:
     manual = v['estado'] != 'aprovada'
     if manual and not d.get('confirmacao'):
         raise ErroThumb(409, f'O diretor deu nota {v["nota"]} (mínimo {config()["nota_min"]}). Para usar mesmo assim, confirme.')
-    for s in db.todos('SELECT id FROM thumbnail_selecoes WHERE (job=? OR video_sha=?) AND revogado IS NULL', tid, video_sha):
-        _revogar(s['id'], 'Outra capa foi escolhida para este vídeo.')
-    sid = secrets.token_hex(6)
-    db.executar('INSERT INTO thumbnail_selecoes (id, job, variante, video_sha, thumb_sha, escolha, por, aprovado, criado) VALUES (?,?,?,?,?,?,?,?,?)',
-                sid, tid, v['id'], video_sha, sha, 'manual' if manual else ('automatica' if quem.startswith('agente6') else 'voce'), str(quem)[:60], 1, _agora())
-    _estado(tid, 'pronto', '')
+    with _PEDIDOS_LOCK:
+        if _job(tid)['estado'] in ENCERRADOS:
+            raise ErroThumb(409, 'Este pedido de capa foi encerrado.')
+        for s in db.todos('SELECT id FROM thumbnail_selecoes WHERE (job=? OR video_sha=?) AND revogado IS NULL', tid, video_sha):
+            _revogar(s['id'], 'Outra capa foi escolhida para este vídeo.')
+        sid = secrets.token_hex(6)
+        db.executar('INSERT INTO thumbnail_selecoes (id, job, variante, video_sha, thumb_sha, escolha, por, aprovado, criado) VALUES (?,?,?,?,?,?,?,?,?)',
+                    sid, tid, v['id'], video_sha, sha, 'manual' if manual else ('automatica' if quem.startswith('agente6') else 'voce'), str(quem)[:60], 1, _agora())
+        _estado(tid, 'pronto', '')
     if j['origem'] == 'corte':
         try:
             import agente as ag
@@ -1216,10 +1306,15 @@ def _variante_publica(v: dict) -> dict:
         'baixar': au.assinar_url(f'/api/v1/thumbnails/midia/{v["id"]}', 3 * 3600) + '&baixar=1'}
 
 
-def obter(tid: str) -> dict:
+def obter(tid: str, *, conferir_versao: bool = True) -> dict:
     j = _job(tid)
-    s = revalidar(tid) if j['estado'] == 'pronto' else selecao_ativa(tid)
+    sha = _video_atual_sha(j) if conferir_versao or j['estado'] == 'pronto' else ''
+    substituto = None
+    if sha and sha != j['video_sha']:
+        _substituir(j)
+        substituto = pedido_da_versao(j['origem'], j['referencia'], sha)
     j = _job(tid)
+    s = revalidar(tid) if j['estado'] == 'pronto' else None if j['estado'] in ENCERRADOS else selecao_ativa(tid)
     fj = fila.obter(j['fila_job']) if j['fila_job'] else None
     progresso = None
     if fj:
@@ -1232,9 +1327,10 @@ def obter(tid: str) -> dict:
         progresso = {'status': fj['status'], 'pct': fj['progresso'], 'etapa': fj['etapa'], 'restante_s': rest, 'estimado': est,
                      'criado': fj['criado'], 'iniciado': fj['iniciado'], 'terminado': fj['terminado'], 'decorrido': fj['decorrido'],
                      'tentativas': fj['tentativas']}
+    j = _job(tid)
     vs = db.todos('SELECT * FROM thumbnail_variantes WHERE job=? ORDER BY numero, versao DESC', tid)
     return {**{k: j[k] for k in ('id', 'origem', 'referencia', 'video_sha', 'estado', 'criado', 'atualizado', 'erro', 'titulo', 'metodo', 'correcoes', 'custo', 'por')},
-            'config': j['config'], 'progresso': progresso, 'selecao': s, 'variantes': [_variante_publica(v) for v in vs]}
+            'config': j['config'], 'pedido_atual': substituto['id'] if substituto else None, 'progresso': progresso, 'selecao': s, 'variantes': [_variante_publica(v) for v in vs]}
 
 
 def listar(estado: str = '', limite: int = 50) -> dict:
@@ -1243,7 +1339,7 @@ def listar(estado: str = '', limite: int = 50) -> dict:
         js = db.todos('SELECT id FROM thumbnail_jobs WHERE estado=? ORDER BY criado DESC LIMIT ?', estado, limite)
     else:
         js = db.todos('SELECT id FROM thumbnail_jobs ORDER BY criado DESC LIMIT ?', limite)
-    return {'jobs': [obter(x['id']) for x in js]}
+    return {'jobs': [obter(x['id'], conferir_versao=False) for x in js]}
 
 
 def midia(variante_id: str) -> tuple[Path, str]:
@@ -1312,7 +1408,7 @@ def varrer() -> int:
             break
         try:
             criar({'origem': f['origem'], 'referencia': f['referencia'], 'metodo': cfg['metodo_padrao'] if cfg['metodo_padrao'] != 'ia' else 'inteligente',
-                   'variantes': cfg['variantes_padrao'], 'formato': 'auto', 'texto_modo': 'auto'}, 'agente6-automatico')
+                   'variantes': cfg['variantes_padrao'], 'formato': 'auto', 'texto_modo': 'auto', 'reusar_versao': True}, 'agente6-automatico')
             n += 1
         except ErroThumb as e:
             print('agente6: não criei capa para', f['referencia'], e)

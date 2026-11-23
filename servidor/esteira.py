@@ -372,10 +372,11 @@ def avancar(vid: str, posts: list | None = None) -> dict | None:
         ets = {e: _etapa(vid, e) for e in ORDEM}
     if ets['a4_final']['estado'] != 'concluida' or not sha:
         return v
+    import thumbnails as th
     c6 = ets['a6_capa']
-    if c6['estado'] == 'concluida' and c6['entrada_sha'] and c6['entrada_sha'] != sha:
-        # o editor trocou o arquivo (ex.: legenda mudou de lugar) e o diretor já aprovou a versão nova: capa e liberação são refeitas
-        invalidar_depois(vid, 'a4_final', 'O vídeo mudou: capa e liberação valem só para a versão aprovada.')
+    capa = th.capa_para_video(arq) if c6['estado'] == 'concluida' else None
+    if c6['estado'] == 'concluida' and (not capa or c6['entrada_sha'] != sha or c6['saida_sha'] != capa['sha']):
+        invalidar_depois(vid, 'a4_final', 'O vídeo ou a capa mudou. A liberação será conferida novamente.')
         ets = {e: _etapa(vid, e) for e in ORDEM}
     if ets['a6_capa']['estado'] not in OK:
         _a6(v, ets['a6_capa'], sha)
@@ -385,7 +386,6 @@ def avancar(vid: str, posts: list | None = None) -> dict | None:
     reaberta = False
     if ets['a7_liberacao']['estado'] == 'concluida' and not _liberacao_vale(sha):
         # a liberação caiu depois (capa trocada/apagada ou pacote revogado): sem isto o post ficava esperando para sempre
-        import thumbnails as th
         sem_capa = politica()['capa_obrigatoria'] and th.capa_para_video(arq) is None
         invalidar_depois(vid, 'a4_final' if sem_capa else 'a6_capa',
                          'A liberação do Coordenador caiu (capa ou pacote mudou): ' + ('a capa é refeita e o pacote é conferido de novo.' if sem_capa
@@ -410,12 +410,12 @@ def _a6(v: dict, e: dict, sha: str):
     import thumbnails as th
     pol = politica()
     origem = 'render' if v['origem'] == 'render' else 'corte'
-    j = db.um('SELECT * FROM thumbnail_jobs WHERE origem=? AND referencia=? AND video_sha=? ORDER BY criado DESC LIMIT 1', origem, v['ref'], sha)
-    if not j:
+    j = th.pedido_da_versao(origem, v['ref'], sha)
+    if not j or j['estado'] == 'substituido':
         if not pol['capa_obrigatoria']:
             marcar(v['id'], 'a6_capa', 'pulada_justificada', motivo='Política sem capa obrigatória.', recibo={'politica': pol['versao']})
             return
-        if _ordem_cuida(v, 'a6.capas'):
+        if _ordem_cuida(v, 'a6.capas') and not th._ultimo_job(origem, v['ref']):
             if e['estado'] != 'aguardando_dependencia':
                 marcar(v['id'], 'a6_capa', 'pendente', motivo='O Coordenador pede as capas pela ordem.')
             return
@@ -425,7 +425,7 @@ def _a6(v: dict, e: dict, sha: str):
         cfg = th.config()
         try:
             j0 = th.criar({'origem': origem, 'referencia': v['ref'], 'metodo': 'inteligente', 'variantes': cfg['variantes_padrao'], 'formato': 'auto',
-                           'texto_modo': 'auto', 'chave_idempotencia': f'esteira:{v["id"]}:{sha[:16]}'}, 'agente7-esteira')
+                           'texto_modo': 'auto', 'video_sha_esperado': sha, 'reusar_versao': True, 'chave_idempotencia': f'esteira:{v["id"]}'}, 'agente7-esteira')
         except th.ErroThumb as err:
             marcar(v['id'], 'a6_capa', 'falhou', erro=str(err))
             return
@@ -453,7 +453,10 @@ def _a6(v: dict, e: dict, sha: str):
         if e['estado'] != 'aguardando_usuario':
             marcar(v['id'], 'a6_capa', 'aguardando_usuario', recibo=rec, motivo='Capas prontas: escolha uma (Capas ou Coordenador > Aprovações).')
         return
-    if est == 'revisao_manual':
+    if est == 'recusado' and not pol['capa_obrigatoria']:
+        marcar(v['id'], 'a6_capa', 'pulada_justificada', recibo=rec, motivo='Capas recusadas pelo usuário.')
+        return
+    if est in ('revisao_manual', 'recusado'):
         if e['estado'] != 'revisao_manual':
             marcar(v['id'], 'a6_capa', 'revisao_manual', recibo=rec, motivo=j.get('erro') or 'Nenhuma capa passou depois das correções.')
         return

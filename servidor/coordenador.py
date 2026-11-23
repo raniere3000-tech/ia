@@ -1218,7 +1218,7 @@ def _iniciar(o: dict, t: dict):
         pid = pr.get('projeto') or next(x for x in _tarefas(oid) if x['id'] == pr['produzir'])['resultado']['projeto']
         n_corr = int(pr.get('correcoes') or 0)
         j = th.criar({'origem': 'render', 'referencia': pid, 'variantes': pr.get('variantes') or 2, 'metodo': 'inteligente',
-                      'descricao': pr.get('pedido_capa') or '', 'chave_idempotencia': f'coord:{t["id"]}:{n_corr}'}, 'agente7')
+                      'descricao': pr.get('pedido_capa') or '', 'reusar_versao': not n_corr, 'chave_idempotencia': f'coord:{t["id"]}:{n_corr}'}, 'agente7')
         _set_tarefa(t['id'], estado='executando', inicio=t['inicio'] or agora, resultado={'thumb': j['id'], 'projeto': pid}, job_id=None)
         evento(oid, t['id'], 'agente7', 'delegado', {'agente': 'agente6', 'thumb': j['id'], 'projeto': pid})
         return
@@ -1281,7 +1281,21 @@ def _acompanhar(o: dict, t: dict):
         except th.ErroThumb:
             _set_tarefa(t['id'], estado='falhou', erro='O pedido de capa sumiu.', fim=_agora())
             return
-        if j['estado'] == 'revisao_manual' and not th.selecao_ativa(j['id']):
+        if j['estado'] == 'substituido':
+            try:
+                novo = th.nova_versao(j['id'], 'agente7')
+            except th.ErroThumb as e:
+                if e.status in (404, 409):
+                    return
+                raise
+            _set_tarefa(t['id'], estado='executando', erro=None, resultado=dict(t['resultado'], thumb=novo['id']))
+            return
+        if j['estado'] in ('revisao_manual', 'recusado') and not th.selecao_ativa(j['id']):
+            if j['estado'] == 'recusado':
+                atual = th.pedido_da_versao(j['origem'], j['referencia'], j['video_sha'])
+                if atual and atual['id'] != j['id']:
+                    _set_tarefa(t['id'], estado='executando', erro=None, resultado=dict(t['resultado'], thumb=atual['id']))
+                    return
             if t['estado'] != 'aguardando_voce':
                 _set_tarefa(t['id'], estado='aguardando_voce', erro=(j.get('erro') or 'Nenhuma capa passou no diretor: escolha ou peça de novo em Capas.')[:300])
             return
@@ -1594,23 +1608,17 @@ def aprovacoes(estado: str = '') -> dict:
 
 def _capas_da_aprovacao(pub: dict) -> list:
     """As capas do pedido ligado a este vídeo, para você escolher aqui mesmo."""
-    t = db.um('SELECT * FROM coordenador_tarefas WHERE id=?', pub['tarefa_id']) if pub.get('tarefa_id') else None
-    if t:
-        ct = (_l(t['parametros_json'], {}) or {}).get('capas_tarefa')
-        if not ct:
-            return []
-        c = db.um('SELECT resultado_json FROM coordenador_tarefas WHERE id=?', ct)
-        tid = (_l(c['resultado_json'], {}) or {}).get('thumb') if c else None
-    else:            # pacote da esteira: as capas do Agente 6 para ESTE vídeo
-        r = db.um('SELECT id FROM thumbnail_jobs WHERE origem=? AND referencia=? AND video_sha=? ORDER BY criado DESC LIMIT 1',
-                  'corte' if pub.get('origem') == 'corte' else 'render', pub['referencia'], pub['video_sha256'])
-        tid = r['id'] if r else (pub.get('relatorio') or {}).get('thumb_job')
-    if not tid:
+    import thumbnails as th
+    origem = 'corte' if pub.get('origem') == 'corte' else 'render'
+    atual = th.pedido_da_versao(origem, pub['referencia'], pub['video_sha256'])
+    if not atual:
         return []
+    tid = atual['id']
     try:
-        import thumbnails as th
         j = th.obter(tid)
-    except Exception:  # noqa: BLE001
+    except th.ErroThumb:
+        return []
+    if j['estado'] in th.ENCERRADOS:
         return []
     return [{'job': tid, **{k: v.get(k) for k in ('id', 'numero', 'versao', 'nota', 'estado', 'layout', 'formato', 'url', 'miniatura', 'sha256')}}
             for v in j['variantes'] if v['estado'] in ('aprovada', 'reprovada')]
