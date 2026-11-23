@@ -1,3 +1,4 @@
+import { TarefasEmFila } from './Fila';
 import PacotePublicacao from '../components/PacotePublicacao';
 import Perfis from '../components/Perfis';
 import GameplayNarrativa from '../components/GameplayNarrativa';
@@ -549,6 +550,7 @@ export default function Agente(){
     </>}
 
     {parte==='fila'&&<>
+      <TarefasEmFila agente="agente1"/>
       <section className="panel">
         <h3>Cortes feitos pelo agente</h3>
         {v.cortes.length?<ul className="ag-cortes">{v.cortes.map(x=><CorteLinha key={x.id} c={x} fazer={a=>{ if(a==='descartar'&&!confirm('Descartar este corte? O arquivo é apagado do servidor.')) return; if(a==='liberar'&&!confirm('Liberar e agendar mesmo com estas restrições?\n\n'+(x.conferencia?.liberaveis||[]).join('\n')+'\n\nA decisão e a responsabilidade são suas. Fica registrado no corte e no post.')) return; run(()=>acaoCorte(settings,x.id,a),a==='email'?'E-mail enviado.':a==='agendar'?'Corte aprovado por você e agendado.':a==='liberar'?'Corte liberado por você (com as restrições registradas) e agendado.':'Corte descartado.'); }}/>)}</ul>:<div className="empty"><strong>Nenhum corte ainda</strong><p>Aprove um canal e toque em Cortar agora, ou cole o link de um vídeo na parte Cortes.</p></div>}
