@@ -871,7 +871,7 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         if j['status'] not in fila.FINAIS:
             j['restante'] = round(fila.restante(j)[0])
         return j
-    m = re.fullmatch(r'/api/v1/fila/(\w+)/(pausar|retomar|cancelar|tentar|reagendar)', caminho)
+    m = re.fullmatch(r'/api/v1/fila/(\w+)/(pausar|retomar|cancelar|ignorar|tentar|reagendar)', caminho)
     if m and metodo == 'POST':
         jid, acao = m.groups()
         if not fila.obter(jid):
@@ -880,7 +880,7 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         if acao == 'reagendar':
             t = _quando(corpo()) or time.time()
             return fila.reagendar(jid, t)
-        return {'pausar': fila.pausar, 'retomar': fila.retomar, 'cancelar': fila.cancelar, 'tentar': fila.tentar_de_novo}[acao](jid)
+        return {'pausar': fila.pausar, 'retomar': fila.retomar, 'cancelar': fila.cancelar, 'ignorar': fila.ignorar, 'tentar': fila.tentar_de_novo}[acao](jid)
     if rota == ('GET', '/api/v1/capacidade'):
         return fila.capacidade()
 

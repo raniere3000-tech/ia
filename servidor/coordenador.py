@@ -1327,7 +1327,9 @@ def _acompanhar(o: dict, t: dict):
                     return
                 evento(o['id'], t['id'], 'agente1', 'concluida', {'job': t['job_id'], 'cortes': len(cortes)})
             _set_tarefa(t['id'], estado='concluida', fim=_agora(), resultado=res)
-        elif j['status'] in ('falhou', 'cancelado'):
+        elif j['status'] == 'cancelado':
+            _set_tarefa(t['id'], estado='cancelada', erro=j['etapa'], fim=_agora())
+        elif j['status'] == 'falhou':
             _set_tarefa(t['id'], estado='falhou', erro=(j.get('erro') or j['status'])[:300], fim=_agora())
 
 
