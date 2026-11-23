@@ -274,7 +274,7 @@ confere(laudo['overflow'], 'texto que não cabe é detectado (overflow), não co
 # ---------------------------------------------------------------- vídeo do Agente 3 (16:9)
 print('7. Capas de um vídeo do Agente 3 (16:9)')
 st, j3, _ = api('POST', '/api/v1/thumbnails/jobs', {'origem': 'render', 'referencia': p['id'], 'metodo': 'editorial', 'variantes': 3,
-                                                     'texto_modo': 'exato', 'texto': 'Mar salgado?'})
+                                                     'texto_modo': 'exato', 'texto': 'Mar salgado?', 'chave_idempotencia': 'coord:teste:0'})
 confere(st == 200, f'pedido do Agente 3 aceito ({st})')
 j3 = esperar(j3['id'])
 v3 = [v for v in j3['variantes'] if v['estado'] in ('aprovada', 'reprovada')]
@@ -292,9 +292,28 @@ nsha = pl.sha_arquivo(rarq)
 db.executar('UPDATE renders SET sha256=? WHERE id=?', nsha, 'r1')
 pj.mudar_dados(p['id'], lambda d, _p: d.update(render={'id': 'r1', 'versao': 2, 'sha': nsha, 'validado': True}))
 st, j3b, _ = api('GET', f'/api/v1/thumbnails/jobs/{j3["id"]}')
-confere(j3b['estado'] == 'aguardando_escolha' and not j3b['selecao'], 'vídeo mudou: a escolha da capa caiu sozinha')
+confere(j3b['estado'] == 'substituido' and not j3b['selecao'], 'vídeo mudou: a escolha da capa caiu sozinha')
 st, r, _ = api('POST', f'/api/v1/thumbnails/jobs/{j3["id"]}/selecionar', {'variante_id': apr3['id']})
 confere(st == 409, f'não deixa escolher capa feita para a versão antiga ({st})')
+
+# O mesmo pedido do Coordenador passa a apontar para o novo render.
+pedido = {'origem': 'render', 'referencia': p['id'], 'metodo': 'editorial', 'variantes': 3,
+          'texto_modo': 'exato', 'texto': 'Mar salgado?', 'chave_idempotencia': 'coord:teste:0'}
+novo = th.criar(pedido, 'agente7')
+confere(novo['id'] != j3['id'] and novo['video_sha'] == nsha and th.criar(pedido, 'agente7')['id'] == novo['id'],
+        'mesma chave do Coordenador reutiliza o pedido só dentro da mesma versão do vídeo')
+confere(th.obter(j3['id'])['pedido_atual'] == novo['id'], 'pedido antigo aponta para o pedido da versão atual')
+novo = esperar(novo['id'])
+nova_capa = next(v for v in novo['variantes'] if v['estado'] == 'aprovada')
+rota_capa = f'/api/v1/thumbnails/jobs/{novo["id"]}'
+st, r, _ = api('POST', rota_capa + '/selecionar', {'variante_id': nova_capa['id']})
+confere(st == 200 and r['selecao']['video_sha'] == nsha, 'escolha da capa funciona para o vídeo refeito')
+st, r, _ = api('POST', rota_capa + '/recusar', {})
+confere(st == 200 and r['estado'] == 'recusado' and not th.capa_para_video(rarq), 'recusa tira a escolha do pacote')
+st, _, _ = api('POST', rota_capa + '/selecionar', {'variante_id': nova_capa['id']})
+confere(st == 409 and th.criar(pedido, 'agente7')['id'] == novo['id'], 'recusa não volta para a fila sozinha')
+st, r, _ = api('POST', rota_capa + '/nova-versao', {})
+confere(st == 200 and r['id'] != novo['id'] and r['video_sha'] == nsha, 'usuário pode gerar outro pedido após recusar')
 
 # ---------------------------------------------------------------- reprovada pede confirmação
 print('8. Capa reprovada e perfil de marca')
