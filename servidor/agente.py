@@ -3143,7 +3143,7 @@ def passo():
                           lambda: (buscar_canais(), rodada_estoque(dec['quantos'], dec.get('fontes', 1))), dec['quantos'], dec.get('fontes', 1))
         elif dec['acao'] == 'cortar':
             _mudar(lambda e: e['marcas'].update(tentativa=time.time()))
-            _rodar_rotina('estoque', 'Repor estoque de cortes',
+            _rodar_rotina('estoque', 'Agente de cortes',
                           lambda: rodada_estoque(dec['quantos'], dec.get('fontes', 1)), dec['quantos'], dec.get('fontes', 1))
         return
     if busca_vencida() and time.time() - m.get('busca_solicitada', 0) > co['busca_horas'] * 3600:
