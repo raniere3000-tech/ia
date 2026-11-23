@@ -287,10 +287,17 @@ def _estado(tid: str, estado: str, erro: str | None = None):
         db.executar("UPDATE thumbnail_jobs SET estado=?, erro=?, atualizado=? WHERE id=? AND (estado<>'cancelado' OR ?='cancelado')", estado, erro[:500], _agora(), tid, estado)
 
 
-def _limpar_texto(t: str, n: int = 60) -> str:
+def _limpar_texto(t: str, n: int | None = 60) -> str:
     t = unicodedata.normalize('NFC', str(t or ''))
     t = ''.join(ch for ch in t if unicodedata.category(ch)[0] != 'C' or ch == '\n')
     return re.sub(r'[ \t]+', ' ', t).strip()[:n]
+
+
+def _texto_completo(t: str) -> str:
+    texto = _limpar_texto(t, None)
+    if len(texto) > 500:
+        raise ErroThumb(400, 'O texto da capa pode ter até 500 caracteres. Ajuste a frase antes de enviar.')
+    return texto
 
 
 def criar(d: dict, quem: str = 'site') -> dict:
@@ -316,7 +323,7 @@ def criar(d: dict, quem: str = 'site') -> dict:
     texto_modo = d.get('texto_modo') or 'auto'
     if texto_modo not in TEXTO_MODOS:
         raise ErroThumb(400, 'Modo do texto inválido (auto, exato ou sem).')
-    texto = _limpar_texto(d.get('texto'), 60)
+    texto = _texto_completo(d.get('texto'))
     if texto_modo == 'exato' and not texto:
         raise ErroThumb(400, 'Escreva o texto exato da capa.')
     descricao = _limpar_texto(d.get('descricao'), 500)
@@ -382,7 +389,7 @@ def refazer(tid: str, d: dict, quem: str = 'site') -> dict:
         raise ErroThumb(409, 'Espere terminar o que está rodando.')
     if j['correcoes'] >= cfg['max_correcoes'] + 3:
         raise ErroThumb(429, 'Limite de refações deste pedido atingido. Crie um pedido novo.')
-    texto = _limpar_texto(d.get('texto'), 60) if 'texto' in d else None
+    texto = _texto_completo(d.get('texto')) if 'texto' in d else None
     j2 = fila.enfileirar('agente6.thumbnail', agente='agente6', dados={'job': tid, 'refazer': numero, 'texto': texto},
                          titulo=f'Capa {numero}: refazer', prioridade=6, max_tentativas=2)
     db.executar('UPDATE thumbnail_jobs SET fila_job=?, estado=?, atualizado=?, erro=NULL WHERE id=?', j2['id'], 'na_fila', _agora(), tid)
@@ -480,20 +487,17 @@ _EMOJI = re.compile('[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0000FE0F\U0000
 
 
 def texto_da_capa(conf: dict, info: dict) -> tuple[str, list]:
-    """Devolve o texto e os avisos. Auto: até 4 palavras (texto entre aspas na descrição tem prioridade)."""
+    """Preserva a frase inteira. Texto entre aspas na descrição tem prioridade no modo automático."""
     avisos = []
     if conf['texto_modo'] == 'sem':
         return '', avisos
     if conf['texto_modo'] == 'exato':
         t = conf['texto']
     else:
-        m = re.search(r'["“\'‘]([^"”\'’]{1,40})["”\'’]', conf.get('descricao') or '')
+        m = re.search(r'["“\'‘]([^"”\'’]{1,500})["”\'’]', conf.get('descricao') or '')
         base = m.group(1) if m else (conf.get('texto') or info.get('gancho') or info.get('titulo') or '')
         base = re.sub(r'#\w+', '', base)
-        palavras = re.findall(r"[\wÀ-ÿ!?¿¡%$-]+", base)
-        t = ' '.join(palavras[:4])
-        if len(palavras) > 4:
-            avisos.append('Texto automático resumido em 4 palavras.')
+        t = _limpar_texto(base, None)
     return sem_emoji(t, avisos), avisos
 
 
@@ -524,7 +528,7 @@ def _quebrar(draw: ImageDraw.ImageDraw, texto: str, fonte, largura: int) -> list
     return linhas
 
 
-def _caber(texto: str, caixa_w: int, caixa_h: int, px_max: int, px_min: int, max_linhas: int = 3):
+def _caber(texto: str, caixa_w: int, caixa_h: int, px_max: int, px_min: int, max_linhas: int = 6):
     """Maior fonte em que o texto cabe na caixa (largura E altura). overflow=True se nem no mínimo couber."""
     rasc = ImageDraw.Draw(Image.new('L', (8, 8)))
     px = px_max
@@ -753,7 +757,7 @@ def conferir(arq: Path, laudo: dict, formato: str, metodo: str, quadro: dict | N
     # área segura
     seg = 15
     if laudo.get('overflow'):
-        bloq.append('O texto não cabe: diminua o texto.')
+        bloq.append('O gancho completo não cabe neste layout. Ajuste as quebras de linha ou escolha outra composição.')
         seg = 0
     cx = laudo.get('caixa_texto')
     if cx:
@@ -965,10 +969,7 @@ def _uma_variante(tid, j, conf, info, formato, destino_formato, numero, versao, 
 
 
 def _correcao(layout: str, texto: str) -> tuple[str, str]:
-    """Correção localizada da capa reprovada: caixa escura atrás do texto e texto mais curto. O vídeo não é refeito."""
-    palavras = texto.split()
-    if len(palavras) > 2:
-        texto = ' '.join(palavras[:max(2, len(palavras) - 1)])
+    """Melhora o contraste e reorganiza o texto sem remover palavras do gancho."""
     return 'caixa', texto
 
 
@@ -1053,7 +1054,7 @@ def job_thumbnail(ctx) -> dict:
                 continue
             v, rel = _uma_variante(tid, j, conf, info, formato, destino_formato, numero, versao, layout, quadro, t_corr, perfil_cfg, perfil_usado, logo, pasta,
                                    metodo, fundo_arq)
-            if layout == 'caixa' and not rel['aprovado'] and len(t_corr.split()) <= 2:
+            if layout == 'caixa' and not rel['aprovado']:
                 break
         feitas.append({'numero': numero, 'versao': v['versao'], 'nota': v['nota'], 'aprovada': v['estado'] == 'aprovada'})
     if avisos or conf.get('aviso'):
