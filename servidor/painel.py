@@ -150,6 +150,15 @@ def resumo(periodo: str = '7d') -> dict:
 
     # ---- por agente (estado atual vem do Coordenador; contagens do período vêm da fila)
     atual = _seguro(lambda: {a['id']: a for a in __import__('coordenador').agentes()['agentes']}, {})
+    # O relógio do Agente 1 também trabalha fora da fila. Conta a execução uma
+    # única vez, sem somar os seis cortes previstos nem duplicar um job existente.
+    if em_producao is not None:
+        for j in (atual.get('agente1') or {}).get('atual', []):
+            if j.get('execucao_direta'):
+                registrado = _seguro(lambda: _n("SELECT COUNT(*) AS n FROM jobs WHERE id=? AND status IN ('rodando','na_fila','aguardando_tentativa')", j['job']))
+                em_producao = None if registrado is None else em_producao + (0 if registrado else 1)
+                if em_producao is None:
+                    break
     agentes = []
     for ag_id, nomes in AGENTES_JOBS.items():
         ph = ','.join('?' * len(nomes))
@@ -203,7 +212,7 @@ def resumo(periodo: str = '7d') -> dict:
             'aprovados_disponiveis': 'Vídeos com certificado final válido do diretor que ainda não foram para a fila de postagem (só com a esteira ligada).',
             'agendados': 'Envios marcados para uma rede e ainda não feitos (cada rede conta 1). Agora, não no período.',
             'publicados': 'Envios feitos com sucesso no período (cada rede conta 1).',
-            'em_producao': 'Trabalhos rodando ou na fila agora (tarefas, não vídeos).',
+            'em_producao': 'Trabalhos rodando ou na fila agora, incluindo a rotina automática do Agente 1 (tarefas, não vídeos).',
             'esperando_decisao': 'Itens parados esperando você (os mesmos da faixa vermelha do topo): vídeos e roteiros, planos e pacotes do Coordenador, revisões da esteira, capas para escolher e posts barrados.',
             'falhas': 'Trabalhos da fila que falharam no período (tarefas).',
         },

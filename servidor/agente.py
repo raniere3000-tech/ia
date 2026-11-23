@@ -247,14 +247,40 @@ def anotar(texto: str, tipo: str = 'info'):
 
 
 JOB_ATUAL = ''          # id do trabalho da fila do Agente 1 rodando agora: vai em cada corte (job_a1) para o Coordenador saber o que saiu dele
+CONTROLE_TRABALHO = threading.local()
 AO_ETAPA = None          # trabalho da fila rodando o Agente 1: recebe (pct, texto) para a barra de progresso do site
 
 
+def atividade_atual() -> dict | None:
+    """Execução viva, inclusive a rotina automática que não passa pela fila.
+
+    Só a trava de execução prova atividade; pedidos pendentes e uma etapa antiga
+    não significam que o agente esteja trabalhando.
+    """
+    if not OCUPADO.locked():
+        return None
+    a = dict(ATUAL)
+    return {'job': JOB_ATUAL or 'agente1:direto', 'titulo': 'Radar e Cortes',
+            'progresso': a['pct'], 'etapa': a['etapa'] or 'Iniciando trabalho',
+            'restante_s': None, 'desde': a['desde'] if a['etapa'] else None,
+            'execucao_direta': True}
+
+
+def verificar_cancelamento():
+    cancelado = getattr(CONTROLE_TRABALHO, 'cancelado', None)
+    if cancelado and cancelado():
+        from fila import Cancelado
+        raise Cancelado()
+
+
 def etapa(texto: str, pct: float = 0):
+    if texto:
+        verificar_cancelamento()
     ATUAL.update(etapa=texto, pct=round(pct), desde=ATUAL['desde'] if texto and ATUAL['etapa'] else time.time())
-    if AO_ETAPA and texto:
+    avisar_etapa = getattr(CONTROLE_TRABALHO, 'etapa', None) or AO_ETAPA
+    if avisar_etapa and texto:
         try:
-            AO_ETAPA(pct, texto)
+            avisar_etapa(pct, texto)
         except Exception as e:  # noqa: BLE001
             if e.__class__.__name__ == 'Cancelado':
                 raise                     # você cancelou o trabalho na fila
@@ -316,16 +342,21 @@ def _pedir_gemini(caminho: str, corpo: dict, chave: str, tempo: int) -> tuple[in
     espera e tenta de novo sozinho algumas vezes antes de desistir."""
     ultimo: Exception | None = None
     for i in range(len(ESPERAS_GEMINI) + 1):
+        verificar_cancelamento()
         try:
             st, _, j = pg.http('POST', f'{URL_GEMINI}/v1beta/models/{caminho}', js=corpo, cab={'x-goog-api-key': chave}, tempo=tempo)
             ultimo = None
         except pg.ErroTemporario as e:
             st, j, ultimo = 0, {}, e
+        verificar_cancelamento()
         ocupado = ultimo is not None or st in (500, 502, 503, 504) or (st >= 400 and st != 429 and _OCUPADO.search(pg._msg(j) or ''))
         if not ocupado:
             return st, j
         if i < len(ESPERAS_GEMINI):
-            time.sleep(ESPERAS_GEMINI[i] + random.random() * 2)
+            fim = time.monotonic() + ESPERAS_GEMINI[i] + random.random() * 2
+            while time.monotonic() < fim:
+                verificar_cancelamento()
+                time.sleep(min(0.3, max(0, fim - time.monotonic())))
     if ultimo is not None:
         raise ErroAgente('Não consegui falar com o Google (a conexão caiu várias vezes). Confira a internet do celular; o agente tenta de novo na próxima rodada.')
     return st, j
@@ -1208,15 +1239,24 @@ def editar(video: Path, corte: dict, palavras: list, tpl: dict, destino: Path, p
     cmd += ['-filter_complex', fc, '-map', '[v]', '-map', '0:a?', '-t', f'{dur:.2f}', '-c:v', 'libx264', '-preset', tpl.get('x264_preset') or os.getenv('PRESET_X264', 'veryfast'),
             '-crf', str(tpl.get('crf', 23)), '-pix_fmt', 'yuv420p', *af, '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-movflags', '+faststart', str(destino)]
     t0 = time.time()
-    r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
-    if r.returncode == 0 and tpl.get('modo'):
-        mr.registrar_tempo(tpl['modo'], time.time() - t0, dur)
-    ass.unlink(missing_ok=True)
-    if logo:
-        logo.unlink(missing_ok=True)
-    if r.returncode != 0 or not destino.exists() or destino.stat().st_size < 2000:
+    import renderizador as rd
+    try:
+        rd.rodar(cmd, cancelado=getattr(CONTROLE_TRABALHO, 'cancelado', None), dur=dur)
+        if not destino.exists() or destino.stat().st_size < 2000:
+            raise rd.ErroRender('arquivo de saída vazio')
+        if tpl.get('modo'):
+            mr.registrar_tempo(tpl['modo'], time.time() - t0, dur)
+    except InterruptedError:
+        from fila import Cancelado
         destino.unlink(missing_ok=True)
-        raise ErroAgente('O FFmpeg não conseguiu montar o corte: ' + (r.stderr.strip()[-300:] or 'erro desconhecido'))
+        raise Cancelado() from None
+    except rd.ErroRender as e:
+        destino.unlink(missing_ok=True)
+        raise ErroAgente(f'O FFmpeg não conseguiu montar o corte: {e}') from e
+    finally:
+        ass.unlink(missing_ok=True)
+        if logo:
+            logo.unlink(missing_ok=True)
 
 
 def duracao(video: Path) -> float:
@@ -1422,6 +1462,7 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
     pre: trechos do banco de trechos (custo_corte.tomar): a transcrição e a escolha já foram pagas numa análise anterior,
     então não chama a IA para ouvir nem para escolher. A edição, o editor e o diretor de qualidade seguem iguais."""
     import custo_corte as cc
+    from fila import Cancelado
     if BAIXAR is None and baixado is None:
         raise ErroAgente('Servidor sem a função de download.')
     cfg = config()
@@ -1432,6 +1473,8 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
     ref = (pre or {}).get('ref') or cc.nova_ref()       # as chamadas à IA desta análise ficam ligadas a ela (custo por corte)
     cc.definir_ref(ref)
     sobras: list = []
+    cid = None
+    vid = None
     try:
         etapa(f'Baixando: {v["titulo"][:60]}', 2)
         if baixado:
@@ -1558,10 +1601,14 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
                     c['hashtags'] = list(dict.fromkeys([*(c.get('hashtags') or []), *perfil['hashtags_base']]))[:12]
             if extra:
                 c.update(extra)
-            if JOB_ATUAL:
-                c.setdefault('job_a1', JOB_ATUAL)
+            job_atual = getattr(CONTROLE_TRABALHO, 'job', '') or JOB_ATUAL
+            if job_atual:
+                c.setdefault('job_a1', job_atual)
+            verificar_cancelamento()
             _mudar(lambda e, c=c: e['cortes'].append(c))
             criados.append(c)
+            cid = None       # o corte já salvo permanece disponível ao cancelar os próximos
+            vid = None
             t_corte = time.time()
         if not pre:
             guardados = 0
@@ -1575,9 +1622,26 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
                     anotar(f'Banco de trechos: guardei mais {guardados} trecho(s) bons de "{v["titulo"][:60]}" para virar corte depois, sem gastar IA.')
             cc.registrar_analise(ref, v, fonte, dur, len(escolhidos) + len(sobras), len(escolhidos), guardados)
         return criados
+    except Cancelado:
+        if cid:
+            encerrar_corte_interrompido(cid)
+        if vid:
+            (pg.VIDEOS / (vid + '.mp4')).unlink(missing_ok=True)
+        raise
     finally:
         cc.definir_ref('')
         shutil.rmtree(pasta, ignore_errors=True)
+
+
+def encerrar_corte_interrompido(cid: str):
+    """Encerra as etapas do corte parcial para os agentes não ficarem ativos no painel."""
+    import banco as db
+    import esteira as es
+    import pipeline as pl
+    for v in db.todos("SELECT id FROM esteira_videos WHERE origem='corte' AND ref=?", cid):
+        es.cancelar(v['id'], 'Produção interrompida por você.')
+    for r in db.todos("SELECT id FROM pipeline_runs WHERE origem='corte' AND ref=? AND estado<>'cancelled'", cid):
+        pl.mover(r['id'], 'cancelled', etapa='Produção interrompida por você.')
 
 
 # ---------------------------------------------------------------- esteira dos 5 agentes (Agente 1 -> 5 -> 4 -> 2)
@@ -1599,7 +1663,7 @@ def _previo_corte(c: dict, palavras: list, co: dict, dur: float, v: dict, cid: s
     evid = es.garantir('corte', cid, c.get('titulo') or '')
     es.marcar_seguro(evid, 'producao', 'concluida', inicio=t0, fim=time.time(), executor='agente.processar_video',
                      recibo={'corte': cid, 'origem': v.get('id', ''), 'ini': round(float(c['ini']), 2), 'fim': round(float(c['fim']), 2),
-                             'nota_agente1': c.get('nota'), 'fala': fonte, 'job': JOB_ATUAL or None})
+                             'nota_agente1': c.get('nota'), 'fala': fonte, 'job': getattr(CONTROLE_TRABALHO, 'job', '') or JOB_ATUAL or None})
     run = pl.criar('corte', cid, (c.get('titulo') or 'corte')[:120], chave=f'corte:{v.get("id", "")}:{float(c["ini"]):.2f}:{cid}',
                    estado='cuts_selected', dados={'origem': v.get('id', '')})
     __import__('banco').executar('UPDATE esteira_videos SET run=? WHERE id=?', run['id'], evid)
@@ -2731,6 +2795,7 @@ def _em_fundo(nome: str, f, *a):
         if not OCUPADO.acquire(blocking=False):
             return
         try:
+            etapa(nome)
             f(*a)
         except (ErroAgente, pg.ErroRede) as e:
             anotar(f'{nome}: {e}', 'erro')
@@ -2745,6 +2810,7 @@ def _em_fundo(nome: str, f, *a):
 
 PENDENTES = None         # ligado pelo servidor: quantos pedidos do agente de cortes esperam na fila
 ENFILEIRAR = None        # ligado pelo servidor: pedidos manuais entram na fila em vez de serem recusados
+ENFILEIRAR_ROTINA = None  # ligado pelo servidor: busca e cortes automáticos também aparecem na fila
 
 
 def rodar_agora(oque: str, link: str = '') -> dict:
@@ -3072,6 +3138,13 @@ def parar_tudo() -> dict:
     return ver()
 
 
+def _rodar_rotina(oque, nome, trabalho, quantos=0, fontes=1):
+    if ENFILEIRAR_ROTINA:
+        ENFILEIRAR_ROTINA(oque, nome, quantos, fontes)
+    else:
+        _em_fundo(nome, trabalho)
+
+
 def passo():
     """Chamado pelo relógio: decide o que fazer agora, sem nunca rodar dois trabalhos pesados juntos."""
     cfg = config()
@@ -3099,7 +3172,7 @@ def passo():
         _mudar(lambda e: e['marcas'].update(relatorio=semana))
         if not primeira:
             relatorio_semana()
-    if not co['ligado'] or OCUPADO.locked():
+    if not co['ligado'] or OCUPADO.locked() or (PENDENTES and PENDENTES()):
         return
     if _live_esperando():
         return                 # a Live vem primeiro: o celular fica livre para os blocos dela
@@ -3119,16 +3192,19 @@ def passo():
     if dec is not None:
         if dec['acao'] == 'buscar_canais':          # procura canais e já emenda a rodada de cortes (não espera a próxima volta)
             _mudar(lambda e: e['marcas'].update(tentativa=time.time()))
-            _em_fundo('Busca de canais e cortes', lambda q=dec['quantos'], f=dec.get('fontes', 1): (buscar_canais(), rodada_estoque(q, f)))
+            _rodar_rotina('buscar_estoque', 'Busca de canais e cortes',
+                          lambda: (buscar_canais(), rodada_estoque(dec['quantos'], dec.get('fontes', 1))), dec['quantos'], dec.get('fontes', 1))
         elif dec['acao'] == 'cortar':
             _mudar(lambda e: e['marcas'].update(tentativa=time.time()))
-            _em_fundo('Agente de cortes', lambda q=dec['quantos'], f=dec.get('fontes', 1): rodada_estoque(q, f))
+            _rodar_rotina('estoque', 'Agente de cortes',
+                          lambda: rodada_estoque(dec['quantos'], dec.get('fontes', 1)), dec['quantos'], dec.get('fontes', 1))
         return
-    if busca_vencida():
-        _em_fundo('Busca de canais', buscar_canais)
+    if busca_vencida() and time.time() - m.get('busca_solicitada', 0) > co['busca_horas'] * 3600:
+        _mudar(lambda e: e['marcas'].update(busca_solicitada=time.time()))
+        _rodar_rotina('buscar', 'Busca automática de canais', buscar_canais)
     elif cortes_da_semana() < co['por_semana'] and time.time() - m.get('tentativa', 0) > float(os.getenv('INTERVALO_CORTES', '3600')):
         _mudar(lambda e: e['marcas'].update(tentativa=time.time()))
-        _em_fundo('Agente de cortes', trabalhar_cortes)
+        _rodar_rotina('meta', 'Cortes da meta semanal', trabalhar_cortes)
 
 
 def iniciar():

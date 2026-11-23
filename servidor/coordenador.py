@@ -1327,7 +1327,9 @@ def _acompanhar(o: dict, t: dict):
                     return
                 evento(o['id'], t['id'], 'agente1', 'concluida', {'job': t['job_id'], 'cortes': len(cortes)})
             _set_tarefa(t['id'], estado='concluida', fim=_agora(), resultado=res)
-        elif j['status'] in ('falhou', 'cancelado'):
+        elif j['status'] == 'cancelado':
+            _set_tarefa(t['id'], estado='cancelada', erro=j['etapa'], fim=_agora())
+        elif j['status'] == 'falhou':
             _set_tarefa(t['id'], estado='falhou', erro=(j.get('erro') or j['status'])[:300], fim=_agora())
 
 
@@ -2049,7 +2051,12 @@ def agentes() -> dict:
             s, medido = fila.restante(j)
             atual.append({'job': j['id'], 'titulo': j['titulo'], 'progresso': round(j.get('progresso') or 0), 'etapa': j.get('etapa') or '',
                           'restante_s': round(s) if medido else None, 'desde': j['iniciado']})
-        item = {'id': ag_id, 'nome': NOMES_AGENTE[ag_id], 'estado': 'trabalhando' if rod else ('na_fila' if fila_n else 'parado'), 'atual': atual,
+        if ag_id == 'agente1' and not rod:
+            import agente as ag
+            atividade = ag.atividade_atual()
+            if atividade:
+                atual.append(atividade)
+        item = {'id': ag_id, 'nome': NOMES_AGENTE[ag_id], 'estado': 'trabalhando' if atual else ('na_fila' if fila_n else 'parado'), 'atual': atual,
                 'na_fila': fila_n, 'feitos_24h': feitos, 'falhas_24h': falhas, 'tempos_medios': medias,
                 'custo_30d': {'valor': round(custo.get('s') or 0, 4), 'moeda': custo.get('moeda') or '', 'registros': custo.get('n') or 0}}
         item.update(_esteira_do_agente(ag_id, agora))

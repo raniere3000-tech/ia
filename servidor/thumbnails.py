@@ -282,9 +282,9 @@ def _job(tid: str) -> dict:
 
 def _estado(tid: str, estado: str, erro: str | None = None):
     if erro is None:
-        db.executar('UPDATE thumbnail_jobs SET estado=?, atualizado=? WHERE id=?', estado, _agora(), tid)
+        db.executar("UPDATE thumbnail_jobs SET estado=?, atualizado=? WHERE id=? AND (estado<>'cancelado' OR ?='cancelado')", estado, _agora(), tid, estado)
     else:
-        db.executar('UPDATE thumbnail_jobs SET estado=?, erro=?, atualizado=? WHERE id=?', estado, erro[:500], _agora(), tid)
+        db.executar("UPDATE thumbnail_jobs SET estado=?, erro=?, atualizado=? WHERE id=? AND (estado<>'cancelado' OR ?='cancelado')", estado, erro[:500], _agora(), tid, estado)
 
 
 def _limpar_texto(t: str, n: int = 60) -> str:

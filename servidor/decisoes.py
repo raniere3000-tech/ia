@@ -3,7 +3,7 @@
 Pedido do Raniere (22/11): "um alerta bem chamativo para as tarefas que dependem da minha decisão".
 
 Regras:
-- SÓ LEITURA: este módulo não aprova, não posta, não muda nada; só junta o que outras partes já guardam;
+- listar é só leitura; remover tira apenas o aviso, sem aprovar ou publicar;
 - cada item diz o que é, de quem veio, desde quando espera e para onde o botão leva (aba/extra/área do site);
 - "urgente" = algo está PARADO esperando você (vídeo, roteiro, plano, liberação, post barrado);
   "quando puder" = decisão que não trava nada agora (canais sugeridos, rascunho de pedido, Kwai para postar à mão);
@@ -11,6 +11,7 @@ Regras:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 
@@ -35,8 +36,10 @@ def _j(txt, padrao):
 
 
 def _item(chave: str, tipo: str, titulo: str, detalhe: str, desde, ir: dict, botao: str, urgente: bool = True, quem: str = '') -> dict:
-    return {'chave': chave, 'tipo': tipo, 'titulo': titulo, 'detalhe': (detalhe or '').strip()[:220], 'desde': float(desde or 0) or None,
+    item = {'chave': chave, 'tipo': tipo, 'titulo': titulo, 'detalhe': (detalhe or '').strip()[:220], 'desde': float(desde or 0) or None,
             'ir': ir, 'botao': botao, 'urgente': urgente, 'quem': quem}
+    item['versao'] = hashlib.sha256(json.dumps(item, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return item
 
 
 # ---------------------------------------------------------------- cada fonte
@@ -176,7 +179,7 @@ def _canais() -> list:
 
 
 # ---------------------------------------------------------------- lista final
-def listar() -> dict:
+def listar(incluir_removidos: bool = False) -> dict:
     cobertos: set = set()
     itens: list = []
     falhou: list = []
@@ -190,6 +193,9 @@ def listar() -> dict:
             falhou.append(nome)
         else:
             itens.extend(r)
+    if not incluir_removidos:
+        removidos = {r['chave']: r['valor'] for r in db.todos("SELECT chave, valor FROM kv WHERE chave LIKE 'decisao_removida:%'")}
+        itens = [x for x in itens if removidos.get('decisao_removida:' + x['chave']) != x['versao']]
     # urgentes primeiro; dentro de cada grupo, o que espera há mais tempo primeiro (sem data vai para o fim)
     itens.sort(key=lambda x: (not x['urgente'], x['desde'] or float('inf')))
     urg = sum(1 for x in itens if x['urgente'])
@@ -198,3 +204,17 @@ def listar() -> dict:
 
 def contar_urgentes() -> int | None:
     return _seguro(lambda: listar()['urgentes'])
+
+
+def remover(chave: str, versao: str, quem: str) -> dict:
+    """Remove este aviso em todos os aparelhos. Uma nova decisão volta a aparecer."""
+    from rotas_esteira import ErroRota
+    item = next((x for x in listar(incluir_removidos=True)['itens'] if x['chave'] == chave), None)
+    if item is None:
+        raise ErroRota(404, 'Este item já não está aguardando decisão. Atualize a lista.')
+    if not versao or item['versao'] != versao:
+        raise ErroRota(409, 'O item mudou. Atualize a lista antes de removê-lo.')
+    db.executar('INSERT INTO kv (chave, valor) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor',
+                'decisao_removida:' + chave, versao)
+    db.evento(quem, 'decisao_removida', chave, {'versao': versao})
+    return listar()
