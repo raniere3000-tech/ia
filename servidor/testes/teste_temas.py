@@ -35,6 +35,7 @@ VIDEOS = {
     'ccccccccccc': dict(id='ccccccccccc', titulo='Tudo sobre ELDEN RING em 15 minutos', canal='UCoutro', canal_nome='Canal Outro', views=500000, dur=900, publicado=agora, idioma='pt'),
 }
 buscas = []
+legendas = {'aaaaaaaaaaa': 'true', 'bbbbbbbbbbb': 'false'}
 
 
 def yt(caminho, **q):
@@ -43,15 +44,34 @@ def yt(caminho, **q):
     if caminho == 'search':
         buscas.append(q['q'])
         return {'items': [{'id': {'videoId': 'ccccccccccc'}}]}
+    if caminho == 'videos':
+        items = []
+        for vid in q['id'].split(','):
+            v = VIDEOS[vid]
+            detalhes = {'duration': 'PT15M'}
+            if vid in legendas:
+                detalhes['caption'] = legendas[vid]
+            items.append({'id': vid, 'snippet': {'title': v['titulo'], 'channelId': v['canal'],
+                                                    'channelTitle': v['canal_nome'], 'publishedAt': v['publicado'],
+                                                    'defaultAudioLanguage': v['idioma']},
+                          'statistics': {'viewCount': str(v['views'])}, 'contentDetails': detalhes})
+        return {'items': items}
     raise AssertionError(caminho)
 
 
 ag.yt = yt
-ag._detalhes = lambda ids: {i: VIDEOS[i] for i in ids if i in VIDEOS}
 ag._mudar(lambda e: e['canais'].append({'id': 'UCaprovado', 'nome': 'Canal A', 'status': 'aprovado', 'motivo': 'meu', 'nicho': 'Games', 'media': 1, 'videos': 1, 'inscritos': 1}))
 
 v = ag.proximo_video()
-confere(v and v['id'] == 'bbbbbbbbbbb', 'sem tema: o mais visto dos canais aprovados')
+confere(v and v['id'] == 'aaaaaaaaaaa', 'prioridade padrão: legenda ganha de mais visualizações')
+ag.salvar_config({'cortes': {'priorizar_legendas': False}})
+v = ag.proximo_video()
+confere(v and v['id'] == 'bbbbbbbbbbb', 'sem prioridade: o mais visto dos canais aprovados')
+ag.salvar_config({'cortes': {'priorizar_legendas': True}})
+legendas.clear()
+ag._marcar_visto('bbbbbbbbbbb', 'erro: Vídeo sem legenda no YouTube: pulei para não gastar IA ouvindo o áudio')
+v = ag.proximo_video()
+confere(v and v['id'] == 'bbbbbbbbbbb', 'sem legendas disponíveis: recupera o vídeo pulado só pela regra antiga')
 
 ag.salvar_config({'cortes': {'temas': ['elden ring']}})
 v = ag.proximo_video()
