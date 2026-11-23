@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import cofre
+from email.utils import parsedate_to_datetime
 
 DADOS = Path(os.getenv('DADOS', str(Path.home() / '.estudioclip')))
 VIDEOS = DADOS / 'videos'
@@ -56,6 +57,9 @@ class ErroRede(Exception):
 
 class ErroTemporario(ErroRede):
     """Falha que costuma passar sozinha (internet caiu, rede fora do ar, limite por minuto): o agendador tenta de novo."""
+    def __init__(self, mensagem, retry_after=0):
+        super().__init__(mensagem)
+        self.retry_after = retry_after
 
 
 # Esperas, em minutos, antes de cada nova tentativa automática de um post que falhou por motivo passageiro.
@@ -121,7 +125,18 @@ def http(metodo: str, url: str, *, dados: bytes | None = None, form: dict | None
             return r.status, dict(r.headers), _json(corpo)
     except urllib.error.HTTPError as e:
         corpo = e.read()
-        return e.code, dict(e.headers or {}), _json(corpo)
+        j = _json(corpo)
+        if e.code == 429 and isinstance(j, dict):
+            valor = (e.headers or {}).get('Retry-After', '')
+            try:
+                espera = float(valor)
+            except ValueError:
+                try:
+                    espera = parsedate_to_datetime(valor).timestamp() - agora()
+                except (TypeError, ValueError, OverflowError):
+                    espera = 0
+            j['_retry_after_s'] = max(0, espera)
+        return e.code, dict(e.headers or {}), j
     except urllib.error.URLError as e:
         raise ErroTemporario(f'Sem conexão com {urllib.parse.urlparse(url).netloc}: {e.reason}')
     except OSError as e:   # queda no meio do envio, tempo esgotado
@@ -148,7 +163,8 @@ def _msg(j) -> str:
 
 def _ok(st, j, oque):
     if st >= 500 or st == 429:
-        raise ErroTemporario(f'{oque} (erro {st}, a rede está instável ou pediu para esperar): {_msg(j)}')
+        raise ErroTemporario(f'{oque} (erro {st}, a rede está instável ou pediu para esperar): {_msg(j)}',
+                            float(j.get('_retry_after_s') or 0) if isinstance(j, dict) else 0)
     if st >= 300:
         raise ErroRede(f'{oque}: {_msg(j)}')
     return j
@@ -519,6 +535,10 @@ def lista_posts() -> list:
     ps = sorted(posts(), key=lambda p: p['quando'])
     for p in ps:
         p['preparando'] = not video_pronto(p['video'])
+        try:
+            p['arquivo_disponivel'] = video_path(p['video']).is_file()
+        except ErroRede:
+            p['arquivo_disponivel'] = False
     return ps
 
 
@@ -564,6 +584,7 @@ def postar_agora(pid: str, rede: str = ''):
         for nome, r in p['redes'].items():
             if (not rede or nome == rede) and r['status'] in ('erro', 'agendado'):
                 r.update(status='agendado', erro='', tentativas=0, proxima=0)
+                r['quando'] = agora()
                 if rede:
                     _anotar(p, nome, 'tentar_de_novo', 'Você pediu para tentar de novo só nesta rede.')
     p = _mudar(pid, f)
@@ -588,11 +609,13 @@ def postar_agora(pid: str, rede: str = ''):
                 print('postagem: liberar horário', e)
 
 
-def liberar(pid: str, quem: str = 'site') -> dict:
+def liberar(pid: str, quem: str = 'site', rede: str = '') -> dict:
     """Liberação especial: você decide postar mesmo sem a origem do vídeo registrada.
     Vale só para os bloqueios liberáveis e só para este arquivo; fica registrada no relatório do post."""
     def f(p):
-        redes = [r for r, x in p['redes'].items() if x['status'] in ('liberacao', 'erro')]
+        if rede and rede not in p['redes']:
+            raise ErroRede('Este post não tem essa rede.')
+        redes = [r for r, x in p['redes'].items() if (not rede or r == rede) and x['status'] in ('liberacao', 'erro')]
         itens = sorted({x['item'] for r in redes for x in conferencia(dict(p, liberacao=None), r) if x.get('liberavel')})
         if not itens:
             raise ErroRede('Este post não tem nada que precise de liberação especial.')
@@ -650,7 +673,7 @@ def editar_post(pid: str, d: dict) -> dict:
             p['quando'] = q
             for r in p['redes'].values():
                 if r['status'] in ('agendado', 'erro'):
-                    r.update(status='agendado', erro='', tentativas=0, proxima=q if r.get('outra_rede') else 0)
+                    r.update(status='agendado', erro='', tentativas=0, quando=q, proxima=0)
         if isinstance(d.get('redes'), list):
             novas = [r for r in d['redes'] if r in REDES]
             feitas = [r for r, s in p['redes'].items() if s['status'] == 'postado']
@@ -1203,16 +1226,43 @@ def _garantir_link(pid: str) -> str | None:
         return None
 
 
+def horario_rede(p: dict, r: dict) -> float:
+    return float(r.get('quando', p['quando']))
+
+
+def _proxima_rede(rede: str) -> float:
+    with LOCK:
+        return float(_ler(DADOS / 'ritmo_posts.json', {}).get(rede) or 0)
+
+
+def _adiar_rede(rede: str, segundos: float):
+    if segundos <= 0:
+        return
+    with LOCK:
+        ritmo = _ler(DADOS / 'ritmo_posts.json', {})
+        ritmo[rede] = max(float(ritmo.get(rede) or 0), agora() + segundos)
+        _gravar(DADOS / 'ritmo_posts.json', ritmo)
+
+
+def _destino_pronto(p: dict, rede: str) -> bool:
+    r = p['redes'].get(rede, {})
+    return (r.get('status') == 'agendado' and not r.get('lote_pausado')
+            and (r.get('outra_rede') and 'quando' not in r or horario_rede(p, r) <= agora())
+            and float(r.get('proxima') or 0) <= agora() and _proxima_rede(rede) <= agora())
+
+
 def _publicar_um(pid: str, rede: str):
     _garantir_link(pid)
     atual = next((x for x in posts() if x['id'] == pid), None)
-    if not atual or atual['redes'].get(rede, {}).get('status') != 'agendado':
+    if not atual or not _destino_pronto(atual, rede):
         return
     conf = conferencia(atual, rede)
     bloqueios = [x['detalhe'] for x in conf if x['bloqueia']]
     if bloqueios and all(x.get('liberavel') for x in conf if x['bloqueia']):
         msg = 'Precisa da sua liberação especial para postar: ' + ' '.join(bloqueios) + ' Toque em "Liberar e postar" se quiser postar mesmo assim.'
         def pedir(q):
+            if not _destino_pronto(q, rede):
+                return
             q['redes'][rede].update(status='liberacao', erro=msg[:500])
             _anotar(q, rede, 'pede_liberacao', msg)
         _mudar(pid, pedir)
@@ -1222,6 +1272,8 @@ def _publicar_um(pid: str, rede: str):
         # falta só etapa da esteira (diretor, capa ou liberação): o post espera e tenta de novo; só vira erro depois de 24 h
         msg = 'Esperando a esteira dos 7 agentes: ' + ' '.join(bloqueios)
         def esperar(q):
+            if not _destino_pronto(q, rede):
+                return
             r = q['redes'][rede]
             if not r.get('esperando_esteira'):
                 _anotar(q, rede, 'esperando_esteira', msg)
@@ -1231,6 +1283,8 @@ def _publicar_um(pid: str, rede: str):
     if bloqueios:
         msg = 'Conferência antes de postar: ' + ' '.join(bloqueios)
         def barrar(q):
+            if not _destino_pronto(q, rede):
+                return
             q['redes'][rede].update(status='erro', erro=msg[:500])
             _anotar(q, rede, 'bloqueado', msg)
         _mudar(pid, barrar)
@@ -1239,7 +1293,12 @@ def _publicar_um(pid: str, rede: str):
 
     nova = next((x.get('nova_versao') for x in conf if x.get('nova_versao')), '')
 
+    iniciou = False
     def iniciar(p):
+        nonlocal iniciou
+        if not _destino_pronto(p, rede):
+            return
+        iniciou = True
         p['redes'][rede].update(status='postando', erro='', inicio=agora())
         if nova and p.get('hash') != nova:       # passa a valer a versão nova aprovada (evita postar a mesma de novo depois)
             _anotar(p, rede, 'versao_nova', 'O vídeo foi refeito depois de agendado; a versão nova tem aprovação própria e é a que vai.')
@@ -1249,6 +1308,8 @@ def _publicar_um(pid: str, rede: str):
         _anotar(p, rede, 'enviando', 'Conferência ok: ' + ', '.join(x['item'] for x in conf if x['ok']) +
                 ''.join(f' Aviso: {x["detalhe"]}' for x in conf if not x['ok'] and not x['bloqueia']))
     p = _mudar(pid, iniciar)
+    if not iniciou:
+        return
     try:
         REF.pop(rede, None)
         link = PUBLICAR[rede](p, video_path(p['video']))
@@ -1259,8 +1320,10 @@ def _publicar_um(pid: str, rede: str):
         _mudar(pid, ok)
     except ErroTemporario as e:
         n = int(p['redes'][rede].get('tentativas', 0))
+        _adiar_rede(rede, max(0, getattr(e, 'retry_after', 0)))
         if n < len(ESPERAS):
-            prox = agora() + ESPERAS[n] * 60
+            espera = max(ESPERAS[n] * 60, getattr(e, 'retry_after', 0))
+            prox = agora() + espera
             hora = datetime.fromtimestamp(prox).strftime('%H:%M')
             def de_novo(q):
                 q['redes'][rede].update(status='agendado', tentativas=n + 1, proxima=prox,
@@ -1277,11 +1340,14 @@ def _publicar_um(pid: str, rede: str):
             _anotar(q, rede, 'erro', msg)
         _mudar(pid, falhou)
         _avisar_falha(pid, rede, msg)
+    finally:
+        _adiar_rede(rede, float(p['redes'][rede].get('intervalo_api_s') or 0))
 
 
 _EM_ENVIO: set = set()                  # (post, rede) sendo enviado agora
 _TRAVA_REDE: dict = {}                  # uma trava por rede: TikTok travado não segura o YouTube
 _TRAVA_ENVIO = threading.Lock()
+_REDES_ATIVAS: set = set()
 
 
 def _enviar_rede(pid: str, rede: str):
@@ -1307,28 +1373,39 @@ def _enviar_rede(pid: str, rede: str):
             _EM_ENVIO.discard((pid, rede))
 
 
+def _enviar_lista(rede: str, ids: list):
+    try:
+        for pid in ids:
+            _enviar_rede(pid, rede)
+    finally:
+        with _TRAVA_ENVIO:
+            _REDES_ATIVAS.discard(rede)
+            for pid in ids:
+                _EM_ENVIO.discard((pid, rede))
+
+
 def ciclo(esperar: bool = True):
     """Publica tudo que já passou do horário. Cada rede vai por conta própria: se uma falhar ou demorar
     (ex.: TikTok), as outras (ex.: YouTube) são postadas do mesmo jeito. esperar=False: não espera os envios acabarem."""
-    fios = []
+    fios, por_rede = [], {}
     for p in lista_posts():
         if not video_pronto(p['video']):
             continue
         for rede, r in p['redes'].items():
-            if p['quando'] > agora() and not r.get('outra_rede'):
-                continue
-            if r['status'] == 'agendado':
-                if agora() < r.get('proxima', 0):
-                    continue
-                with _TRAVA_ENVIO:
-                    if (p['id'], rede) in _EM_ENVIO:
-                        continue
-                    _EM_ENVIO.add((p['id'], rede))
-                t = threading.Thread(target=_enviar_rede, args=(p['id'], rede), daemon=True, name=f'post-{rede}')
-                t.start()
-                fios.append(t)
+            if _destino_pronto(p, rede):
+                por_rede.setdefault(rede, []).append((horario_rede(p, r), p['id']))
             elif r['status'] == 'postando' and agora() - r.get('inicio', 0) > 3600 and (p['id'], rede) not in _EM_ENVIO:
                 _mudar(p['id'], lambda q, rede=rede: q['redes'][rede].update(status='erro', erro='O envio foi interrompido (servidor desligou?). Toque em Tentar de novo nesta rede.'))
+    for rede, itens in por_rede.items():
+        with _TRAVA_ENVIO:
+            if rede in _REDES_ATIVAS:
+                continue
+            ids = [pid for _, pid in sorted(itens)]
+            _REDES_ATIVAS.add(rede)
+            _EM_ENVIO.update((pid, rede) for pid in ids)
+        t = threading.Thread(target=_enviar_lista, args=(rede, ids), daemon=True, name=f'post-{rede}')
+        t.start()
+        fios.append(t)
     if esperar:
         for t in fios:
             t.join()

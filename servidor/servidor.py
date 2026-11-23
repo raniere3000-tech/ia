@@ -607,6 +607,10 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == '/posts':
             self.token_ok()
             return self.json(200, {'posts': pg.lista_posts(), 'agora': time.time()})
+        if caminho == '/posts/lotes':
+            self.token_ok()
+            import publicacao_lotes as lotes
+            return self.json(200, lotes.listar())
         if caminho == '/agente':
             self.token_ok()
             return self.json(200, ag.ver())
@@ -846,6 +850,13 @@ def _rotas_agenda(self, caminho: str):
         return pg.finalizar_video(m.group(1))
     if caminho == '/posts':
         return pg.criar_post(d)
+    if caminho in ('/posts/lotes/previa', '/posts/lotes'):
+        import publicacao_lotes as lotes
+        return lotes.previa(d) if caminho.endswith('/previa') else lotes.criar(d)
+    m = re.fullmatch(r'/posts/lotes/([\w-]+)/(pausar|retomar|cancelar)', caminho)
+    if m:
+        import publicacao_lotes as lotes
+        return lotes.acao(*m.groups())
     m = re.fullmatch(r'/posts/(\w+)/(agora|cancelar|feito|editar|liberar|outras-redes)', caminho)
     if m:
         pid, acao = m.groups()
@@ -854,7 +865,7 @@ def _rotas_agenda(self, caminho: str):
         if acao == 'editar':
             return pg.editar_post(pid, d)
         if acao == 'liberar':
-            return pg.liberar(pid)
+            return pg.liberar(pid, rede=str(d.get('rede') or ''))
         if acao == 'agora':
             return pg.postar_agora(pid, str(d.get('rede') or ''))
         if acao == 'cancelar':

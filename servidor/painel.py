@@ -120,8 +120,8 @@ def resumo(periodo: str = '7d') -> dict:
                 st = r.get('status')
                 if st == 'agendado':
                     agendados += 1
-                    q = float(p.get('quando') or 0)
-                    if q and (proxima is None or q < proxima['quando']):
+                    q = float(r.get('quando', p.get('quando')) or 0)
+                    if q and not r.get('lote_pausado') and (proxima is None or q < proxima['quando']):
                         proxima = {'post': p.get('id'), 'titulo': (p.get('titulo') or '')[:100], 'quando': q, 'redes': [], 'status': 'agendado'}
                 elif st == 'postado' and float(r.get('feito') or 0) >= ini:
                     publicados += 1
@@ -129,7 +129,8 @@ def resumo(periodo: str = '7d') -> dict:
                     posts_erro += 1
         if proxima:
             pp = next(p for p in posts if p.get('id') == proxima['post'])
-            proxima['redes'] = [rd for rd, r in pp['redes'].items() if r.get('status') == 'agendado']
+            proxima['redes'] = [rd for rd, r in pp['redes'].items() if r.get('status') == 'agendado' and not r.get('lote_pausado')
+                                and float(r.get('quando', pp.get('quando')) or 0) == proxima['quando']]
 
     # ---- tarefas (unidade = trabalho da fila)
     em_producao = _seguro(lambda: _n("SELECT COUNT(*) AS n FROM jobs WHERE status IN ('rodando','na_fila','aguardando_tentativa')"))
