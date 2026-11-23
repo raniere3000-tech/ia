@@ -135,7 +135,7 @@ st, r, _ = api('POST', '/api/v1/sessao/login', {'senha': 'senha-de-teste-123', '
 SES['X-Sessao'] = r['sessao']
 confere(not pl.ligado(), 'esteira desligada no começo')
 v1 = video('corteum', 720, 1280)
-ag._mudar(lambda e: e['cortes'].append({'id': 'c1', 'video': 'corteum', 'titulo': 'Jogada absurda no GTA', 'gancho': 'Ninguém esperava essa jogada',
+ag._mudar(lambda e: e['cortes'].append({'id': 'c1', 'video': 'corteum', 'titulo': 'Jogada absurda no GTA', 'gancho': 'Ninguém esperava essa jogada no último segundo, quando tudo parecia perdido!',
                                          'hashtags': ['#gta'], 'status': 'pronto', 'criado': time.time()}))
 # vídeo do Agente 3 (render final validado), horizontal
 p = pj.criar({'titulo': 'Por que o mar é salgado', 'tipo': 'agente3', 'dados': {'roteiro': {'titulo': 'Por que o mar é salgado'}}})
@@ -214,7 +214,7 @@ st, _, _ = api('GET', vs[0]['url'].replace('sig=', 'sig=0'), cab={'X-Sessao': ''
 confere(st == 403, f'assinatura adulterada: recusado ({st})')
 
 # texto automático
-confere(vs[0]['relatorio']['texto'] == 'Ninguém esperava essa jogada', 'texto automático: gancho do corte, até 4 palavras, com acento')
+confere(vs[0]['relatorio']['texto'] == 'Ninguém esperava essa jogada no último segundo, quando tudo parecia perdido!', 'texto automático: gancho completo do corte, com pontuação e mais de 4 palavras')
 
 # ---------------------------------------------------------------- escolha presa ao hash
 print('4. Escolha e pacote')
