@@ -50,7 +50,7 @@ export const verAgente=(c:Cfg)=>chamar(c,'GET','/agente');
 export const salvarAgente=(c:Cfg,parte:Parcial<ConfigAgente>)=>chamar(c,'POST','/agente/config',parte);
 export const salvarChaves=(c:Cfg,chaves:{gemini?:string;gemini_pago?:string;youtube?:string;email_senha?:string;pexels?:string;pixabay?:string;callmebot?:string})=>chamar(c,'POST','/agente/chaves',chaves);
 export const acaoCanal=(c:Cfg,d:{acao:'aprovar'|'recusar'|'remover'|'adicionar'|'editar';id?:string;link?:string;motivo?:string;comercial?:boolean|null;restricoes?:string;origem_aut?:string})=>chamar(c,'POST','/agente/canais',d);
-export const rodarAgente=(c:Cfg,oque:'buscar'|'cortar'|'postar'|'link'|'tema',link?:string)=>chamar<{ok:boolean}>(c,'POST','/agente/rodar',{oque,link});
+export const rodarAgente=(c:Cfg,oque:'buscar'|'cortar'|'postar'|'link'|'tema',link?:string)=>chamar<{ok:boolean;job?:string}>(c,'POST','/agente/rodar',{oque,link});
 /** Você define os pesos de uma rede à mão, ou zera tudo para voltar às chances iguais. */
 export const salvarPesos=(c:Cfg,d:{rede?:string;pesos?:Record<string,number>;zerar?:boolean})=>chamar(c,'POST','/agente/pesos',d);
 export const aprenderAgora=(c:Cfg)=>chamar<VisaoAgente&{redes:string[]}>(c,'POST','/agente/aprender',{});

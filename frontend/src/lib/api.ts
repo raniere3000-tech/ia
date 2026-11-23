@@ -133,6 +133,7 @@ export async function baixarAsset(cfg:CfgSrv,id:string):Promise<Blob>{
 export type Job={id:string;tipo:string;agente:string;titulo:string;status:string;etapa:string;progresso:number;projeto:string;run_at:number;criado:number;iniciado:number|null;terminado:number|null;
   decorrido:number;tentativas:number;max_tentativas:number;erro:string|null;pausado:number;recurso:string;prioridade:number;
   posicao?:number|null;inicio_previsto?:number|null;fim_previsto?:number|null;restante?:number|null;estimativa_medida?:boolean;decorrido_total?:number;dados?:Record<string,unknown>};
+export const lerJob=(cfg:CfgSrv,id:string)=>api<Job & {resultado?:{mensagem?:string}}>(cfg,'GET',`/api/v1/fila/${id}`);
 export type Fila={jobs:Job[];contagem:Record<string,number>;agora:number;limites:Record<string,number>};
 export const lerFila=(cfg:CfgSrv,filtro='')=>api<Fila>(cfg,'GET','/api/v1/fila'+(filtro?'?filtro='+filtro:''));
 export const acaoFila=(cfg:CfgSrv,id:string,acao:'pausar'|'retomar'|'cancelar'|'tentar'|'reagendar',corpo:unknown={})=>api<Job>(cfg,'POST',`/api/v1/fila/${id}/${acao}`,corpo);
@@ -171,7 +172,7 @@ export const apagarRotina=(cfg:CfgSrv,id:string)=>api(cfg,'DELETE','/api/v1/roti
 
 // ---------------------------------------------------------------- revisão e aprovação
 export type Render={id:string;sha:string;versao:number;duracao:number;validado:boolean;avisos:string[];assets:Record<string,string>;tamanho:number;criado:number;codec:string;largura:number;altura:number};
-export type Revisao={parecer?:{aprovado:boolean;motivos:string[]}|null;projeto:ProjetoSrv;ref:string;links:Record<string,string>;historico:{id:string;render_sha:string;decisao:string;origem:string;por:string;texto:string;criado:number}[];
+export type Revisao={bloqueios_manuais?:string[];parecer?:{aprovado:boolean;motivos:string[]}|null;projeto:ProjetoSrv;ref:string;links:Record<string,string>;historico:{id:string;render_sha:string;decisao:string;origem:string;por:string;texto:string;criado:number}[];
   contas:{ok:string[];faltam:string[]};estados:Record<string,string>;job:Job|null};
 export type Pendente={projeto:string;ref:string;titulo:string;status:string;atualizado:number;tipo:'video'|'roteiro';render:Partial<Render>|null;destinos:Briefing['destinos']};
 export const pendentes=(cfg:CfgSrv)=>api<{pendentes:Pendente[]}>(cfg,'GET','/api/v1/aprovacoes');
@@ -180,8 +181,8 @@ export const lerRevisao=(cfg:CfgSrv,id:string)=>api<Revisao>(cfg,'GET',`/api/v1/
 export type Descricao={legenda:string;padrao:string;editada:boolean;link_original:string;avisos:string[]};
 export const lerDescricao=(cfg:CfgSrv,id:string,redes:string[])=>api<Descricao>(cfg,'GET',`/api/v1/projetos/${id}/descricao?redes=${encodeURIComponent(redes.join(',')||'-')}`);
 export const salvarDescricao=(cfg:CfgSrv,id:string,d:{legenda?:string;restaurar?:boolean;link_original?:string})=>api<Descricao>(cfg,'POST',`/api/v1/projetos/${id}/descricao`,d);
-export const aprovar=(cfg:CfgSrv,id:string,render_sha:string,destinos?:Partial<Briefing['destinos']>)=>
-  api<{ok:boolean;quando?:number;posts:{id:string}[];repetido?:boolean}>(cfg,'POST',`/api/v1/projetos/${id}/aprovar`,{render_sha,destinos},{'Idempotency-Key':`site:${id}:${render_sha}`});
+export const aprovar=(cfg:CfgSrv,id:string,render_sha:string,destinos?:Partial<Briefing['destinos']>,manual=false)=>
+  api<{ok:boolean;quando?:number;posts:{id:string}[];repetido?:boolean}>(cfg,'POST',`/api/v1/projetos/${id}/aprovar`,{render_sha,destinos,manual},{'Idempotency-Key':`site:${id}:${render_sha}`});
 export const refazerCena=(cfg:CfgSrv,id:string,i:number,o:{imagem:boolean;voz:boolean;plano?:string;problema?:{tipo:string;cena_id:string;plano_id:string;timecode:string|null}})=>api<{job:{id:string}}>(cfg,'POST',`/api/v1/projetos/${id}/cenas/${i}/refazer`,o);
 export type QuadroVersao={versao?:number;t?:number;jpg?:string;erro?:string};
 export const quadrosRender=(cfg:CfgSrv,id:string,t:number,renders:string[])=>api<{quadros:Record<string,QuadroVersao>}>(cfg,'POST',`/api/v1/projetos/${id}/quadros`,{t,renders});
