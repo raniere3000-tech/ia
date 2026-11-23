@@ -215,6 +215,20 @@ def tomar(quantos: int, tema: str = '') -> dict | None:
     return None
 
 
+def retomar_reserva(pedido: dict, video: dict) -> dict | None:
+    """Reabre os trechos já reservados pelo lote, sem tirar outros vídeos do banco."""
+    try:
+        with gzip.open(_arq(pedido['ref']), 'rt', encoding='utf-8') as f:
+            extra = json.load(f)
+        linhas = [db.um('SELECT dados FROM cortes_reserva WHERE id=? AND analise=?', id_, pedido['ref']) for id_ in pedido['ids']]
+        if not linhas or any(not x for x in linhas):
+            return None
+        return {**pedido, 'video': video, 'itens': sorted((json.loads(x['dados']) for x in linhas), key=lambda c: c['ini']),
+                'palavras': extra.get('palavras') or [], 'cam': extra.get('cam'), 'tem_cam': bool(extra.get('tem_cam'))}
+    except (OSError, ValueError):
+        return None
+
+
 def devolver(reserva: dict, descartar: bool = False):
     """Não deu para cortar (ex.: o download falhou). descartar=True: o vídeo saiu do ar, não tenta mais."""
     for i in reserva.get('ids') or []:

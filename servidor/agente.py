@@ -225,7 +225,7 @@ def salvar_segredos(novo: dict):
 def estado() -> dict:
     with LOCK:
         e = pg._ler(ARQ_EST, {})
-        for k, v in (('canais', []), ('cortes', []), ('vistos', {}), ('log', []), ('gasto', {}), ('horarios', {}), ('marcas', {}), ('pesos', {}), ('medidas', [])):
+        for k, v in (('canais', []), ('cortes', []), ('vistos', {}), ('cortes_pendentes', {}), ('log', []), ('gasto', {}), ('horarios', {}), ('marcas', {}), ('pesos', {}), ('medidas', [])):
             if not isinstance(e.get(k), type(v)):
                 e[k] = v
         return e
@@ -1469,12 +1469,21 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             escolhidos = escolher(frases(palavras), v['titulo'], quantos, co, **({'sobra': sobras} if guardar else {}))
         if not escolhidos:
             raise ErroAgente('Nenhum trecho passou nas suas regras (pontuação mínima, duração e assuntos proibidos).')
+        lote = (extra or {}).get('corte_lote')
+        anteriores = _cortes_do_lote(lote) if lote else []
+        restantes = quantos - len(anteriores)
+        if anteriores:
+            escolhidos = [c for c in escolhidos if not any(
+                min(c['fim'], a['fim']) - max(c['ini'], a['ini']) >= 0.5 * min(c['fim'] - c['ini'], a['fim'] - a['ini'])
+                for a in anteriores)]
         criados = []
         memo_cam: dict = {}
         if pre and pre.get('tem_cam'):
             memo_cam['cam'] = pre.get('cam')          # a câmera do streamer já foi achada na análise: não pergunta à IA de novo
         t_corte = t_inicio
         for i, c in enumerate(escolhidos):
+            if restantes <= 0:
+                break
             etapa(f'Editando o corte {i + 1} de {len(escolhidos)}', 62 + 34 * i / len(escolhidos))
             rnd = random.Random(f'{v["id"]}-{c["ini"]}-{time.time()}')
             perfil = None
@@ -1560,6 +1569,7 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
                 c.setdefault('job_a1', JOB_ATUAL)
             _mudar(lambda e, c=c: e['cortes'].append(c))
             criados.append(c)
+            restantes -= c['status'] == 'pronto'
             t_corte = time.time()
         if not pre:
             guardados = 0
@@ -1924,63 +1934,103 @@ def _marcar_visto(vid: str, resultado: str):
     _mudar(f)
 
 
-def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '', limite: int = 0) -> str:
-    """Um passo do agente de cortes: no máximo um vídeo por vez. limite > 0: quem manda é o estoque da Central de Automação."""
-    co = config()['cortes']
-    if limite > 0 and not link:
-        forcar = True
-    if link:
-        m = re.search(r'(?:v=|youtu\.be/|shorts/|live/)([\w-]{11})', link)
-        v = {'id': m.group(1) if m else 'x' + uuid.uuid4().hex[:10], 'url': link, 'titulo': '', 'canal': '', 'canal_nome': 'link enviado por você'}
-        quantos = co['por_video']
-    else:
-        falta = co['por_semana'] - cortes_da_semana()
-        if falta <= 0 and not forcar:
-            return 'A meta de cortes desta semana já foi cumprida.'
-        quantos = max(1, min(co['por_video'], limite if limite > 0 else (falta if falta > 0 else co['por_video'])))
-        if co.get('por_analise'):
-            # banco de trechos primeiro: trechos que sobraram de uma análise já paga viram corte sem chamar a IA para ouvir e escolher
-            import custo_corte as cc
-            try:
-                reserva = cc.tomar(quantos, tema)
-            except Exception as e:  # noqa: BLE001 - banco de trechos com problema: segue procurando vídeo novo
-                print('agente: banco de trechos', e)
-                reserva = None
-            if reserva:
-                return _cortar_da_reserva(reserva)
-        v = proximo_video(tema)
-        if not v and (tema or co['temas']):
-            return (f'Não achei vídeo novo sobre "{tema}".' if tema else 'Não achei vídeo novo sobre os seus temas (' + ', '.join(co['temas'][:4]) + ').') + \
-                   ('' if tema or co['temas_outros'] else ' Só procurei nos canais aprovados: ligue "Procurar também em outros canais" para buscar no YouTube todo.')
-        if not v:
-            return 'Nenhum vídeo novo nos canais aprovados.' if any(c['status'] == 'aprovado' for c in estado()['canais']) else 'Nenhum canal aprovado ainda. Aprove canais na aba Agente.'
-        v['url'] = os.getenv('URL_VIDEO_TESTE') or 'https://www.youtube.com/watch?v=' + v['id']
-        quantos = max(1, min(co['por_video'], limite if limite > 0 else (falta if falta > 0 else co['por_video'])))
-    try:
-        criados = processar_video(v, quantos)
-    except (ErroAgente, pg.ErroRede) as e:
-        _marcar_visto(v['id'], 'erro: ' + str(e))
-        anotar(f'Não deu para cortar "{v.get("titulo") or link}": {e}', 'erro')
-        avisar('falha', 'Um vídeo não pôde ser cortado', f'Vídeo: {v.get("titulo") or link}\nMotivo: {e}', zap_tipo='a1_falha')
-        return str(e)
-    _marcar_visto(v['id'], f'{len(criados)} corte(s)')
-    anotar(f'{len(criados)} corte(s) pronto(s) de "{v["titulo"][:80]}".', 'ok')
-    return _depois_de_cortar(v, criados)
+def _cortes_do_lote(lote: str) -> list:
+    return [c for c in estado()['cortes'] if c.get('corte_lote') == lote
+            and c.get('status') in ('pronto', 'agendado', 'postado')]
 
 
-def _cortar_da_reserva(reserva: dict) -> str:
-    """Cortes a partir do banco de trechos: baixa o vídeo de novo (de graça) e edita os trechos já escolhidos."""
+def _pendencia_corte(chave: str, dados: dict | None):
+    def mudar(e):
+        if dados is None:
+            e['cortes_pendentes'].pop(chave, None)
+        else:
+            e['cortes_pendentes'][chave] = dados
+    _mudar(mudar)
+
+
+def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '', limite: int = 0, *, job_id: str = '') -> str:
+    """Processa um vídeo por vez. Guarda a fonte antes de baixar para retomar a mesma após erro ou reinício."""
     import custo_corte as cc
-    v = reserva['video']
+    import fila
+    chave = 'link:' + link if link else 'tema:' + tema.strip().casefold() if tema.strip() else 'auto'
+    co = config()['cortes']
+    pedido = estado()['cortes_pendentes'].get(chave)
+    reserva = None
+    if pedido:
+        v, quantos = pedido['video'], pedido['quantos']
+        if not job_id and pedido.get('proxima', 0) > time.time():
+            return pedido.get('erro') or 'Aguardando nova tentativa do mesmo vídeo.'
+        if pedido.get('reserva'):
+            reserva = cc.retomar_reserva(pedido['reserva'], v)
+        if job_id:
+            pedido['job'] = job_id
+            _pendencia_corte(chave, pedido)
+    else:
+        if link:
+            m = re.search(r'(?:v=|youtu\.be/|shorts/|live/)([\w-]{11})', link)
+            v = {'id': m.group(1) if m else 'x' + uuid.uuid4().hex[:10], 'url': link, 'titulo': '', 'canal': '',
+                 'canal_nome': 'link enviado por você'}
+            quantos = co['por_video']
+        else:
+            falta = co['por_semana'] - cortes_da_semana()
+            if falta <= 0 and not (forcar or limite > 0):
+                return 'A meta de cortes desta semana já foi cumprida.'
+            quantos = max(1, min(co['por_video'], limite if limite > 0 else (falta if falta > 0 else co['por_video'])))
+            if co.get('por_analise'):
+                try:
+                    reserva = cc.tomar(quantos, tema)
+                except Exception as e:  # noqa: BLE001
+                    print('agente: banco de trechos', e)
+            v = reserva['video'] if reserva else proximo_video(tema)
+            if not v and (tema or co['temas']):
+                return (f'Não achei vídeo novo sobre "{tema}".' if tema else 'Não achei vídeo novo sobre os seus temas (' + ', '.join(co['temas'][:4]) + ').') + \
+                       ('' if tema or co['temas_outros'] else ' Só procurei nos canais aprovados: ligue "Procurar também em outros canais" para buscar no YouTube todo.')
+            if not v:
+                return 'Nenhum vídeo novo nos canais aprovados.' if any(c['status'] == 'aprovado' for c in estado()['canais']) else 'Nenhum canal aprovado ainda. Aprove canais na aba Agente.'
+            if not reserva:
+                v['url'] = os.getenv('URL_VIDEO_TESTE') or 'https://www.youtube.com/watch?v=' + v['id']
+        pedido = {'video': v, 'quantos': len(reserva['itens']) if reserva else quantos, 'lote': uuid.uuid4().hex,
+                  'tentativas': 0, 'job': job_id}
+        if reserva:
+            pedido['reserva'] = {k: reserva[k] for k in ('ref', 'ids')}
+        quantos = pedido['quantos']
+        _pendencia_corte(chave, pedido)
+    lote = pedido['lote']
+    titulo = v.get('titulo') or v['url']
+    if pedido['tentativas']:
+        etapa(f'Retomando o mesmo vídeo: {titulo[:85]}', 1)
     try:
-        criados = processar_video(v, len(reserva['itens']), pre=reserva)
-    except (ErroAgente, pg.ErroRede) as e:
-        fora = bool(re.search(r'unavailable|private|removed|indispon|privado|removido|not available|404', str(e), re.I))
-        cc.devolver(reserva, descartar=fora or isinstance(e, ErroAgente))
-        anotar(f'Não deu para cortar os trechos guardados de "{v["titulo"][:60]}": {e}', 'erro')
+        antes = len(_cortes_do_lote(lote))
+        if antes < quantos:
+            extra = {'corte_lote': lote}
+            if job_id:
+                extra['job_a1'] = job_id
+            processar_video(v, quantos, extra=extra, pre=reserva)
+        criados = _cortes_do_lote(lote)
+        if not criados or (pedido['tentativas'] and len(criados) == antes < quantos):
+            raise ErroAgente('Ainda não saiu um corte aprovado do vídeo.')
+    except (fila.Cancelado, fila.Esperar):
+        raise
+    except Exception as e:  # inclui erros do download, FFmpeg e da conferência
+        tentativas = pedido['tentativas'] + 1
+        espera = min(3600, 120 * 2 ** min(tentativas - 1, 5))
+        pedido.update(tentativas=tentativas, proxima=time.time() + espera, erro=str(e)[:500])
+        _pendencia_corte(chave, pedido)
+        anotar(f'Vou tentar de novo o mesmo vídeo "{titulo[:70]}" em {espera // 60} min: {e}', 'erro')
+        if tentativas == 1:
+            avisar('falha', 'Corte aguardando nova tentativa', f'Vídeo: {titulo}\nMotivo: {e}\nO Agente 1 vai tentar o mesmo vídeo.', zap_tipo='a1_falha')
+        if job_id:
+            raise fila.Esperar(espera, f'Mesmo vídeo: {titulo[:60]} · tentativa {tentativas + 1} em {espera // 60} min · {e}', 'aguardando_tentativa') from e
         return str(e)
-    anotar(f'{len(criados)} corte(s) pronto(s) de "{v["titulo"][:80]}" com trechos guardados (sem gastar IA para ouvir e escolher).', 'ok')
-    return _depois_de_cortar(v, criados)
+    if not pedido.get('reserva'):
+        _marcar_visto(v['id'], f'{len(criados)} corte(s)')
+    _pendencia_corte(chave, None)
+    if job_id:
+        _mudar(lambda e: [c.update(job_a1=job_id) for c in e['cortes'] if c.get('corte_lote') == lote])
+    titulo = v.get('titulo') or titulo
+    anotar(f'{len(criados)} corte(s) pronto(s) de "{titulo[:80]}".', 'ok')
+    _depois_de_cortar(v, [c for c in criados if c['status'] == 'pronto' and not c.get('email')])
+    return f'{len(criados)} corte(s) pronto(s).'
 
 
 def _depois_de_cortar(v: dict, criados: list) -> str:
@@ -3107,6 +3157,18 @@ def passo():
         return
     s = segredos()
     if not s['youtube'] or not (s['gemini'] or s['gemini_pago']):
+        return
+    pendente = estado()['cortes_pendentes'].get('auto')
+    if pendente:
+        import fila
+        j = fila.obter(pendente['job']) if pendente.get('job') else None
+        if j and j['status'] == 'cancelado':
+            _pendencia_corte('auto', None)
+            return
+        if j and j['status'] in fila.ATIVOS:
+            return
+        if pendente.get('proxima', 0) <= time.time():
+            _em_fundo('Tentando o mesmo vídeo', trabalhar_cortes)
         return
     try:            # Central de Automação ligada: o estoque decide (None = regra antiga da meta semanal)
         import orquestrador as oq

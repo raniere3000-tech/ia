@@ -880,11 +880,11 @@ def _job_agente1(ctx):
         if oque == 'buscar':
             ag.buscar_canais()
         elif oque == 'cortar':
-            msg = ag.trabalhar_cortes(True)
+            msg = ag.trabalhar_cortes(True, job_id=ctx.id)
         elif oque == 'link':
-            msg = ag.trabalhar_cortes(True, link)
+            msg = ag.trabalhar_cortes(True, link, job_id=ctx.id)
         elif oque == 'tema':
-            msg = ag.trabalhar_cortes(True, '', link)
+            msg = ag.trabalhar_cortes(True, '', link, job_id=ctx.id)
         elif oque == 'postar':
             ag.trabalhar_postagem()
     except (ag.ErroAgente, pg.ErroRede) as e:
@@ -901,8 +901,8 @@ def _job_agente1(ctx):
 
 
 def _enfileirar_agente1(oque: str, link: str = '') -> dict:
-    ja = db.um("SELECT id FROM jobs WHERE agente='agente1' AND status IN ('agendado','na_fila','rodando') AND dados=?",
-               json.dumps({'oque': oque, 'link': link}, ensure_ascii=False))
+    ja = db.um("SELECT id FROM jobs WHERE agente='agente1' AND status IN ('agendado','na_fila','rodando','aguardando_tentativa') AND json_extract(dados, '$.oque')=? AND json_extract(dados, '$.link')=?",
+               oque, link)
     if ja:
         return {'ok': True, 'job': ja['id'], 'fila': True, 'ja_na_fila': True}
     pesado = oque in ('cortar', 'link', 'tema')
