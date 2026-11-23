@@ -32,6 +32,7 @@ function CartaoJob({j,agora,acao}:{j:Job;agora:number;acao:(id:string,a:'pausar'
     </div>
     {j.erro&&j.status!=='concluido'&&<p className="hint bad">{j.erro}</p>}
     <div className="row-gap left">
+     {j.tipo==='agente1.pesado'&&<button className="subtle sm" onClick={()=>go('agente','corte-job-'+j.id,'agentes')}><Eye size={14}/> Acompanhar corte</button>}
      {j.projeto&&<button className="subtle sm" onClick={()=>go('revisar',j.projeto,'fila')}><Eye size={14}/> Ver projeto</button>}
      {ativo&&!j.pausado&&j.status!=='aguardando_aprovacao'&&<button className="subtle sm" onClick={()=>acao(j.id,'pausar')}><Pause size={14}/> Pausar</button>}
      {ativo&&!!j.pausado&&<button className="subtle sm" onClick={()=>acao(j.id,'retomar')}><Play size={14}/> Retomar</button>}
