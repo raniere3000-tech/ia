@@ -131,11 +131,12 @@ export async function baixarAsset(cfg:CfgSrv,id:string):Promise<Blob>{
 
 // ---------------------------------------------------------------- fila e capacidade
 export type Job={id:string;tipo:string;agente:string;titulo:string;status:string;etapa:string;progresso:number;projeto:string;run_at:number;criado:number;iniciado:number|null;terminado:number|null;
-  decorrido:number;tentativas:number;max_tentativas:number;erro:string|null;pausado:number;recurso:string;prioridade:number;
+  decorrido:number;tentativas:number;max_tentativas:number;erro:string|null;pausado:number;cancelar?:number;recurso:string;prioridade:number;
   posicao?:number|null;inicio_previsto?:number|null;fim_previsto?:number|null;restante?:number|null;estimativa_medida?:boolean;decorrido_total?:number;dados?:Record<string,unknown>};
 export type Fila={jobs:Job[];contagem:Record<string,number>;agora:number;limites:Record<string,number>};
 export const lerFila=(cfg:CfgSrv,filtro='')=>api<Fila>(cfg,'GET','/api/v1/fila'+(filtro?'?filtro='+filtro:''));
-export const acaoFila=(cfg:CfgSrv,id:string,acao:'pausar'|'retomar'|'cancelar'|'tentar'|'reagendar',corpo:unknown={})=>api<Job>(cfg,'POST',`/api/v1/fila/${id}/${acao}`,corpo);
+export type AcaoFila='pausar'|'retomar'|'cancelar'|'ignorar'|'tentar'|'reagendar';
+export const acaoFila=(cfg:CfgSrv,id:string,acao:AcaoFila,corpo:unknown={})=>api<Job>(cfg,'POST',`/api/v1/fila/${id}/${acao}`,corpo);
 export type Capacidade={limites:Record<string,number>;rodando:{id:string;tipo:string}[];cpus:number|null;disco_livre_mb:number|null;carga_cpu:number|null;memoria:{total_mb:number;livre_mb:number}|null;bateria:number|null;temperatura:number|null};
 export const lerCapacidade=(cfg:CfgSrv)=>api<Capacidade>(cfg,'GET','/api/v1/capacidade');
 

@@ -1,10 +1,12 @@
 // Faixa "Espera a sua decisão": tudo o que está parado esperando você, numa lista só (servidor/decisoes.py).
 import { api, ErroApi, type CfgSrv } from './api';
 
-export type Decisao={chave:string;tipo:string;titulo:string;detalhe:string;desde:number|null;ir:{aba:string;extra:string;area:string};botao:string;urgente:boolean;quem:string};
+export type Decisao={chave:string;versao?:string;tipo:string;titulo:string;detalhe:string;desde:number|null;ir:{aba:string;extra:string;area:string};botao:string;urgente:boolean;quem:string};
 export type ListaDecisoes={itens:Decisao[];urgentes:number;depois:number;total:number;fontes_com_erro:string[];gerado_em:number;
   /** Servidor antigo (sem a lista): só o número do painel, sem os itens. */
   antigo?:boolean};
+
+export const removerDecisao=(c:CfgSrv,d:Decisao)=>api<ListaDecisoes>(c,'POST','/api/v1/alertas/decisoes/remover',{chave:d.chave,versao:d.versao});
 
 /** Lê a lista. Servidor sem a rota nova: cai para o número do painel do Início (pelo menos o alarme aparece). */
 export async function lerDecisoes(c:CfgSrv):Promise<ListaDecisoes>{
