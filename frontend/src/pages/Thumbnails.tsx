@@ -93,8 +93,8 @@ function Criar({pronto}:{pronto:(id:string)=>void}){
     <label className="field"><span>3. Descreva a capa (opcional)</span><textarea rows={2} value={p.descricao} onChange={e=>setP({...p,descricao:e.target.value})} placeholder={'Ex.: Uma lua enorme no horizonte e o texto "POR QUÊ?" com contraste amarelo'}/>
       <small className="muted">Texto entre aspas vira o texto da capa no modo automático.</small></label>
     <div className="field"><span className="field-label">4. Texto da capa</span>
-      <div className="seg" role="radiogroup">{([['auto','Automático (até 4 palavras)'],['exato','Texto exato'],['sem','Sem texto']] as const).map(([k,t])=><button key={k} role="radio" aria-checked={p.texto_modo===k} className={p.texto_modo===k?'on':''} onClick={()=>setP({...p,texto_modo:k})}>{t}</button>)}</div>
-      {p.texto_modo==='exato'&&<input maxLength={60} value={p.texto} onChange={e=>setP({...p,texto:e.target.value})} placeholder="Ex.: POR QUÊ?" style={{marginTop:8}}/>}
+      <div className="seg" role="radiogroup">{([['auto','Automático (gancho completo)'],['exato','Texto exato'],['sem','Sem texto']] as const).map(([k,t])=><button key={k} role="radio" aria-checked={p.texto_modo===k} className={p.texto_modo===k?'on':''} onClick={()=>setP({...p,texto_modo:k})}>{t}</button>)}</div>
+      {p.texto_modo==='exato'&&<textarea maxLength={500} value={p.texto} onChange={e=>setP({...p,texto:e.target.value})} placeholder="Escreva a frase completa da capa" style={{marginTop:8}}/>}
       {p.texto_modo!=='sem'&&<small className="muted">O texto é desenhado pelo EstúdioClip (nunca pela IA), então sai sem erro de escrita. Emoji não aparece: a fonte não tem.</small>}
     </div>
     <div className="thumb-grade">
@@ -162,7 +162,7 @@ function Galeria({id,voltar}:{id:string;voltar:()=>void}){
           <label className="check sm"><input type="checkbox" checked={comparar.includes(v.id)} onChange={e=>setComparar(e.target.checked?[...comparar.slice(-1),v.id]:comparar.filter(x=>x!==v.id))}/> comparar</label>
         </div>
         <details><summary>Refazer só esta capa</summary>
-          <input maxLength={60} placeholder="Texto novo (deixe vazio para manter)" value={refTxt[v.numero]||''} onChange={e=>setRefTxt({...refTxt,[v.numero]:e.target.value})}/>
+          <textarea maxLength={500} placeholder="Texto novo completo (deixe vazio para manter)" value={refTxt[v.numero]||''} onChange={e=>setRefTxt({...refTxt,[v.numero]:e.target.value})}/>
           <button className="subtle sm" disabled={busy||rodando} onClick={()=>fazer(()=>refazerCapa(cfg,j.id,v.numero,refTxt[v.numero]?.trim()||undefined),`Refazendo a capa ${v.numero}.`)}><RefreshCw size={13}/> Refazer</button>
           <small className="muted">Só esta capa muda. O vídeo não é refeito.</small></details>
       </article>; })}
