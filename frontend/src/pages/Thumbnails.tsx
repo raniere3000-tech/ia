@@ -6,7 +6,7 @@ import Progresso from '../components/Progresso';
 import { urlServidor } from '../lib/api';
 import { tempoTexto } from '../lib/alertas';
 import { ESTADOS, LAYOUT, METODOS, cancelarJob, criarPerfil, escolherCapa, lerCapacidades, lerCfgThumb, lerDesempenho, lerFontes, lerJob, lerJobs, lerPerfis,
-  mudarPerfil, pedirCapas, refazerCapa, salvarCfgThumb, type CfgThumb, type Fonte, type Metodo, type Pedido, type Perfil, type Variante } from '../lib/thumbnails';
+  mudarPerfil, pedirCapas, pedirParaVersaoAtual, recusarCapas, refazerCapa, salvarCfgThumb, type CfgThumb, type Fonte, type Metodo, type Pedido, type Perfil, type Variante } from '../lib/thumbnails';
 
 type Aba='fila'|'criar'|'galeria'|'modelos'|'desempenho'|'config';
 const ABAS:[Aba,string,typeof ImgIcon][]=[['fila','Fila',ListChecks],['criar','Criar',Plus],['galeria','Galeria',ImgIcon],['modelos','Modelos',Palette],['desempenho','Desempenho',BarChart3],['config','Configurações',Settings2]];
@@ -28,7 +28,7 @@ export default function Thumbnails(){
     <div className="ag-abas" role="tablist">{ABAS.map(([k,t,I])=><button key={k} role="tab" aria-selected={aba===k} className={aba===k?'active':''} onClick={()=>trocar(k)}><I size={14}/> {t}</button>)}</div>
     {aba==='fila'&&<FilaThumbs abrir={abrir} criar={()=>trocar('criar')}/>}
     {aba==='criar'&&<Criar pronto={abrir}/>}
-    {aba==='galeria'&&<Galeria id={jobSel} voltar={()=>trocar('fila')}/>}
+    {aba==='galeria'&&<Galeria key={jobSel} id={jobSel} abrir={abrir} voltar={()=>trocar('fila')}/>}
     {aba==='modelos'&&<Modelos/>}
     {aba==='desempenho'&&<DesempenhoTela/>}
     {aba==='config'&&<Config/>}
@@ -39,7 +39,7 @@ function FilaThumbs({abrir,criar}:{abrir:(id:string)=>void;criar:()=>void}){
   const cfg=useCfg(); const r=useServidor(c=>lerJobs(c),5);
   const [filtro,setFiltro]=useState('');
   const jobs=(r.dados?.jobs||[]).filter(j=>!filtro||(filtro==='rodando'?RODANDO.includes(j.estado):j.estado===filtro));
-  const grupos:[string,string][]=[['','Todos'],['rodando','Em processamento'],['aguardando_escolha','Esperando escolha'],['pronto','Prontas'],['revisao_manual','Precisam de você'],['falhou','Com erro']];
+  const grupos:[string,string][]=[['','Todos'],['rodando','Em processamento'],['aguardando_escolha','Esperando escolha'],['pronto','Prontas'],['revisao_manual','Precisam de você'],['falhou','Com erro'],['recusado','Recusadas'],['substituido','Versões anteriores']];
   return <section className="panel">
     <h3><ListChecks size={16}/> Capas pedidas</h3>
     {r.erro&&<p className="hint bad">{/rota não encontrada/i.test(r.erro)?<>O servidor do celular ainda não tem o Agente 6. No Termux rode: <code>cd ~/ia &amp;&amp; git pull</code> e depois <code>cd servidor &amp;&amp; bash iniciar-termux.sh link</code>.</>:r.erro}</p>}
@@ -108,7 +108,7 @@ function Criar({pronto}:{pronto:(id:string)=>void}){
   </section>;
 }
 
-function Galeria({id,voltar}:{id:string;voltar:()=>void}){
+function Galeria({id,abrir,voltar}:{id:string;abrir:(id:string)=>void;voltar:()=>void}){
   const {toast}=useApp(); const cfg=useCfg();
   const r=useServidor(c=>id?lerJob(c,id):Promise.resolve(null),4,[id]);
   const [busy,setBusy]=useState(false); const [comparar,setComparar]=useState<string[]>([]); const [refTxt,setRefTxt]=useState<Record<number,string>>({});
@@ -126,6 +126,8 @@ function Galeria({id,voltar}:{id:string;voltar:()=>void}){
     return fazer(()=>escolherCapa(cfg,j!.id,v),'Capa escolhida. O pacote vídeo + capa está pronto.');
   }
   const rodando=RODANDO.includes(j.estado);
+  const encerrado=['recusado','substituido','cancelado'].includes(j.estado);
+  const podeRecusar=['pronto','aguardando_escolha','revisao_manual','falhou'].includes(j.estado);
   const vistos=comparar.length===2?ativas.filter(v=>comparar.includes(v.id)):[];
   return <>
     <section className="panel">
@@ -138,6 +140,12 @@ function Galeria({id,voltar}:{id:string;voltar:()=>void}){
       {j.progresso&&<p className="muted thumb-tempos">Na fila: {quando(j.progresso.criado)} · começou: {quando(j.progresso.iniciado)||'ainda não'} · {j.progresso.terminado?`terminou: ${quando(j.progresso.terminado)} · trabalhando: ${seg(j.progresso.decorrido)}`:'rodando'}{j.progresso.tentativas?` · tentativas: ${j.progresso.tentativas}`:''}</p>}
       {j.selecao&&<p className="hint ok"><CheckCircle2 size={13}/> Capa escolhida ({j.selecao.escolha==='manual'?'por você, abaixo da nota':j.selecao.escolha==='automatica'?'pelo modo automático':'por você'}). Vai junto com o vídeo onde a rede aceitar. Se o vídeo ou a capa mudarem, a escolha cai sozinha.</p>}
       <div className="row-gap left">
+        {podeRecusar&&<button className="subtle" disabled={busy} onClick={()=>fazer(()=>recusarCapas(cfg,j.id),'Capas recusadas.')}>
+          <XCircle size={14}/> Recusar capas</button>}
+        {encerrado&&<button className="primary" disabled={busy} onClick={()=>{
+          if(j.pedido_atual) abrir(j.pedido_atual);
+          else void fazer(async()=>{const novo=await pedirParaVersaoAtual(cfg,j.id); abrir(novo.id);},'Pedido para a versão atual aberto.');
+        }}><ImgIcon size={14}/> {j.pedido_atual?'Abrir capas da versão atual':'Gerar capas para o vídeo atual'}</button>}
         {rodando&&<button className="subtle" disabled={busy} onClick={()=>window.confirm('Cancelar este pedido?')&&fazer(()=>cancelarJob(cfg,j.id),'Pedido cancelado.')}><XCircle size={14}/> Cancelar</button>}
         <button className="subtle" onClick={()=>r.recarregar()}><RefreshCw size={14}/> Atualizar</button>
         {comparar.length>0&&<button className="subtle" onClick={()=>setComparar([])}>Limpar comparação</button>}
@@ -157,14 +165,14 @@ function Galeria({id,voltar}:{id:string;voltar:()=>void}){
         <details><summary>Notas do diretor</summary><ul className="thumb-crit">{(['fidelidade','legibilidade','area_segura','tecnica','identidade','rede'] as const).map(k=><li key={k}>{({fidelidade:'Fiel ao vídeo (25)',legibilidade:'Leitura no celular (20)',area_segura:'Área segura (15)',tecnica:'Arquivo (15)',identidade:'Identidade (15)',rede:'Formato da rede (10)'})[k]}: <b>{v.relatorio.criterios[k]??'-'}</b></li>)}</ul>
           <small className="muted">{v.relatorio.metodo}</small></details>
         <div className="row-gap left">
-          {!sel&&<button className="primary sm" disabled={busy||rodando||!!v.relatorio.bloqueios.length} onClick={()=>escolher(v)}><CheckCircle2 size={13}/> Escolher</button>}
+          {!sel&&!encerrado&&<button className="primary sm" disabled={busy||rodando||!!v.relatorio.bloqueios.length} onClick={()=>escolher(v)}><CheckCircle2 size={13}/> Escolher</button>}
           <a className="subtle sm btn-link" href={urlServidor(cfg,v.baixar)} download><Download size={13}/> Baixar</a>
           <label className="check sm"><input type="checkbox" checked={comparar.includes(v.id)} onChange={e=>setComparar(e.target.checked?[...comparar.slice(-1),v.id]:comparar.filter(x=>x!==v.id))}/> comparar</label>
         </div>
-        <details><summary>Refazer só esta capa</summary>
+        {!encerrado&&<details><summary>Refazer só esta capa</summary>
           <input maxLength={60} placeholder="Texto novo (deixe vazio para manter)" value={refTxt[v.numero]||''} onChange={e=>setRefTxt({...refTxt,[v.numero]:e.target.value})}/>
           <button className="subtle sm" disabled={busy||rodando} onClick={()=>fazer(()=>refazerCapa(cfg,j.id,v.numero,refTxt[v.numero]?.trim()||undefined),`Refazendo a capa ${v.numero}.`)}><RefreshCw size={13}/> Refazer</button>
-          <small className="muted">Só esta capa muda. O vídeo não é refeito.</small></details>
+          <small className="muted">Só esta capa muda. O vídeo não é refeito.</small></details>}
       </article>; })}
       {!ativas.length&&!rodando&&<section className="panel"><p className="muted">Nenhuma capa neste pedido.</p></section>}</div>
     {historico.length>0&&<section className="panel"><details><summary>Histórico ({historico.length} versão(ões) corrigida(s) pelo diretor)</summary>
