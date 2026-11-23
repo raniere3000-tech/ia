@@ -1238,6 +1238,7 @@ body.sem-rolar{overflow:hidden}
 .faixa-dec-lista li{display:flex;align-items:center;gap:12px;background:#1d1217;border:1px solid #3d2028;border-radius:11px;padding:11px 12px}
 .faixa-dec-lista li.urg{border-left:5px solid #ff4b3e}
 .fd-txt{flex:1;min-width:0;display:grid;gap:3px}
+.fd-item-acoes{display:flex;gap:8px;flex-wrap:wrap}
 .fd-txt b{font-size:14px;color:#fff}.fd-txt>span{font-size:12.5px;color:#e5c9cf;overflow-wrap:anywhere}
 .fd-txt small{font-size:11.5px;color:#b9939b;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .fd-novo{font-style:normal;background:#ffd23f;color:#3a2600;font-size:10px;font-weight:900;border-radius:6px;padding:1px 6px;margin-left:8px;vertical-align:middle}
