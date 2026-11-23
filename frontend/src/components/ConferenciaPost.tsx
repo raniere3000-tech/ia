@@ -11,11 +11,11 @@ const ESTADO:Record<string,[string,string]>={agendado:['agendado',''],postando:[
 type Estado={status:string;erro:string;link:string};
 
 /** Portões do Agente 2: o mesmo que o servidor confere na hora de postar, para ver antes. */
-export default function ConferenciaPost({id,onLiberado}:{id:string;onLiberado?:()=>void}){
+export default function ConferenciaPost({id,onLiberado,rede}:{id:string;onLiberado?:()=>void;rede?:string}){
   const cfg=useCfg();
   const [res,setRes]=useState<Record<string,Item[]>|null>(null); const [est,setEst]=useState<Record<string,Estado>>({}); const [hash,setHash]=useState(''); const [busy,setBusy]=useState(false); const [erro,setErro]=useState('');
-  const conferir=async()=>{ setBusy(true); setErro(''); try{ const r=await api<{redes:Record<string,Item[]>;estados?:Record<string,Estado>;hash?:string}>(cfg,'GET',`/api/v1/posts/${id}/conferencia`); setRes(r.redes); setEst(r.estados||{}); setHash(r.hash||''); }catch(e){ setErro(erroTexto(e)); }finally{ setBusy(false); } };
-  const liberar=async()=>{ if(!window.confirm(AVISO_LIBERAR)) return; setBusy(true); try{ await api(cfg,'POST',`/posts/${id}/liberar`,{}); onLiberado?.(); await conferir(); }catch(e){ setErro(erroTexto(e)); setBusy(false); } };
+  const conferir=async()=>{ setBusy(true); setErro(''); try{ const r=await api<{redes:Record<string,Item[]>;estados?:Record<string,Estado>;hash?:string}>(cfg,'GET',`/api/v1/posts/${id}/conferencia`); setRes(rede?Object.fromEntries(Object.entries(r.redes).filter(([k])=>k===rede)):r.redes); setEst(r.estados||{}); setHash(r.hash||''); }catch(e){ setErro(erroTexto(e)); }finally{ setBusy(false); } };
+  const liberar=async()=>{ if(!window.confirm(AVISO_LIBERAR)) return; setBusy(true); try{ await api(cfg,'POST',`/posts/${id}/liberar`,rede?{rede}:{}); onLiberado?.(); await conferir(); }catch(e){ setErro(erroTexto(e)); setBusy(false); } };
   const pedeLib=!!res&&Object.values(res).some(i=>i.some(x=>x.liberavel));
   const [enviado,setEnviado]=useState('');
   const semCert=!!res&&Object.values(res).some(i=>i.some(x=>x.item==='certificado'&&!x.ok));
