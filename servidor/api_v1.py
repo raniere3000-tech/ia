@@ -786,7 +786,8 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
             redes = (p['dados']['briefing'].get('destinos') or {}).get('redes') or [] if p['tipo'] == 'agente3' else []
             ok, faltam = apv.contas_ok(redes)
             return {'projeto': p, 'ref': apv.ref(pid), 'links': links_render(r),
-                    'parecer': apv.diretor_ok(p, r.get('sha')) if r else None, 'historico': apv.historico(pid),
+                    'parecer': apv.diretor_ok(p, r.get('sha')) if r else None,
+                    'bloqueios_manuais': apv.bloqueios_manuais(p, r['sha']) if r and r.get('sha') else [], 'historico': apv.historico(pid),
                     'contas': {'ok': ok, 'faltam': faltam}, 'estados': produtor.ESTADOS,
                     'job': db.um("SELECT * FROM jobs WHERE projeto=? ORDER BY criado DESC LIMIT 1", pid)}
         if acao == 'descricao':
@@ -822,7 +823,7 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         d = corpo()
         if acao == 'aprovar':
             chave = (h.headers.get('Idempotency-Key') or d.get('chave') or '')[:80]
-            return apv.aprovar(pid, str(d.get('render_sha', '')), d.get('destinos'), 'site', quem, chave)
+            return apv.aprovar(pid, str(d.get('render_sha', '')), d.get('destinos'), 'site', quem, chave, manual=d.get('manual') is True)
         if acao == 'alterar':
             return apv.pedir_alteracao(pid, str(d.get('render_sha', '')), str(d.get('texto', '')), 'site', quem)
         if acao == 'rejeitar':

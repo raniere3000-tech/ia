@@ -1506,9 +1506,6 @@ def etapa_final(ctx, pid, p, b):
             base = (d.get('qualidade') or {}).get('problemas') or []
         d['qualidade'] = dict(qd.resumo(base + visao, conf), problemas_cenas=base)
     pj.mudar_dados(pid, laudo_final)
-    if any(x.get('tipo') == 'analise_indisponivel' for x in visao):
-        parecer_etapa(pid, 'final', [x['descricao'] for x in visao if x.get('tipo') == 'analise_indisponivel'])
-        raise fila.Esperar(300, 'Diretor aguardando nova análise visual.')
     render = {'id': rid, 'sha': sha, 'versao': versao, 'duracao': conf['duracao'], 'validado': True, 'avisos': conf['avisos'], 'assets': ids,
               'tamanho': final.stat().st_size, 'criado': time.time(), 'codec': f'{conf["codec"]}/{conf["audio"]}', 'largura': W, 'altura': H}
     # A5 nos vídeos próprios = a montagem final do Agente 3 (concat, mix, conferência técnica). Registrado com quem fez de verdade.
@@ -1546,6 +1543,19 @@ def _marcar_a3(pid: str, etapa: str, estado: str, **kw):
     except Exception as e:  # noqa: BLE001  (o registro nunca derruba a produção)
         print('esteira (agente3):', e)
         return None
+
+
+def entregar_revisao_manual(pid, render, motivos):
+    """Guarda a versão conferida e encerra as correções enquanto o usuário decide."""
+    parecer_etapa(pid, 'final', motivos)
+    def guardar(d, _p):
+        d['render'] = render
+        d.pop('render_reprovado', None)
+        if not any(r.get('id') == render['id'] for r in d.setdefault('renders', [])):
+            d['renders'].append({k: render[k] for k in ('id', 'sha', 'versao', 'duracao', 'criado')})
+        return {'status': 'ready_for_review'}
+    pj.mudar_dados(pid, guardar)
+    return {'resultado': {'render': render['sha'], 'diretor': 'revisao_manual'}, 'etapa': 'Vídeo disponível para revisão manual'}
 
 
 def decisao_pela_esteira(ctx, pid: str, b: dict, render: dict | None, sha: str, versao: int, conf: dict, so_cenas: bool = False) -> dict | None:
@@ -1632,6 +1642,7 @@ def decisao_pela_esteira(ctx, pid: str, b: dict, render: dict | None, sha: str, 
         if dec['decisao'] == 'corrigir':
             alvo = dq.cenas_para_refazer(rel)
             return refazer({'cenas': alvo, 'motivos': [], 'tecnico': not alvo}, rel, 'creative_preedit', dec)
+        parecer_etapa(pid, 'creative_preedit', [])
         pl.mover(rid, 'creative_approved', agente='agent5', etapa=f'Cenas aprovadas com nota {rel["score"]}')
         es.marcar_seguro(evid, 'a4_previo', 'concluida', correcoes=dec['correcoes_usadas'],
                          recibo={'relatorio': rel['id'], 'nota': rel['score'], 'bloqueios': 0, 'decisao': 'aprovado', 'hash_cenas': _hash_cenas(cenas)})
@@ -1663,6 +1674,12 @@ def decisao_pela_esteira(ctx, pid: str, b: dict, render: dict | None, sha: str, 
     if dec['decisao'] == 'revisao_manual':
         return parar(dec['motivo'], rel, 'final_release')
     if dec['decisao'] == 'corrigir':
+        so_parecer = all(f.get('category') == 'qualidade' for f in rel['blocking_findings'])
+        if so_parecer and dec['correcoes_usadas'] > 0:
+            motivos = parecer['motivos'] or [f'Nota do diretor: {rel["score"]}.']
+            pl.mover(rid, 'manual_review_required', agente='pessoa', etapa='Aguardando decisão manual')
+            es.marcar_seguro(evid, 'a4_final', 'revisao_manual', motivo=motivos[0], recibo={'relatorio': rel['id']})
+            return entregar_revisao_manual(pid, render, motivos)
         if any(f.get('target_agent') == 'pessoa' for f in rel['blocking_findings']):
             motivo = next(f['evidence'] for f in rel['blocking_findings'] if f.get('target_agent') == 'pessoa')
             pl.encerrar_etapa(rid, 'final_release', 'revisao_manual', motivo)
@@ -1709,8 +1726,7 @@ def decisao_do_diretor(ctx, pid: str, b: dict, render: dict, sha: str, versao: i
     if not vd['aprovado']:
         if any(x.get('tipo') == 'analise_indisponivel' and x.get('status') != 'resolvido'
                for x in (pj.obter(pid)['dados'].get('qualidade') or {}).get('problemas', [])):
-            parecer_etapa(pid, 'final', vd['motivos'])
-            raise fila.Esperar(300, 'Diretor aguardando nova análise do vídeo final.')
+            return entregar_revisao_manual(pid, render, vd['motivos'])
         refez = not (tent and dir0.get('sha') == sha) and _refazer_pelo_diretor(pid, vd, b)
         hist = (list(dir0.get('historico') or []) + [{'t': time.time(), 'sha': sha, 'versao': versao, 'veredito': 'reprovado', 'motivos': vd['motivos']}])[-20:]
         if refez:
@@ -1727,7 +1743,7 @@ def decisao_do_diretor(ctx, pid: str, b: dict, render: dict, sha: str, versao: i
                 print('produtor: aviso de refação', e)
             return {'proxima': True, 'recurso': 'leve', 'etapa': f'Diretor de qualidade mandou refazer (tentativa {tent + 1})',
                     'refazer': True}
-        return corrigir_etapa(ctx, pid, 'final', 'revisar', vd['motivos'])
+        return entregar_revisao_manual(pid, render, vd['motivos'])
 
     def f(d, _p):
         d['render'] = render

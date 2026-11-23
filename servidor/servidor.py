@@ -871,9 +871,17 @@ Handler.TOKEN = TOKEN
 def _job_agente1(ctx):
     """Pedido manual do agente de cortes, agora pela fila (antes era recusado quando estava ocupado)."""
     oque, link = ctx.dados.get('oque', ''), ctx.dados.get('link', '')
-    ag.AO_ETAPA = lambda p, t: ctx.progresso(float(p) if p else None, t)       # a barra do site acompanha o Agente 1
+    def progresso(pct, texto):
+        ctx.progresso(float(pct) if pct else None, texto)
+        historico = ctx.dados.setdefault('etapas_corte', [])
+        if not historico or historico[-1]['texto'] != texto:
+            historico.append({'texto': texto, 't': time.time()})
+            del historico[:-40]
+            ctx.salvar()
+
+    ag.AO_ETAPA = progresso
     ag.JOB_ATUAL = ctx.id                     # cada corte guarda de qual trabalho saiu (o Coordenador acompanha por ele)
-    ctx.progresso(5, {'buscar': 'Buscando canais', 'cortar': 'Fazendo cortes', 'link': 'Cortando o link', 'tema': 'Procurando vídeo pelo tema', 'postar': 'Agendando cortes'}.get(oque, oque))
+    progresso(5, {'buscar': 'Buscando canais', 'cortar': 'Fazendo cortes', 'link': 'Cortando o link', 'tema': 'Procurando vídeo pelo tema', 'postar': 'Agendando cortes'}.get(oque, oque))
     nome = {'buscar': 'Busca de canais', 'cortar': 'Agente de cortes', 'link': 'Corte do link', 'tema': 'Corte por tema', 'postar': 'Agente de postagem'}.get(oque, oque)
     msg = ''
     try:
@@ -901,8 +909,8 @@ def _job_agente1(ctx):
 
 
 def _enfileirar_agente1(oque: str, link: str = '') -> dict:
-    ja = db.um("SELECT id FROM jobs WHERE agente='agente1' AND status IN ('agendado','na_fila','rodando') AND dados=?",
-               json.dumps({'oque': oque, 'link': link}, ensure_ascii=False))
+    ja = db.um("SELECT id FROM jobs WHERE agente='agente1' AND status IN ('agendado','na_fila','rodando') AND json_extract(dados, '$.oque')=? AND json_extract(dados, '$.link')=?",
+               oque, link)
     if ja:
         return {'ok': True, 'job': ja['id'], 'fila': True, 'ja_na_fila': True}
     pesado = oque in ('cortar', 'link', 'tema')
