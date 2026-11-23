@@ -1257,3 +1257,8 @@ body.sem-rolar{overflow:hidden}
  .faixa-dec-lista li{flex-direction:column;align-items:stretch}.faixa-dec-lista li .fd-ir,.faixa-dec-lista li .subtle{justify-content:center}
 }
 @media(prefers-reduced-motion:reduce){.faixa-dec.urgente,.faixa-dec.urgente .fd-icone{animation:none}}
+
+.posts-lote-barra{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+.lote-campos{border:0;padding:0;min-width:0}.lote-campos legend{font-weight:700;margin-bottom:12px}
+.lote-ordem{padding-left:24px;max-height:260px;overflow:auto}.lote-ordem li{display:flex;align-items:center;gap:6px;padding:6px 0}.lote-ordem li>span{flex:1}
+.lote-tabela{max-height:360px;overflow:auto}.lote-tabela table{width:100%;border-collapse:collapse}.lote-tabela th,.lote-tabela td{text-align:left;padding:10px;border-bottom:1px solid var(--line);font-size:13px}.lote-tabela th{background:var(--panel2);position:sticky;top:0}
