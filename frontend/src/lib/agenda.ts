@@ -4,8 +4,8 @@ export type Prov = 'google'|'meta'|'tiktok';
 export type Rede = 'youtube'|'facebook'|'instagram'|'tiktok'|'kwai';
 export type Conta = {app:boolean;conectado:boolean;nome:string;client_id:string;paginas:{id:string;nome:string;instagram:string}[];pagina:string;erro:string;verificado?:number};
 export type Contas = Record<Prov,Conta>;
-export type StatusRede = {status:'agendado'|'postando'|'postado'|'erro'|'manual'|'liberacao';link:string;erro:string};
-export type Post = {id:string;video:string;criado:number;quando:number;titulo:string;legenda:string;opcoes:{youtube_privacidade:string;tiktok_modo:string};redes:Partial<Record<Rede,StatusRede>>;preparando?:boolean;relatorio?:{t:number;rede:string;evento:string;detalhe:string}[]};
+export type StatusRede = {status:'agendado'|'postando'|'postado'|'erro'|'manual'|'liberacao'|'cancelado';link:string;erro:string;quando?:number;lote?:string;lote_pausado?:boolean;intervalo_api_s?:number};
+export type Post = {id:string;video:string;hash?:string;arquivo_disponivel?:boolean;criado:number;quando:number;titulo:string;legenda:string;opcoes:{youtube_privacidade:string;tiktok_modo:string};redes:Partial<Record<Rede,StatusRede>>;preparando?:boolean;relatorio?:{t:number;rede:string;evento:string;detalhe:string}[]};
 
 export const REDES:{id:Rede;nome:string;prov:Prov|null}[] = [
   {id:'youtube',nome:'YouTube Shorts',prov:'google'},
@@ -80,3 +80,12 @@ export async function baixarVideoPost(c:Cfg,id:string,nome:string){
   if(!r||!r.ok) throw new Error('Não consegui baixar o vídeo do servidor.');
   const u=URL.createObjectURL(await r.blob()); const a=document.createElement('a'); a.href=u; a.download=(nome.replace(/[\\/:*?"<>|]+/g,'').slice(0,60)||'corte')+'.mp4'; a.click(); setTimeout(()=>URL.revokeObjectURL(u),30000);
 }
+
+export type ItemLote={post:string;rede:Rede;titulo:string;quando?:number;slot?:string|null;motivo?:string};
+export type PreviaLote={agendados:ItemLote[];ignorados:ItemLote[];ajustes:ItemLote[];versao?:string;lote?:string;repetido?:boolean};
+export type PedidoLote={posts:string[];redes:Rede[];inicio:number;intervalo_min:number;intervalo_api_s:number;modo:'intervalo'|'programacao';reagendar:boolean};
+export type LotePosts={id:string;inicio?:number;total:number;publicados:number;pendentes:number;cancelados:number;pausado:boolean;redes:Rede[]};
+export const previaLote=(c:Cfg,d:PedidoLote)=>chamar<PreviaLote>(c,'POST','/posts/lotes/previa',d);
+export const criarLote=(c:Cfg,d:PedidoLote&{chave:string;versao:string})=>chamar<PreviaLote>(c,'POST','/posts/lotes',d);
+export const listarLotes=(c:Cfg)=>chamar<{lotes:LotePosts[]}>(c,'GET','/posts/lotes');
+export const acaoLote=(c:Cfg,id:string,acao:'pausar'|'retomar'|'cancelar')=>chamar<{lotes:LotePosts[]}>(c,'POST',`/posts/lotes/${id}/${acao}`,{});
