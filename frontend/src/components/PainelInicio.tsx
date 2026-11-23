@@ -32,7 +32,7 @@ function Kpi({rotulo,valor,def,ir}:{rotulo:string;valor:number|null|undefined;de
 export default function PainelInicio(){
   const {go,abrirCoordenador}=useApp(); const cfg=useCfg();
   const [periodo,setPeriodo]=useState<Periodo>('hoje');
-  const res=useResumo(cfg,periodo,30);
+  const res=useResumo(cfg,periodo,5);
   const r=res.dados; const t=r?.totais;
   const nomeP=PERIODOS.find(x=>x[0]===periodo)![1].toLowerCase();
   const ir=(x:Tab,extra='',area?:string)=>()=>go(x,extra,area);
@@ -82,6 +82,7 @@ export default function PainelInicio(){
         const [nome,cor]=a.estado_real?(ESTADO_REAL[a.estado_real]||[a.estado_real_nome||a.estado_real,'']):['Não disponível',''];
         return <div key={a.id} className="pi-estado" role="listitem"><b>{info?`${info.n} · ${info.nome}`:a.id}</b><span className={'tag '+cor}>{nome}</span>
           {a.esteira_agora?.[0]&&<small>{a.esteira_agora[0].etapa}: {a.esteira_agora[0].titulo}</small>}
+          {!a.esteira_agora?.length&&a.atual[0]?.etapa&&<small>{a.atual[0].etapa}</small>}
           {a.motivo&&a.estado_real!=='ativo'&&<small className="muted">{a.motivo.slice(0,140)}</small>}
         </div>; })}</div>}
       {r?.esteira7&&<p className="hint">Esteira: {Object.entries(r.esteira7.por_etapa).length?Object.entries(r.esteira7.por_etapa).map(([k,n])=>`${n} em ${r.esteira7!.nomes_etapa[k]||k}`).join(' · '):'nenhum vídeo em andamento'}
