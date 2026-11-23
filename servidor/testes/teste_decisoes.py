@@ -12,6 +12,7 @@ TMP = Path(tempfile.mkdtemp(prefix='ec-decisoes-'))
 os.environ['DADOS'] = str(TMP / 'dados')
 os.environ['BANCO_ARQ'] = str(TMP / 'dados' / 'database' / 'studio.sqlite')
 os.environ['CENTRAL_SEM_ACORDAR'] = '1'
+os.environ['ESTEIRA_COMPLETA'] = '0'
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import banco as db  # noqa: E402
 import agente as ag  # noqa: E402
@@ -45,7 +46,7 @@ check(r['total'] == 0 and r['urgentes'] == 0 and not r['fontes_com_erro'], 'serv
 
 print('2. Cada tipo de decisão aparece')
 db.executar("INSERT INTO projetos (id, titulo, tipo, status, dados, criado, atualizado, apagado) VALUES (?,?,?,?,?,?,?,0)",
-            'p1', 'Vídeo do café', 'agente3', 'ready_for_review', '{"briefing":{}}', agora, agora - 300)
+            'p1', 'Vídeo do café', 'agente3', 'ready_for_review', '{"briefing":{},"render":{"sha":"video-teste"},"diretor":{"sha":"video-teste","veredito":"aprovado"},"qualidade":{"status":"apto_para_revisao_humana"}}', agora, agora - 300)
 db.executar("INSERT INTO projetos (id, titulo, tipo, status, dados, criado, atualizado, apagado) VALUES (?,?,?,?,?,?,?,0)",
             'p2', 'Roteiro do chá', 'agente3', 'waiting_brief_approval', '{"briefing":{}}', agora, agora - 200)
 db.executar("INSERT INTO projetos (id, titulo, tipo, status, dados, criado, atualizado, apagado) VALUES (?,?,?,?,?,?,?,0)",
@@ -106,6 +107,34 @@ decisoes._esteira = lambda: 1 / 0
 r2 = rota()
 decisoes._esteira = orig
 check(r2['fontes_com_erro'] == ['esteira'] and r2['total'] == r['total'] - 1, 'esteira com erro: o resto continua aparecendo')
+
+print('4. Remover avisos persiste no servidor sem aprovar nem cancelar tarefas')
+antes = db.um('SELECT status FROM projetos WHERE id=?', 'p1')['status']
+rem = rt.tratar('POST', '/api/v1/alertas/decisoes/remover', {},
+                lambda: {'chave': 'a3:p1', 'versao': ch['a3:p1']['versao']}, 'teste')
+check(not any(x['chave'] == 'a3:p1' for x in rem['itens']) and rem['urgentes'] == r['urgentes'] - 1,
+      'remover tira o item e reduz o contador imediatamente')
+check(db.um('SELECT status FROM projetos WHERE id=?', 'p1')['status'] == antes,
+      'remover aviso preserva a tarefa, sem aprovar, postar ou rejeitar')
+check(painel.resumo('hoje')['totais']['esperando_decisao'] == rem['urgentes'],
+      'contador do Início acompanha a remoção do aviso')
+db.con().close()
+del db._local.c
+check(not any(x['chave'] == 'a3:p1' for x in rota()['itens']), 'outra conexão mantém o aviso removido')
+db.executar('UPDATE projetos SET atualizado=? WHERE id=?', agora + 5, 'p1')
+novo = next(x for x in rota()['itens'] if x['chave'] == 'a3:p1')
+check(novo['versao'] != ch['a3:p1']['versao'], 'nova revisão do mesmo projeto volta à lista')
+try:
+    rt.tratar('POST', '/api/v1/alertas/decisoes/remover', {},
+              lambda: {'chave': 'a3:p1', 'versao': ch['a3:p1']['versao']}, 'teste')
+    check(False, 'remoção desatualizada deve falhar')
+except rt.ErroRota as e:
+    check(e.status == 409, 'remoção desatualizada não esconde uma decisão nova')
+try:
+    rt.tratar('POST', '/api/v1/alertas/decisoes/remover', {}, lambda: {}, 'teste')
+    check(False, 'pedido vazio deve falhar')
+except rt.ErroRota as e:
+    check(e.status == 404, 'pedido vazio não remove outros itens')
 
 print(f'\n{ok} ok, {falhas} falha(s)')
 sys.exit(1 if falhas else 0)
