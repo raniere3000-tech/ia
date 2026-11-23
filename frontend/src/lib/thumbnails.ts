@@ -13,7 +13,7 @@ export type Selecao={id:string;variante:string;video_sha:string;thumb_sha:string
 export type Progresso={status:string;pct:number;etapa:string;restante_s:number|null;estimado:boolean;criado:number;iniciado:number|null;terminado:number|null;decorrido:number;tentativas:number}|null;
 export type Job={id:string;origem:Origem;referencia:string;video_sha:string;estado:string;criado:number;atualizado:number;erro:string|null;titulo:string;metodo:string;
   correcoes:number;custo:number;por:string;config:{variantes:number;formato:string;texto_modo:string;texto:string;descricao:string;avisos?:string[]};
-  progresso:Progresso;selecao:Selecao;variantes:Variante[]};
+  pedido_atual?:string|null;progresso:Progresso;selecao:Selecao;variantes:Variante[]};
 export type Perfil={id:string;nome:string;escopo:string;versao:number;config:{cor_texto:string;cor_destaque:string;cor_faixa:string;intensidade:number;maiusculas:boolean;logo_asset:string;nicho:string;exemplos:string}};
 export type CfgThumb={modo:'automatico'|'supervisionado'|'manual';criar_sozinho:boolean;metodo_padrao:Metodo;variantes_padrao:number;max_variantes:number;max_correcoes:number;
   nota_min:number;ia:boolean;ia_max_por_pedido:number;ia_fallback_local:boolean;exigir_capa_youtube:boolean;formato_por_rede:Record<string,string>};
@@ -31,6 +31,8 @@ export const lerJobs=(c:CfgSrv,estado='')=>api<{jobs:Job[]}>(c,'GET',`${B}/jobs?
 export const lerJob=(c:CfgSrv,id:string)=>api<Job>(c,'GET',`${B}/jobs/${id}`);
 export const pedirCapas=(c:CfgSrv,d:Pedido)=>api<Job&{repetido?:boolean}>(c,'POST',`${B}/jobs`,{...d,chave_idempotencia:undefined});
 export const cancelarJob=(c:CfgSrv,id:string)=>api<Job>(c,'POST',`${B}/jobs/${id}/cancelar`,{});
+export const recusarCapas=(c:CfgSrv,id:string)=>api<Job>(c,'POST',`${B}/jobs/${id}/recusar`,{});
+export const pedirParaVersaoAtual=(c:CfgSrv,id:string)=>api<Job>(c,'POST',`${B}/jobs/${id}/nova-versao`,{});
 export const refazerCapa=(c:CfgSrv,id:string,numero:number,texto?:string)=>api<Job>(c,'POST',`${B}/jobs/${id}/refazer`,texto===undefined?{numero}:{numero,texto});
 export const escolherCapa=(c:CfgSrv,id:string,v:Variante,confirmacao=false)=>api<Job>(c,'POST',`${B}/jobs/${id}/selecionar`,{variante_id:v.id,versao:v.versao,confirmacao});
 export const lerPacote=(c:CfgSrv,id:string)=>api<{valido:boolean;motivo?:string;video_sha?:string;thumb_sha?:string;numero?:number;versao?:number}>(c,'GET',`${B}/jobs/${id}/pacote`);
@@ -44,7 +46,7 @@ export const lerDesempenho=(c:CfgSrv)=>api<Desempenho>(c,'GET',`${B}/desempenho`
 
 export const ESTADOS:Record<string,[string,string]>={aguardando_video:['esperando o diretor aprovar o vídeo','warn'],na_fila:['na fila',''],analisando:['olhando o vídeo','ok'],
   criando:['desenhando','ok'],validando:['diretor conferindo','ok'],aguardando_escolha:['escolha a capa','warn'],pronto:['pronta','ok'],falhou:['falhou','bad'],
-  cancelado:['cancelado',''],revisao_manual:['precisa de você','bad']};
+  cancelado:['cancelado',''],recusado:['recusado','warn'],substituido:['versão anterior',''],revisao_manual:['precisa de você','bad']};
 export const METODOS:[Metodo,string,string][]=[['inteligente','Automático','Quadros do vídeo com três composições diferentes.'],
   ['frame','Quadro do vídeo','O próprio quadro, com pouco enfeite.'],['editorial','Editorial','Faixas, painel e moldura, estilo revista.'],
   ['ia','Com IA','Fundo gerado pela IA (sem texto). O texto continua pelo nosso desenho, sem erro de escrita.']];
