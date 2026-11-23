@@ -190,12 +190,43 @@ export default function Agente(){
   const [link,setLink]=useState(''); const [tema,setTema]=useState(''); const [canalLink,setCanalLink]=useState(''); const [canalMotivo,setCanalMotivo]=useState('');
   const [chaves,setChaves]=useState({gemini:'',gemini_pago:'',youtube:'',email_senha:'',pexels:'',pixabay:'',callmebot:''}); const [hora,setHora]=useState('18:00'); const [diasSel,setDiasSel]=useState<number[]>([0,1,2,3,4,5]);
   const vivo=useRef(true);
+  const filaConfig=useRef(Promise.resolve());
+  const versaoConfig=useRef(0);
+  const [salvamentos,setSalvamentos]=useState(0);
   useEffect(()=>{ vivo.current=true; return ()=>{ vivo.current=false; }; },[]);
-  const carregar=useCallback(()=>{ if(!settings.servidor) return; verAgente(settings).then(x=>{ if(vivo.current){ setV(x); setErro(''); } }).catch(e=>{ if(vivo.current) setErro(e.message); }); },[settings]);
+  const carregar=useCallback(()=>{
+    if(!settings.servidor) return;
+    const versao=versaoConfig.current;
+    verAgente(settings).then(x=>{
+      if(vivo.current&&versao===versaoConfig.current){ setV(x); setErro(''); }
+    }).catch(e=>{ if(vivo.current&&versao===versaoConfig.current) setErro(e.message); });
+  },[settings]);
   const ocupado=!!v?.atual.ocupado;
   useEffect(()=>{ carregar(); const t=setInterval(carregar,ocupado?3000:12000); return ()=>clearInterval(t); },[carregar,ocupado]);
   const run=async(f:()=>Promise<unknown>,ok?:string)=>{ try{ const r=await f(); if(r&&typeof r==='object'&&'config' in r) setV(r as VisaoAgente); else carregar(); if(ok) toast(ok,'ok'); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } };
-  const salvar=(p:Parameters<typeof salvarAgente>[1])=>run(()=>salvarAgente(settings,p));
+  const salvar=(p:Parameters<typeof salvarAgente>[1],ok='Configuração salva.')=>{
+    versaoConfig.current++;
+    setSalvamentos(n=>n+1);
+    filaConfig.current=filaConfig.current.then(async()=>{
+      try{
+        const nv=await salvarAgente(settings,p);
+        versaoConfig.current++;
+        if(!vivo.current) return;
+        setV(nv);
+        const confirmado=(['priorizar_legendas','so_com_legenda'] as const)
+          .every(k=>p.cortes?.[k]===undefined||nv.config.cortes[k]===p.cortes[k]);
+        if(!confirmado){
+          toast('O servidor não salvou a opção de legenda. Atualize o EstúdioClip no Termux e reinicie o servidor.','erro');
+          return;
+        }
+        toast(ok,'ok');
+      }catch(e){
+        if(vivo.current) toast('Não consegui salvar. '+(e instanceof Error?e.message:String(e)),'erro');
+      }finally{
+        if(vivo.current) setSalvamentos(n=>n-1);
+      }
+    });
+  };
   /** Liga/desliga a busca automática e confere se o servidor guardou mesmo (servidor antigo ignora a opção sem avisar). */
   const trocarBusca=async()=>{
     if(!v) return;
@@ -307,7 +338,13 @@ export default function Agente(){
         <div className="mt"><b>Temas específicos</b>
           <p className="hint">Quer vídeos só sobre um assunto? Escreva o tema (ex.: <i>Elden Ring</i>, <i>futebol</i>). Com temas, o agente só corta vídeos que falam deles, em vez de pegar o mais visto de qualquer assunto.</p>
           <Lista titulo="" escolhidos={co.temas||[]} sugestoes={[]} mudar={l=>salvar({cortes:{temas:l}})} placeholder="Escreva um tema e toque em adicionar"/>
-          <label className="check mt"><input type="checkbox" checked={co.priorizar_legendas ?? true} onChange={e=>salvar({cortes:{priorizar_legendas:e.target.checked}})}/> Priorizar vídeos com legenda no YouTube. Se o vídeo escolhido não tiver legenda disponível, o Agente 1 usa o áudio para fazer os cortes.</label>
+          {co.priorizar_legendas===undefined?
+            <div className="mt">
+              <p className="hint">Atualize e reinicie o servidor para usar a preferência por legenda.</p>
+              {co.so_com_legenda&&<button type="button" className="subtle sm" disabled={salvamentos>0} onClick={()=>salvar({cortes:{so_com_legenda:false}},'Vídeos sem legenda liberados.')}>Permitir cortes sem legenda agora</button>}
+            </div>:
+            <label className="check mt"><input type="checkbox" checked={co.priorizar_legendas} disabled={salvamentos>0} onChange={e=>salvar({cortes:{priorizar_legendas:e.target.checked}})}/> Priorizar vídeos com legenda no YouTube. Se o vídeo escolhido não tiver legenda disponível, o Agente 1 usa o áudio para fazer os cortes.</label>}
+          {salvamentos>0&&<small role="status">Salvando configuração…</small>}
           <label className="check mt"><input type="checkbox" checked={!!co.temas_outros} onChange={e=>salvar({cortes:{temas_outros:e.target.checked}})}/> Procurar também em outros canais do YouTube (não só nos aprovados)</label>
           <p className="hint">Vídeo de canal que você não aprovou fica sem origem registrada: ele passa pelo diretor de qualidade, mas só posta depois da sua liberação especial.</p>
           <div className="ag-add"><input value={tema} onChange={e=>setTema(e.target.value)} placeholder="Cortar agora um vídeo sobre... (só desta vez)"/><button className="subtle sm" disabled={ocupado||tema.trim().length<3} onClick={()=>run(async()=>{ await rodarAgente(settings,'tema',tema.trim()); setTema(''); setParte('fila'); },'Procurando um vídeo sobre esse tema. O resultado aparece na fila.')}><Search size={14}/> Procurar e cortar</button></div>
