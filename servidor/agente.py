@@ -624,7 +624,10 @@ def proximo_video(tema: str = '') -> dict | None:
                     ids += [it['id']['videoId'] for it in j.get('items', []) if it.get('id', {}).get('videoId')]
             except ErroAgente as err:
                 anotar(f'Não consegui procurar "{tm}": {err}', 'erro')
-    ids = [i for i in dict.fromkeys(ids) if i not in e['vistos']]
+    # A regra antiga marcava o vídeo como visto antes de haver qualquer corte.
+    vistos = {i for i, visita in e['vistos'].items()
+              if not visita.get('r', '').startswith('erro: Vídeo sem legenda no YouTube: pulei')}
+    ids = [i for i in dict.fromkeys(ids) if i not in vistos]
     limite = (datetime.utcnow() - timedelta(days=co['dias_video'])).strftime('%Y-%m-%dT%H:%M:%SZ')
     ok_canais = {c['id'] for c in aprovados}
     bons = []
