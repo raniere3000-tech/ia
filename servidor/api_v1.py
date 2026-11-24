@@ -865,11 +865,11 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         j = fila.obter(m.group(1))
         if not j:
             raise pj.ErroProjeto(404, 'Trabalho não encontrado.')
-        j = dict(j)
+        j = fila.estado_publico(j)
         j['dados'] = json.loads(j.get('dados') or '{}')
         j['resultado'] = json.loads(j['resultado']) if j.get('resultado') else None
         if j['status'] not in fila.FINAIS:
-            j['restante'] = round(fila.restante(j)[0])
+            j['restante'] = None if j['heartbeat_atrasado'] or j['estado_comum'] in ('PAUSED','WAITING_USER','CANCEL_REQUESTED') else round(fila.restante(j)[0])
         return j
     m = re.fullmatch(r'/api/v1/fila/(\w+)/(pausar|retomar|cancelar|ignorar|tentar|reagendar)', caminho)
     if m and metodo == 'POST':

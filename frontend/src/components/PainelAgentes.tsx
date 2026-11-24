@@ -52,7 +52,7 @@ export default function PainelAgentes({titulo=true}:{titulo?:boolean}){
   const co=v?.config.cortes, po=v?.config.postagem;
   const agendados=cortes.filter(c=>c.status==='agendado').sort((a,b)=>(a.quando||0)-(b.quando||0));
   const j1=ativos('agente1'), j3=ativos('agente3');
-  const rodando3=j3.filter(j=>j.status==='rodando');
+  const rodando3=j3.filter(j=>j.estado_comum?j.estado_comum==='RUNNING':j.status==='rodando');
   const esperando3=(pend.dados?.pendentes||[]).length;
   const prontos3=(proj.dados?.projetos||[]).filter(p=>['ready_for_review','approved','queued_to_publish','posted'].includes(p.status)).length;
   const linhas:Linha[]=[

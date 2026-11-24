@@ -2035,6 +2035,9 @@ def agentes() -> dict:
     for ag_id, nomes in AGENTES_JOBS.items():
         ph = ','.join('?' * len(nomes))
         rod = db.todos(f"SELECT * FROM jobs WHERE agente IN ({ph}) AND status='rodando' ORDER BY iniciado", *nomes)
+        lidos = [fila.estado_publico(j, agora) for j in rod]
+        recuperaveis = [j for j in lidos if j['heartbeat_atrasado']]
+        rod = [j for j in lidos if j['estado_comum'] == 'RUNNING']
         fila_n = (db.um(f"SELECT COUNT(*) AS n FROM jobs WHERE agente IN ({ph}) AND status IN ('na_fila','agendado','aguardando_tentativa')", *nomes) or {'n': 0})['n']
         falhas = (db.um(f"SELECT COUNT(*) AS n FROM jobs WHERE agente IN ({ph}) AND status='falhou' AND terminado>?", *nomes, agora - 86400) or {'n': 0})['n']
         feitos = (db.um(f"SELECT COUNT(*) AS n FROM jobs WHERE agente IN ({ph}) AND status='concluido' AND terminado>?", *nomes, agora - 86400) or {'n': 0})['n']
@@ -2059,6 +2062,8 @@ def agentes() -> dict:
         item = {'id': ag_id, 'nome': NOMES_AGENTE[ag_id], 'estado': 'trabalhando' if atual else ('na_fila' if fila_n else 'parado'), 'atual': atual,
                 'na_fila': fila_n, 'feitos_24h': feitos, 'falhas_24h': falhas, 'tempos_medios': medias,
                 'custo_30d': {'valor': round(custo.get('s') or 0, 4), 'moeda': custo.get('moeda') or '', 'registros': custo.get('n') or 0}}
+        item['jobs_recuperaveis'] = [{'job': j['id'], 'estado_comum': j['estado_comum'],
+                                     'motivo': j['estado_motivo']} for j in recuperaveis]
         item.update(_esteira_do_agente(ag_id, agora))
         if ag_id == 'agente6':
             try:

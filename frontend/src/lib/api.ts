@@ -130,7 +130,7 @@ export async function baixarAsset(cfg:CfgSrv,id:string):Promise<Blob>{
 }
 
 // ---------------------------------------------------------------- fila e capacidade
-export type Job={id:string;tipo:string;agente:string;titulo:string;status:string;etapa:string;progresso:number;projeto:string;run_at:number;criado:number;iniciado:number|null;terminado:number|null;
+export type Job={estado_comum?:'CREATED'|'QUEUED'|'RUNNING'|'WAITING_USER'|'PAUSED'|'RETRYABLE_ERROR'|'CANCEL_REQUESTED'|'CANCELLED'|'FAILED'|'COMPLETED';heartbeat_atrasado?:boolean;estado_motivo?:string;id:string;tipo:string;agente:string;titulo:string;status:string;etapa:string;progresso:number;projeto:string;run_at:number;criado:number;iniciado:number|null;terminado:number|null;
   decorrido:number;tentativas:number;max_tentativas:number;erro:string|null;pausado:number;cancelar?:number;recurso:string;prioridade:number;
   posicao?:number|null;inicio_previsto?:number|null;fim_previsto?:number|null;restante?:number|null;estimativa_medida?:boolean;decorrido_total?:number;dados?:Record<string,unknown>};
 export type Fila={jobs:Job[];contagem:Record<string,number>;agora:number;limites:Record<string,number>};

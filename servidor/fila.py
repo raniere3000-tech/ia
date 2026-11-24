@@ -415,6 +415,31 @@ def restante(job: dict) -> tuple[float, bool]:
 ESTIMADORES: dict = {}
 
 
+def estado_publico(job: dict, agora: float | None = None) -> dict:
+    """Adaptador de leitura: preserva status/flags legados e não grava no banco."""
+    agora = time.time() if agora is None else agora
+    status = job.get('status')
+    mapa = {'agendado': 'QUEUED', 'na_fila': 'QUEUED', 'aguardando_aprovacao': 'WAITING_USER',
+            'aguardando_tentativa': 'RETRYABLE_ERROR', 'cancelado': 'CANCELLED',
+            'falhou': 'FAILED', 'concluido': 'COMPLETED'}
+    atrasado = status == 'rodando' and (not job.get('heartbeat') or
+        agora - float(job['heartbeat']) > ALUGUEL or float(job.get('lease') or 0) < agora)
+    motivo = ''
+    if status in FINAIS:
+        estado = mapa[status]
+    elif job.get('cancelar'):
+        estado = 'CANCEL_REQUESTED'
+    elif job.get('pausado'):
+        estado = 'PAUSED'
+    elif status == 'rodando':
+        estado = 'RETRYABLE_ERROR' if atrasado else 'RUNNING'
+        if atrasado:
+            motivo = 'Sem sinal recente do servidor. A tarefa precisa ser recuperada antes de continuar.'
+    else:
+        estado = mapa.get(status, 'CREATED')
+    return dict(job, estado_comum=estado, heartbeat_atrasado=atrasado, estado_motivo=motivo)
+
+
 def lista(filtro: str = '') -> dict:
     agora = time.time()
     js = db.todos('SELECT * FROM jobs ORDER BY CASE status WHEN \'rodando\' THEN 0 WHEN \'na_fila\' THEN 1 WHEN \'aguardando_tentativa\' THEN 2 '
@@ -422,11 +447,16 @@ def lista(filtro: str = '') -> dict:
     # previsão de início: soma do que está na frente na mesma classe de recurso
     frente = {'pesado': 0.0, 'leve': 0.0}
     for j in js:
+        j.update(estado_publico(j, agora))
         j['dados'] = json.loads(j.get('dados') or '{}')
         j['resultado'] = json.loads(j['resultado']) if j.get('resultado') else None
         if j['status'] in FINAIS:
             j['inicio_previsto'] = None
             j['restante'] = 0
+            continue
+        if j['estado_comum'] in ('PAUSED', 'WAITING_USER', 'CANCEL_REQUESTED') or j['heartbeat_atrasado']:
+            j.update(inicio_previsto=None, fim_previsto=None, restante=None, posicao=None,
+                     decorrido_total=j.get('decorrido') or 0)
             continue
         rest, medido = restante(j)
         j['restante'] = round(rest)
@@ -453,10 +483,14 @@ def lista(filtro: str = '') -> dict:
 
 
 def _grupo(j: dict) -> str:
+    if j.get('heartbeat_atrasado') and j.get('estado_comum') == 'RETRYABLE_ERROR':
+        return 'erros'
     if j['status'] == 'falhou':
         return 'erros'
     if j['pausado']:
         return 'pausados'
+    if j['status'] == 'aguardando_aprovacao':
+        return 'prontos'
     if j['status'] == 'agendado':
         return 'agendados'
     if j['status'] in ('rodando', 'na_fila', 'aguardando_tentativa'):
