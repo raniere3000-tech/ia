@@ -462,7 +462,8 @@ QA_VISAO_CONFIANCA = 0.6
 def visao_ia(pid: str, video: Path, sha: str, cenas: list, b: dict, cancelado=None) -> list:
     """Olhar estético da IA (provedor configurado, só se ligado no pedido): até 6 quadros pequenos do meio dos planos.
     Cada apontamento vem com a confiança da IA; abaixo de 0,6 é descartado. Tudo é JULGAMENTO (natureza 'julgamento'):
-    aparece na revisão e nunca reprova nem corrige nada sozinho. Orçamento: QA_VISAO_DIA vídeos por dia; mesmo vídeo não paga duas vezes."""
+    aparece no laudo e passa pelas mesmas regras de pendências do Diretor.
+    Orçamento: QA_VISAO_DIA vídeos por dia; mesmo vídeo não paga duas vezes."""
     if not b.get('qa_visao') or not (ag.segredos().get('gemini') or ag.segredos().get('gemini_pago')):
         return []
     feito = pj.obter(pid)['dados'].get('qa_visao') or {}
@@ -1490,6 +1491,59 @@ def _srt(cenas: list) -> str:
     return '\n'.join(out)
 
 
+def edicao_compartilhada_ativa() -> bool:
+    return os.getenv('A3_EDICAO_COMPARTILHADA', '0') == '1'
+
+
+def _editar_montagem(ctx, pid, b, fonte: Path, destino: Path) -> dict:
+    """Entrega a montagem pronta ao mesmo EditPlan/executor do A5, sem remontar cenas."""
+    import contratos as ct
+    import editor_ia as ed
+    import pipeline as pl
+    p = pj.obter(pid)
+    meta = rd.sonda(fonte)
+    video = next(s for s in meta['streams'] if s.get('codec_type') == 'video')
+    # O AAC pode ter padding no contêiner; a timeline segue o relógio da imagem.
+    dur = float(video.get('duration') or meta.get('format', {}).get('duration') or 0)
+    padrao = ed.plano_importado(dur, b['formato'])
+    padrao['effects'].append({'tipo': 'fade', 'entrada_ms': 120, 'saida_ms': 120})
+    padrao['edit_reason'] = 'Finalização compartilhada das cenas do Agente 3.'
+    plano = ct.validar_plano(p['dados'].get('plano_edicao') or padrao, dur)
+    clipes = plano['clips']
+    # SRT e vozes já seguem o storyboard. Mudanças de timeline pertencem às cenas.
+    if (len(clipes) != 1 or clipes[0]['source'] != 'principal' or clipes[0]['in_ms'] != 0
+            or abs(clipes[0]['out_ms'] / 1000 - dur) > .05 or plano['target_aspect_ratio'] != b['formato']):
+        raise ct.ErroContrato('Na finalização do A3, preserve a duração e o formato; altere os tempos no storyboard.')
+    run = pl.criar('agente3', pid, p['titulo'][:120], chave=f'agente3:{pid}:{ctx.id}', estado='creative_qa_pending')
+    pl.guardar_plano(run['id'], plano, plano['edit_reason'])
+    pl.mover(run['id'], 'rendering', agente='agent5', etapa='A5 finalizando a montagem original')
+    try:
+        ed.executar_importado(plano, fonte, destino, comprovar=True, cancelado=_cancelado(ctx))
+        recibo = json.loads(destino.with_suffix('.efeitos.json').read_text())
+        if (not isinstance(recibo, dict) or recibo.get('status') != 'concluido' or recibo.get('arquivo_sha') != rd.sha256(destino)
+                or recibo.get('plano_hash') != ct.hash_plano(plano)):
+            raise rd.ErroRender('Falta comprovar os efeitos do A5 nesta montagem.')
+    except BaseException as erro:
+        arq = destino.with_suffix('.efeitos.json')
+        try:
+            falha = json.loads(arq.read_text())
+        except (OSError, ValueError):
+            falha = {'schema': 1}
+        if not isinstance(falha, dict):
+            falha = {'schema': 1}
+        falha.update(status='falhou', falhas=1, aplicados=0, erro=str(erro)[:500])
+        ed._registrar_efeitos(destino, falha)
+        pj.mudar_dados(pid, lambda d, _p: d.update(edicao_compartilhada=falha))
+        _marcar_a3(pid, 'a5_edicao', 'falhou', executor='editor_ia.executar_importado')
+        raise
+    recibo.update(fonte_sha=rd.sha256(fonte), executor='editor_ia.executar_importado')
+    ed._registrar_efeitos(destino, recibo)
+    pl.guardar_plano(run['id'], plano, arquivo_sha=recibo['arquivo_sha'])
+    pl.mover(run['id'], 'rendering', dados={'execucao_efeitos': recibo})
+    pj.mudar_dados(pid, lambda d, _p: d.update(edicao_compartilhada=recibo))
+    return recibo
+
+
 def etapa_final(ctx, pid, p, b):
     _status(pid, 'assembling')
     cenas = p['dados']['cenas']
@@ -1519,6 +1573,12 @@ def etapa_final(ctx, pid, p, b):
     ctx.progresso(89, 'Mixando o som')
     final_tmp = trab / 'final.tmp.mp4'
     rd.mixar_trilha(junto, trilha, final_tmp, _cancelado(ctx))
+    recibo_edicao = None
+    if edicao_compartilhada_ativa():
+        ctx.progresso(90, 'Editor aplicando e comprovando os efeitos da montagem')
+        candidato = trab / 'editado.mp4'
+        recibo_edicao = _editar_montagem(ctx, pid, b, final_tmp, candidato)
+        final_tmp = candidato
     dur_esperada = sum((c.get('clipe') or {}).get('dur') or 0 for c in cenas)
     W, H = ec.FORMATOS[b['formato']]
     _status(pid, 'validating')
@@ -1532,6 +1592,8 @@ def etapa_final(ctx, pid, p, b):
     sha = rd.sha256(final_tmp)
     final = pasta / f'{sha[:16]}.mp4'
     final_tmp.replace(final)                       # só agora o arquivo vira "final"
+    if recibo_edicao:
+        shutil.copyfile(final_tmp.with_suffix('.efeitos.json'), final.with_suffix('.efeitos.json'))
     prev = pasta / f'{sha[:16]}.preview.mp4'
     try:
         rd.preview_leve(final, prev, _cancelado(ctx))
@@ -1545,7 +1607,10 @@ def etapa_final(ctx, pid, p, b):
     srt = pasta / f'{sha[:16]}.srt'
     srt.write_text(_srt(cenas), encoding='utf-8')
     ids = {}
-    for nome, arq, mime in (('video', final, 'video/mp4'), ('preview', prev, 'video/mp4'), ('thumb', thumb, 'image/jpeg'), ('srt', srt, 'application/octet-stream')):
+    arquivos = [('video', final, 'video/mp4'), ('preview', prev, 'video/mp4'), ('thumb', thumb, 'image/jpeg'), ('srt', srt, 'application/octet-stream')]
+    if recibo_edicao:
+        arquivos.append(('efeitos', final.with_suffix('.efeitos.json'), 'application/json'))
+    for nome, arq, mime in arquivos:
         if arq.exists():
             ids[nome] = pj.registrar_asset(arq, f'{nome}-{sha[:8]}{arq.suffix}', mime, pid, 'agente3')['asset']['id']
     versao = (db.um('SELECT COALESCE(MAX(versao),0) AS v FROM renders WHERE projeto=?', pid) or {'v': 0})['v'] + 1
@@ -1567,9 +1632,10 @@ def etapa_final(ctx, pid, p, b):
     render = {'id': rid, 'sha': sha, 'versao': versao, 'duracao': conf['duracao'], 'validado': True, 'avisos': conf['avisos'], 'assets': ids,
               'tamanho': final.stat().st_size, 'criado': time.time(), 'codec': f'{conf["codec"]}/{conf["audio"]}', 'largura': W, 'altura': H}
     # A5 nos vídeos próprios = a montagem final do Agente 3 (concat, mix, conferência técnica). Registrado com quem fez de verdade.
-    _marcar_a3(pid, 'a5_edicao', 'concluida', saida_sha=sha, executor='produtor.etapa_final (montagem do Agente 3)',
+    _marcar_a3(pid, 'a5_edicao', 'concluida', saida_sha=sha,
+               executor='editor_ia.executar_importado' if recibo_edicao else 'produtor.etapa_final (montagem do Agente 3)',
                recibo={'render': rid, 'sha': sha, 'versao': versao, 'duracao': conf['duracao'], 'codec': render['codec'], 'tamanho': render['tamanho'],
-                       'conferencia': 'ok', 'avisos': conf['avisos'][:5]})
+                       'conferencia': 'ok', 'avisos': conf['avisos'][:5], **({'efeitos': recibo_edicao} if recibo_edicao else {})})
 
     resultado = decisao_do_diretor(ctx, pid, b, render, sha, versao, conf)
     if resultado.get('etapa') == 'Avisando por e-mail':
@@ -1580,7 +1646,7 @@ def etapa_final(ctx, pid, p, b):
 def _esteira_ligada() -> bool:
     try:
         import pipeline as pl
-        return pl.ligado()
+        return pl.ligado() or edicao_compartilhada_ativa()
     except Exception:  # noqa: BLE001
         return False
 

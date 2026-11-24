@@ -121,3 +121,11 @@ Na F2.03, a cauda da transição da exportação foi corrigida: teste_exportacao
 passou com 23 verificações. Logs e SHAs nos respectivos checkpoints. As outras
 duas falhas integrais (agente3 e reposicao) continuam encaminhadas a F3.01 e
 F4.02. As limitações de email/yt_dlp e Termux permanecem explícitas.
+
+## Atualização posterior — F3.03
+
+`teste_agente3.py` integral passou: 176 verificações, zero falhas. As correções
+de roteiro F1.01 foram preservadas. Snapshots foram corrigidos na F3.02 e os
+simuladores positivos/negativos foram separados na F3.03, sem relaxar bloqueios
+do Diretor. Evidência: checkpoints/F3.03-agente3-integral.log. O resultado F1.09
+acima permanece histórico; teste_reposicao continua pendente de F4.02.

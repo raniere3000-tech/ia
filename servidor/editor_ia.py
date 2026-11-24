@@ -381,7 +381,7 @@ def plano_importado(dur: float, aspecto: str = '9:16', template_id: str = '') ->
                              'edit_reason': 'Vídeo recebido pronto: conferir antes de mexer.'}, dur)
 
 
-def _executar_importado_base(plano: dict, fonte: Path, destino: Path, inicial_hash: str = '') -> Path:
+def _executar_importado_base(plano: dict, fonte: Path, destino: Path, inicial_hash: str = '', *, cancelado=None) -> Path:
     """Plano igual ao inicial: o arquivo segue como veio (mesmo SHA). Senão: trechos, enquadramento, fade e volume, sempre 30 fps."""
     import shutil
     if inicial_hash and ct.hash_plano(plano) == inicial_hash:
@@ -428,10 +428,15 @@ def _executar_importado_base(plano: dict, fonte: Path, destino: Path, inicial_ha
     cmd = ['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', str(fonte), '-filter_complex', ';'.join(fc), '-map', '[v]', *(['-map', '[a]'] if audio else []),
            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p', '-r', '30',
            *(['-c:a', 'aac', '-b:a', '128k', '-ar', '44100'] if audio else []), '-movflags', '+faststart', str(tmp)]
-    r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
-    if r.returncode != 0 or not tmp.exists() or tmp.stat().st_size < 2000:
+    import renderizador as rd
+    try:
+        rd.rodar(cmd, cancelado=cancelado or _cancelamento_editor(), dur=total)
+    except BaseException:
         tmp.unlink(missing_ok=True)
-        raise RuntimeError('O editor não conseguiu montar o vídeo: ' + (r.stderr.strip()[-300:] or 'erro desconhecido'))
+        raise
+    if not tmp.exists() or tmp.stat().st_size < 2000:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError('O editor não conseguiu montar o vídeo: arquivo incompleto.')
     tmp.replace(destino)
     return destino
 
@@ -450,7 +455,7 @@ def _registrar_efeitos(destino: Path, recibo: dict):
     tmp.replace(p)
 
 
-def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | None = None, base_aplicados=()) -> Path:
+def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | None = None, base_aplicados=(), cancelado=None) -> Path:
     import projetos as pj
     import renderizador as rd
     plano=ct.validar_plano(plano)
@@ -459,6 +464,7 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
     recibo={'schema':1,'plano_hash':ct.hash_plano(plano),'planejados':len(efeitos),'aplicados':0,'falhas':0,
             'efeitos':[],'criado':time.time(),'status':'executando'}
     tmp=destino.with_name(destino.stem+'-efeitos.tmp.mp4')
+    cancelar=cancelado or _cancelamento_editor()
     try:
         meta=rd.sonda(base)
         v=next(x for x in meta['streams'] if x['codec_type']=='video');w,h=int(v['width']),int(v['height'])
@@ -494,6 +500,8 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
                 if not e.get('ligado',1):status='sem_alteracao'
             elif tipo=='zoom':
                 status='sem_alteracao';motivo='Nível de zoom igual a 1.'
+            elif tipo=='reframe' and e.get('modo')=='manter':
+                status='sem_alteracao';motivo='Enquadramento mantido.'
             elif tipo not in base_aplicados:
                 raise ct.ErroContrato('O render base não comprovou aplicação de '+tipo)
             recibo['efeitos'].append({'tipo':tipo,'status':status,'parametros':e,'motivo':motivo})
@@ -507,18 +515,17 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
         if ln:
             cmd += ['-af',f"loudnorm=I={ln['alvo_lufs']:.1f}:TP=-1.5:LRA=11"]
         cmd += ['-movflags','+faststart',str(tmp)]
-        rd.rodar(cmd,cancelado=_cancelamento_editor(),dur=total)
+        rd.rodar(cmd,cancelado=cancelar,dur=total)
         dur=rd.duracao(tmp)
         if abs(dur-total)>0.25:
             raise rd.ErroRender('Duração do efeito divergente do plano.')
         if os.getenv('RENDER_INTEGRIDADE','0')=='1':
             qa=destino.parent/(destino.stem+'-integridade');qa.mkdir(exist_ok=True)
             conferencia=rd.conferir(tmp,qa,{'largura':w,'altura':h,'duracao':total,
-                                         'parados_previstos':parados},_cancelamento_editor())
+                                         'parados_previstos':parados},cancelar)
             recibo['integridade']=conferencia['integridade']
             if not conferencia['ok']:
                 raise rd.ErroRender('Integridade do render: '+'; '.join(conferencia['erros']))
-        cancelar=_cancelamento_editor()
         if cancelar and cancelar():
             raise InterruptedError('cancelado')
         recibo.update(status='concluido',arquivo_sha=rd.sha256(tmp),duracao=dur,
@@ -558,13 +565,13 @@ def _executar_corte_efeitos(plano: dict, video: Path, c: dict, palavras: list, t
         base.unlink(missing_ok=True);montado.unlink(missing_ok=True)
 
 
-def executar_importado(plano: dict, fonte: Path, destino: Path, inicial_hash: str = '') -> Path:
-    if not ct.efeitos_reais_ativos():
-        return _executar_importado_base(plano,fonte,destino,inicial_hash)
+def executar_importado(plano: dict, fonte: Path, destino: Path, inicial_hash: str = '', *, comprovar=False, cancelado=None) -> Path:
+    if not comprovar and not ct.efeitos_reais_ativos():
+        return _executar_importado_base(plano,fonte,destino,inicial_hash,cancelado=cancelado)
     p=copy.deepcopy(ct.validar_plano(plano));base=destino.with_name(destino.stem+'-base-efeitos.mp4')
     p['effects']=[e for e in p['effects'] if e['tipo'] not in ('zoom','broll','caption')]
     try:
-        _executar_importado_base(p,fonte,base)
-        return _finalizar_efeitos(plano,base,destino,base_aplicados=('reframe','fade','loudnorm'))
+        _executar_importado_base(p,fonte,base,cancelado=cancelado)
+        return _finalizar_efeitos(plano,base,destino,base_aplicados=('reframe','fade','loudnorm'),cancelado=cancelado)
     finally:
         base.unlink(missing_ok=True)
