@@ -1408,9 +1408,114 @@ def desempenho() -> dict:
 
 
 # ---------------------------------------------------------------- automático
+def _sha_atual(origem: str, ref: str) -> str:
+    try:
+        import pipeline as pl
+        return pl.sha_arquivo(resolver(origem, ref)['arquivo']) or ''
+    except (ErroThumb, Exception):  # noqa: BLE001 - vídeo sumiu: nada a recuperar
+        return ''
+
+
+def _recuperacoes(origem: str, ref: str, sha: str) -> int:
+    r = db.um("SELECT COUNT(*) n FROM thumbnail_jobs WHERE origem=? AND referencia=? AND video_sha=? AND por='agente6-recuperacao'", origem, ref, sha)
+    return int(r['n'] if r else 0)
+
+
+def diagnosticar(f: dict, cfg: dict | None = None) -> dict:
+    """O que o Agente 6 precisa fazer por este vídeo agora. acao: nada | criar | selecionar | refazer_pedido | excecao."""
+    cfg = cfg or config()
+    origem, ref = f['origem'], f['referencia']
+    j = _ultimo_job(origem, ref)
+    sha = _sha_atual(origem, ref)
+    if not sha:
+        return {'acao': 'nada', 'motivo': 'Vídeo não encontrado no servidor.'}
+    if not j:
+        return {'acao': 'criar', 'motivo': 'Vídeo sem pedido de capa.', 'sha': sha}
+    base = {'job': j['id'], 'estado': j['estado'], 'sha': sha}
+    if j['video_sha'] != sha:
+        atual = db.um('SELECT * FROM thumbnail_jobs WHERE origem=? AND referencia=? AND video_sha=? ORDER BY criado DESC LIMIT 1', origem, ref, sha)
+        if not atual:
+            return {**base, 'acao': 'criar', 'motivo': 'O vídeo mudou: a capa precisa ser da versão nova.', 'recuperacao': True}
+        j = atual
+        base = {'job': j['id'], 'estado': j['estado'], 'sha': sha}
+    est = j['estado']
+    if est in ('na_fila', 'analisando', 'criando', 'validando', 'aguardando_video'):
+        return {**base, 'acao': 'nada', 'motivo': 'Pedido em andamento.'}
+    if est == 'cancelado' and (j.get('erro') or '').startswith('Cancelado por você'):
+        return {**base, 'acao': 'nada', 'motivo': 'Você cancelou este pedido.'}
+    if est in ('pronto', 'aguardando_escolha'):
+        s = revalidar(j['id']) if est == 'pronto' else selecao_ativa(j['id'])
+        if s and s.get('video_sha') == sha:
+            return {**base, 'acao': 'nada', 'motivo': 'Capa escolhida e válida.'}
+        tem_aprovada = db.um("SELECT 1 FROM thumbnail_variantes WHERE job=? AND estado='aprovada'", j['id'])
+        if tem_aprovada:
+            return {**base, 'acao': 'selecionar' if cfg['modo'] == 'automatico' else 'excecao',
+                    'motivo': 'Há capa aprovada sem escolha.' if cfg['modo'] == 'automatico' else 'Capas prontas esperando a sua escolha (modo supervisionado).'}
+    # falhou, cancelado pelo sistema, revisão manual ou sem nenhuma aprovada: pedido novo, até o limite
+    if _recuperacoes(origem, ref, sha) >= cfg['max_recuperacoes']:
+        return {**base, 'acao': 'excecao', 'motivo': f'Nenhuma capa válida depois de {cfg["max_recuperacoes"]} pedidos automáticos: precisa de você.'}
+    return {**base, 'acao': 'refazer_pedido', 'motivo': {'falhou': 'O pedido falhou.', 'revisao_manual': 'Nenhuma capa passou no diretor.',
+                                                        'cancelado': 'O pedido foi cancelado pelo sistema.'}.get(est, 'Sem capa aprovada.')}
+
+
+def _candidatas() -> list:
+    """Vídeos que precisam de capa: cortes prontos/agendados e vídeos finais do Agente 3, os que vão ao ar mais cedo primeiro."""
+    import agente as ag
+    quando = {c['id']: c.get('quando') or 0 for c in ag.estado()['cortes']}
+    cand = [f for f in fontes(limite=200) if
+            ((f['origem'] == 'corte' and f['status'] in ('pronto', 'agendado')) or (f['origem'] == 'render' and f['status'] in ('ready_for_review', 'approved', 'scheduled')))]
+    cand.sort(key=lambda f: (quando.get(f['referencia']) or float('inf')) if f['origem'] == 'corte' else float('inf'))
+    return cand
+
+
+def recuperar(limite_pesados: int = 2, simular: bool = False) -> dict:
+    """Uma passada do Agente 6 autônomo: cria o que falta, escolhe a melhor aprovada e refaz pedidos que não deram capa.
+    Pedidos novos são pesados (FFmpeg + Pillow), então no máximo `limite_pesados` por passada."""
+    cfg = config()
+    out = {'criados': [], 'selecionados': [], 'excecoes': [], 'simulado': simular}
+    if cfg['modo'] == 'manual':
+        return out
+    novos = 0
+    for f in _candidatas():
+        d = diagnosticar(f, cfg)
+        item = {'origem': f['origem'], 'referencia': f['referencia'], 'titulo': f['titulo'], **{k: d.get(k) for k in ('acao', 'motivo', 'job')}}
+        if d['acao'] == 'selecionar':
+            if not simular:
+                r = selecionar_melhor(d['job'], 'agente6-automatico')
+                if not r:
+                    continue
+            out['selecionados'].append(item)
+        elif d['acao'] in ('criar', 'refazer_pedido'):
+            if not cfg['criar_sozinho'] or novos >= limite_pesados:
+                continue
+            if d['acao'] == 'refazer_pedido' or d.get('recuperacao'):
+                if not cfg['recuperacao_automatica']:
+                    continue
+                quem = 'agente6-recuperacao'
+                chave = f'recuperar:{f["referencia"]}:{d["sha"][:16]}:{_recuperacoes(f["origem"], f["referencia"], d["sha"])}'
+                # a cada nova tentativa muda o método, para não repetir a mesma composição que não passou
+                metodo = ('inteligente', 'editorial', 'frame')[_recuperacoes(f['origem'], f['referencia'], d['sha']) % 3]
+            else:
+                quem, chave, metodo = 'agente6-automatico', '', (cfg['metodo_padrao'] if cfg['metodo_padrao'] != 'ia' else 'inteligente')
+            if not simular:
+                try:
+                    j = criar({'origem': f['origem'], 'referencia': f['referencia'], 'metodo': metodo, 'variantes': cfg['variantes_padrao'],
+                               'formato': 'auto', 'texto_modo': 'auto', **({'chave_idempotencia': chave} if chave else {})}, quem)
+                    item['job'] = j['id']
+                except ErroThumb as e:
+                    item['motivo'] = str(e)
+                    out['excecoes'].append(item)
+                    continue
+            novos += 1
+            out['criados'].append(item)
+        elif d['acao'] == 'excecao':
+            out['excecoes'].append(item)
+    return out
+
+
 def varrer() -> int:
-    """Cria capas sozinho (modos automático e supervisionado, com "criar sozinho" ligado): até 2 vídeos por vez,
-    primeiro os que vão ao ar mais cedo. Cortes já agendados também entram, enquanto o post ainda não saiu."""
+    """Cria capas sozinho (modos automático e supervisionado, com "criar sozinho" ligado), recupera pedidos que não deram capa e,
+    no automático, escolhe a melhor aprovada. Até 2 pedidos novos por vez, primeiro os vídeos que vão ao ar mais cedo."""
     cfg = config()
     if cfg['modo'] == 'manual' or not cfg['criar_sozinho']:
         return 0
@@ -1423,23 +1528,8 @@ def varrer() -> int:
             except Exception as e:  # noqa: BLE001
                 print('agente6: aviso', e)
         return 0
-    import agente as ag
-    quando = {c['id']: c.get('quando') or 0 for c in ag.estado()['cortes']}
-    cand = [f for f in fontes(limite=200) if not f['job'] and
-            ((f['origem'] == 'corte' and f['status'] in ('pronto', 'agendado')) or (f['origem'] == 'render' and f['status'] in ('ready_for_review', 'approved', 'scheduled')))]
-    cand.sort(key=lambda f: (quando.get(f['referencia']) or float('inf')) if f['origem'] == 'corte' else float('inf'))
-    n = 0
-    for f in cand:
-        if n >= 2:
-            break
-        try:
-            criar({'origem': f['origem'], 'referencia': f['referencia'], 'metodo': cfg['metodo_padrao'] if cfg['metodo_padrao'] != 'ia' else 'inteligente',
-                   'variantes': cfg['variantes_padrao'], 'formato': 'auto', 'texto_modo': 'auto'}, 'agente6-automatico')
-            n += 1
-        except ErroThumb as e:
-            print('agente6: não criei capa para', f['referencia'], e)
-            continue
-    return n
+    r = recuperar()
+    return len(r['criados']) + len(r['selecionados'])
 
 
 def _vigia():
