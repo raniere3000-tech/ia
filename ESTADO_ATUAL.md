@@ -1,18 +1,18 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T20:25:53-03:00.
+Atualizado: 2026-11-24T20:36:51-03:00.
 
 ```yaml
 fase: "F4"
-microetapa: "F4.02"
+microetapa: "F4.03"
 status: "COMMITTED"
 branch: "codex/estudioclip-2-fase4"
-sha_inicial: "21fbd8c5086596976de75f0ae9e606b4a3ee2ee9"
-sha_final_implementacao: "4f155a0c156c458016c5b29b9e627a3bb09076e2"
-proxima_microetapa: "F4.03"
+sha_inicial: "4ebbcc7dd9d8231a4b688b5519a21d14d7b83a55"
+sha_final_implementacao: "e704ae82d43a49b740447fe258fea527ba58c0d3"
+proxima_microetapa: "F4.04"
 mudancas_nao_commitadas: []
-testes: {"publicacao_lotes": 12, "agenda_agente2": 45, "reposicao": 35}
-flags_adicionadas: []
+testes: ["métricas 7 PASS", "aprendizado 47 PASS", "painel 34 PASS"]
+flags_adicionadas: ["METRICAS_PUBLICACOES=0"]
 migracoes: []
 merge: "NAO_REALIZADO"
 producao: "NAO_PUBLICADA"
@@ -37,11 +37,11 @@ commitadas; flags novas desligadas. Falhas antigas de estilos e exportação
 corrigidas. F3.01: 23 verificações de roteiro e 10 de concorrência. F3.02: seis
 testes de consistência, incluindo render real de duas cenas/duas versões.
 
-Lote, intervalos, slots, retry por rede e idempotência já implementados nos módulos existentes e validados: publicacao_lotes12/12, agenda45/45. Duas falhas históricas de reposição reproduzidas e diagnosticadas: o teste assumia faixa livre após preenchê-la com k3. App corretamente não solicitava vídeo para vaga fora de24h. Preparação corrigida com negativo de horário ocupado e faixa livre comprovada em6h; reposicao35/35. Código de produção intacto, sem nova flag/migração. Nenhuma conta real. Logs antes/diagnóstico/depois preservados. Quatro testes que falharam na suíte F1.09 agora têm verificações posteriores PASS, mas suíte global ainda não repetida.
+Inventário do coletor e snapshots de publicações IA/manuais, reutilizando aprendizado_snapshots. Valores indisponíveis preservados; data real da medição; sem duplicação por corte/post/rede. Documentação: fase-4-coleta-metricas.md.
 
-Evidências: docs/estudioclip-2/checkpoints/F4.02-*.
+Evidências: docs/estudioclip-2/checkpoints/F4.03-*.
 
-## Retomada exata — F4.03
+## Retomada exata — F4.04
 
 ```bash
 git status --short
@@ -51,12 +51,12 @@ git fetch origin codex/estudioclip-2-fase4:refs/remotes/origin/codex/estudioclip
 git rev-list --left-right --count HEAD...origin/codex/estudioclip-2-fase4
 ```
 
-Continuar F4.03 sem parar no checkpoint. Inventariar funções reais em agente.medir_post, aprendizado.coletar/_gravar_retrato e permissões/endpoints YouTube/Meta/TikTok; consultar documentação oficial quando necessário. Usar snapshots existentes; campos não retornados ficam ausentes/None, não zero inventado. Preservar origem, instante e rede. Não chamar contas reais em testes. Depois F4.04 vínculo imutável da publicação/versão e fecho F4.
+Implementar histórico imutável ligando publicação por rede à versão/render/capa/gancho, sem alterar contexto antigo ao editar o projeto.
 
 ## Pendências e limites
 
-Termux, email e APIs de contas reais não verificados. As quatro falhas históricas de F1 tiveram correções/verificações posteriores, mas a suíte global deve ser repetida no fecho final; não declarar aceite global ainda.
+Termux, email e APIs reais não validados. Regressão global final pendente; as quatro falhas históricas já foram corrigidas e verificadas individualmente.
 
 Não afirmar aceite integral de produção. Não abrir segunda implementação de
 editor, métrica ou memória quando o módulo existente cobrir. Rollback se
-solicitado: git revert 4f155a0c156c458016c5b29b9e627a3bb09076e2.
+solicitado: git revert e704ae82d43a49b740447fe258fea527ba58c0d3.
