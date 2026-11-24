@@ -1990,12 +1990,67 @@ def _marcar_visto(vid: str, resultado: str):
     _mudar(f)
 
 
+def mesma_fonte_ativa() -> bool:
+    return os.getenv('A1_MESMA_FONTE', '0').lower() in ('1', 'true', 'sim')
+
+
+def _fonte_transitoria(erro: Exception) -> bool:
+    texto = str(erro)
+    # Sem autorização, fonte removida e limites financeiros nunca entram em retry.
+    if re.search(r'privad|private|removid|removed|404|copyright|sem (direito|autoriza)|url inv[aá]lida|teto|or[cç]amento|falta.*chave', texto, re.I):
+        return False
+    return isinstance(erro, (TimeoutError, ConnectionError)) or bool(re.search(
+        r'timeout|timed out|429|502|503|504|tempor[aá]ri|temporar|connection|conex[aã]o|rede indispon|network|ffmpeg.*(busy|recurso|broken pipe)', texto, re.I))
+
+
+def _salvar_fonte(chave: str, registro: dict, *, encerrar=False):
+    import banco as db
+    with db.tx() as c:
+        c.execute('INSERT INTO kv (chave,valor) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor',
+                  ('a1.fonte:' + registro['video']['id'], json.dumps(registro, ensure_ascii=False)))
+        if encerrar:
+            c.execute('DELETE FROM kv WHERE chave=?', (chave,))
+        else:
+            c.execute('INSERT INTO kv (chave,valor) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor',
+                      (chave, json.dumps(registro, ensure_ascii=False)))
+
+
+def _esperar_fonte(segundos: float, motivo: str) -> str:
+    if getattr(CONTROLE_TRABALHO, 'job', ''):
+        from fila import Esperar
+        raise Esperar(max(0, segundos), motivo)
+    return motivo
+
+
 def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '', limite: int = 0) -> str:
     """Um passo do agente de cortes: no máximo um vídeo por vez. limite > 0: quem manda é o estoque da Central de Automação."""
     co = config()['cortes']
+    retry = mesma_fonte_ativa()
+    registro = None
+    chave_fonte = 'a1.pendente:' + hashlib.sha256((link + '\0' + tema).encode()).hexdigest()[:20]
+    max_fonte = max(1, min(10, int(os.getenv('A1_FONTE_MAX_TENTATIVAS', '3')))) if retry else 1
+    if retry:
+        import banco as db
+        verificar_cancelamento()
+        registro = db.kv(chave_fonte)
+        if registro:
+            dono = db.um('SELECT status,cancelar FROM jobs WHERE id=?', registro.get('job') or '')
+            if dono and (dono['cancelar'] or dono['status'] == 'cancelado'):
+                registro.update(estado='CANCELLED')
+                _salvar_fonte(chave_fonte, registro, encerrar=True)
+                return 'A tentativa desta fonte foi cancelada.'
+            if registro.get('tentativas', 0) >= max_fonte:
+                registro.update(estado='BLOCKED', erro='Limite de tentativas atingido.')
+                _salvar_fonte(chave_fonte, registro, encerrar=True)
+                _marcar_visto(registro['video']['id'], registro['erro'])
+                return registro['erro']
+            if registro.get('proxima', 0) > time.time():
+                return _esperar_fonte(registro['proxima'] - time.time(), 'Esperando para tentar novamente a mesma fonte.')
     if limite > 0 and not link:
         forcar = True
-    if link:
+    if registro:
+        v, quantos = registro['video'], registro['quantos']
+    elif link:
         m = re.search(r'(?:v=|youtu\.be/|shorts/|live/)([\w-]{11})', link)
         v = {'id': m.group(1) if m else 'x' + uuid.uuid4().hex[:10], 'url': link, 'titulo': '', 'canal': '', 'canal_nome': 'link enviado por você'}
         quantos = co['por_video']
@@ -2022,13 +2077,39 @@ def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '', limit
             return 'Nenhum vídeo novo nos canais aprovados.' if any(c['status'] == 'aprovado' for c in estado()['canais']) else 'Nenhum canal aprovado ainda. Aprove canais na aba Agente.'
         v['url'] = os.getenv('URL_VIDEO_TESTE') or 'https://www.youtube.com/watch?v=' + v['id']
         quantos = max(1, min(co['por_video'], limite if limite > 0 else (falta if falta > 0 else co['por_video'])))
+    if retry:
+        registro = registro or {'video': v, 'quantos': quantos, 'tentativas': 0,
+                                'job': getattr(CONTROLE_TRABALHO, 'job', ''),
+                                'canal_aprovado': any(c.get('id') == v.get('canal') and c.get('status') == 'aprovado' for c in estado()['canais'])}
+        registro.update(tentativas=registro['tentativas'] + 1, estado='RUNNING', proxima=0)
+        _salvar_fonte(chave_fonte, registro)  # fonte salva antes de baixar/IA: sobrevive à queda
     try:
+        if retry:
+            verificar_cancelamento()
+            if registro.get('canal_aprovado') and not any(
+                    c.get('id') == v.get('canal') and c.get('status') == 'aprovado' for c in estado()['canais']):
+                raise ErroAgente('Sem autorização atual do canal para repetir esta fonte.')
         criados = processar_video(v, quantos)
-    except (ErroAgente, pg.ErroRede) as e:
+    except (ErroAgente, pg.ErroRede, TimeoutError, ConnectionError) as e:
+        if not retry and not isinstance(e, (ErroAgente, pg.ErroRede)):
+            raise  # flag desligada conserva inclusive o contrato de erro antigo
+        if retry:
+            transitorio = _fonte_transitoria(e)
+            repetir = transitorio and registro['tentativas'] < max_fonte
+            atraso = min(1800, 60 * 3 ** (registro['tentativas'] - 1))
+            registro.update(estado='RETRYABLE_ERROR' if repetir else 'BLOCKED', erro=str(e)[:500],
+                            proxima=time.time() + atraso if repetir else 0)
+            _salvar_fonte(chave_fonte, registro, encerrar=not repetir)
+            if repetir:
+                anotar(f'Tentativa {registro["tentativas"]}/{max_fonte}: vou repetir a fonte {v["id"]} em {atraso}s.', 'erro')
+                return _esperar_fonte(atraso, 'Nova tentativa na mesma fonte: ' + str(e)[:160])
         _marcar_visto(v['id'], 'erro: ' + str(e))
         anotar(f'Não deu para cortar "{v.get("titulo") or link}": {e}', 'erro')
         avisar('falha', 'Um vídeo não pôde ser cortado', f'Vídeo: {v.get("titulo") or link}\nMotivo: {e}', zap_tipo='a1_falha')
         return str(e)
+    if retry:
+        registro.update(estado='COMPLETED', proxima=0)
+        _salvar_fonte(chave_fonte, registro, encerrar=True)
     _marcar_visto(v['id'], f'{len(criados)} corte(s)')
     anotar(f'{len(criados)} corte(s) pronto(s) de "{v["titulo"][:80]}".', 'ok')
     return _depois_de_cortar(v, criados)
