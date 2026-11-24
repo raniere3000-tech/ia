@@ -104,8 +104,13 @@ def rodar(cmd: list, cancelado=None, tempo_max: float = 3600, progresso=None, du
             p.wait(timeout=10)
         except subprocess.TimeoutExpired:
             _matar()
+            p.wait(timeout=10)
         for t in leitores:
             t.join(timeout=5)
+        if p.stdout is not None:
+            p.stdout.close()
+        if p.stderr is not None:
+            p.stderr.close()
     if progresso and dur > 0 and p.returncode == 0:
         progresso(1.0)
     erro = ''.join(cauda)
@@ -200,10 +205,12 @@ def conferir(video: Path, pasta: Path, esperado: dict, cancelado=None) -> dict:
         avisos.append(f'Codec de áudio {a.get("codec_name")} (o esperado é AAC).')
     # tela preta, imagem congelada e silêncio (análise em tamanho pequeno para ser leve no celular)
     analise = ''
+    analise_ok = True
     try:
         analise = rodar(['ffmpeg', '-nostdin', '-v', 'info', '-i', str(video), '-vf', 'scale=270:-2,blackdetect=d=1.0:pic_th=0.97,freezedetect=n=0.002:d=4',
-                         '-af', 'silencedetect=n=-50dB:d=3', '-f', 'null', '-'], cancelado, tempo_max=1800, etapa='conferindo tela preta e silêncio')
+                         '-af', 'silencedetect=n=-50dB:d=3,volumedetect', '-f', 'null', '-'], cancelado, tempo_max=1800, etapa='conferindo tela preta e silêncio')
     except ErroRender as e:
+        analise_ok = False
         avisos.append('Não deu para analisar tela preta/congelada: ' + str(e)[:120])
     # falha de decodificação (o player travaria): o decodificador reclama durante a mesma leitura da análise
     ruins = [ln.strip() for ln in analise.splitlines()
@@ -239,12 +246,63 @@ def conferir(video: Path, pasta: Path, esperado: dict, cancelado=None) -> dict:
         avisos.append(f'Imagem parada por {max(float(x) for x in congel):.1f}s (normal em cenas sem movimento).')
     if silencio:
         avisos.append(f'Silêncio de {max(float(x) for x in silencio):.1f}s.')
+    # O detector não emite freeze_end quando a imagem fica parada até o EOF.
+    congelamentos, inicio = [], None
+    for evento, valor in re.findall(r'freeze_(start|end): ([\d.]+)', analise):
+        if evento == 'start':
+            inicio = float(valor)
+        elif inicio is not None:
+            congelamentos.append([inicio, float(valor)])
+            inicio = None
+    if inicio is not None:
+        congelamentos.append([inicio, dur])
+    pretos = [[float(x), float(y)] for x, y in pretos]
+
+    def previsto(intervalo, permitidos):
+        # Só permite o trecho explicitamente previsto no manifesto, não o vídeo inteiro.
+        cursor, fim = intervalo
+        for ini, ate in sorted(permitidos):
+            if ini > cursor + .2:
+                break
+            if ate >= cursor:
+                cursor = ate
+            if cursor >= fim - .2:
+                return True
+        return False
+
+    def volume(nome):
+        m = re.search(rf'{nome}_volume: (-?[\d.]+|-inf) dB', analise)
+        return float(m[1]) if m and m[1] != '-inf' else None
+
+    integridade = {'schema': 1, 'analise_ok': analise_ok, 'pretos': pretos,
+                   'congelamentos': congelamentos, 'silencios_s': [float(x) for x in silencio],
+                   'volume_medio_db': volume('mean'), 'pico_db': volume('max'),
+                   'diferenca_audio_video_s': round(abs(dv - da), 3) if dv and da else None,
+                   'diferenca_inicio_audio_video_s': round(abs(float((v or {}).get('start_time') or 0) -
+                                                              float((a or {}).get('start_time') or 0)), 3) if v and a else None}
+    if os.getenv('RENDER_INTEGRIDADE', '0') == '1':
+        if not analise_ok:
+            erros.append('A análise de integridade não foi concluída.')
+        if (v and v.get('codec_name') != 'h264') or (a and a.get('codec_name') != 'aac'):
+            erros.append('Codecs incompatíveis com a saída H.264/AAC.')
+        if (dv and da and abs(dv - da) > .5) or (integridade['diferenca_inicio_audio_video_s'] or 0) > .2:
+            erros.append('Áudio e vídeo dessincronizados: diferença de duração acima de 0,5s.')
+        if any(not previsto(x, esperado.get('pretos_previstos', [])) for x in pretos):
+            erros.append('Há trecho preto não previsto no plano.')
+        if any(not previsto(x, esperado.get('parados_previstos', [])) for x in congelamentos):
+            erros.append('Há imagem congelada não prevista no plano.')
+        if silencio and not esperado.get('silencio_previsto'):
+            erros.append('Há silêncio prolongado não previsto no plano.')
+        if integridade['pico_db'] is not None and integridade['pico_db'] > -.1:
+            erros.append('Áudio sem margem de pico (acima de -0,1 dB).')
+    if cancelado and cancelado():
+        raise InterruptedError('cancelado')
     fotos = quadros(video, pasta, dur)
     if len(fotos) < 3:
         erros.append('Não consegui ler quadros do começo, meio e fim.')
     return {'ok': not erros, 'erros': erros, 'avisos': avisos, 'duracao': dur, 'largura': int(v.get('width', 0)) if v else 0,
             'altura': int(v.get('height', 0)) if v else 0, 'codec': v.get('codec_name') if v else '', 'audio': a.get('codec_name') if a else '',
-            'tamanho': video.stat().st_size, 'quadros': [str(f) for f in fotos]}
+            'tamanho': video.stat().st_size, 'quadros': [str(f) for f in fotos], 'integridade': integridade}
 
 
 def conferir_srt(arq: Path, dur: float) -> list:

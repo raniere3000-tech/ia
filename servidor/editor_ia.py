@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import time
 import subprocess
 from pathlib import Path
@@ -462,7 +463,7 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
         meta=rd.sonda(base)
         v=next(x for x in meta['streams'] if x['codec_type']=='video');w,h=int(v['width']),int(v['height'])
         cmd=['ffmpeg','-nostdin','-y','-v','error','-i',str(base)]
-        filtros=[];atual='[0:v]';entrada=1
+        filtros=[];atual='[0:v]';entrada=1;parados=[]
         for k,e in enumerate(efeitos):
             tipo=e['tipo'];status='aplicado';motivo=''
             a=float(e.get('ini_ms',0))/1000;b=float(e.get('fim_ms',total*1000))/1000
@@ -480,6 +481,7 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
                 if not mime.startswith(('image/','video/')):
                     raise ct.ErroContrato('B-roll precisa de uma imagem ou vídeo.')
                 if mime.startswith('image/'):
+                    parados.append([a,b])
                     cmd += ['-loop','1','-t',str(total),'-i',midia['caminho']]
                 else:
                     cmd += ['-stream_loop','-1','-i',midia['caminho']]
@@ -509,6 +511,16 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
         dur=rd.duracao(tmp)
         if abs(dur-total)>0.25:
             raise rd.ErroRender('Duração do efeito divergente do plano.')
+        if os.getenv('RENDER_INTEGRIDADE','0')=='1':
+            qa=destino.parent/(destino.stem+'-integridade');qa.mkdir(exist_ok=True)
+            conferencia=rd.conferir(tmp,qa,{'largura':w,'altura':h,'duracao':total,
+                                         'parados_previstos':parados},_cancelamento_editor())
+            recibo['integridade']=conferencia['integridade']
+            if not conferencia['ok']:
+                raise rd.ErroRender('Integridade do render: '+'; '.join(conferencia['erros']))
+        cancelar=_cancelamento_editor()
+        if cancelar and cancelar():
+            raise InterruptedError('cancelado')
         recibo.update(status='concluido',arquivo_sha=rd.sha256(tmp),duracao=dur,
                       aplicados=sum(x['status']=='aplicado' for x in recibo['efeitos']),
                       sem_alteracao=sum(x['status']=='sem_alteracao' for x in recibo['efeitos']))
