@@ -304,7 +304,8 @@ def esperar_video(pid, seg=400):
             raise AssertionError(f'Revisão indisponível: {st} {estado}')
         status = estado['projeto']['status']
         job = estado.get('job') or {}
-        if status == 'ready_for_review':
+        # O projeto fica pronto antes da etapa de e-mail terminar no mesmo job.
+        if status == 'ready_for_review' and job.get('status') == 'concluido':
             return estado
         if status == 'failed' or job.get('status') in ('falhou', 'cancelado', 'aguardando_aprovacao'):
             raise AssertionError('Produção não chegou à revisão: ' + json.dumps({

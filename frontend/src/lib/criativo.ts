@@ -42,6 +42,14 @@ export const duplicarProposta=(cfg:CfgSrv,id:string)=>api<Proposta>(cfg,'POST',`
 export const transformarEmSerie=(cfg:CfgSrv,projeto_id:string)=>api<{serie:{id:string;titulo:string};repetido?:boolean}>(cfg,'POST','/api/v1/criativo/transformar-em-serie',{projeto_id});
 export const previaAsset=(cfg:CfgSrv,id:string)=>api<{png?:string;status?:string;motivo?:string}>(cfg,'POST',`/api/v1/criativo/assets/${id}/previa`,{});
 
+export type ConfigFormato=Pick<import('./api').Briefing,'tipo'|'estilo'|'duracao_alvo'|'cenas_qtd'|'ritmo'|'formato'>;
+export type FormatoIA={id:string;nome:string;descricao:string;versao?:number;dados:{formato_ia:string;briefing:ConfigFormato}};
+export const formatosIA=(cfg:CfgSrv)=>api<{habilitado:boolean;padroes:FormatoIA[];salvos:FormatoIA[]}>(cfg,'GET','/api/v1/criativo/formatos');
+export const salvarFormatoIA=(cfg:CfgSrv,modelo:FormatoIA,nome:string,briefing:ConfigFormato)=>api<FormatoIA>(cfg,
+  modelo.versao?'PATCH':'POST',modelo.versao?`/api/v1/criativo/assets/${modelo.id}`:'/api/v1/criativo/biblioteca',
+  {tipo:'template_pack',nome,descricao:modelo.descricao,versao:modelo.versao,origem:'manual',
+   dados:{formato_ia:modelo.dados.formato_ia,briefing}});
+
 export const NOME_TIPO:Record<TipoModelo,string>={ideia:'Ideia de vídeo',historia:'História / roteiro',serie:'Série',episodio:'Episódio',personagem:'Personagem',cenario:'Cenário',
   objeto:'Objeto / acessório',movimento:'Movimento / atuação',estilo:'Estilo visual',cena:'Cena / storyboard',pacote:'Pacote completo'};
 export const NOME_DESTINO:Record<Destino,string>={biblioteca:'Salvar como modelo',personagem:'Criar personagem',cenario:'Criar cenário',serie:'Criar série',

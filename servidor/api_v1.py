@@ -367,6 +367,8 @@ def _criativo(metodo: str, caminho: str, q: dict, corpo, quem: str, sid: str) ->
     p = lambda k, padrao='': q.get(k, [padrao])[0]  # noqa: E731
     if rota == ('GET', '/api/v1/criativo/capacidades'):
         return cri.capacidades()
+    if rota == ('GET', '/api/v1/criativo/formatos'):
+        return cri.formatos_ia()
     if rota == ('GET', '/api/v1/criativo/biblioteca'):
         return cri.biblioteca(p('tipo'), p('q')[:80], _int(p('pagina', '1'), 1))
     if rota == ('POST', '/api/v1/criativo/biblioteca'):

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import random
 import re
 import time
@@ -35,6 +36,15 @@ TIPOS_MODELO = {
 }
 # tipos guardados na biblioteca própria (personagem e cenário ficam nas tabelas de Séries)
 TIPOS_ASSET = ('story', 'series_bible', 'object', 'visual_style', 'motion_preset', 'scene_package', 'template_pack')
+FORMATO_CAMPOS = ('tipo', 'estilo', 'duracao_alvo', 'cenas_qtd', 'ritmo', 'formato')
+FORMATOS_IA = {
+    'curiosidade': {'nome': 'Curiosidade', 'descricao': 'Pergunta, descoberta e explicação curta.',
+                   'briefing': {'tipo': 'curiosidades', 'estilo': 'quadro_branco', 'duracao_alvo': 30, 'cenas_qtd': 4, 'ritmo': 'agil', 'formato': '9:16'}},
+    'historia': {'nome': 'História narrada', 'descricao': 'Apresentação, conflito, virada e desfecho.',
+                 'briefing': {'tipo': 'história narrada', 'estilo': 'animado2d', 'duracao_alvo': 60, 'cenas_qtd': 6, 'ritmo': 'normal', 'formato': '9:16'}},
+    'explicativo': {'nome': 'Vídeo explicativo', 'descricao': 'Conceito, etapas e exemplo prático.',
+                   'briefing': {'tipo': 'explicativo', 'estilo': 'motion_graphics', 'duracao_alvo': 45, 'cenas_qtd': 5, 'ritmo': 'normal', 'formato': '16:9'}},
+}
 ASSET_DO_TIPO = {'ideia': 'story', 'historia': 'story', 'serie': 'series_bible', 'episodio': 'story', 'objeto': 'object',
                  'movimento': 'motion_preset', 'estilo': 'visual_style', 'cena': 'scene_package', 'pacote': 'scene_package'}
 PERFIL_DO_TIPO = {'personagem': 'criativo.personagem', 'cenario': 'criativo.cenario', 'cena': 'criativo.storyboard'}
@@ -512,6 +522,28 @@ def listar_propostas(favoritas: bool = False, limite: int = 30) -> list:
 
 
 # ---------------------------------------------------------------- biblioteca (assets próprios + personagens e cenários de Séries)
+def limpar_formato(dados: dict) -> dict:
+    import produtor
+    base = dados.get('formato_ia')
+    if not isinstance(base, str) or base not in FORMATOS_IA or not isinstance(dados.get('briefing'), dict):
+        raise ErroCriativo(400, 'Formato de vídeo inválido.')
+    try:
+        b = produtor.limpar_briefing({**FORMATOS_IA[base]['briefing'], **dados['briefing']})
+    except (produtor.ErroProdutor, OverflowError) as erro:
+        raise ErroCriativo(400, 'Configurações do formato inválidas.') from erro
+    return {'formato_ia': base, 'briefing': {k: b[k] for k in FORMATO_CAMPOS}}
+
+
+def formatos_ia() -> dict:
+    if os.getenv('FORMATOS_IA', '0') != '1':
+        return {'habilitado': False, 'padroes': [], 'salvos': []}
+    padroes = [{'id': k, 'nome': v['nome'], 'descricao': v['descricao'], 'dados':
+                {'formato_ia': k, 'briefing': dict(v['briefing'])}} for k, v in FORMATOS_IA.items()]
+    salvos = [a for a in biblioteca('template_pack')['itens']
+              if isinstance(a['dados'].get('formato_ia'), str) and a['dados']['formato_ia'] in FORMATOS_IA]
+    return {'habilitado': True, 'padroes': padroes, 'salvos': salvos}
+
+
 def _pub_asset(r: dict) -> dict:
     return {'id': r['id'], 'tipo': r['tipo'], 'nome': r['nome'], 'descricao': r['descricao'], 'dados': json.loads(r['dados']), 'origem': r['origem'],
             'status': r['status'], 'versao': r['versao'], 'hash': r['hash'], 'proveniencia': json.loads(r['proveniencia'] or '{}'),
@@ -523,6 +555,8 @@ def criar_asset(d: dict, quem: str = '') -> dict:
     if not tipo:
         raise ErroCriativo(400, 'Tipo de modelo inválido.')
     dados = d.get('dados') if isinstance(d.get('dados'), dict) else {}
+    if tipo == 'template_pack' and 'formato_ia' in dados:
+        dados = limpar_formato(dados)
     texto = json.dumps(dados, ensure_ascii=False)
     if len(texto) > 60000:
         raise ErroCriativo(413, 'Modelo grande demais.')
@@ -554,6 +588,8 @@ def atualizar_asset(aid: str, d: dict, quem: str = '') -> dict:
     if d.get('versao') is not None and _num(d['versao']) != a['versao']:
         raise ErroCriativo(409, 'Este modelo foi mudado em outro aparelho. Abra de novo.')
     dados = d['dados'] if isinstance(d.get('dados'), dict) else a['dados']
+    if a['tipo'] == 'template_pack' and 'formato_ia' in dados:
+        dados = limpar_formato(dados)
     status = d.get('status') if d.get('status') in ('rascunho', 'aprovado', 'arquivado') else a['status']
     agora = time.time()
     with db.tx() as c:
