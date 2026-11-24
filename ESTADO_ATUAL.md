@@ -1,62 +1,74 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T12:56:54-03:00. Executor: Codex. Apenas F1.01 executada nesta sessão.
+Atualizado: 2026-11-24T13:55:19-03:00. Executor: Codex. Uma microetapa de desenvolvimento nesta retomada: F1.02.
 
 ```yaml
 projeto: EstudioClip-2.0
 fase: F1
-microetapa: F1.01
+microetapa: F1.02
 status: COMMITTED
 branch: claude/project-thread-hqyqog-fase1
-sha_inicial: ca2652614dd453f7cdcf2e9d9320436ba596efd7
-sha_final_implementacao: 72ab6c3474a15837d1d6958c74c5cb7bd11e3afc
-proxima_microetapa: F1.02
+sha_inicial: 598597778437068f3da0954ffe931dc031d694ac
+sha_final_implementacao: f7fd7418c521efb42f6ea532607de770488e38d5
+proxima_microetapa: F1.03
 mudancas_nao_commitadas_implementacao: []
 flags_adicionadas: []
 migracoes: []
-suite_completa: NAO_CONCLUIDA_NESTA_MICROETAPA
+suite_completa: NAO_EXECUTADA_NESTA_MICROETAPA
 merge: NAO_REALIZADO
 producao: NAO_PUBLICADA
 sincronizacao_remota: SINCRONIZADA_NA_BRANCH_DE_TRABALHO
 commits_automaticos: AUTORIZADOS_PELO_USUARIO
 ```
 
-O SHA acima identifica o commit de código e testes. Este checkpoint e as evidências são
-registrados em commit documental posterior; obter o HEAD final com `git rev-parse HEAD`.
+O SHA final acima identifica a implementação e seus testes; este checkpoint e as
+saídas de validação seguem em commit documental posterior. Obter o HEAD completo
+com `git rev-parse HEAD` e comparar com o remoto antes de alterar qualquer coisa.
 
-## Resultado e testes
+## Resultado da F1.02
 
-- Aprovação concorrente não volta a False; roteiro aprovado segue até revisão do vídeo.
-- Sinal de liberação e espera são transacionais. Identidade do roteiro impede aprovação
-  antiga de antecipar decisão sobre conteúdo editado. Reinício testado em processo novo.
-- Apontamentos narrativos aceitos depois do limite permanecem auditados como resolvidos
-  por decisão do usuário. Defeitos técnicos e conferência final continuam bloqueando.
-- `cd servidor && PYTHONPATH=. python3 testes/teste_aprovacao_roteiro_corrida.py`: **10/10**, exit 0 (~0,1 s).
-- `cd servidor && PYTHONPATH=. python3 testes/teste_cancelamento.py`: **13/13**, exit 0 (~0,2 s).
-  ResourceWarning de arquivo não fechado preexistente; nenhum teste falhou.
-- Último teste integrado: `cd servidor && PYTHONPATH=. python3 testes/teste_agente3.py --somente-aprovacao-roteiro`:
-  **18 verificações, zero falhas**, exit 0; produção em 7 s na última execução.
-  FFmpeg real: 1080x1920 H.264, AAC, hash conferido, revisão pronta, nenhuma publicação.
-- `teste_central_automacao.py` e `teste_coordenador.py`: exit 1 com falhas também reproduzidas
-  no SHA inicial, incluindo bloqueio por ausência de parecer do Diretor e StopIteration.
-  A correção desses fluxos pertence à F1.02 e NÃO foi iniciada.
-- `teste_agente3.py` completo foi iniciado no baseline (13 verificações, bloqueado novamente
-  em aprovação) e durante desenvolvimento. Após a correção, passou a primeira produção e
-  continuou até outro projeto em modo supervisionado, onde aguarda decisão após o limite.
-  Execuções longas foram interrompidas (130); NÃO declarar o arquivo inteiro aprovado.
-  O parâmetro focal só encerra depois da produção, codecs, hash e ausência de posts;
-  o comando sem parâmetro mantém todas as verificações originais.
-- `git diff --check`: aprovado. Frontend e suíte integral reservados ao fechamento F1.09.
+- Cinco fixtures antigas simulavam vídeo pronto sem preencher todo o contrato
+  atual do Diretor: parecer preso ao SHA + relatório de qualidade sem pendências.
+  Asserções e regras de produção foram preservadas; corrigidos somente os dados simulados.
+- Defeito real corrigido em `comandos.executar`: o SIM de uma confirmação antiga
+  reconsultava o vídeo e podia aprovar outro render, mesmo que não tivesse sido apresentado
+  no pedido original. Agora compara o SHA guardado na confirmação com o SHA atual.
+  Render alterado exige novo pedido de aprovação; nada é agendado pelo SIM antigo.
+- O teste de regressão novo falhou no SHA inicial, demonstrando a aprovação indevida,
+  e passa com a correção. Nenhuma regra do Diretor foi afrouxada.
+- Certificado ausente, revogado ou de versão anterior, parecer antigo e problemas
+  técnicos/de qualidade continuam impedindo criação de aprovação e publicação.
+- Reutilizados aprovacoes.diretor_ok/aprovar/rejeitar, qualidade.veredito,
+  pipeline.certificado e comandos.responder. Sem novo serviço, agente ou banco.
 
-## Arquivos alterados
+## Testes e último comando
 
-`servidor/produtor.py`, `servidor/fila.py`, `servidor/aprovacoes.py`,
-`servidor/projetos.py`, `servidor/testes/teste_agente3.py`,
-`servidor/testes/teste_aprovacao_roteiro_corrida.py`, este checkpoint,
-`docs/estudioclip-2/checkpoints/F1.01-*` e cartões em
-`docs/estudioclip-2/microetapas/`.
+| Teste | Antes | Depois |
+| --- | --- | --- |
+| teste_comandos.py | exit 1, cinco falhas | 17 verificações, exit 0 |
+| teste_descricao.py | exit 1, falta parecer | 36 verificações, exit 0 |
+| teste_liberacao.py | exit 1, falta parecer | 10 verificações, exit 0 |
+| teste_central_automacao.py | exit 1, StopIteration após bloqueio de aprovação | 138 verificações, exit 0 |
+| teste_coordenador.py | exit 1, StopIteration após bloqueio do pacote | 80 verificações, exit 0 |
+| teste_portao_diretor.py (novo) | regressão do SIM falha no SHA inicial | 13 testes, exit 0 |
 
-## Próxima ação exata — próxima sessão, F1.02
+Total focal: **294 verificações/testes aprovados**, sem publicação em conta real.
+Todos usam dados/bancos temporários; central/coordenador usam também FFmpeg/Pillow reais.
+O teste novo usa arquivos mínimos para testar identidade e os portões; não mede codecs.
+As funções reais de aprovação, certificação e comandos não são substituídas nesse teste.
+
+Comandos: `cd servidor && PYTHONPATH=. python3 testes/<arquivo>.py`.
+Último grupo focal executado: `teste_portao_diretor`, `teste_comandos`,
+`teste_descricao`, `teste_liberacao`, todos exit 0; os outros dois também exit 0.
+`git diff --check`: aprovado. Logs: `docs/estudioclip-2/checkpoints/F1.02-*`.
+
+## Arquivos tocados
+
+`servidor/comandos.py`, cinco testes focais acima, novo
+`servidor/testes/teste_portao_diretor.py`, `ESTADO_ATUAL.md`, relatório e logs
+`docs/estudioclip-2/checkpoints/F1.02-*`, cartão F1.03.
+
+## Próxima ação exata — F1.03, ainda NÃO iniciada
 
 ```bash
 git status --short
@@ -66,36 +78,32 @@ git log -3 --oneline
 git fetch origin claude/project-thread-hqyqog-fase1
 git rev-list --left-right --count HEAD...origin/claude/project-thread-hqyqog-fase1
 cat ESTADO_ATUAL.md
-cat docs/estudioclip-2/microetapas/04_F1_02_REGRA_DIRETOR.md
+cat docs/estudioclip-2/checkpoints/F1.02-relatorio.md
+cat docs/estudioclip-2/microetapas/05_F1_03_ERRO_REDES.md
 cd servidor
-PYTHONPATH=. python3 testes/teste_liberacao.py
+PYTHONPATH=. python3 testes/teste_skills_agentes.py
 ```
 
-Não reiniciar Fase 0 ou F1.01. Ler relatório
-`docs/estudioclip-2/checkpoints/F1.01-relatorio.md` e comparar mudanças concorrentes.
-Na F1.02, reproduzir os testes da regra do Diretor e distinguir fixture obsoleta de fluxo
-real bloqueado. Não remover requisitos de qualidade para fazer testes passarem.
+Não reiniciar Fase 0, F1.01 ou F1.02. Comparar mudanças concorrentes antes de editar.
+F1.03 trata o KeyError de redes na conferência da postagem, sem novas funcionalidades.
 
-## Limites e rollback
+## Continuidade, autorização e riscos não verificados
 
-Sem migração, sem flags novas (conserto de defeito), sem contas reais ou dados de produção.
-Banco de cada teste é temporário. Nenhum PR de merge aberto nesta sessão.
-Aprovações legadas sem hash não são inferidas como válidas para ultrapassar o limite;
-se um projeto antigo ainda estiver esperando, uma aprovação explícita atualiza o hash e o libera.
-Celular, redes sociais e esteira completa não validados nesta microetapa.
-Rollback de código: `git revert 72ab6c3474a15837d1d6958c74c5cb7bd11e3afc` na branch de trabalho, se necessário;
-nenhuma alteração destrutiva do banco foi feita. Não executar rollback automaticamente.
-
-## Sincronização remota e autorização persistente
-
-O usuário autorizou commits automáticos e configurou o Conector ChatGPT Codex
-na conta raniere3000-tech. A conexão autenticada passou a aceitar gravações.
-Código e testes foram transferidos sem alteração de conteúdo: a árvore Git da
-implementação local 4624a1c é idêntica à do commit remoto de implementação acima.
-O SHA mudou porque a integração criou o commit com seus próprios metadados.
-Checkpoint, evidências e cartões seguem em commit documental descendente.
-Commits locais originais preservados em branch de segurança local.
-
-Commits e sincronização desta branch de trabalho autorizados; não perguntar novamente.
-Merge e publicação em produção continuam dependendo de autorização específica.
-Próxima tarefa permanece F1.02; não há necessidade de repetir a F1.01.
+- F1.01 foi sincronizada nesta retomada antes de iniciar a F1.02: código remoto
+  72ab6c3474a15837d1d6958c74c5cb7bd11e3afc, checkpoint 5985977.
+- Conector Codex configurado pelo usuário; gravação na branch validada. HTTPS via
+  Git local não dispõe de credencial: usar conexão autenticada para commits remotos.
+  Árvores locais/remotas foram comparadas para garantir conteúdo idêntico; metadados
+  da integração alteram o SHA dos commits. Históricos locais originais preservados
+  em branches de segurança antes de alinhar o trabalho ao remoto.
+- Commits e sincronização da branch autorizados automaticamente pelo usuário;
+  merge e publicação em produção continuam dependendo de autorização específica.
+- Nenhum PR para merge aberto nesta retomada. Suite integral e frontend aguardam F1.09.
+- `teste_agente3.py` integral continua pendente de avaliação das outras modalidades:
+  seus cenários supervisionados/alertas antigos ainda não foram adaptados ao contrato
+  de revisão manual. F1.01 validou o recorte de aprovação e render real (18/18).
+  Não declarar este arquivo inteiro aprovado, nem retomar a F1.01 por esse motivo.
+- Não verificados nesta etapa: celular Termux, contas reais, WhatsApp externo,
+  e-mail externo e esteira completa em produção.
+- Rollback de código, se necessário: `git revert f7fd7418c521efb42f6ea532607de770488e38d5` na branch de trabalho;
+  sem migrações ou mudanças destrutivas de dados. Não executar rollback automaticamente.
