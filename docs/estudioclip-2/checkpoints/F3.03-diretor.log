@@ -1,0 +1,46 @@
+ok    falha técnica reprova
+ok    falha técnica pede refazer tudo
+ok    vídeo sem conferência não é aprovado
+ok    cabeça cortada (grave) reprova e aponta a cena
+ok    problema leve pendente bloqueia
+ok    nota de roteiro e ritmo pendente bloqueia
+ok    opinião da IA pendente bloqueia
+ok    problema já resolvido não reprova
+ok    tudo certo aprova
+ok    desenho: planos abertos e personagens afastados
+ok    desenho: sem mais nada a mudar, não finge que refez
+ok    reprovado: volta a produzir em vez de chegar para você
+ok    conta a tentativa de refazer
+ok    só a cena reprovada é refeita, com planos abertos
+ok    a cena boa não é mexida
+ok    o vídeo reprovado não vira o vídeo para aprovar
+ok    você não consegue aprovar o vídeo reprovado
+ok    refeito e aprovado: chega para a sua aprovação final
+ok    registra que foi aprovado depois de refazer 1 vez
+ok    a sua aprovação aceita o arquivo que o diretor aprovou
+ok    laudo limpo não libera outro arquivo
+ok    arquivo com pendências sai da aprovação final
+ok    outro arquivo, sem aprovação do diretor, não passa
+ok    documentário: tentativa 1 refaz
+ok    documentário: tentativa 2 refaz
+ok    documentário: tentativa 3 refaz
+ok    documentário: troca a foto recusada
+ok    ultrapassar o antigo limite mantém a correção automática
+ok    continua fora da fila de aprovação
+ok    parecer favorável após o antigo limite libera a revisão
+ok    mandar produzir de novo zera as tentativas
+ok    parecer desfavorável envia roteiro e instrução à reescrita
+ok    o novo parecer libera a narração e preserva a contagem
+ok    corte que demora para falar é reprovado
+ok    corte com erro técnico é reprovado
+ok    aviso leve não reprova o corte
+ok    ajuste: começa logo antes da fala e termina no fim da frase
+ok    legenda automática sem pontuação: a pausa marca o fim da frase
+ok    sem pontuação e sem pausa: não reprova por não saber
+ok    sem fala no trecho: não inventa ajuste
+ok    com "exigir minha aprovação" ligado: corte aprovado pelo diretor espera o seu ok
+ok    corte reprovado não pode ser agendado
+ok    você aprova e ele agenda
+ok    padrão (certificado basta): corte aprovado pelo diretor é agendado sozinho; reprovado nunca
+
+TUDO OK
