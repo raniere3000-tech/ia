@@ -6,9 +6,9 @@ Checkpoint próprio desta frente. **Não substitui** o `ESTADO_ATUAL.md` (checkp
 frente: AGENTE6_AUTONOMIA_CAPAS
 branch: codex/agente6-autonomia-capas
 sha_origem: 222a1c399da1e2d081fda16de2faa4a3cf092b7a
-microetapa_atual: TH.04
+microetapa_atual: TH.08
 status: CONCLUIDA
-proxima_microetapa: TH.05
+proxima_microetapa: VALIDACAO_FINAL_NO_CELULAR
 merge: NAO_REALIZADO
 producao: NAO_PUBLICADA
 publicacoes_reais_em_teste: NENHUMA
@@ -65,7 +65,39 @@ Capacidade real das APIs (sem envio real nesta auditoria):
 
 Testes TH.04: `teste_agente6_autonomia` 33 ok · `teste_thumbnails` 102 ok · `teste_coordenador` 80 ok · `teste_esteira_7` 70 ok · `teste_redes_independentes` 13 ok.
 
-## Plano das próximas microetapas
+## TH.05 — Agente 2 (concluída, dd5cea2)
+
+- `conferencia` usa `th.exige_capa(rede)` em todas as redes; capa de versão antiga não vale (hash do arquivo).
+- Estado da capa por post/rede em `p['redes'][rede]['capa']` e `thumbnail_aplicacoes`: aplicada (rede confirmou), indicada (rede aceitou o tempo do quadro), falhou (tenta de novo), bloqueada (403), manual (no app), sem_capa.
+- YouTube: falha da capa não derruba o post; `reenviar_capa` / `reenviar_capas_pendentes` mandam SÓ a capa pelo ID do vídeo (espera 5→15→60→180→720 min, até `max_envios_capa`).
+- TikTok/Instagram: sobem a versão com a arte no quadro final (`video_com_capa`) e mandam o tempo dele; TikTok assistido fica "manual" com instrução do último quadro.
+
+## TH.06 — Estoque (concluída, 947ee00)
+
+- `auditar_estoque(aplicar)`: redundantes cancelados ("Redundante: ..."), recuperação, posts travados por falta de capa voltam à fila (mesmo post), YouTube já postado recebe só a capa; outras redes listadas como manuais. Simular não muda nada.
+- `ignorar`: você tira um vídeo da recuperação automática.
+- API: `GET /api/v1/thumbnails/autonomia`, `POST .../autonomia/auditar|ignorar|reenviar-capa`.
+
+## TH.07 — Tela (concluída, 1d9b7a5)
+
+- `frontend/src/pages/ThumbAutonomia.tsx`, aba "Autonomia e Integração" em Agentes > Agente 6 (o "Configurar" do cartão abre aqui). Conferida no navegador (1440 e 390 px) com o servidor de teste: sem erro no console e sem rolagem lateral. Não vista no celular real.
+
+## TH.08 — Regressão (concluída, 8969314)
+
+- Suíte inteira do servidor (61 arquivos): todos passam, menos:
+  - `teste_agente3` (2 falhas, `KeyError: 'imagem'`): **igual na origem 222a1c3**, não é desta frente;
+  - `teste_email` (pede digitação) e `teste_trecho_link` (falta `yt_dlp` nesta máquina): ambiente.
+- Ajustados para a nova configuração (sem mudar o que testam): `teste_thumbnails`, `teste_coordenador`, `teste_decisoes` (modo supervisionado), `teste_liberacao`, `teste_versao_refeita` (capa obrigatória desligada).
+- `teste_agente6_autonomia` 72 ok. Frontend: `npm run build` ok, `npm test` 16 ok.
+
+## Pendências (não feitas nesta frente)
+
+- Não testado no celular nem com contas reais (nenhuma publicação real foi feita).
+- "Aprender com métricas reais": nada novo; continua o aprendizado que já existe (`desempenho`, escolhas por layout). Ligar nota da capa a CTR real depende de métrica do YouTube Analytics.
+- `publish_package.sugerir_capas` (3 quadros do pacote do A2) continua existindo em paralelo: não foi removido para não quebrar telas antigas.
+- Migração 14 do banco: conferir conflito com a Fase 2 no merge.
+
+## Plano das microetapas (histórico)
 
 - **TH.02** modo automático por migração única (respeita quem já escolheu manual), seleção automática também depois de refazer.
 - **TH.03** varredura de recuperação: versão nova do vídeo, pedido falho/cancelado, aguardando escolha com aprovada.
