@@ -837,8 +837,31 @@ def _sem_link(s) -> str:
     return re.sub(r'\s+', ' ', re.sub(r'[\x00-\x1f@<>]', ' ', s)).strip()
 
 
+def gancho_integro_ativo() -> bool:
+    return os.getenv('A1_GANCHO_INTEGRO','0').lower() in ('1','true','sim')
+
+
+def _fronteira_fala(frs: list, i: int) -> bool:
+    texto = str(frs[i].get('texto') or '').rstrip('"”’) ')
+    return bool(re.search(r'[.!?…]$', texto)) or (i + 1 < len(frs) and frs[i+1]['ini'] - frs[i]['fim'] > 0.7)
+
+
+def _limites_integros(frs: list, i0: int, i1: int, co: dict):
+    # Chunks de 12 palavras não são necessariamente frases. Junta até pontuação/pausa.
+    while i0 > 0 and not _fronteira_fala(frs, i0-1):
+        i0 -= 1
+    finais = [k for k in range(i0,len(frs)) if _fronteira_fala(frs,k) and
+              co['dur_min'] <= frs[k]['fim'] - frs[i0]['ini'] <= co['dur_max']]
+    if not finais:
+        return None
+    fim = min(finais,key=lambda k:abs(frs[k]['fim']-frs[i1]['fim']))
+    return i0,fim
+
+
 def validar(achados: list, frs: list, co: dict) -> list:
     """Confere o que a IA devolveu: tempos reais, duração, nota, proibidos e repetidos."""
+    if not frs:
+        return []
     notas = []
     for a in achados:
         try:
@@ -867,8 +890,14 @@ def validar(achados: list, frs: list, co: dict) -> list:
         # a IA às vezes devolve um trecho curto no fim do vídeo: tenta completar a duração puxando o começo para trás
         while frs[i1]['fim'] - frs[i0]['ini'] < co['dur_min'] and i0 > 0:
             i0 -= 1
+        integro = gancho_integro_ativo()
+        if integro:
+            limites = _limites_integros(frs,i0,i1,co)
+            if not limites:
+                continue
+            i0,i1 = limites
         ini, fim = frs[i0]['ini'], frs[i1]['fim']
-        if fim - ini > co['dur_max'] + 0.5 and fim - ini - co['dur_max'] <= 6 and i1 > i0:
+        if not integro and fim - ini > co['dur_max'] + 0.5 and fim - ini - co['dur_max'] <= 6 and i1 > i0:
             fim = ini + co['dur_max']           # passou por pouco (frase comprida): termina no limite em vez de perder o trecho
         if not (co['dur_min'] <= fim - ini <= co['dur_max'] + 0.5):
             continue
@@ -877,9 +906,20 @@ def validar(achados: list, frs: list, co: dict) -> list:
             continue
         tags = [re.sub(r'[^\w#]', '', str(h)) for h in (a.get('hashtags') or []) if isinstance(h, str)]
         tags = [h if h.startswith('#') else '#' + h for h in tags if len(h) > 1][:6]
-        out.append({'ini': round(max(0, ini - 0.15), 2), 'fim': round(fim + 0.25, 2), 'nota': int(max(0, min(99, round(nota)))),
+        ini_saida, fim_saida = max(0, ini - 0.15), fim + 0.25
+        if integro:
+            folga = max(0,co['dur_max']-(fim-ini))
+            antes = min(0.15,folga,max(0,ini-(frs[i0-1]['fim'] if i0 else 0)))
+            depois = min(0.25,folga-antes,max(0,(frs[i1+1]['ini'] if i1+1<len(frs) else fim+0.25)-fim))
+            ini_saida,fim_saida=ini-antes,fim+depois
+        out.append({'ini': round(ini_saida, 2), 'fim': round(fim_saida, 2), 'nota': int(max(0, min(99, round(nota)))),
                     'titulo': _sem_link(a.get('titulo', ''))[:90] or texto[:60], 'gancho': _sem_link(a.get('gancho', ''))[:60],
                     'hashtags': tags, 'motivo': _sem_link(a.get('motivo', ''))[:200], 'texto': texto[:600]})
+        if integro:
+            out[-1]['gancho_integridade'] = {'verificado':True,'fonte':'transcricao',
+                'inicio_solicitado':float(a['inicio']),'fim_solicitado':float(a['fim']),
+                'inicio_frase':ini,'fim_frase':fim,'criterio':'pontuacao_ou_pausa',
+                'motivo':'Mantidas palavras inteiras e fronteiras observadas de fala, dentro do limite de duração.'}
     out.sort(key=lambda c: -c['nota'])
     limpos = []
     for c in out:
@@ -969,6 +1009,9 @@ def escolher_sem_fala(arq: Path, dur: float, palavras: list, quantos: int, co: d
                     'gancho': _sem_link(str(tx.get('gancho') or ''))[:60] or 'OLHA ESSE MOMENTO', 'hashtags': tags or ['#gameplay', '#live'],
                     'motivo': c['motivo'] + (f' Na imagem: {str(tx.get("descricao"))[:120]}' if tx.get('descricao') else ''),
                     'texto': '', 'sem_legenda': True})
+        if gancho_integro_ativo():
+            out[-1]['gancho_integridade']={'verificado':False,'fonte':'som_imagem',
+                'motivo':'Sem transcrição: limites medidos por eventos de som/imagem; integridade da fala não confirmada.'}
     return out
 
 
