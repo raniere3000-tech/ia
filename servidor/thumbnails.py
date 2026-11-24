@@ -1412,6 +1412,20 @@ def video_com_capa(arq: Path) -> dict | None:
     return {'arquivo': dest, 'tempo_ms': tempo_ms, 'capa': cap, 'original_sha': orig, 'sha': sha, 'reaproveitado': False}
 
 
+def registrar_aplicacao(post: str, rede: str, c: dict, quem: str = 'agente2'):
+    """Estado da capa por post e rede, SEPARADO do estado do post (o vídeo pode estar postado e a capa ter falhado)."""
+    agora = _agora()
+    with db.tx() as cx:
+        cx.execute('INSERT INTO thumbnail_aplicacoes (post, rede, estrategia, estado, video_sha, thumb_sha, ref_rede, tentativas, erro, criado, atualizado) '
+                   'VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(post, rede) DO UPDATE SET estrategia=excluded.estrategia, estado=excluded.estado, '
+                   'thumb_sha=excluded.thumb_sha, ref_rede=COALESCE(NULLIF(excluded.ref_rede, \'\'), ref_rede), tentativas=excluded.tentativas, '
+                   'erro=excluded.erro, atualizado=excluded.atualizado',
+                   (post, rede, c.get('estrategia') or '', c.get('estado') or '', c.get('original_sha') or '', c.get('sha') or '',
+                    c.get('ref_rede') or '', int(c.get('tentativas') or 0), (c.get('detalhe') or '')[:300] if c.get('estado') != 'aplicada' else '',
+                    agora, agora))
+    db.evento(quem, 'thumbnail_aplicacao', f'post:{post}', {'rede': rede, 'estado': c.get('estado'), 'thumb_sha': (c.get('sha') or '')[:16]})
+
+
 def marcar_rede_ok(rede: str):
     db.kv_gravar('agente6.rede_ok.' + rede, _agora())
 

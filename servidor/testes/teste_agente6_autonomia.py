@@ -264,5 +264,101 @@ if e:
     th.recuperar()
     esperar_fila()
 
+# ---------------------------------------------------------------- TH.05
+print('TH.05 Agente 2: capa obrigatória por rede e estado da capa separado do post')
+video('v5', cor='rgbtestsrc')
+corte('k5', 'v5', 'Quinto corte sem capa')
+p5 = pg.criar_post({'video': 'v5', 'redes': ['youtube', 'tiktok', 'instagram', 'facebook'], 'quando': pg.agora() + 3600, 'titulo': 't', 'legenda': 'x'})
+p5 = next(x for x in pg.posts() if x['id'] == p5['id'])
+for rede in ('youtube', 'tiktok', 'instagram', 'facebook'):
+    conf = pg.conferencia(p5, rede)
+    confere(any(x['item'] == 'capa' and x['bloqueia'] for x in conf), f'{rede} {[x["item"] for x in conf]}: sem capa aprovada para o arquivo, não sai')
+th.salvar_config({'exigir_capa': False, 'exigir_capa_youtube': False})
+confere(not any(x['item'] == 'capa' for x in pg.conferencia(p5, 'tiktok')), 'com "exigir capa" desligado, a capa não barra')
+th.salvar_config({'exigir_capa': True, 'exigir_capa_youtube': True})
+pg.cancelar_post(p5['id']) if hasattr(pg, 'cancelar_post') else None
+
+# capa da versão antiga não vale
+arq1 = pg.VIDEOS / 'v1.mp4'
+jk1 = th._ultimo_job('corte', 'k1')
+if not th.capa_para_video(arq1):
+    th.selecionar_melhor(jk1['id'])
+confere(th.capa_para_video(arq1) is not None, 'v1 tem capa válida para o arquivo atual')
+
+pg.status_contas = lambda: {k: {'conectado': True, 'erro': '', 'paginas': [], 'pagina': ''} for k in set(pg.PROV.values())}
+pg._token_google = lambda: 'tok'
+pg._token_tiktok = lambda: {'access': 'tok'}
+os.environ['TIKTOK_DIRECT_POST_APROVADO'] = '1'
+ENVIOS = []
+TT = {}
+http_real = pg.http
+
+
+def http_falso(metodo, url, **kw):
+    if 'uploadType=resumable' in url:
+        return 200, {'Location': 'http://falso/up'}, {}
+    if url == 'http://falso/up':
+        ENVIOS.append(('youtube', len(kw.get('dados') or b'')))
+        return 200, {}, {'id': 'vidYTabc123', 'status': {'privacyStatus': 'public'}}
+    if '/creator_info/' in url:
+        return 200, {}, {'data': {'privacy_level_options': ['PUBLIC_TO_EVERYONE']}, 'error': {'code': 'ok'}}
+    if '/video/init/' in url:
+        TT['init'] = kw.get('js')
+        return 200, {}, {'data': {'publish_id': 'pub1', 'upload_url': 'http://falso/tt'}, 'error': {'code': 'ok'}}
+    if url == 'http://falso/tt':
+        TT.setdefault('bytes', b'')
+        TT['bytes'] += kw.get('dados') or b''
+        return 201, {}, {}
+    if '/status/fetch/' in url:
+        return 200, {}, {'data': {'status': 'PUBLISH_COMPLETE'}, 'error': {'code': 'ok'}}
+    return http_real(metodo, url, **kw)
+
+
+pg.http = http_falso
+# YouTube: a capa falha (erro do servidor do YouTube) -> o vídeo fica postado e SÓ a capa é tentada de novo depois
+YT_STATUS[0] = 500
+n_capas = len(CAPAS_YT)
+py = pg.criar_post({'video': 'v1', 'redes': ['youtube'], 'quando': pg.agora() - 5, 'titulo': 'Virada', 'legenda': 'x', 'repetir': True})
+pg._publicar_um(py['id'], 'youtube')
+q = next(x for x in pg.posts() if x['id'] == py['id'])
+cy = q['redes']['youtube'].get('capa') or {}
+confere(q['redes']['youtube']['status'] == 'postado' and cy.get('estado') == 'falhou' and cy.get('ref_rede') == 'vidYTabc123',
+        f'YouTube: vídeo postado, capa "falhou" guardada à parte com o ID do vídeo ({cy.get("estado")})')
+confere(len(CAPAS_YT) == n_capas + 1 and len(ENVIOS) == 1, 'uma tentativa de capa e um envio de vídeo')
+confere(db.um("SELECT estado FROM thumbnail_aplicacoes WHERE post=? AND rede='youtube'", py['id'])['estado'] == 'falhou', 'estado da capa registrado por post e rede')
+confere(pg.reenviar_capas_pendentes() == [], 'antes da hora marcada, não reenvia')
+YT_STATUS[0] = 200
+pg._mudar(py['id'], lambda q: q['redes']['youtube']['capa'].update(proxima=pg.agora() - 1))
+feitos = pg.reenviar_capas_pendentes()
+q = next(x for x in pg.posts() if x['id'] == py['id'])
+cy = q['redes']['youtube']['capa']
+confere(feitos == [(py['id'], 'aplicada')] and cy['estado'] == 'aplicada' and cy['tentativas'] == 2, f'nova tentativa só da capa: aplicada ({feitos})')
+confere(len(ENVIOS) == 1 and 'videoId=vidYTabc123' in CAPAS_YT[-1][0] and CAPAS_YT[-1][1] == th.capa_para_video(arq1)['sha'],
+        'o vídeo NÃO foi enviado de novo; a capa foi para o mesmo ID, com o hash da capa escolhida')
+confere(pg.reenviar_capas_pendentes() == [], 'capa aplicada não é reenviada')
+YT_STATUS[0] = 403
+r403 = pg.reenviar_capa(py['id'], 'youtube', 'voce', forcar=True)
+confere(r403['estado'] == 'bloqueada' and not r403.get('proxima'), 'conta sem permissão (403): fica bloqueada, sem repetir sozinho')
+YT_STATUS[0] = 200
+
+# TikTok direto (app aprovado): sobe a versão com a arte no quadro final e manda o tempo dela
+pt = pg.criar_post({'video': 'v1', 'redes': ['tiktok'], 'quando': pg.agora() - 5, 'titulo': 'Virada', 'legenda': 'x', 'tiktok_modo': 'direto'})
+pg._publicar_um(pt['id'], 'tiktok')
+q = next(x for x in pg.posts() if x['id'] == pt['id'])
+ct = q['redes']['tiktok'].get('capa') or {}
+emb = db.um('SELECT * FROM thumbnail_embutidos WHERE original_sha=? ORDER BY criado DESC LIMIT 1', th.capa_para_video(arq1)['original_sha'])
+confere(q['redes']['tiktok']['status'] == 'postado' and ct.get('estado') == 'indicada', f'TikTok direto: postado e capa indicada ({ct.get("estado")})')
+confere(TT.get('init') and TT['init']['post_info'].get('video_cover_timestamp_ms') == emb['tempo_ms'], 'TikTok recebeu o tempo do quadro com a arte')
+confere(hashlib.sha256(TT.get('bytes', b'')).hexdigest() == emb['video_sha'], 'o arquivo enviado é a versão com a capa embutida (hash registrado)')
+# TikTok assistido (rascunho): você escolhe a capa no app, com a instrução do quadro
+os.environ['TIKTOK_DIRECT_POST_APROVADO'] = '0'
+TT.clear()
+pa = pg.criar_post({'video': 'v1', 'redes': ['tiktok'], 'quando': pg.agora() - 5, 'titulo': 'Virada 2', 'legenda': 'x', 'repetir': True})
+pg._publicar_um(pa['id'], 'tiktok')
+q = next(x for x in pg.posts() if x['id'] == pa['id'])
+ca = q['redes']['tiktok'].get('capa') or {}
+confere(ca.get('estado') == 'manual' and 'ÚLTIMO quadro' in ca.get('detalhe', ''), 'TikTok assistido: capa fica manual, com a instrução do quadro (sem fingir aplicada)')
+pg.http = http_real
+
 print(f'\n{ok_n} ok, {falhas} falha(s)   (pasta {TMP})')
 sys.exit(1 if falhas else 0)
