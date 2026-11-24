@@ -1,17 +1,17 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T14:51:23-03:00. Executor: Codex.
+Atualizado: 2026-11-24T15:00:49-03:00. Executor: Codex.
 
 ```yaml
 fase: F2
-microetapa: F2.02
+microetapa: F2.03
 status: COMMITTED
 branch: codex/estudioclip-2-fase2
-sha_inicial: a0dcbb9a838ddf61c9173d411defb88555a0dac2
-sha_final_implementacao: 1832906f31b1ed48dc339973a74bbb777fba2db5
-proxima_microetapa: F2.03
+sha_inicial: 1b7a05da6ebb9d53d38222cd6f13f4faea017d11
+sha_final_implementacao: e4bc1bbc6ba52c448b2cd6b6847c31accc0e4126
+proxima_microetapa: F2.04
 mudancas_nao_commitadas: []
-flags_adicionadas: ['A5_EFEITOS_REAIS=0']
+flags_adicionadas: ['RENDER_INTEGRIDADE=0']
 migracoes: []
 merge: NAO_REALIZADO
 producao: NAO_PUBLICADA
@@ -35,12 +35,12 @@ permissão para continuar etapas autorizadas ou sincronizar esta branch.
 
 ## Última microetapa
 
-EditPlan/editor_ia existentes estendidos atrás de A5_EFEITOS_REAIS=0. Zoom é aplicado somente no intervalo tipado; B-roll usa asset registrado com declaração de origem permitida (meu/autorizado/regra), sem aceitar caminhos vindos de IA; fade reaproveita montagem existente e legendas dinâmicas usam ASS existente após overlays. Cada render grava recibo com hash do plano e arquivo, efeitos planejados/aplicados/sem alteração/falhos; zoom 1 não conta como efeito aplicado. Editor.rodar não conclui sem recibo correspondente quando flag ativa e registra prova em dados da pipeline existente. Falha deixa arquivo anterior intacto. Executores de corte/importado compartilham finalização; importado sem transcrição recusa pedido de legenda dinâmica em vez de alegar aplicação. Mídias e direitos são fornecidos pelo contexto; licença externa não foi auditada automaticamente. Corrigido defeito comprovado dos estilos força zero (retorna filtro null). Testes: teste_efeitos_reais.py 6/6 com FFmpeg real, frames antes/durante/depois do zoom = diferenças RGB 0,00/73,39/3,85; B-roll azul medido, legenda visível, fade, recibo/no-op e falha preservando anterior; teste_estilos_visuais.py agora 65/65 (antes duas falhas reproduzidas no baseline); teste_pipeline_5_agentes.py 51/51 com flag off. Flags off preservam fluxo anterior. ResourceWarning de stdout do executor preexistente será tratado no cartão de integridade/processos. Sem migração ou segundo editor.
+Conferência técnica opt-in com métricas reais de volume, início/duração A/V, preto, congelamento até EOF, codecs e silêncio. Exceções limitadas aos intervalos previstos; editor de efeitos e exportação validam temporário antes da troca, cancelamento preserva anterior. Corrigida perda de cauda de transição pela ordem setpts/tpad no FFmpeg 7; cache v3. Pipes fechados e processo recolhido após timeout/cancelamento. Testes: integridade 7, exportação 23 (falha histórica F1.09 resolvida), efeitos 6 sem ResourceWarning, cancelamento 15, tempo/travamento 8; todos aprovados. Sem frontend alterado, sem migração, sem API real ou Termux.
 
-Evidências: docs/estudioclip-2/checkpoints/F2.02-*.
+Evidências: docs/estudioclip-2/checkpoints/F2.03-*.
 Último resultado: testes focais e git diff --check aprovados.
 
-## Ponto exato de retomada — F2.03
+## Ponto exato de retomada — F2.04
 
 ```bash
 git status --short
@@ -52,10 +52,10 @@ git rev-list --left-right --count HEAD...origin/codex/estudioclip-2-fase2
 cat ESTADO_ATUAL.md
 ```
 
-Ler microetapas/12_F2_CORTES_EDICAO_INCREMENTAL.md, F2.03. Corrigir teste_exportacao.py reproduzido no baseline: duração de quadro com transição sai 2,00 em vez de 2,40. Verificar preservação de versão anterior, áudio/duração/frames e fechamento do processo de render. Rodar teste_exportacao.py e teste_ffmpeg_tempo.py, sem regressão do A5.
+Executar F2.04: reutilizar perfis/templates por canal para DNA mínimo (template, fonte, cor, legenda, zoom e ritmo); testar escolha manual e uso pelo A1. Depois rodar o fecho F2 completo e abrir PR separado tendo a branch F1 como base. Não fazer merge. Pendências antigas de teste_agente3 e reposicao continuam documentadas em F1.09.
 
 Não refazer Fase 0 ou microetapas concluídas. Relatórios anteriores permanecem em
-checkpoints/. Flags desligadas por padrão. Rollback: git revert 1832906f31b1ed48dc339973a74bbb777fba2db5
+checkpoints/. Flags desligadas por padrão. Rollback: git revert e4bc1bbc6ba52c448b2cd6b6847c31accc0e4126
 (não executar automaticamente). Sem migrações ou publicação em conta real.
 Suite F1.09 executada com quatro falhas documentadas; consultar fase-1-regressao.md.
 As pendências são atualizadas nos relatórios das fases seguintes; recorte F1.01 18/18.
