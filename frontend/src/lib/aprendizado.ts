@@ -4,7 +4,7 @@ import { api, type CfgSrv } from './api';
 export type ValorVar={valor:string;n:number;media:number;mediana:number;dp:number};
 export type VarAprend={variavel:string;nome:string;rede:string;minimo:number;valores:ValorVar[];aplicavel:boolean;aviso:string;estado:'dados insuficientes'|'tendência'|'sem diferença clara';mensagem:string;melhor?:string;
   peso_ativo:Record<string,number>;versao_pesos:number|null;pode_desfazer:boolean;pode_aplicar:boolean;pesos_calculados:Record<string,number>};
-export type Experimento={id:string;nome:string;variavel:string;a:string;b:string;fixos:Record<string,string>;min_amostras:number;status:string;resultado:string;mensagem:string;
+export type Experimento={contexto?:{canal:string;vertente:string;rede:string;metrica:string}|null;id:string;nome:string;variavel:string;a:string;b:string;fixos:Record<string,string>;min_amostras:number;status:string;resultado:string;mensagem:string;
   lados:Record<'a'|'b',{valor:string;n:number;media?:number}>;aviso_frequencia:string};
 export type PainelAprend={retratos:number;minimo:number;fontes:{fonte:string;rede:string;retratos:number;de:number|null;ate:number|null}[];variaveis:VarAprend[];experimentos:Experimento[];
   importacoes:{id:string;nome:string;formato:string;linhas:number;recusadas:number;t:number}[];historico_pesos:{versao:number;t:number;variavel:string;motivo:string;ativo:number}[];

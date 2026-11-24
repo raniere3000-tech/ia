@@ -64,7 +64,8 @@ export default function Aprendizado(){
     {ex?<div className="ag-teste">
       <p><b>{ex.nome}</b> — {ex.resultado}</p><p className="hint">{ex.mensagem}</p>
       <p className="hint">A ({ex.lados.a.valor}): {ex.lados.a.n} vídeo(s) • B ({ex.lados.b.valor}): {ex.lados.b.n} vídeo(s){Object.keys(ex.fixos).length?` • fixo: ${Object.entries(ex.fixos).map(([k,x])=>`${k}=${x}`).join(', ')}`:''}</p>
-      {ex.variavel==='estilo'&&<p className="hint">Enquanto o teste está ativo, o Agente 1 sorteia o estilo só entre A e B.</p>}
+      {ex.contexto&&<p className="hint">Teste manual: {ex.contexto.canal} • {ex.contexto.vertente} • {ex.contexto.rede}. Apenas publicações posteriores à criação do teste entram na amostra. Mantenha os demais fatores fixos; não há distribuição automática ou mudança no DNA.</p>}
+      {ex.variavel==='estilo'&&!ex.contexto&&<p className="hint">Enquanto o teste está ativo, o Agente 1 sorteia o estilo só entre A e B.</p>}
       <button className="subtle sm" disabled={!!busy} onClick={()=>rodar('encerrar',()=>encerrarTeste(cfg,ex.id),'Teste encerrado.')}>Encerrar teste</button>
     </div>:<div className="ag-grade">
       <label>Variável<select value={t.variavel} onChange={e=>setT({...t,variavel:e.target.value})}>{d.variaveis.map(v=><option key={v.variavel} value={v.variavel}>{v.nome}</option>)}</select></label>

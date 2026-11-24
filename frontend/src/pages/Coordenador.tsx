@@ -7,7 +7,7 @@ import EsteiraSete from '../components/EsteiraSete';
 import { urlServidor } from '../lib/api';
 import { tempoTexto } from '../lib/alertas';
 import { ESCOPOS, ESTADO_ORDEM, ESTADO_TAREFA, REDES, acaoMemoria, acaoOrdem, acaoSugestao, confirmarOrdem, conferirHistorico, conferirLinks, criarMemoria, enviarKwai, lerKwai, lerCustos, avisarCustos, aplicarSugestaoCusto, decidir, escolherCapaPacote,
-  interpretar, lerAgentes, lerAprovacoes, lerCfgCoord, lerConversa, lerEventos, lerMemoria, lerMemorias, lerOrdem, lerOrdens, lerSugestoes, mudarParametros, salvarCfgCoord,
+  testarHipotese, interpretar, lerAgentes, lerAprovacoes, lerCfgCoord, lerConversa, lerEventos, lerMemoria, lerMemorias, lerOrdem, lerOrdens, lerSugestoes, mudarParametros, salvarCfgCoord,
   type Aprovacao, type CfgCoord, type Custos as CustosT, type Evento, type Memoria, type Ordem, type Resposta } from '../lib/coordenador';
 
 type Aba='conversar'|'esteira'|'ordens'|'aprovacoes'|'agentes'|'kwai'|'custos'|'memoria'|'aprendizado'|'historico'|'config';
@@ -265,6 +265,7 @@ function MemoriaTela(){
       <span>"{m.texto}" <span className={'tag '+(m.status==='confirmada'?'ok':m.status==='proposta'?'warn':'')}>{m.status}</span></span>
       <small className="muted">{m.escopo} · versão {m.versao} · {m.origem==='sugestao'?'sugerida pelo aprendizado':'sua'}{Object.keys(m.dados).length?` · ${JSON.stringify(m.dados)}`:''}</small>
       <div className="row-gap left">
+        {m.status==='confirmada'&&m.dados._aprendizado!=null&&<button className="subtle sm" disabled={busy} onClick={()=>fazer(()=>testarHipotese(cfg,m.id,m.versao),'Teste registrado em Agentes → Aprendizado. Distribua A/B manualmente mantendo os demais fatores fixos.')}>Iniciar teste controlado</button>}
         {m.status!=='confirmada'&&<button className="subtle sm" disabled={busy} onClick={()=>fazer(()=>acaoMemoria(cfg,m.id,'confirmar',m.versao),'Confirmada.')}>Confirmar</button>}
         {m.status!=='desativada'&&<button className="subtle sm" disabled={busy} onClick={()=>fazer(()=>acaoMemoria(cfg,m.id,'desativar',m.versao),'Desativada.')}>Desativar</button>}
         <button className="link-btn" onClick={()=>setAberta(aberta===m.id?'':m.id)}>versões</button>

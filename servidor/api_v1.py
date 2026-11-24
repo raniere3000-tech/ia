@@ -648,6 +648,9 @@ def _coord(metodo: str, caminho: str, q: dict, corpo, quem: str):
             return co.desativar_memoria(mid, quem, corpo().get('versao'))
         if metodo == 'POST' and acao == 'reverter':
             return co.reverter_memoria(mid, _int(corpo().get('versao'), 0), quem)
+    m = re.fullmatch(base + r'/memorias/([\w-]+)/testar', caminho)
+    if m and metodo == 'POST':
+        return co.testar_hipotese(m.group(1), quem, corpo().get('versao'))
     if rota == ('POST', base + '/feedback'):
         return co.feedback(corpo(), quem)
     if rota == ('GET', base + '/aprendizado/sugestoes'):

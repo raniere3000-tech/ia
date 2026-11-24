@@ -90,3 +90,5 @@ export const ESTADO_TAREFA:Record<string,[string,string]>={pendente:['Na espera'
   falhou:['Falhou','bad'],bloqueada:['Bloqueada','bad'],cancelada:['Cancelada',''],pulada:['Pulada','']};
 export const REDES=['youtube','tiktok','instagram','facebook','kwai'];
 export const ESCOPOS:[string,string][]=[['global','Tudo'],['plataforma:youtube','Só no YouTube'],['plataforma:tiktok','Só no TikTok'],['plataforma:instagram','Só no Instagram']];
+
+export const testarHipotese=(c:CfgSrv,id:string,versao:number)=>api<{id:string}>(c,'POST',`${B}/memorias/${id}/testar`,{versao});

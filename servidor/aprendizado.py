@@ -27,6 +27,7 @@ import modelos as mo
 
 VARIAVEIS = {'estilo': 'Estilo visual', 'modelo': 'Template', 'faixa': 'Dia e hora', 'duracao': 'Duração', 'gancho': 'Tipo de gancho', 'formato': 'Formato', 'perfil': 'Perfil',
              'arranjo': 'Tela dividida (comparação)'}
+ALVOS_TESTE = dict(VARIAVEIS, roteiro='Roteiro', efeitos='Efeitos', capa='Capa', horario='Hora UTC', criterios='Critérios QA')
 APLICAVEIS = ('estilo',)                 # onde já existe um sorteio que pode usar os pesos; o template tem os pesos próprios do Agente 1
 REDES = ('youtube', 'instagram', 'facebook', 'kwai', 'tiktok')
 MIN_AMOSTRAS = 5                         # vídeos medidos por valor antes de dizer qualquer coisa
@@ -359,7 +360,7 @@ def desfazer(variavel: str, quem: str = 'site') -> dict:
 def sortear_estilo(ok: list, rnd) -> str:
     """Usado pelo Agente 1: com pesos aprendidos e/ou teste A/B ativo no estilo; senão, sorteio igual (como sempre foi)."""
     ex = experimento_ativo()
-    if ex and ex['variavel'] == 'estilo':
+    if ex and not ex.get('contexto') and ex['variavel'] == 'estilo':
         par = [x for x in (ex['a'], ex['b']) if x in ok]
         if par:
             return rnd.choice(par)
@@ -378,27 +379,57 @@ def experimento_ativo() -> dict | None:
 
 
 def _exp(r: dict) -> dict:
-    return {'id': r['id'], 'nome': r['nome'], 'variavel': r['variavel'], 'a': r['a'], 'b': r['b'], 'fixos': json.loads(r['fixos_json']), 'min_amostras': r['min_amostras'],
-            'status': r['status'], 'criado': r['criado'], 'encerrado': r['encerrado']}
+    fixos = json.loads(r['fixos_json'])
+    contexto = fixos.pop('_contexto', None)
+    return {'id': r['id'], 'nome': r['nome'], 'variavel': r['variavel'], 'a': r['a'], 'b': r['b'], 'fixos': fixos,
+            'contexto': contexto, 'min_amostras': r['min_amostras'], 'status': r['status'], 'criado': r['criado'], 'encerrado': r['encerrado']}
 
 
-def criar_experimento(d: dict) -> dict:
+def contexto_teste(d: dict) -> dict:
+    if not isinstance(d, dict) or d.get('vertente') not in ('cortes', 'criacao_ia') or not str(d.get('canal') or '').strip():
+        raise ErroAprendizado('Teste contextual exige canal e vertente conhecidos.')
+    if d.get('rede') not in REDES or d.get('metrica') not in ('views', 'curtidas', 'comentarios', 'compartilhamentos'):
+        raise ErroAprendizado('Rede ou métrica inválida para o teste.')
+    return {k: str(d[k])[:100] for k in ('canal', 'vertente', 'rede', 'metrica')}
+
+
+def valor_contexto(c: dict, alvo: str):
+    if alvo == 'gancho': return c.get('gancho')
+    if alvo == 'roteiro': return c.get('roteiro_sha')
+    if alvo == 'capa': return (c.get('capa_selecionada') or {}).get('sha')
+    if alvo == 'criterios': return c.get('criterio_qa')
+    if alvo == 'horario': return time.strftime('%Hh UTC', time.gmtime(c['publicado_em'])) if c.get('publicado_em') else None
+    if alvo == 'efeitos' and isinstance(c.get('efeitos'), dict):
+        return ','.join(sorted({e['tipo'] for e in c['efeitos'].get('efeitos', []) if e.get('status') == 'aplicado'})) or 'nenhum'
+    return c.get(alvo)
+
+
+def criar_experimento(d: dict, *, c=None) -> dict:
+    if c is None:
+        with db.tx() as conn:
+            ex = criar_experimento(d, c=conn)
+        db.evento('aprendizado', 'experimento_criado', 'experimento:' + ex['id'], {'variavel': ex['variavel'], 'contexto': ex.get('contexto')})
+        return ex
     var, a, b = str(d.get('variavel', '')), _txt(d.get('a')), _txt(d.get('b'))
-    if var not in VARIAVEIS:
+    if var not in ALVOS_TESTE:
         raise ErroAprendizado('Escolha a variável que vai mudar.')
+    contexto = contexto_teste(d['contexto']) if d.get('contexto') is not None else None
+    if var not in VARIAVEIS and contexto is None:
+        raise ErroAprendizado('Esta variável exige teste contextual.')
     if not a or not b or a == b:
         raise ErroAprendizado('Informe dois valores diferentes para comparar (A e B).')
     fixos = d.get('fixos') or {}
     if not isinstance(fixos, dict) or var in fixos or any(k not in VARIAVEIS for k in fixos):
         raise ErroAprendizado('Os valores fixos precisam ser de OUTRAS variáveis. Muda uma coisa por vez.')
     fixos = {k: _txt(v) for k, v in fixos.items() if _txt(v)}
+    if contexto:
+        fixos['_contexto'] = contexto
     if experimento_ativo():
         raise ErroAprendizado('Já existe um teste ativo. Encerre-o antes: o painel só roda um teste por vez para não misturar causas.', 409)
     mn = max(MIN_AMOSTRAS, min(int(d.get('min_amostras') or MIN_AMOSTRAS), 100))
     eid = uuid.uuid4().hex[:10]
-    db.executar('INSERT INTO aprendizado_experimentos (id, nome, variavel, a, b, fixos_json, min_amostras, status, criado) VALUES (?,?,?,?,?,?,?,?,?)',
-                eid, _txt(d.get('nome'), 80) or f'{VARIAVEIS[var]}: {a} contra {b}', var, a, b, json.dumps(fixos, ensure_ascii=False), mn, 'ativo', time.time())
-    db.evento('aprendizado', 'experimento_criado', 'experimento:' + eid, {'variavel': var, 'a': a, 'b': b, 'fixos': fixos})
+    c.execute('INSERT INTO aprendizado_experimentos (id, nome, variavel, a, b, fixos_json, min_amostras, status, criado) VALUES (?,?,?,?,?,?,?,?,?)',
+                (eid, _txt(d.get('nome'), 80) or f'{ALVOS_TESTE[var]}: {a} contra {b}', var, a, b, json.dumps(fixos, ensure_ascii=False), mn, 'ativo', time.time()))
     return ler_experimento(eid)
 
 
@@ -407,7 +438,21 @@ def ler_experimento(eid: str) -> dict:
     if not r:
         raise ErroAprendizado('Teste não encontrado.', 404)
     ex = _exp(r)
+    if ex.get('contexto') and ex['status'] == 'encerrado' and r.get('resultado_json'):
+        ex.update(json.loads(r['resultado_json']), aviso_frequencia=FREQUENCIA)
+        return ex
     ret = [x for x in _retratos() if all(x['v'].get(k) == v for k, v in ex['fixos'].items())]
+    if ex.get('contexto'):
+        ret = []
+        for x in indicadores(ex['contexto'])['itens']:
+            ctx = x['publicacao'] or {}
+            metrica = ex['contexto']['metrica']
+            # Só publicações novas após a criação do teste. A amostra da hipótese não é reutilizada.
+            if (ctx.get('publicado_em') or 0) < ex['criado'] or metrica not in x['metricas']:
+                continue
+            v = {k: valor_contexto(ctx, k) for k in [ex['variavel'], *ex['fixos']]}
+            if all(v.get(k) == val for k, val in ex['fixos'].items()):
+                ret.append({'v': v, 'r': x['metricas'][metrica]})
     br = {lado: [x['r'] for x in ret if x['v'].get(ex['variavel']) == ex[lado]] for lado in ('a', 'b')}
     ex['lados'] = {lado: ({'valor': ex[lado], **_estat(v)} if v else {'valor': ex[lado], 'n': 0}) for lado, v in br.items()}
     na, nb = len(br['a']), len(br['b'])

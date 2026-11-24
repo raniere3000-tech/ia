@@ -526,6 +526,17 @@ def _dados_memoria(d) -> dict:
         out['capa_layout'] = re.sub(r'[^a-z_]', '', str(out['capa_layout']))[:20]
     if 'ritmo' in out:
         out['ritmo'] = re.sub(r'[^a-z_]', '', str(out['ritmo']))[:20]
+    if isinstance(d.get('_aprendizado'), dict):
+        import aprendizado as ap
+        a = d['_aprendizado']
+        ctx = ap.contexto_teste(a)
+        alvo = str(a.get('variavel') or '')
+        if alvo not in ap.ALVOS_TESTE:
+            raise ErroCoord(400, 'Variável da hipótese inválida.')
+        out['_aprendizado'] = dict(ctx, variavel=alvo, responsavel=str(a.get('responsavel') or '')[:40],
+            hipotese=str(a.get('hipotese') or '')[:500], amostra=int(a.get('amostra') or 0),
+            snapshots=[str(x)[:80] for x in a.get('snapshots', [])[:500]], a=str(a.get('a') or '')[:60], b=str(a.get('b') or '')[:60],
+            teste_id=str(a.get('teste_id') or '')[:40], rollback='desativar_memoria_ou_reverter_versao')
     return out
 
 
@@ -609,6 +620,13 @@ def _mudar_memoria(mid: str, novos: dict, motivo: str, quem: str, versao_esperad
         c.execute('UPDATE coordenador_memorias SET tipo=:tipo, escopo=:escopo, chave=:chave, texto=:texto, dados_json=:dados_json, status=:status, confianca=:confianca, '
                   'confirmada_por=:confirmada_por, versao=:versao, atualizada=:atualizada, travada=:travada WHERE id=:id', m)
         _versao(mid, antes, _mem_publica(m), motivo, quem, c)
+    a = (antes.get('dados') or {}).get('_aprendizado') or {}
+    b = _l(m['dados_json'], {}).get('_aprendizado') or {}
+    if a.get('teste_id') and (m['status'] == 'desativada' or a['teste_id'] != b.get('teste_id')):
+        import aprendizado as ap
+        teste = ap.ler_experimento(a['teste_id'])
+        if teste['status'] == 'ativo':
+            ap.encerrar_experimento(a['teste_id'])
     evento(None, None, quem, 'memoria', {'acao': motivo, 'id': mid, 'versao': m['versao']})
     return memoria(mid)
 
@@ -662,6 +680,10 @@ def memorias_aplicaveis(ctx: dict) -> list:
     tema = str(ctx.get('tema') or '').lower()
     ms = []
     for m in db.todos("SELECT * FROM coordenador_memorias WHERE status='confirmada'"):
+        aprendizado = _l(m['dados_json'], {}).get('_aprendizado')
+        if aprendizado and (str(ctx.get('canal') or '').lower() != aprendizado['canal'].lower() or
+                            ctx.get('vertente') != aprendizado['vertente'] or aprendizado['rede'] not in (ctx.get('redes') or [])):
+            continue
         tipo, _, valor = m['escopo'].partition(':')
         if m['escopo'] in escopos or (tipo == 'tema' and valor and valor in tema):
             ms.append(m)
@@ -1994,6 +2016,19 @@ def sugestoes() -> dict:
                 out.append({'id': 'lento_' + tipo.replace('.', '_'), 'tipo': 'fato', 'titulo': f'"{tipo}" ficou mais lento: {round(rec / 60, 1)} min (antes {round(ant / 60, 1)} min)',
                             'evidencia': {'ultimos_3_s': [round(x) for x in ds[:3]], 'media_antes_s': round(ant), 'amostras': len(ds)}, 'confianca': None,
                             'proposta': {'texto': f'"{tipo}" está mais lento no celular; evite pedir muitos de uma vez.', 'escopo': 'global', 'chave': 'lento.' + tipo, 'tipo': 'fato'}})
+    # Hipóteses de métricas entram no fluxo existente de proposta/versão/aprovação.
+    for f in feedback_metricas():
+        if f['estado'] != 'hipotese_observacional':
+            continue
+        assinatura = hashlib.sha256(_j(f).encode()).hexdigest()[:20]
+        chave = 'metricas.' + f['agente'] + '.' + assinatura
+        meta = {k: f[k] for k in ('canal', 'vertente', 'rede', 'metrica', 'snapshots')}
+        meta.update(variavel=f['alvo'], responsavel=f['agente'], hipotese=f['recomendacao'], amostra=f['amostras'],
+                    a=f['comparacoes'][0]['valor'], b=f['comparacoes'][1]['valor'])
+        out.append({'id': chave, 'tipo': 'fato', 'titulo': f['agente'] + ': hipótese sobre ' + f['alvo'],
+                    'evidencia': meta, 'confianca': None,
+                    'proposta': {'texto': f['recomendacao'], 'tipo': 'fato', 'escopo': 'canal:' + f['canal'],
+                                 'chave': chave, 'dados': {'_aprendizado': meta}}})
     dis = set(_dispensadas())
     ja = {m['chave'] for m in memorias() if m['status'] in ('proposta', 'confirmada')}
     out = [s for s in out if s['id'] not in dis and s['proposta']['chave'] not in ja]
@@ -2468,19 +2503,7 @@ def feedback_metricas(filtros: dict | None = None) -> list:
             evidencias = []
             for x in itens:
                 c = x['publicacao'] or {}
-                valor = None
-                if alvo == 'gancho':
-                    valor = c.get('gancho')
-                elif alvo == 'roteiro':
-                    valor = c.get('roteiro_sha')  # não inferir roteiro a partir do título/projeto atual
-                elif alvo == 'efeitos' and isinstance(c.get('efeitos'), dict):
-                    valor = ','.join(sorted({e['tipo'] for e in c['efeitos'].get('efeitos', []) if e.get('status') == 'aplicado'})) or 'nenhum'
-                elif alvo == 'capa':
-                    valor = (c.get('capa_selecionada') or {}).get('sha')
-                elif alvo == 'horario' and c.get('publicado_em'):
-                    valor = time.strftime('%Hh UTC', time.gmtime(c['publicado_em']))
-                elif alvo == 'criterios':
-                    valor = c.get('criterio_qa')
+                valor = ap.valor_contexto(c, alvo)
                 if valor is not None and metrica in x['metricas']:
                     vals.setdefault(str(valor), []).append(x['metricas'][metrica])
                     evidencias.append(x['snapshot'])
@@ -2495,3 +2518,26 @@ def feedback_metricas(filtros: dict | None = None) -> list:
                         'recomendacao': texto, 'amostras': len(evidencias), 'sem_contexto_ou_metrica': len(itens)-len(evidencias),
                         'comparacoes': comparaveis, 'snapshots': sorted(evidencias), 'aviso': ap.AVISO_CAUSA})
     return out
+
+
+def testar_hipotese(mid: str, quem: str = 'site', versao=None) -> dict:
+    """Confirmação/CAS e criação do experimento na mesma transação."""
+    import aprendizado as ap
+    with db.tx() as c:
+        m = memoria(mid)
+        if versao is None or int(versao) != m['versao']:
+            raise ErroCoord(409, 'Atualize a versão da memória antes de iniciar o teste.')
+        a = m['dados'].get('_aprendizado')
+        if m['status'] != 'confirmada' or not a:
+            raise ErroCoord(409, 'Confirme uma hipótese de métricas antes do teste.')
+        if a.get('teste_id'):
+            return ap.ler_experimento(a['teste_id'])
+        ex = ap.criar_experimento({'variavel': a['variavel'], 'a': a['a'], 'b': a['b'], 'contexto': a}, c=c)
+        depois = {k: v for k, v in m.items() if k not in ('versoes', 'evidencias')}
+        depois.update(dados=dict(m['dados'], _aprendizado=dict(a, teste_id=ex['id'])), versao=m['versao']+1, atualizada=_agora())
+        c.execute('UPDATE coordenador_memorias SET dados_json=?, versao=?, atualizada=? WHERE id=?',
+                  (_j(depois['dados']), depois['versao'], depois['atualizada'], mid))
+        antes = {k: v for k, v in m.items() if k not in ('versoes', 'evidencias')}
+        _versao(mid, antes, depois, 'teste controlado criado', quem, c)
+    evento(None, None, quem, 'aprendizado', {'memoria': mid, 'teste': ex['id']})
+    return ex
