@@ -129,3 +129,12 @@ de roteiro F1.01 foram preservadas. Snapshots foram corrigidos na F3.02 e os
 simuladores positivos/negativos foram separados na F3.03, sem relaxar bloqueios
 do Diretor. Evidência: checkpoints/F3.03-agente3-integral.log. O resultado F1.09
 acima permanece histórico; teste_reposicao continua pendente de F4.02.
+
+## Atualização posterior — F4.02
+
+`teste_reposicao.py` passou com 35 verificações. As duas falhas antigas eram
+um cenário que afirmava ter horário livre após preenchê-lo com k3; agora
+confere o caso ocupado e cria uma vaga real antes de pedir reposição. Código
+de produção preservado. Evidência antes/diagnóstico/depois nos checkpoints.
+Os quatro testes que falharam na execução histórica F1.09 tiveram correções
+e verificações posteriores; isso não substitui uma nova suíte global integral.
