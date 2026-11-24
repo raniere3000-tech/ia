@@ -1218,7 +1218,8 @@ def _iniciar(o: dict, t: dict):
         pid = pr.get('projeto') or next(x for x in _tarefas(oid) if x['id'] == pr['produzir'])['resultado']['projeto']
         n_corr = int(pr.get('correcoes') or 0)
         j = th.criar({'origem': 'render', 'referencia': pid, 'variantes': pr.get('variantes') or 2, 'metodo': 'inteligente',
-                      'descricao': pr.get('pedido_capa') or '', 'chave_idempotencia': f'coord:{t["id"]}:{n_corr}'}, 'agente7')
+                      'descricao': pr.get('pedido_capa') or '', 'chave_idempotencia': f'coord:{t["id"]}:{n_corr}',
+                      'reaproveitar': not n_corr}, 'agente7')
         _set_tarefa(t['id'], estado='executando', inicio=t['inicio'] or agora, resultado={'thumb': j['id'], 'projeto': pid}, job_id=None)
         evento(oid, t['id'], 'agente7', 'delegado', {'agente': 'agente6', 'thumb': j['id'], 'projeto': pid})
         return
@@ -1284,6 +1285,24 @@ def _acompanhar(o: dict, t: dict):
         if j['estado'] == 'revisao_manual' and not th.selecao_ativa(j['id']):
             if t['estado'] != 'aguardando_voce':
                 _set_tarefa(t['id'], estado='aguardando_voce', erro=(j.get('erro') or 'Nenhuma capa passou no diretor: escolha ou peça de novo em Capas.')[:300])
+            return
+        if j['estado'] in ('aguardando_escolha', 'pronto', 'revisao_manual') and th.config()['modo'] == 'automatico':
+            # Automático: só conclui com capa ESCOLHIDA e válida para a versão atual do vídeo (não com capa "esperando escolha").
+            s = th.revalidar(j['id']) or (th.selecionar_melhor(j['id'], 'agente6-automatico') and th.revalidar(j['id']))
+            if not s:
+                if j['estado'] == 'pronto' or (j['estado'] == 'aguardando_escolha' and th._video_atual_sha(j) != j['video_sha']):
+                    if t['estado'] != 'executando':      # o vídeo mudou: a recuperação do Agente 6 pede a capa da versão nova
+                        _set_tarefa(t['id'], estado='executando', erro='O vídeo mudou: o Agente 6 está refazendo a capa da versão nova.')
+                    nj = th._ultimo_job(j['origem'], j['referencia'])
+                    if nj and nj['id'] != j['id']:
+                        _set_tarefa(t['id'], resultado=dict(t['resultado'], thumb=nj['id']))
+                    return
+                if t['estado'] != 'aguardando_voce':
+                    _set_tarefa(t['id'], estado='aguardando_voce', erro=(j.get('erro') or 'Nenhuma capa passou no diretor: escolha ou peça de novo em Capas.')[:300])
+                return
+            _set_tarefa(t['id'], estado='concluida', fim=_agora(), erro=None, resultado=dict(t['resultado'], estado_capas='pronto', variante=s['variante'],
+                                                                                             capa_sha=s['thumb_sha'], video_sha=s['video_sha'], escolha=s['escolha']))
+            evento(o['id'], t['id'], 'agente6', 'concluida', {'thumb': j['id'], 'estado': 'pronto', 'escolha': s['escolha']})
             return
         if j['estado'] in ('aguardando_escolha', 'pronto', 'revisao_manual'):
             _set_tarefa(t['id'], estado='concluida', fim=_agora(), resultado=dict(t['resultado'], estado_capas=j['estado'],

@@ -382,6 +382,13 @@ def criar(d: dict, quem: str = 'site') -> dict:
     sha = pl.sha_arquivo(info['arquivo'])
     if not sha:
         raise ErroThumb(404, 'Não consegui ler o vídeo.')
+    if d.get('reaproveitar'):
+        # Esteira e Coordenador pedem capa do MESMO vídeo por caminhos diferentes: um pedido vivo para a mesma versão serve aos dois.
+        ja = db.um("SELECT id FROM thumbnail_jobs WHERE origem=? AND referencia=? AND video_sha=? AND estado NOT IN ('falhou','cancelado') "
+                   "ORDER BY criado DESC LIMIT 1", origem, ref, sha)
+        if ja:
+            db.evento(str(quem)[:60], 'thumbnail_pedido_reaproveitado', 'thumb:' + ja['id'], {'video_sha': sha[:16]})
+            return dict(obter(ja['id']), reaproveitado=True)
     aviso = ''
     if metodo == 'ia':
         ok, motivo = ia_disponivel()
@@ -1313,14 +1320,96 @@ def capa_para_video(arq: Path) -> dict | None:
         return None
     if not sha:
         return None
+    e = db.um('SELECT * FROM thumbnail_embutidos WHERE video_sha=?', sha)
+    if e:                         # versão de publicação com a capa embutida: vale a MESMA escolha do vídeo original
+        s = db.um('SELECT * FROM thumbnail_selecoes WHERE id=? AND revogado IS NULL AND aprovado=1', e['selecao'])
+        v = db.um('SELECT * FROM thumbnail_variantes WHERE id=?', s['variante']) if s else None
+        if not s or not v or s['thumb_sha'] != e['thumb_sha'] or _arquivo_sha(v['arquivo']) != s['thumb_sha']:
+            return None
+        return {'arquivo': Path(v['arquivo']), 'sha': s['thumb_sha'], 'formato': v['formato'], 'tempo_ms': e['tempo_ms'], 'job': s['job'],
+                'variante': v['id'], 'selecao': s['id'], 'embutida': True, 'original_sha': e['original_sha']}
     for s in db.todos('SELECT * FROM thumbnail_selecoes WHERE video_sha=? AND revogado IS NULL AND aprovado=1 ORDER BY criado DESC', sha):
         v = db.um('SELECT * FROM thumbnail_variantes WHERE id=?', s['variante'])
         if not v or _arquivo_sha(v['arquivo']) != s['thumb_sha']:
             _revogar(s['id'], 'A capa mudou ou sumiu depois da aprovação.')
             continue
         return {'arquivo': Path(v['arquivo']), 'sha': s['thumb_sha'], 'formato': v['formato'], 'tempo_ms': int((v['quadro_t'] or 0) * 1000),
-                'job': s['job'], 'variante': v['id']}
+                'job': s['job'], 'variante': v['id'], 'selecao': s['id'], 'embutida': False, 'original_sha': sha}
     return None
+
+
+SEG_CAPA_EMBUTIDA = 0.5      # quadro final curto: não mexe no gancho (começo) nem corta o conteúdo
+
+
+def _sondar_pub(arq: Path) -> dict:
+    r = subprocess.run(['ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(arq)],
+                       capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60, check=True)
+    info = json.loads(r.stdout or '{}')
+    v = next(s for s in info.get('streams', []) if s.get('codec_type') == 'video')
+    a = any(s.get('codec_type') == 'audio' for s in info.get('streams', []))
+    num, _, den = str(v.get('r_frame_rate') or '30/1').partition('/')
+    try:
+        fps = float(num) / float(den or 1)
+    except (ValueError, ZeroDivisionError):
+        fps = 30.0
+    fps = fps if 10 <= fps <= 120 else 30.0
+    return {'w': int(v['width']), 'h': int(v['height']), 'fps': round(fps, 3), 'audio': a,
+            'dur': float(info.get('format', {}).get('duration') or v.get('duration') or 0)}
+
+
+def video_com_capa(arq: Path) -> dict | None:
+    """Versão de PUBLICAÇÃO para redes que só aceitam um momento do vídeo como capa (TikTok, Instagram).
+
+    A arte escolhida vira um quadro final curto (SEG_CAPA_EMBUTIDA s) e a rede recebe o tempo desse quadro. O arquivo
+    derivado fica registrado em thumbnail_embutidos preso à MESMA escolha (vídeo original + capa): não é um vídeo novo
+    para o Agente 6 (não gera pedido de capa) nem muda o vídeo aprovado/liberado — o que o A7 liberou continua igual.
+    Devolve None quando não há capa escolhida e válida para este arquivo."""
+    cap = capa_para_video(arq)
+    if not cap:
+        return None
+    if cap.get('embutida'):
+        return {'arquivo': Path(arq), 'tempo_ms': cap['tempo_ms'], 'capa': cap, 'original_sha': cap['original_sha'], 'reaproveitado': True}
+    orig = cap['original_sha']
+    ja = db.um('SELECT * FROM thumbnail_embutidos WHERE original_sha=? AND thumb_sha=? AND selecao=? ORDER BY criado DESC LIMIT 1',
+               orig, cap['sha'], cap['selecao'])
+    if ja and Path(ja['arquivo']).exists() and _arquivo_sha(ja['arquivo']) == ja['video_sha']:
+        return {'arquivo': Path(ja['arquivo']), 'tempo_ms': ja['tempo_ms'], 'capa': cap, 'original_sha': orig, 'sha': ja['video_sha'], 'reaproveitado': True}
+    try:
+        m = _sondar_pub(Path(arq))
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError, OSError, StopIteration):
+        return None
+    if m['dur'] <= 0:
+        return None
+    pasta = PASTA / 'embutidos'
+    pasta.mkdir(parents=True, exist_ok=True)
+    dest = pasta / f'{orig[:16]}_{cap["sha"][:16]}.mp4'
+    tmp = pasta / f'{orig[:16]}_{cap["sha"][:16]}.tmp.mp4'
+    seg = SEG_CAPA_EMBUTIDA
+    w, h, fps = m['w'] - m['w'] % 2, m['h'] - m['h'] % 2, m['fps']
+    filtro = (f'[0:v]scale={w}:{h},setsar=1,fps={fps},format=yuv420p[v0];'
+              f'[1:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps={fps},format=yuv420p[c];'
+              '[v0][c]concat=n=2:v=1:a=0[v]')
+    cmd = ['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', str(arq), '-loop', '1', '-t', f'{seg}', '-i', str(cap['arquivo'])]
+    mapa = ['-map', '[v]']
+    if m['audio']:
+        filtro += f';[0:a]apad=pad_dur={seg}[a]'
+        mapa += ['-map', '[a]', '-c:a', 'aac', '-b:a', '128k']
+    cmd += ['-filter_complex', filtro] + mapa + ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+                                                  '-t', f'{m["dur"] + seg:.3f}', '-movflags', '+faststart', str(tmp)]
+    try:
+        subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL, timeout=1800, check=True)
+        os.replace(tmp, dest)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+        tmp.unlink(missing_ok=True)
+        print('agente6: não consegui embutir a capa no vídeo:', e)
+        return None
+    sha = _arquivo_sha(str(dest))
+    tempo_ms = int(m['dur'] * 1000 + seg * 500)          # meio do quadro final
+    with db.tx() as c:
+        c.execute('INSERT OR REPLACE INTO thumbnail_embutidos (video_sha, original_sha, selecao, thumb_sha, tempo_ms, segundos, arquivo, criado) '
+                  'VALUES (?,?,?,?,?,?,?,?)', (sha, orig, cap['selecao'], cap['sha'], tempo_ms, seg, str(dest), _agora()))
+    db.evento('agente6', 'thumbnail_capa_embutida', 'thumb:' + cap['job'], {'original_sha': orig[:16], 'video_sha': sha[:16], 'tempo_ms': tempo_ms})
+    return {'arquivo': dest, 'tempo_ms': tempo_ms, 'capa': cap, 'original_sha': orig, 'sha': sha, 'reaproveitado': False}
 
 
 def marcar_rede_ok(rede: str):

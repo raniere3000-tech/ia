@@ -200,5 +200,69 @@ th.salvar_config({'modo': 'automatico'})
 r = th.recuperar()
 confere(any(x['referencia'] == 'k3' for x in r['selecionados']) and th.selecao_ativa(j3['id']), 'voltando ao automático, a recuperação escolhe a aprovada')
 
+# ---------------------------------------------------------------- TH.04
+print('TH.04 Coordenador, esteira e capa embutida')
+import coordenador as co  # noqa: E402
+jn = th._ultimo_job('corte', 'k1')
+r = th.criar({'origem': 'corte', 'referencia': 'k1', 'variantes': 2, 'chave_idempotencia': 'coord:outra:0', 'reaproveitar': True}, 'agente7')
+confere(r['id'] == jn['id'] and r.get('reaproveitado'), 'Coordenador e esteira reaproveitam o pedido vivo do mesmo vídeo (sem duplicar)')
+n_antes = db.um('SELECT COUNT(*) n FROM thumbnail_jobs')['n']
+th.criar({'origem': 'corte', 'referencia': 'k1', 'variantes': 3, 'chave_idempotencia': 'esteira:x:y', 'reaproveitar': True}, 'agente7-esteira')
+confere(db.um('SELECT COUNT(*) n FROM thumbnail_jobs')['n'] == n_antes, 'nenhum pedido novo para o mesmo vídeo')
+
+# Coordenador no automático: só conclui com capa escolhida e válida
+video('v4')
+corte('k4', 'v4', 'Quarto corte')
+th.salvar_config({'modo': 'supervisionado'})
+j4 = esperar(th.criar({'origem': 'corte', 'referencia': 'k4', 'variantes': 3}, 'teste')['id'])
+th.salvar_config({'modo': 'automatico'})
+tid4 = co._nova_tarefa('ordem-teste', 'capas_k4', 'agente6', 'a6.capas', {}, [])
+co._set_tarefa(tid4, estado='executando', resultado={'thumb': j4['id']})
+aprovadas4 = [v for v in j4['variantes'] if v['estado'] == 'aprovada']
+co._acompanhar({'id': 'ordem-teste'}, co._tarefa(tid4))
+t4 = co._tarefa(tid4)
+if aprovadas4:
+    confere(t4['estado'] == 'concluida' and t4['resultado'].get('variante') and th.selecao_ativa(j4['id']),
+            f'Coordenador (automático): escolheu e só então concluiu ({t4["estado"]})')
+else:
+    confere(t4['estado'] == 'aguardando_voce', 'sem aprovada: fica com você, não conclui')
+# sem nenhuma aprovada: não conclui
+db.executar("UPDATE thumbnail_variantes SET estado='reprovada' WHERE job=?", j4['id'])
+db.executar('UPDATE thumbnail_selecoes SET revogado=? WHERE job=?', time.time(), j4['id'])
+th._estado(j4['id'], 'revisao_manual', 'teste: nenhuma passou')
+co._set_tarefa(tid4, estado='executando')
+co._acompanhar({'id': 'ordem-teste'}, co._tarefa(tid4))
+confere(co._tarefa(tid4)['estado'] == 'aguardando_voce', 'Coordenador: sem capa aprovada não conclui (fica como pendência sua)')
+
+# capa embutida para TikTok/Instagram, presa à mesma escolha e sem novo ciclo
+arq1 = pg.VIDEOS / 'v1.mp4'
+cap1 = th.capa_para_video(arq1)
+e = th.video_com_capa(arq1)
+confere(e and e['arquivo'].exists() and e['arquivo'] != arq1, 'versão de publicação com a capa embutida criada')
+if e:
+    dur = lambda a: float(subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', str(a)],
+                                         capture_output=True, text=True).stdout.strip() or 0)
+    d0, d1 = dur(arq1), dur(e['arquivo'])
+    confere(0.3 <= d1 - d0 <= 0.8 and d0 * 1000 < e['tempo_ms'] < d1 * 1000, f'quadro final curto ({d1 - d0:.2f}s) e tempo da capa dentro dele ({e["tempo_ms"]} ms)')
+    # o quadro no tempo indicado é a arte da capa (não um quadro qualquer)
+    from PIL import Image, ImageChops, ImageStat  # noqa: E402
+    q = TMP / 'quadro.png'
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-ss', f'{e["tempo_ms"] / 1000:.3f}', '-i', str(e['arquivo']), '-frames:v', '1', str(q)], check=True)
+    a = Image.open(q).convert('RGB').resize((90, 160))
+    b = Image.open(cap1['arquivo']).convert('RGB').resize((90, 160))
+    dif = sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / 3
+    confere(dif < 25, f'o quadro no tempo da capa é a arte escolhida (diferença média {dif:.1f})')
+    c2 = th.capa_para_video(e['arquivo'])
+    confere(c2 and c2['embutida'] and c2['selecao'] == cap1['selecao'] and c2['tempo_ms'] == e['tempo_ms'], 'o Agente 2 reconhece a versão embutida pela MESMA escolha')
+    confere(th.video_com_capa(arq1)['reaproveitado'], 'pedir de novo reaproveita o arquivo (não refaz)')
+    rr = th.recuperar()
+    confere(not any(x['referencia'] == 'k1' for x in rr['criados']) and
+            not db.um('SELECT 1 FROM thumbnail_jobs WHERE video_sha=?', e['sha']), 'a versão embutida não gera pedido de capa novo (sem ciclo)')
+    esperar_fila()
+    th._revogar(cap1['selecao'], 'teste')
+    confere(th.capa_para_video(e['arquivo']) is None, 'escolha revogada: a versão embutida também perde a capa')
+    th.recuperar()
+    esperar_fila()
+
 print(f'\n{ok_n} ok, {falhas} falha(s)   (pasta {TMP})')
 sys.exit(1 if falhas else 0)
