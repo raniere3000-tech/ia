@@ -109,8 +109,10 @@ def _hash(d: dict) -> str:
     return hashlib.sha256(json.dumps(d, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-def _gravar_retrato(fonte: str, rede: str, item: str, variaveis: dict, metricas: dict, ini, fim, imp: str = '') -> bool:
+def _gravar_retrato(fonte: str, rede: str, item: str, variaveis: dict, metricas: dict, ini, fim, imp: str = '', publicacao: dict | None = None) -> bool:
     variaveis = {k: _txt(v) for k, v in variaveis.items() if k in VARIAVEIS and _txt(v)}
+    if publicacao:
+        variaveis['_publicacao'] = json.loads(json.dumps(publicacao))
     metricas = metricas_validas(metricas)
     if not metricas:
         return False
@@ -149,13 +151,15 @@ def capturar(publicacoes: list | None = None) -> dict:
     import agente as ag
     novos = 0
     representados = set()
+    posts = {p['id']: p for p in publicacoes or []}
     for c in ag.estado()['cortes']:
         if not c.get('medido') or not c.get('metricas'):
             continue
         fim = c.get('postado') or c.get('criado') or 0
         for rede, m in c['metricas'].items():
             if rede in REDES and isinstance(m, dict) and resultado(metricas_validas(m)) is not None:
-                novos += _gravar_retrato('rede', rede, c.get('id', ''), variaveis_do_corte(c), m, fim, c.get('metricas_em') or fim)
+                destino = ((posts.get(c.get('post')) or {}).get('redes') or {}).get(rede) or {}
+                novos += _gravar_retrato('rede', rede, c.get('id', ''), variaveis_do_corte(c), m, fim, c.get('metricas_em') or fim, publicacao=destino.get('publicacao'))
                 if c.get('post'):
                     representados.add((c['post'], rede))
     if os.getenv('METRICAS_PUBLICACOES', '0') == '1':
@@ -169,7 +173,7 @@ def capturar(publicacoes: list | None = None) -> dict:
                     continue
                 inicio = destino.get('feito') or p.get('quando')
                 novos += _gravar_retrato('rede', rede, 'post:' + p['id'],
-                                        {'modelo': p.get('modelo') or ''}, m, inicio, p.get('metricas_em'))
+                                        {'modelo': p.get('modelo') or ''}, m, inicio, p.get('metricas_em'), publicacao=destino.get('publicacao'))
     if novos:
         db.evento('aprendizado', 'capturar', '', {'novos': novos})
     return {'novos': novos}

@@ -741,12 +741,39 @@ def postar_youtube(p: dict, arq: Path) -> str:
         st, _, j = http('PUT', destino, dados=f.read(), cab={'Content-Type': 'video/mp4', 'Content-Length': str(tam)}, tempo=1800)
     _ok(st, j, 'YouTube recusou o vídeo')
     vid = j.get('id')
+    REF['youtube'] = vid or ''
     _capa_youtube(p, arq, vid, tok)
     priv = (j.get('status') or {}).get('privacyStatus')
     link = f'https://youtube.com/shorts/{vid}'
     if p['opcoes'].get('youtube_privacidade', 'public') != 'private' and priv == 'private':
         link += '  (o YouTube deixou privado: projeto do Google ainda não verificado; veja o "?")'
     return link
+
+
+def contexto_publicacao(p: dict, arq: Path) -> dict:
+    """Retrato local antes do envio. Não afirma que a rede aceitou a capa."""
+    import pipeline as pl
+    import agente as ag
+    sha = pl.sha_arquivo(arq)
+    corte = next((c for c in ag.estado()['cortes'] if c.get('post') == p['id'] or
+                  c.get('video') == p['video']), {})
+    capa = _capa(arq) or {}
+    efeitos = None
+    try:
+        recibo = json.loads(arq.with_suffix('.efeitos.json').read_text())
+        if recibo.get('arquivo_sha') == sha:
+            efeitos = recibo
+    except (OSError, ValueError):
+        pass
+    return {'schema': 1, 'post': p['id'], 'video': p['video'], 'render_sha': sha,
+            'projeto': p.get('projeto') or None, 'origem': p.get('origem') or 'manual',
+            'vertente': 'criacao_ia' if p.get('origem') == 'agente3' else ('cortes' if corte else 'manual'),
+            'corte': corte.get('id'), 'canal': corte.get('canal') or None,
+            'titulo': p.get('titulo'), 'legenda': p.get('legenda'),
+            'gancho': corte.get('gancho'), 'modelo': p.get('modelo') or corte.get('modelo'),
+            'efeitos': efeitos,
+            'capa_selecionada': {k: capa.get(k) for k in ('sha', 'formato', 'tempo_ms', 'job', 'variante')} if capa else None,
+            'capa_envio': 'consultar_historico_da_rede', 'capturado_em': agora()}
 
 
 def _capa(arq: Path) -> dict | None:
@@ -1330,10 +1357,15 @@ def _publicar_um(pid: str, rede: str):
         return
     try:
         REF.pop(rede, None)
-        link = PUBLICAR[rede](p, video_path(p['video']))
+        arq = video_path(p['video'])
+        contexto = contexto_publicacao(p, arq) if os.getenv('PUBLICACAO_CONTEXTO', '0') == '1' else None
+        link = PUBLICAR[rede](p, arq)
         ref = REF.pop(rede, '')
         def ok(q):
-            q['redes'][rede].update(status='postado', link=link, erro='', feito=agora(), ref=ref)
+            feito = agora()
+            q['redes'][rede].update(status='postado', link=link, erro='', feito=feito, ref=ref)
+            if contexto is not None:
+                q['redes'][rede]['publicacao'] = dict(contexto, rede=rede, ref=ref or None, link=link, publicado_em=feito)
             _anotar(q, rede, 'postado', link)
         _mudar(pid, ok)
         if rede == 'tiktok':
