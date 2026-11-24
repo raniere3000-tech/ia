@@ -1,0 +1,15 @@
+ok    TikTok com erro não impede YouTube e Instagram: {'tiktok': 'erro', 'youtube': 'postado', 'instagram': 'postado'}
+ok    aviso na hora: falhou no TikTok e diz que o YouTube foi ou vai sem depender dele
+ok    o aviso diz como tentar de novo só no TikTok
+ok    tentar de novo só no TikTok: posta lá e não repete o YouTube ({'tiktok': 'postado', 'youtube': 'postado', 'instagram': 'postado'})
+ok    rede que não está no post: recusada
+ok    TikTok travado: YouTube postado em 0.1s sem esperar ({'tiktok': 'postando', 'youtube': 'postado'})
+ok    post novo do YouTube sai enquanto o TikTok ainda está travado
+ok    o mesmo envio do TikTok não é disparado duas vezes
+ok    TikTok termina depois, uma vez só
+ok    erro inesperado só no TikTok: YouTube postado ({'tiktok': 'erro', 'youtube': 'postado'})
+ok    Instagram é enviado e Kwai fica manual no mesmo post
+ok    o histórico e o horário original são preservados
+ok    repetir a solicitação não duplica envios
+
+13 ok, 0 falha(s)

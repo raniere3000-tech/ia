@@ -1,0 +1,9 @@
+Desenhando 60 quadros 540x960 (esfera com 784 triângulos + cubo)...
+
+Tempo médio por quadro: 37 ms   (o pior: 87 ms)
+Cada segundo de vídeo leva cerca de 1.1 s para desenhar.
+Um vídeo de 45 s levaria cerca de 0.8 minutos só de 3D (sem voz e legenda).
+Vídeo de teste: /home/agent/teste3d.mp4   (abra no celular e veja se está bom)
+RESULTADO: BOM. Dá para ligar os estilos 3D simples neste aparelho.
+
+Mande para o Claude o texto acima (de "Tempo médio" até "RESULTADO").

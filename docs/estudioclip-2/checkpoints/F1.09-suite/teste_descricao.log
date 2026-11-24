@@ -1,0 +1,51 @@
+Formato
+ok    sem link: título, hashtags, três pontos e "Link original do vídeo []" (exato)
+---
+Por que o céu é azul
+
+#Ciência #CéuAzul #curiosidades
+
+.
+.
+.
+Link original do vídeo []
+---
+ok    link válido entra só dentro dos colchetes
+ok    link inválido não entra: 'www.site.com'
+ok    link inválido não entra: 'javascript:alert(1)'
+ok    link inválido não entra: 'https://x y.com'
+ok    link inválido não entra: 'https://a.com/[x]'
+ok    link inválido não entra: 'https://localhost'
+ok    link inválido não entra: 'qualquer coisa'
+ok    hashtags com # e sem repetir
+ok    mantém a quantidade de hashtags do projeto
+ok    sem hashtags: não fica linha vazia sobrando
+ok    título numa linha só
+ok    rodapé e pontos aparecem uma vez
+ok    créditos antes dos três pontos, modelo mantido
+ok    crédito já presente não é repetido
+ok    crédito obrigatório entra na editada antes do rodapé
+ok    editada sem rodapé: crédito no fim, nada inventado
+ok    aviso só para a rede que passa do limite
+ok    no limite: sem aviso
+
+Aprovação e post do Agente 2
+ok    prévia pronta antes de aprovar, no formato
+ok    legenda do Agente 2 = descrição da prévia
+ok    aprovar de novo não duplica post, rodapé nem pontos
+ok    crédito obrigatório presente (Agente 2 não barra)
+ok    link válido do projeto vai dentro dos colchetes
+ok    edição guardada (com o crédito obrigatório garantido)
+ok    edição continua lá ao reabrir
+ok    mudar o link não apaga a edição à mão
+ok    restaurar o modelo padrão
+ok    aprovar e agendar mantém a edição à mão
+ok    crédito não duplicado na editada
+ok    legenda enviada na aprovação é a usada
+ok    prévia avisa que passa do limite da rede
+ok    aprovação acima do limite é recusada com aviso (nada cortado)
+ok    nenhum post criado com texto cortado
+ok    YouTube recebe a descrição terminando no "Link original do vídeo []"
+ok    post sem o modelo continua como antes (#shorts)
+
+TUDO OK
