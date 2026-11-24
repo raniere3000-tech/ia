@@ -6,9 +6,9 @@ Checkpoint próprio desta frente. **Não substitui** o `ESTADO_ATUAL.md` (Estúd
 frente: DOWNLOAD_EM_LOTE
 branch: claude/project-thread-hqyqog
 sha_origem: 1e89d59 (origin/main depois do PR #20)
-microetapa_atual: DL.04
+microetapa_atual: DL.05
 status: CONCLUIDA
-proxima_microetapa: DL.05
+proxima_microetapa: DL.06
 merge: NAO_REALIZADO
 producao: NAO_PUBLICADA
 publicacoes_reais_em_teste: NENHUMA
@@ -57,6 +57,11 @@ publicacoes_reais_em_teste: NENHUMA
 - Rotas (`api_v1._downloads`): `POST /api/v1/downloads`, `GET /api/v1/downloads/<id>`, `POST .../cancelar|tentar-novamente`, `GET .../arquivo` e `.../item/<n>` (links assinados de 6 h, sem a senha na URL; Range para retomar). `servidor.py`: prefixo `/api/v1/downloads/` aceita assinatura; `Content-Disposition` agora também manda `filename*=UTF-8''...` (antes um nome fora do latin-1 quebraria o cabeçalho).
 - Teste novo `servidor/testes/teste_download_lote.py`: 65 ok (nomes maliciosos, títulos iguais, TXT, estrutura do ZIP, capa PNG com nome .jpg, MP4 certo para cada vídeo, parcial, relatório, Range, assinatura adulterada, sem login, capa desatualizada, falta de espaço, cancelar, repetir, reinício, limpeza, e "posts/capas/fila/vídeos não mudaram").
 - Regressão rápida: `teste_thumbnails` 101, `teste_exportacao` 23, `teste_publicacao_lotes` 12, `teste_tiktok_assistido` 41.
+
+## DL.05 — Site + servidor no navegador (concluída)
+
+- Teste de ponta a ponta com o servidor de verdade e Chromium: `frontend/testes/e2e-download-servidor.py` + `frontend/testes/e2e-download.cjs` (computador 1280x900 e Pixel 7 emulado). 14 ok: botões lado a lado, desligado sem seleção, janela com alcance, pacote completo marcado, preparo, **download real** do ZIP pelo navegador (633 KB, 2 vídeos), sem erro no console. ZIP aberto: pastas, MP4, TXT, `RELATORIO.txt` (sem capa), `testzip` ok.
+- **Limite honesto:** isto NÃO é Android real nem Termux. Pendente de você: baixar no celular com o servidor Termux (pacote e ZIP) e, com 3 agentes rodando, medir tempo/memória. Nada foi medido nem inventado.
 
 ## Como retomar
 
