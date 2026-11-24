@@ -1,17 +1,17 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T20:22:24-03:00.
+Atualizado: 2026-11-24T20:25:53-03:00.
 
 ```yaml
 fase: "F4"
-microetapa: "F4.01"
+microetapa: "F4.02"
 status: "COMMITTED"
 branch: "codex/estudioclip-2-fase4"
-sha_inicial: "560c46ec7214dd710a3e651d69920b3e603aafdc"
-sha_final_implementacao: "6c49ecbbd07ad871501f1b60f43e471d1dfb927e"
-proxima_microetapa: "F4.02"
+sha_inicial: "21fbd8c5086596976de75f0ae9e606b4a3ee2ee9"
+sha_final_implementacao: "4f155a0c156c458016c5b29b9e627a3bb09076e2"
+proxima_microetapa: "F4.03"
 mudancas_nao_commitadas: []
-testes: {"frontend": 18, "redes_independentes": 13}
+testes: {"publicacao_lotes": 12, "agenda_agente2": 45, "reposicao": 35}
 flags_adicionadas: []
 migracoes: []
 merge: "NAO_REALIZADO"
@@ -37,11 +37,11 @@ commitadas; flags novas desligadas. Falhas antigas de estilos e exportação
 corrigidas. F3.01: 23 verificações de roteiro e 10 de concorrência. F3.02: seis
 testes de consistência, incluindo render real de duas cenas/duas versões.
 
-F4.01 verificada sem reescrever funcionalidade existente. Status por rede, ações dirigidas, horário por destino e filtros já presentes. Dois testes adicionados para YouTube postado/TikTok com erro/Instagram manual e imutabilidade de status/link/ref/data durante filtragem. Frontend18/18 e redes_independentes13/13. Nenhum módulo de produção, flag ou migração alterado. F3 fechada com integral176/176 e PR24 em rascunho sobreF2; F4 em branch própria.
+Lote, intervalos, slots, retry por rede e idempotência já implementados nos módulos existentes e validados: publicacao_lotes12/12, agenda45/45. Duas falhas históricas de reposição reproduzidas e diagnosticadas: o teste assumia faixa livre após preenchê-la com k3. App corretamente não solicitava vídeo para vaga fora de24h. Preparação corrigida com negativo de horário ocupado e faixa livre comprovada em6h; reposicao35/35. Código de produção intacto, sem nova flag/migração. Nenhuma conta real. Logs antes/diagnóstico/depois preservados. Quatro testes que falharam na suíte F1.09 agora têm verificações posteriores PASS, mas suíte global ainda não repetida.
 
-Evidências: docs/estudioclip-2/checkpoints/F4.01-*.
+Evidências: docs/estudioclip-2/checkpoints/F4.02-*.
 
-## Retomada exata — F4.02
+## Retomada exata — F4.03
 
 ```bash
 git status --short
@@ -51,12 +51,12 @@ git fetch origin codex/estudioclip-2-fase4:refs/remotes/origin/codex/estudioclip
 git rev-list --left-right --count HEAD...origin/codex/estudioclip-2-fase4
 ```
 
-Continuar F4.02 sem encerrar no checkpoint. Ler 14_F4_PUBLICACOES_METRICAS.md; inspecionar publicacao_lotes.py, agenda_postagem.py e interface Agendar existentes. Reproduzir teste_reposicao (duas falhas históricas no caminho sem programação diária) e corrigir apenas a causa comprovada, preservando módulos e contas reais. Testar seleção múltipla, intervalo por rede, slots/idempotência, retry só da rede falha e não reenviar rede concluída. Não criar agendador paralelo nem usar contas reais.
+Continuar F4.03 sem parar no checkpoint. Inventariar funções reais em agente.medir_post, aprendizado.coletar/_gravar_retrato e permissões/endpoints YouTube/Meta/TikTok; consultar documentação oficial quando necessário. Usar snapshots existentes; campos não retornados ficam ausentes/None, não zero inventado. Preservar origem, instante e rede. Não chamar contas reais em testes. Depois F4.04 vínculo imutável da publicação/versão e fecho F4.
 
 ## Pendências e limites
 
-F4.02: teste_reposicao histórico ainda pendente. Termux, email e APIs de contas reais não validados.
+Termux, email e APIs de contas reais não verificados. As quatro falhas históricas de F1 tiveram correções/verificações posteriores, mas a suíte global deve ser repetida no fecho final; não declarar aceite global ainda.
 
 Não afirmar aceite integral de produção. Não abrir segunda implementação de
 editor, métrica ou memória quando o módulo existente cobrir. Rollback se
-solicitado: git revert 6c49ecbbd07ad871501f1b60f43e471d1dfb927e.
+solicitado: git revert 4f155a0c156c458016c5b29b9e627a3bb09076e2.

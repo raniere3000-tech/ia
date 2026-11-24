@@ -1,0 +1,62 @@
+1. Horários cheios: nada de pedir mais vídeo
+DIAGNOSTICO _pedir_reposicao None agora 1795562624.8526316
+VAGA None POR_SEMANA None
+  ok   os 2 horários das próximas 24 h receberam vídeo: {'agendados': 2}
+  ok   com vídeo em todos os horários, o Agente 2 não pede nada
+2. Você posta antes da hora: o horário fica livre
+  ok   horário de 23:00 voltou a ficar livre
+  ok   o post vai agora e não fica mais preso ao horário
+  ok   o corte já postado não volta para a fila
+  ok   fica registrado no histórico que o horário foi liberado
+3. Sem vídeo para o horário: o Agente 2 pede ao Coordenador, que manda o Agente 1 cortar
+DIAGNOSTICO pedir_reposicao {'ok': True, 'ordem': '1fe943380a55'} agora 1795562624.8557084
+DIAGNOSTICO _pedir_reposicao None agora 1795562624.855718
+VAGA None POR_SEMANA None
+  ok   o mesmo corte não é usado de novo para tapar o buraco
+  ok   o Agente 2 pediu mais vídeos: {'ok': True, 'ordem': '1fe943380a55'}
+  ok   o Coordenador abriu uma ordem de reposição
+  ok   o Agente 1 recebeu "cortar": ['cortar']
+4. Sem pedidos repetidos
+DIAGNOSTICO pedir_reposicao {'ok': False, 'motivo': 'Já há um pedido de reposição em andamento.', 'ordem': '1fe943380a55'} agora 1795562624.8571727
+DIAGNOSTICO _pedir_reposicao None agora 1795562624.8571854
+VAGA None POR_SEMANA None
+  ok   rodar de novo não abre outra ordem enquanto a primeira trabalha
+DIAGNOSTICO pedir_reposicao {'ok': False, 'motivo': 'Pedi mais cortes há pouco; espero o Agente 1 terminar.'} agora 1795562624.8572643
+  ok   depois que termina, espera o intervalo antes de pedir de novo
+DIAGNOSTICO pedir_reposicao {'ok': False, 'motivo': 'Central pausada por você.'} agora 1795562624.8574011
+  ok   Central pausada: não pede nada
+DIAGNOSTICO pedir_reposicao {'ok': False, 'motivo': 'Reposição automática desligada nas configurações do Coordenador.'} agora 1795562624.8582551
+  ok   opção desligada no Coordenador: não pede nada
+  ok   intervalo padrão de 60 minutos
+  ok   intervalo menor que 10 minutos não é aceito
+4b. Reposição que só falha: não avisa a cada hora e espera cada vez mais
+  ok   primeira falha: avisa com o motivo de verdade
+  ok   mesma falha de novo: não avisa outra vez
+  ok   depois de 3 falhas seguidas, espera 8 h para pedir de novo
+  ok   motivo novo: avisa
+  ok   no máximo 1 pedido por dia enquanto só falha
+  ok   deu certo: volta ao intervalo normal
+  ok   a tarefa mostra o motivo do Agente 1: O Agente 1 terminou sem nenhum corte aprovado. O Agente 1 disse: Nenhum vídeo novo nos canais aprovados.
+5. O Agente 1 entregou um corte novo: ele vai para o mesmo horário
+DIAGNOSTICO _pedir_reposicao None agora 1795562625.1220088
+VAGA None POR_SEMANA None
+  ok   o horário de 23:00 recebeu o corte novo
+  ok   o post novo sai no horário original
+6. Caminho antigo (sem programação diária)
+  ok   programação desligada
+DIAGNOSTICO escolher_vaga {'quando': 1795658400.0, 'faixa': '2-23:00'} agora 1795562625.123325
+DIAGNOSTICO _pedir_reposicao None agora 1795562625.1233423
+VAGA {'quando': 1795658400.0, 'faixa': '2-23:00'} POR_SEMANA 6
+  FALHOU: sem corte pronto e com horário livre: pede mais cortes ao Coordenador
+DIAGNOSTICO escolher_vaga {'quando': 1795658400.0, 'faixa': '2-23:00'} agora 1795562625.1236255
+DIAGNOSTICO _pedir_reposicao None agora 1795562625.123634
+VAGA {'quando': 1795658400.0, 'faixa': '2-23:00'} POR_SEMANA 6
+  FALHOU: não pede de novo enquanto o Agente 1 trabalha
+7. Ordem do Coordenador (vídeos próprios, um por dia): postar antes da hora adianta o próximo
+  ok   o vídeo 1 sai agora
+  ok   o vídeo 2 subiu para o horário que ficou livre (o do vídeo 1)
+  ok   o vídeo 3, ainda em produção, já vai para o horário do vídeo 2
+  ok   fica no histórico da ordem
+  ok   tentar de novo o mesmo post não adianta nada de novo
+
+31 ok, 2 falhas
