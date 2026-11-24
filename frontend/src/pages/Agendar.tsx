@@ -4,6 +4,7 @@ import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import AgendarPost from '../components/AgendarPost';
 import AgendarLote from '../components/AgendarLote';
+import DownloadLote from '../components/DownloadLote';
 import { FILTROS_POST, filtrarPosts, filtrarTikTok, horaDaRede, type FiltroPost } from '../lib/filtrosPosts';
 import ConferenciaPost from '../components/ConferenciaPost';
 import TikTokInfoPainel from '../components/TikTokInfo';
@@ -153,6 +154,7 @@ export default function Agendar(){
   const [filtroTk,setFiltroTk]=useState<EstadoTikTok|''>('');
   const [selecionados,setSelecionados]=useState<Set<string>>(new Set());
   const [abrirLote,setAbrirLote]=useState(false);
+  const [abrirBaixar,setAbrirBaixar]=useState(false);
   const [lotes,setLotes]=useState<LotePosts[]>([]);
   const [busyLote,setBusyLote]=useState('');
   const [erro,setErro]=useState('');
@@ -172,10 +174,16 @@ export default function Agendar(){
   </section>;
 
   const lista=filtrarTikTok(filtrarPosts(posts||[],rede,filtroTk?'todos':filtro),filtroTk);
-  const podeSelecionar=(p:Post)=>p.arquivo_disponivel!==false&&!p.preparando&&(!rede||!['postado','postando'].includes(p.redes[rede]?.status||''));
+  const podeAgendar=(p:Post)=>p.arquivo_disponivel!==false&&!p.preparando&&(!rede||!['postado','postando'].includes(p.redes[rede]?.status||''));
+  // Para baixar, vale pendente, agendado e publicado: basta o arquivo final existir no servidor.
+  const podeSelecionar=(p:Post)=>p.arquivo_disponivel!==false&&!p.preparando;
+  const MAX_SEL=300;
   const elegiveis=lista.filter(podeSelecionar);
+  const idsAgendar=[...selecionados].filter(id=>{ const p=(posts||[]).find(x=>x.id===id); return !!p&&podeAgendar(p); });
+  const idsBaixar=lista.filter(p=>selecionados.has(p.id)).map(p=>p.id);       // na ordem em que aparecem para você
+  const escopoBaixar=`${idsBaixar.length} vídeo(s) selecionado(s) entre os ${lista.length} do filtro atual${rede?` (${REDES.find(r=>r.id===rede)?.nome})`:' (todas as redes)'}. A seleção vale só para o que está listado aqui e some ao trocar de filtro.`;
   const porDia=new Map<string,Post[]>(); for(const p of lista){ const d=rede&&!p.redes[rede]?'Ainda não agendados nesta rede':dia(horaDaRede(p,rede?p.redes[rede]:undefined)); porDia.set(d,[...(porDia.get(d)||[]),p]); }
-  const escolher=(id:string)=>setSelecionados(xs=>{const n=new Set(xs);if(n.has(id))n.delete(id);else if(n.size<200)n.add(id);return n;});
+  const escolher=(id:string)=>setSelecionados(xs=>{const n=new Set(xs);if(n.has(id))n.delete(id);else if(n.size<MAX_SEL)n.add(id);return n;});
   const agirLote=async(id:string,a:'pausar'|'retomar'|'cancelar')=>{
     setBusyLote(id);
     try{setLotes((await acaoLote(settings,id,a)).lotes);recarregar();toast(a==='cancelar'?'Restante do lote cancelado. Envios já iniciados terminam normalmente.':'Lote atualizado.','ok');}
@@ -194,13 +202,14 @@ export default function Agendar(){
     {filtroTk&&<p className="hint">Filtrando pelo status do TikTok: a lista mostra o vídeo em qualquer situação das outras redes.</p>}
     {!rede&&<p className="hint">Escolha uma rede para incluir os vídeos que ainda não foram agendados nela. Os números dos botões contam pendências de cada rede.</p>}
     {erro&&<p className="hint bad" role="alert">{erro}</p>}
-    {!!elegiveis.length&&<div className="posts-lote-barra mt"><label className="check"><input type="checkbox" checked={elegiveis.slice(0,200).every(p=>selecionados.has(p.id))} onChange={e=>setSelecionados(e.target.checked?new Set(elegiveis.slice(0,200).map(p=>p.id)):new Set())}/> Selecionar resultados do filtro (até 200)</label><span>{selecionados.size} selecionado(s)</span><button className="primary sm" disabled={!selecionados.size} onClick={()=>setAbrirLote(true)}><CalendarClock size={14}/> Agendar selecionados</button>{!!selecionados.size&&<button className="subtle sm" onClick={()=>setSelecionados(new Set())}>Limpar seleção</button>}</div>}
+    {!!elegiveis.length&&<div className="posts-lote-barra mt"><label className="check"><input type="checkbox" checked={elegiveis.slice(0,MAX_SEL).every(p=>selecionados.has(p.id))} onChange={e=>setSelecionados(e.target.checked?new Set(elegiveis.slice(0,MAX_SEL).map(p=>p.id)):new Set())}/> Selecionar todos do filtro ({Math.min(elegiveis.length,MAX_SEL)}{elegiveis.length>MAX_SEL?` de ${elegiveis.length}, o limite por vez`:''})</label><span>{selecionados.size} selecionado(s)</span><button className="primary sm" disabled={!idsAgendar.length||idsAgendar.length>200} title={idsAgendar.length>200?'O agendamento em lote aceita até 200 vídeos por vez.':''} onClick={()=>setAbrirLote(true)}><CalendarClock size={14}/> Agendar selecionados ({idsAgendar.length})</button><button className="subtle sm" disabled={!idsBaixar.length} onClick={()=>setAbrirBaixar(true)}><Download size={14}/> Baixar selecionados ({idsBaixar.length})</button>{!!selecionados.size&&<button className="subtle sm" onClick={()=>setSelecionados(new Set())}>Limpar seleção</button>}</div>}
     {!posts?<p className="hint"><Loader2 size={14} className="spin"/> Carregando...</p>
     :!lista.length?<p className="hint center">Nenhum vídeo nesta combinação de rede e situação.</p>
     :[...porDia].map(([d,ls])=><div key={d} className="agenda-dia"><h3>{d}</h3>{ls.map(p=><PostLinha key={p.id+'-'+rede} p={p} redeFiltro={rede} selecionado={selecionados.has(p.id)} onSelecionar={podeSelecionar(p)?()=>escolher(p.id):undefined} onAgendar={()=>{setSelecionados(new Set([p.id]));setAbrirLote(true);}} acao={acao}/>)}</div>)}
    </section>
    {!!lotes.length&&<section className="panel"><h2>Lotes de publicação</h2>{lotes.map(l=><article className="post-row" key={l.id}><div className="grow"><b>Lote{l.inicio?` · ${fmtData(l.inicio)}`:""} · {l.redes.map(r=>REDES.find(x=>x.id===r)?.nome).join(', ')}</b><p className="hint">{l.publicados} publicado(s) · {l.pendentes} restante(s) · {l.cancelados} cancelado(s){l.pausado?' · Pausado':''}</p></div>{l.pendentes>0&&<div className="row-gap"><button className="subtle sm" disabled={!!busyLote} onClick={()=>void agirLote(l.id,l.pausado?'retomar':'pausar')}>{l.pausado?'Retomar':'Pausar'} lote</button><button className="subtle sm" disabled={!!busyLote} onClick={()=>void agirLote(l.id,'cancelar')}>Cancelar restante</button></div>}</article>)}</section>}
-   {abrirLote&&<AgendarLote posts={posts||[]} ids={[...selecionados]} redeInicial={rede||undefined} onClose={()=>setAbrirLote(false)} onAgendado={()=>{setAbrirLote(false);setSelecionados(new Set());recarregar();}}/>}
+   {abrirBaixar&&<DownloadLote ids={idsBaixar} escopo={escopoBaixar} onClose={()=>setAbrirBaixar(false)}/>}
+   {abrirLote&&<AgendarLote posts={posts||[]} ids={idsAgendar} redeInicial={rede||undefined} onClose={()=>setAbrirLote(false)} onAgendado={()=>{setAbrirLote(false);setSelecionados(new Set());recarregar();}}/>}
 
    <details className="recolhido contas-dobra" open={!posts?.length}>
     <summary><ChevronDown size={16}/> Contas das redes (YouTube, Facebook, Instagram, TikTok)</summary>
