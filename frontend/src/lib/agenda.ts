@@ -5,7 +5,11 @@ export type Rede = 'youtube'|'facebook'|'instagram'|'tiktok'|'kwai';
 export type Conta = {app:boolean;conectado:boolean;nome:string;client_id:string;paginas:{id:string;nome:string;instagram:string}[];pagina:string;erro:string;verificado?:number};
 export type Contas = Record<Prov,Conta>;
 export type StatusRede = {status:'agendado'|'postando'|'postado'|'erro'|'manual'|'liberacao'|'cancelado';link:string;erro:string;quando?:number;lote?:string;lote_pausado?:boolean;intervalo_api_s?:number};
-export type Post = {id:string;video:string;hash?:string;arquivo_disponivel?:boolean;criado:number;quando:number;titulo:string;legenda:string;opcoes:{youtube_privacidade:string;tiktok_modo:string};redes:Partial<Record<Rede,StatusRede>>;preparando?:boolean;relatorio?:{t:number;rede:string;evento:string;detalhe:string}[]};
+export type Post = {id:string;video:string;hash?:string;arquivo_disponivel?:boolean;criado:number;quando:number;titulo:string;legenda:string;opcoes:{youtube_privacidade:string;tiktok_modo:string};redes:Partial<Record<Rede,StatusRede>>;preparando?:boolean;relatorio?:{t:number;rede:string;evento:string;detalhe:string}[];tiktok?:TikTokInfo};
+
+export type EstadoTikTok='pendente_envio'|'agendado'|'enviado_tiktok'|'aguardando_publicacao_manual'|'aguardando_confirmacao'|'publicado'|'falha'|'cancelado';
+export type TikTokInfo={estado:EstadoTikTok;rotulo:string;meta:{titulo:string;descricao:string;hashtags:string[];links:{rotulo:string;url:string}[]};origem:Record<string,string>;texto:string;ja_enviado:boolean;modo:'assistido'|'direto';editado:number;copiado:number};
+export const ESTADOS_TIKTOK:[EstadoTikTok,string][]=[['pendente_envio','Pendente de envio'],['agendado','Agendado'],['enviado_tiktok','Enviado ao TikTok'],['aguardando_publicacao_manual','Aguardando publicação manual'],['aguardando_confirmacao','Aguardando confirmação'],['publicado','Publicado'],['falha','Falha'],['cancelado','Cancelado']];
 
 export const REDES:{id:Rede;nome:string;prov:Prov|null}[] = [
   {id:'youtube',nome:'YouTube Shorts',prov:'google'},
@@ -89,3 +93,8 @@ export const previaLote=(c:Cfg,d:PedidoLote)=>chamar<PreviaLote>(c,'POST','/post
 export const criarLote=(c:Cfg,d:PedidoLote&{chave:string;versao:string})=>chamar<PreviaLote>(c,'POST','/posts/lotes',d);
 export const listarLotes=(c:Cfg)=>chamar<{lotes:LotePosts[]}>(c,'GET','/posts/lotes');
 export const acaoLote=(c:Cfg,id:string,acao:'pausar'|'retomar'|'cancelar')=>chamar<{lotes:LotePosts[]}>(c,'POST',`/posts/lotes/${id}/${acao}`,{});
+
+/** Publicação assistida do TikTok: ver, editar, copiar e confirmar. Nada disso envia o vídeo de novo. */
+export const editarTikTok=(c:Cfg,id:string,d:{titulo?:string;descricao?:string;hashtags?:string[];links?:{rotulo:string;url:string}[]})=>chamar<TikTokInfo>(c,'POST',`/posts/${id}/tiktok`,{acao:'editar',...d});
+export const acaoTikTok=(c:Cfg,id:string,acao:'copiado'|'abrir'|'confirmar'|'reabrir',link?:string)=>chamar<TikTokInfo>(c,'POST',`/posts/${id}/tiktok`,{acao,link});
+export const migrarTikTok=(c:Cfg,simular=false)=>chamar<{posts:number;atualizados:number;ja_prontos:number;campos_gerados:number}>(c,'POST','/posts/tiktok/migrar',{simular});
