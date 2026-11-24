@@ -1,17 +1,17 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T20:43:47-03:00.
+Atualizado: 2026-11-24T20:45:49-03:00.
 
 ```yaml
 fase: "F5"
-microetapa: "F5.02"
+microetapa: "F5.03"
 status: "COMMITTED"
 branch: "codex/estudioclip-2-fase5"
-sha_inicial: "332c4ae9a455a90f58d7949a3dcc7e5237a19e53"
-sha_final_implementacao: "f30398852e73c10105072d3e94be5d7230adbd8a"
-proxima_microetapa: "F5.03"
+sha_inicial: "d118a539861331544d03088e3d11bda619889321"
+sha_final_implementacao: "0e339ac2ce2481ed50b598cb5e8f3d55cb11e08b"
+proxima_microetapa: "F5.04"
 mudancas_nao_commitadas: []
-testes: ["ranking 3 PASS", "frontend 18 PASS", "TypeScript/Vite PASS"]
+testes: ["feedback 3 PASS", "coordenador 80 PASS", "frontend 18 PASS", "TypeScript/Vite PASS"]
 flags_adicionadas: []
 migracoes: []
 merge: "NAO_REALIZADO"
@@ -37,11 +37,11 @@ commitadas; flags novas desligadas. Falhas antigas de estilos e exportação
 corrigidas. F3.01: 23 verificações de roteiro e 10 de concorrência. F3.02: seis
 testes de consistência, incluindo render real de duas cenas/duas versões.
 
-Ranking por métrica e plataforma com rastreio congelado de versão, gancho, template, recibo de efeitos, seleção de capa e datas. Legados e ausência de métrica continuam explícitos.
+Feedback A1/A3/A5/A6/A2/A4 com evidência, limite de amostra e isolamento por canal/rede/vertente. Associação não prova causa. Contexto ausente gera dados insuficientes, sem alteração automática de agentes.
 
-Evidências: docs/estudioclip-2/checkpoints/F5.02-*.
+Evidências: docs/estudioclip-2/checkpoints/F5.03-*.
 
-## Retomada exata — F5.03
+## Retomada exata — F5.04
 
 ```bash
 git status --short
@@ -51,7 +51,7 @@ git fetch origin codex/estudioclip-2-fase5:refs/remotes/origin/codex/estudioclip
 git rev-list --left-right --count HEAD...origin/codex/estudioclip-2-fase5
 ```
 
-F5.03: recomendações específicas A1/A3/A5/A6/A2/A4 com evidência e limite de amostra; nenhuma alteração automática de prompt ou configuração.
+F5.04: persistir hipóteses e amostras no mecanismo existente de memória versionada/experimentos, com aprovação, teste controlado e rollback por canal/vertente.
 
 ## Pendências e limites
 
@@ -59,4 +59,4 @@ Fecho F5, regressão global, Termux e contas reais pendentes.
 
 Não afirmar aceite integral de produção. Não abrir segunda implementação de
 editor, métrica ou memória quando o módulo existente cobrir. Rollback se
-solicitado: git revert f30398852e73c10105072d3e94be5d7230adbd8a.
+solicitado: git revert 0e339ac2ce2481ed50b598cb5e8f3d55cb11e08b.
