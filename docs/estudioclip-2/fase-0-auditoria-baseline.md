@@ -24,7 +24,7 @@
 | Backup antes de migrar | `banco.migrar()` copia o banco para `studio-antes-vN.sqlite` antes de mudar o esquema | PRESENTE |
 | Backup/restauração manual | `servidor/backups.py` (`fazer`, `listar`, `testar_restauracao`) | PRESENTE; ensaio no celular NÃO VERIFICADO |
 | Frontend | React/Vite, GitHub Pages pelo workflow `pages.yml` (push na main) | build OK aqui |
-| Servidor real (Termux) | versão rodando, branch do celular, banco real, espaço livre | **NÃO VERIFICADO** (sem acesso ao celular) |
+| Servidor real (Termux) | branch `main` em `b948059` (mesmo SHA auditado); armazenamento 109 GB, 29 GB usados, 79 GB livres (28%) | **conferido por você em 24/11 10:18**; versão do esquema do banco real e backup ainda NÃO VERIFICADOS |
 | Pasta `backend/` (FastAPI) | código antigo, não usado pelo site | legado; não apagar sem decisão |
 | `docs/estado-e-proximos-passos.md` | descreve o MVP antigo ("publicação ainda não desenvolvida") | **desatualizado** |
 
@@ -108,7 +108,7 @@ Resumo: **52 arquivos `teste_*.py` → 43 PASS, 7 FAIL, 2 não rodam neste ambie
 
 | Item | Estado |
 |---|---|
-| Documentar SHA, branch, versão do servidor, ambiente e banco | feito para o código; **servidor real NÃO VERIFICADO** |
+| Documentar SHA, branch, versão do servidor, ambiente e banco | feito; celular em `main`/`b948059` com 79 GB livres (24/11); esquema do banco real não conferido |
 | Backup integral e ensaio de restauração isolado | **NÃO FEITO** (precisa do celular) |
 | URLs antigas e hashes | FUNCIONA (teste `rotas.test.ts`) |
 | 7 agentes, sem agente novo | conferido |
