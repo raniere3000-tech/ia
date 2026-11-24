@@ -179,6 +179,8 @@ def grafo(pid: str, L: int, A: int, entrada: str, saida: str, forca: float = 1.0
     """Trecho de filter_complex que trata a imagem: `entrada` -> `saida`. Peças desligadas somem; força 0 deixa a imagem igual."""
     if pid not in PRESETS:
         raise ErroEstilo(f'Estilo visual desconhecido: "{pid}".')
+    if float(forca) <= 0:
+        return f'{entrada}null{saida}'
     falta = _faltam(pid)
     if falta:
         raise ErroEstilo(f'O FFmpeg deste aparelho não tem o filtro {", ".join(falta)}, necessário para o estilo {PRESETS[pid]["nome"]}.')

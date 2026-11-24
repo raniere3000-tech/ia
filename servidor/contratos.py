@@ -8,6 +8,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import re
 
 SCHEMA = 1
 NOTA_MINIMA = 70             # nota total para aprovar (0 a 100)
@@ -106,6 +108,10 @@ def _params(spec: dict, d: dict, nome: str) -> dict:
     return out
 
 
+def efeitos_reais_ativos() -> bool:
+    return os.getenv('A5_EFEITOS_REAIS','0').lower() in ('1','true','sim')
+
+
 def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
     """EditPlan: confere tudo e devolve uma cópia limpa. Caminhos de arquivo nunca vêm do cliente: só ids de fontes conhecidas."""
     if not isinstance(p, dict):
@@ -130,6 +136,17 @@ def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
     efeitos = []
     for i, e in enumerate(p.get('effects') or []):
         tipo = (e or {}).get('tipo') if isinstance(e, dict) else None
+        if tipo == 'broll' and efeitos_reais_ativos():
+            asset = str(e.get('asset') or '')
+            if not re.fullmatch(r'[a-f0-9]{12,64}',asset) or e.get('direitos') not in ('meu','autorizado','regra'):
+                raise ErroContrato('B-roll exige mídia registrada e origem de uso autorizada.')
+            ini=int(_num(e.get('ini_ms'),(0,3_600_000),'b-roll início'))
+            fim=int(_num(e.get('fim_ms'),(0,3_600_000),'b-roll fim'))
+            if fim<=ini:
+                raise ErroContrato('B-roll exige intervalo positivo.')
+            efeitos.append({'tipo':'broll','asset':asset,'direitos':e['direitos'],'ini_ms':ini,'fim_ms':fim,
+                            'credito':str(e.get('credito') or '')[:300]})
+            continue
         if tipo not in EFEITOS:
             raise ErroContrato(f'Efeito {i + 1}: tipo não permitido ({tipo}). Permitidos: {", ".join(EFEITOS)}.')
         efeitos.append({'tipo': tipo, **_params(EFEITOS[tipo], e, f'efeito {tipo}')})
