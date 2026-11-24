@@ -224,6 +224,8 @@ def executar(p: dict, por: str, confirmado: bool = False) -> str:
         if a == 'rejeitar':
             apv.rejeitar(v['pid'], v['sha'], str(p.get('texto') or '')[:500], 'whatsapp', por)
             return f'{v["ref"]} rejeitado. Nada será publicado.'
+        if confirmado and p.get('sha') != v['sha']:
+            return 'O vídeo mudou desde o pedido de confirmação. Confira a versão nova e peça a aprovação novamente.'
         p = {'acao': 'aprovar', 'ref': v['ref'], 'pid': v['pid'], 'sha': v['sha'], 'titulo': v['titulo']}
         if not confirmado:
             _guardar(por, p)
