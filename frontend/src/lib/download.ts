@@ -2,7 +2,7 @@
 import { chamar, type Cfg } from './agenda';
 
 export type FormatoDownload='pacote'|'zip'|'mp4';
-export type CapaDownload='ok'|'ausente'|'desatualizada';
+export type CapaDownload='ok'|'ausente'|'desatualizada'|'';
 export type ItemDownload={n:number;post:string;nome:string;titulo:string;disponivel:boolean;motivo:string;capa:CapaDownload;tamanho:number;url?:string;preparado?:boolean};
 export type EstadoDownload='preparando'|'pronto'|'parcial'|'falhou'|'cancelado';
 export type JobDownload={id:string;formato:FormatoDownload;estado:EstadoDownload;total:number;disponiveis:number;preparados:number;bytes_feitos:number;bytes_total:number;

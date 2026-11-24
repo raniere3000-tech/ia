@@ -6,9 +6,9 @@ Checkpoint próprio desta frente. **Não substitui** o `ESTADO_ATUAL.md` (Estúd
 frente: DOWNLOAD_EM_LOTE
 branch: claude/project-thread-hqyqog
 sha_origem: 1e89d59 (origin/main depois do PR #20)
-microetapa_atual: DL.02
+microetapa_atual: DL.04
 status: CONCLUIDA
-proxima_microetapa: DL.03
+proxima_microetapa: DL.05
 merge: NAO_REALIZADO
 producao: NAO_PUBLICADA
 publicacoes_reais_em_teste: NENHUMA
@@ -49,6 +49,14 @@ publicacoes_reais_em_teste: NENHUMA
 - `Agendar.tsx`: botão **Baixar selecionados (N)** ao lado de **Agendar selecionados (N)**; seleção reaproveitada (agora aceita também vídeos já publicados; o agendamento usa só os agendáveis, `idsAgendar`, com o mesmo limite de 200). "Selecionar todos do filtro (N)" cobre toda a lista filtrada (não há paginação), limite 300 por vez, texto de alcance na janela.
 - `components/DownloadLote.tsx` + `lib/download.ts`: janela com 3 formatos (pacote completo recomendado), progresso, cancelar, falhas, tentar novamente, fila de MP4 um por vez. **Chama rotas `/api/v1/downloads` que nascem em DL.03/DL.04** (até lá o botão abre a janela e o servidor responde 404).
 - Testes: `tsc` limpo, `npm test` 16 ok. Servidor não mudou nesta etapa.
+
+## DL.03 + DL.04 — Servidor (concluídas; feitas juntas porque o preparo do ZIP usa os nomes e o TXT)
+
+- `servidor/download_lote.py` (novo): `limpar_nome`/`nome_base` (`001 - Título - a1b2c3`: sem emoji, sem `/ \ : * ? " < > |`, sem `..`, até 80 caracteres de título; sem título = `Video - ID`), `texto_publicacao` (TXT UTF-8 por vídeo, um bloco por rede do post, só metadados salvos; TikTok usa `tiktok_meta`; ausente = `[não configurado]`), `capa_do_video` (somente leitura: capa aprovada para o hash EXATO do arquivo; extensão pelo conteúdo — PNG/JPEG/WEBP; nunca revoga seleção), `criar/obter/cancelar/tentar_de_novo/limpar`.
+- ZIP por streaming (`ZIP_STORED`, 1 MB por vez), um preparo por vez (semáforo), checagem de espaço livre (+200 MB de folga), progresso em `kv` (`download.job.<id>`, sem migração de banco), `.part` renomeado só no fim, cancelar apaga temporários, job `preparando` sem fio vivo (servidor reiniciou) vira `falhou` com saída "tentar novamente", arquivos prontos somem em 24 h. Cópia que muda no meio aborta o job (nunca entrega MP4 pela metade como sucesso). `RELATORIO.txt` dentro do ZIP quando há ausentes, falhas ou vídeos sem capa; estado `parcial` quando algum vídeo não entrou.
+- Rotas (`api_v1._downloads`): `POST /api/v1/downloads`, `GET /api/v1/downloads/<id>`, `POST .../cancelar|tentar-novamente`, `GET .../arquivo` e `.../item/<n>` (links assinados de 6 h, sem a senha na URL; Range para retomar). `servidor.py`: prefixo `/api/v1/downloads/` aceita assinatura; `Content-Disposition` agora também manda `filename*=UTF-8''...` (antes um nome fora do latin-1 quebraria o cabeçalho).
+- Teste novo `servidor/testes/teste_download_lote.py`: 65 ok (nomes maliciosos, títulos iguais, TXT, estrutura do ZIP, capa PNG com nome .jpg, MP4 certo para cada vídeo, parcial, relatório, Range, assinatura adulterada, sem login, capa desatualizada, falta de espaço, cancelar, repetir, reinício, limpeza, e "posts/capas/fila/vídeos não mudaram").
+- Regressão rápida: `teste_thumbnails` 101, `teste_exportacao` 23, `teste_publicacao_lotes` 12, `teste_tiktok_assistido` 41.
 
 ## Como retomar
 
