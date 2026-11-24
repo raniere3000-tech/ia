@@ -1,17 +1,17 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T14:09:02-03:00. Executor: Codex.
+Atualizado: 2026-11-24T14:11:19-03:00. Executor: Codex.
 
 ```yaml
 fase: F1
-microetapa: F1.05
+microetapa: F1.06
 status: COMMITTED
 branch: claude/project-thread-hqyqog-fase1
-sha_inicial: 88a3fa0cbb57400660055e0dcc41b77e4ae57c27
-sha_final_implementacao: 93e0a157cd23e606944c39ad6f9bc6656bee08a4
-proxima_microetapa: F1.06
+sha_inicial: 9d3906a236bbc3f857c1c4339050126b3ed4ff05
+sha_final_implementacao: e68e2a73010531017f9796583f387a9411a30d7f
+proxima_microetapa: F1.07
 mudancas_nao_commitadas: []
-flags_adicionadas: ['A1_MESMA_FONTE=0']
+flags_adicionadas: []
 migracoes: []
 merge: NAO_REALIZADO
 producao: NAO_PUBLICADA
@@ -35,12 +35,12 @@ permissão para continuar etapas autorizadas ou sincronizar esta branch.
 
 ## Última microetapa
 
-A1 reaproveita trabalhar_cortes, processar_video, fila.Esperar e kv existente. Flag A1_MESMA_FONTE desligada por padrão; quando ativa, fonte é salva antes do trabalho, falhas transitórias repetem o mesmo vídeo com backoff 60/180/540s e limite A1_FONTE_MAX_TENTATIVAS (padrão 3, máximo 10). Não marca visto no erro recuperável. Esperar usa o mesmo job sem consumir orçamento infinito de tentativas. Definitivos/limites de custo param com BLOCKED; canal anteriormente aprovado é revalidado antes de repetir. Cancelamento impede a execução e limpa a fonte pendente do job cancelado. Sucesso encerra a pendência mantendo registro por fonte. Sem legenda não é classificado como erro; segue processar_video existente. Testes: teste_retry_fonte_a1.py 8/8 (inclui processo novo após reinício, fila com max_tentativas=1, cancelamento, FFmpeg temporário, permissão revogada e flag off), teste_busca_canais.py 13/13, teste_estilos_agente1.py 6/6; todos exit 0. Arquivos: servidor/agente.py e teste_retry_fonte_a1.py. Todos dados temporários, sem contas reais. Retry de banco de trechos segue mecanismo custo_corte existente; não foi substituído.
+Reutilizados controles de fila e render já existentes. Cancelar/ignorar atualizam job, projeto, desafios de aprovação e thumbnail relacionados na mesma transação; apagam sinal liberar:<job>. Ação repetida não repete atualização de entidades nem evento de decisão. Registro job/eventos preservado, pendência removida. Recuperação de cancelamento interrompido completa limpeza das entidades; pausa continua impedindo _proximo após processo novo. Testes: teste_cancelamento.py 15/15 (inclui WAITING_USER/auditoria e queda no cancelamento), teste_aprovacao_roteiro_corrida.py 10/10, teste_painel.py 34/34, teste_esteira_7.py 70/70, teste_versao_refeita.py TUDO OK; todos exit 0. Regressões cobrem sucesso/transição/espera/erro concorrendo com cancelamento, interrupção real de subprocesso falso de render, IA não chamada após cancelamento e cleanup da esteira. ResourceWarning preexistente de arquivo no teste de subprocesso; sem falha. Arquivos: servidor/fila.py e testes/teste_cancelamento.py. Sem flags novas, conserto de consistência.
 
-Evidências: docs/estudioclip-2/checkpoints/F1.05-*.
+Evidências: docs/estudioclip-2/checkpoints/F1.06-*.
 Último resultado: testes focais e git diff --check aprovados.
 
-## Ponto exato de retomada — F1.06
+## Ponto exato de retomada — F1.07
 
 ```bash
 git status --short
@@ -52,10 +52,10 @@ git rev-list --left-right --count HEAD...origin/claude/project-thread-hqyqog-fas
 cat ESTADO_ATUAL.md
 ```
 
-Ler docs/estudioclip-2/microetapas/08_F1_06_CANCELAR_IGNORAR.md. Reutilizar teste_cancelamento.py, fila.cancelar/ignorar/recuperar e rotas existentes; testar WAITING_USER, auditoria e reinício.
+Ler docs/estudioclip-2/microetapas/09_F1_07_IDEMPOTENCIA.md. Verificar enfileirar(chave), aprovar e refazer capa com duas solicitações concorrentes e versões distintas; sem nova fila.
 
 Não refazer Fase 0 ou microetapas concluídas. Relatórios anteriores permanecem em
-checkpoints/. Flags desligadas por padrão. Rollback: git revert 93e0a157cd23e606944c39ad6f9bc6656bee08a4
+checkpoints/. Flags desligadas por padrão. Rollback: git revert e68e2a73010531017f9796583f387a9411a30d7f
 (não executar automaticamente). Sem migrações ou publicação em conta real.
 Suite integral/frontend no fechamento F1.09; teste_agente3 integral ainda tem cenários
 antigos pendentes de avaliação, embora o recorte F1.01 de render real passou 18/18.

@@ -1,0 +1,123 @@
+0. Política padrão
+  ok  esteira completa ligada por padrão, capa obrigatória
+  ok  com a esteira completa, editor e diretor ficam sempre ligados
+  ok  o Agente 2 passa a exigir a liberação do Coordenador
+
+1. Corte de ponta a ponta (Agente 1 -> 4 -> 5 -> 4 -> 6 -> 7 -> 2)
+     (Agente 1 + diretor + editor levaram 8s)
+  ok  o Agente 1 criou 1 corte
+  ok  o corte guarda de qual trabalho do Agente 1 saiu (o Coordenador acompanha por ele)
+  ok  A1: produção concluída com recibo (id do corte) e tempo medido
+  ok  A4 avaliação inicial: reprovou o começo, o A1 corrigiu e passou (1 correção)
+  ok  histórico guarda a reprovação e a aprovação da avaliação inicial
+  ok  laudos da avaliação inicial guardados: [76, 100]
+  ok  A5: edição concluída com SHA do arquivo exportado e versão do plano
+  ok  A4 arquivo final: aprovado com certificado preso ao arquivo (nota 100)
+  ok  A6 liberado automaticamente (pendente) só depois do certificado
+     Publicador recusou: Falta na esteira: Capa (thumbnail).
+  ok  sem capa e sem liberação, o Publicador NÃO cria o post (diz o que falta)
+  ok  o agendador automático também não pega o corte ainda
+  ok  A6: pedido de capa criado e na fila (sem trabalho falso)
+
+1b. Coordenador acha legenda do vídeo por baixo da nossa e manda de volta para o editor
+  ok  corte com legenda nossa e trecho original guardado (sem a nossa legenda) para o editor
+  ok  A7 não libera enquanto confere o texto na tela: "Coordenador conferindo se o vídeo já tem texto ou legenda por baixo da nossa."
+agente: "O plano que ninguém acreditava" voltou para o editor: A legenda fica em cima de um texto que já estava no vídeo (68%–80% da altura). Vai para o editor mudar a legenda para me
+  ok  Coordenador olhou 5 quadros reais do vídeo e achou a legenda embutida em cima da nossa (nossa: baixo)
+  ok  escolheu um lugar livre para a nossa legenda: meio
+  ok  A7 reprovou pela legenda e o A5 ficou "corrigindo" (registro na esteira)
+  ok  trabalho do editor na fila com a posição nova
+  ok  nada liberado para postar com a legenda sobreposta
+agente: Editor mudou a legenda de "O plano que ninguém acreditava" para meio; diretor aprovou com nota 100.
+  ok  arquivo novo no lugar do antigo, já com o certificado do diretor
+  ok  o corte registra que a legenda foi para meio
+  ok  o plano do editor tem a legenda na posição nova
+  ok  segunda conferência: o texto do vídeo continua lá, mas a nossa legenda não fica mais em cima dele
+  ok  A6 refez a capa para o arquivo novo
+  ok  trecho guardado apagado depois da conferência aprovada
+  ok  A6: capa feita pelo Agente 6, escolhida (automatica) e presa ao vídeo
+  ok  A7: pacote conferido item por item e liberado
+  ok  A7 conferiu diretor, avaliação inicial, capa, direitos, link original, título e legenda sobreposta
+  ok  liberação presa ao hash do vídeo E da capa
+  ok  agora o agendador do Agente 2 pode pegar o corte
+agente: "O plano que ninguém acreditava" agendado para 24/11 às 18:00 em Youtube, Tiktok.
+  ok  A2: corte agendado pelo Publicador
+  ok  A2 agendamento concluído com o id do post como prova
+  ok  A2 publicação concluída com o link de cada rede: ['youtube', 'tiktok']
+  ok  o arquivo enviado é exatamente o aprovado pelo diretor (mesmo SHA)
+
+  --- Registro da esteira: Corte do Agente 1 (corte:f90918a6ad) — estado final: publicado, 100% das etapas
+  agente1  Produção                         concluida           tempo 0.0s     correções 1  prova {"ini": 8.05, "fim": 34.15, "job": "job-de-teste", "correcao": 1}
+  agente4  Diretor: avaliação inicial       concluida           tempo —        correções 1  prova {"relatorio": "9602f961d6dd", "nota": 100, "decisao": "aprovado", "ini": 8.05, "fim": 34.15}
+  agente5  Editor: edição e exportação      concluida           tempo 9.0s     correções 0  prova {"plano_versao": 1, "job": "b41254c2df2f"}
+  agente4  Diretor: arquivo final           concluida           tempo 5.1s     correções 0  prova {"relatorio": "d7ebcf465350", "nota": 100, "decisao": "aprovado", "certificado": "c9d57952f09640b1"}
+  agente6  Capa (thumbnail)                 concluida           tempo 2.7s     correções 0  prova {"job": "b054dea4d9c6", "variante": "ac46d245e181", "capa_sha": "1c031cc17eadd80d75a6cd7b9cd82890ff5503a153b3d9a79a293981da9b2751", "escolha": "automa
+  agente7  Coordenador: liberação final     concluida           tempo —        correções 0  prova {"aprovacao": "30d1a7dd6a6d"}
+  agente2  Publicador: agendamento          concluida           tempo 0.0s     correções 0  prova {"posts": ["8434c37539"]}
+  agente2  Publicador: envio às redes       concluida           tempo 0.0s     correções 0  prova {"links": {"youtube": "https://youtube.exemplo/8434c37539", "tiktok": "https://tiktok.exemplo/8434c37539"}}
+  ok  corte: as 8 etapas concluídas
+  ok  descrição publicada com o link do vídeo original
+
+2. Vídeo original do Agente 3 de ponta a ponta (A3 -> 4 -> 5 -> 4 -> 6 -> 7 -> 2)
+     (produção do Agente 3 levou 8s; situação: ready_for_review)
+  ok  vídeo do Agente 3 pronto para revisão
+  ok  A3: produção com recibo (3 cenas e hash das cenas)
+  ok  A4 avaliação inicial (cenas e roteiro) ANTES da montagem
+  ok  a montagem só começou depois da avaliação inicial aprovada
+  ok  A5 nos vídeos próprios: montagem registrada com o render e quem fez (o Agente 3)
+  ok  A4 arquivo final com certificado
+  ok  A6: capa do vídeo próprio feita e escolhida
+  ok  A7: pacote do vídeo próprio liberado
+  ok  sua aprovação em Revisar cria o post (pacote já liberado pelo A7)
+
+  --- Registro da esteira: Vídeo original do Agente 3 (render:e64e4060fad14120) — estado final: publicado, 100% das etapas
+  agente3  Produção                         concluida           tempo 4.9s     correções 0  prova {"cenas": 3, "job": "9a1d381511d7"}
+  agente4  Diretor: avaliação inicial       concluida           tempo —        correções 0  prova {"relatorio": "2578e0f17869", "nota": 100, "decisao": "aprovado"}
+  agente5  Editor: edição e exportação      concluida           tempo 1.9s     correções 0  prova {"render": "04aaf018f07a2802"}
+  agente4  Diretor: arquivo final           concluida           tempo 1.1s     correções 0  prova {"relatorio": "5f5ef05cac6f", "nota": 94, "decisao": "aprovado", "certificado": "251a1ffaaf2d4845"}
+  agente6  Capa (thumbnail)                 concluida           tempo 0.8s     correções 0  prova {"job": "4dfffb74568b", "variante": "343c26147490", "capa_sha": "9585a6bfb6fd024d65f6cf0d0231c9d082680a6b9184ed8681c6f232371e48cd", "escolha": "automa
+  agente7  Coordenador: liberação final     concluida           tempo 0.0s     correções 0  prova {"aprovacao": "db6242447610"}
+  agente2  Publicador: agendamento          concluida           tempo 0.0s     correções 0  prova {"posts": ["5539574837"]}
+  agente2  Publicador: envio às redes       concluida           tempo —        correções 0  prova {"links": {"youtube": "https://youtube.exemplo/5539574837"}}
+  ok  vídeo próprio: as 8 etapas concluídas
+
+2b. Liberação caiu depois (capa ou pacote mudou): o Coordenador confere e libera de novo sozinho
+  ok  antes: liberação revogada, mas a etapa dizia "concluída" (post travado)
+  ok  depois: o Agente 7 conferiu o pacote de novo e liberou (o post segue)
+
+3. Arquivo mudou depois da liberação
+  ok  o arquivo mudou: a aprovação do diretor não vale para a versão nova
+  ok  capa e liberação voltam a esperar (o histórico fica)
+  ok  a liberação antiga não serve para o arquivo novo
+
+4. A6 sem Pillow
+  ok  sem Pillow: "Falta um recurso" com o motivo, sem concluir
+  ok  A7 não começa sem a capa
+
+5. Recuperação de produção antiga
+  ok  simulação mostra o que falta: Sem certificado do diretor para o arquivo atual: vai para o editor e o diretor.
+  ok  simular não muda nada
+  ok  vídeo já publicado fica de fora da recuperação
+  ok  recuperar sem confirmar é recusado
+agente: "Corte de antes da esteira" foi para o editor e o diretor (recuperação).
+  ok  com a sua confirmação: só a etapa que falta (editor e diretor) é pedida
+agente: Diretor: "Corte de antes da esteira" aprovado com nota 100.
+     corte antigo agora: em_andamento / a6_capa / 
+  ok  avaliação inicial marcada "não se aplica" com o motivo (vídeo já editado)
+  ok  o diretor avaliou o arquivo de verdade
+
+6. Post antigo agendado antes da esteira completa
+  ok  não foi enviado e espera a esteira (sem virar erro): Esperando a esteira dos 7 agentes: Falta liberar o pacote final no Coordenador (Agente 7),
+
+7. Coordenador não conclui tarefa só porque pediu
+agente: Não consegui listar os vídeos de Canal Teste: Falta a chave do YouTube. Preencha na aba Agente, em Chaves.
+  ok  sem trabalho na fila para acompanhar, a tarefa não é dada como concluída (falhou)
+
+8. Painel Início
+  ok  os 7 agentes com estado real: {'agente1': 'sem_demanda', 'agente2': 'aguardando_etapa', 'agente3': 'sem_demanda', 'agente4': 'aguardando_etapa', 'agente5': 'sem_demanda', 'agente6': 'na_fila', 'agente7': 'aguardando_etapa'}
+  ok  Diretor (A4) com etapas concluídas COM PROVA no período: {'concluidas': 6, 'falhas': 0, 'por_etapa': {'a4_previo': 3, 'a4_final': 3}, 'tempo_medio_s': 1.1, 'amostras': 2}
+  ok  resumo da esteira no Início: {'bloqueado': 1, 'em_andamento': 2, 'publicado': 1}
+  ok  diagnóstico mostra a política e que a liberação é exigida
+  ok  API da linha do tempo do vídeo responde com as 8 etapas e o histórico
+
+70 ok, 0 falhas   (registros salvos em /tmp/esteira7-relatorio.json)
