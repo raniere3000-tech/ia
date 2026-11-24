@@ -112,3 +112,12 @@ permissão para continuar implementação e testes já autorizados.
 | teste_trecho_link.py | AMBIENTE | — | — |
 | teste_versao_refeita.py | PASS | 0 | 0.52 |
 | teste_whatsapp.py | PASS | 0 | 16.27 |
+
+## Atualização posterior — Fase 2
+
+O registro da execução integral acima permanece histórico. Na F2.02, a força
+zero dos estilos foi corrigida: teste_estilos_visuais passou com 65 verificações.
+Na F2.03, a cauda da transição da exportação foi corrigida: teste_exportacao
+passou com 23 verificações. Logs e SHAs nos respectivos checkpoints. As outras
+duas falhas integrais (agente3 e reposicao) continuam encaminhadas a F3.01 e
+F4.02. As limitações de email/yt_dlp e Termux permanecem explícitas.

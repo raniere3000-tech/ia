@@ -622,7 +622,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(200, pub.obter(mk.group(1)))
         if caminho == '/perfis':
             self.token_ok()
-            return self.json(200, {'perfis': pf.listar()})
+            return self.json(200, {'perfis': pf.listar(), 'dna_corte_habilitado': pf.dna_ativo()})
         mp = re.fullmatch(r'/perfis/(\w+)(?:/(resolvido|validar))?', caminho)
         if mp:
             self.token_ok()

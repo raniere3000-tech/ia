@@ -9,6 +9,8 @@ usar e, no Meta, qual página; não cria contas novas.
 from __future__ import annotations
 
 import re
+import math
+import os
 import time
 import uuid
 
@@ -21,6 +23,30 @@ MAX_VERSOES = 20
 CAMPOS_LISTA = ('elenco', 'series', 'templates', 'estilos_permitidos', 'hashtags_base', 'redes', 'temas_frequentes')
 MODOS_QUALIDADE = ('', 'rapido', 'caprichado')
 FONTES = ('meu', 'autorizado', 'regra')
+
+
+def dna_ativo() -> bool:
+    return os.getenv('DNA_CORTE', '0') == '1'
+
+
+def limpar_dna(d) -> dict:
+    """Só os ajustes mínimos; template e cor continuam nos campos já existentes."""
+    if not isinstance(d, dict):
+        return {}
+    out = {}
+    if d.get('fonte') == 'Inter':  # única família distribuída junto com o servidor
+        out['fonte'] = 'Inter'
+    if d.get('legenda') in ('destaque', 'simples', 'caixa', 'nenhuma'):
+        out['legenda'] = d['legenda']
+    if d.get('ritmo') in ('calmo', 'padrao', 'dinamico'):
+        out['ritmo'] = d['ritmo']
+    try:
+        zoom = float(d.get('zoom'))
+        if math.isfinite(zoom):
+            out['zoom'] = round(max(1.0, min(1.6, zoom)), 2)
+    except (TypeError, ValueError):
+        pass
+    return out
 
 
 class ErroPerfil(Exception):
@@ -64,7 +90,8 @@ def limpar(d: dict) -> dict:
             'redes': [x for x in _lista(d.get('redes'), 5, 20) if x in pg.REDES],
             'contas': {'meta_pagina': _s(contas.get('meta_pagina'), 60)},
             'modo_qualidade': d.get('modo_qualidade') if d.get('modo_qualidade') in MODOS_QUALIDADE else '', 'orcamento': orc,
-            'temas_frequentes': _lista(d.get('temas_frequentes'), 20, 80), 'regras_de_marca': _s(d.get('regras_de_marca'), 1200)}
+            'temas_frequentes': _lista(d.get('temas_frequentes'), 20, 80), 'regras_de_marca': _s(d.get('regras_de_marca'), 1200),
+            'dna_corte': limpar_dna(d.get('dna_corte'))}
 
 
 def _dados() -> dict:
@@ -80,7 +107,7 @@ def obter(pid: str) -> dict:
     p = _dados()['perfis'].get(pid)
     if not p:
         raise ErroPerfil('Perfil não encontrado.')
-    return {'id': pid, **p}
+    return {'id': pid, 'dna_corte': {}, **p}
 
 
 def salvar(d: dict, pid: str = '') -> dict:
@@ -97,7 +124,7 @@ def salvar(d: dict, pid: str = '') -> dict:
             atual = todos['perfis'].get(pid)
             if not atual:
                 raise ErroPerfil('Perfil não encontrado.')
-            ant = {k: atual[k] for k in campos}
+            ant = {k: atual.get(k, {}) for k in campos}
             mudou = [k for k in campos if ant[k] != campos[k]]
             if mudou:
                 v = atual['versao'] + 1
@@ -193,4 +220,9 @@ def aplicar_ao_tpl(tpl: dict, perfil: dict, rnd) -> list:
             pid = rnd.choice(ok)
             tpl['estilo_visual'], tpl['estilo_forca'], tpl['estilo_off'], tpl['estilo_texto'] = pid, 1.0, [], ''
             notas.append(f'estilo {vp.PRESETS[pid]["nome"]}')
+    if dna_ativo():
+        dna = limpar_dna(perfil.get('dna_corte'))
+        tpl.update(dna)
+        if dna:
+            notas.append('DNA do corte: ' + ', '.join(f'{k}={v}' for k, v in dna.items()))
     return notas

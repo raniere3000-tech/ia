@@ -1127,10 +1127,11 @@ def montar_ass(palavras: list, ini: float, fim: float, tpl: dict, gancho: str, L
     if tpl['legenda'] != 'nenhuma':
         ps = [(max(0, a - ini), min(dur, b - ini), p) for a, b, p in palavras if b > ini and a < fim]
         grupo, grupos = [], []
+        max_palavras, max_letras = {'calmo': (4, 24), 'dinamico': (2, 12)}.get(tpl.get('ritmo'), (3, 16))
         for i, w in enumerate(ps):
             grupo.append(w)
             prox = ps[i + 1][0] if i + 1 < len(ps) else None
-            if len(grupo) >= 3 or sum(len(x[2]) for x in grupo) >= 16 or prox is None or prox - w[1] > 0.6:
+            if len(grupo) >= max_palavras or sum(len(x[2]) for x in grupo) >= max_letras or prox is None or prox - w[1] > 0.6:
                 grupos.append(grupo)
                 grupo = []
         dest = _ass_cor(tpl['cor_destaque'])
@@ -1578,10 +1579,10 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             mid = mo.sortear(estado()['pesos'], [m['id'] for m in ativos], cfg['postagem']['redes'], rnd)
             modelo = next(m for m in ativos if m['id'] == mid)
             tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
-            if c.get('sem_legenda'):
-                tpl['legenda'] = 'nenhuma'          # momento sem fala: não há o que legendar
             if perfil:
                 usadas.append(f'Perfil {perfil["nome"]}: ' + ('; '.join(pf.aplicar_ao_tpl(tpl, perfil, rnd)) or 'sem mudanças de identidade'))
+            if c.get('sem_legenda'):
+                tpl['legenda'] = 'nenhuma'          # momento sem fala: não há o que legendar
             usadas += _sortear_estilo(tpl, co, rnd)
             arranjo = cmp.sortear_arranjo(tpl, rnd)       # comparação: um em cima do outro ou lado a lado, sorteado por corte
             if arranjo:
@@ -1616,6 +1617,8 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
                 ajuste = ajustar_corte(c, palavras, qa, co, dur)
                 if qa.get('erros') or not ajuste:
                     tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
+                    if perfil:
+                        usadas += pf.aplicar_ao_tpl(tpl, perfil, rnd)
                     if c.get('sem_legenda'):
                         tpl['legenda'] = 'nenhuma'
                     tpl['estilo_visual'], tpl['estilo_forca'], tpl['estilo_off'], tpl['estilo_texto'] = estilo_ant
