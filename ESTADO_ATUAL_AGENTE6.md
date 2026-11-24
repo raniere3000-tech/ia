@@ -6,9 +6,9 @@ Checkpoint próprio desta frente. **Não substitui** o `ESTADO_ATUAL.md` (checkp
 frente: AGENTE6_AUTONOMIA_CAPAS
 branch: codex/agente6-autonomia-capas
 sha_origem: 222a1c399da1e2d081fda16de2faa4a3cf092b7a
-microetapa_atual: TH.01
+microetapa_atual: TH.04
 status: CONCLUIDA
-proxima_microetapa: TH.02
+proxima_microetapa: TH.05
 merge: NAO_REALIZADO
 producao: NAO_PUBLICADA
 publicacoes_reais_em_teste: NENHUMA
@@ -43,6 +43,28 @@ Capacidade real das APIs (sem envio real nesta auditoria):
 - **Instagram Reels**: `thumb_offset` (milissegundo do vídeo); `cover_url` exige imagem em URL pública (o servidor no Termux não tem URL pública fixa) — não usado.
 - **Facebook / Kwai**: sem capa pela integração atual; fica manual.
 
+## TH.02 — Autonomia e seleção automática (concluída, 41f97b7)
+
+- `thumbnails.CONFIG_PADRAO`: modo automático, capa obrigatória (todas as redes), recuperação, reenvio da capa, estratégia por rede.
+- Migração única `agente6.autonomia_v1`: aplica a configuração aprovada uma vez; depois a escolha feita na tela vale.
+- `selecionar_melhor`: escolhe a aprovada de maior nota; roda também depois de refazer; nunca troca uma escolha sua válida.
+- `exige_capa(rede)`: regra única usada pelo Agente 2 (TH.05).
+
+## TH.03 — Correção e recuperação (concluída, 39cec86)
+
+- `diagnosticar` / `recuperar(simular)`: vídeo mudou → pede capa da versão nova; pedido falhou → refaz com outro método até `max_recuperacoes`, depois vira exceção; aprovada sem escolha → escolhe (automático) ou pendência (supervisionado); cancelado por você é respeitado. `varrer` usa a recuperação.
+- `teste_coordenador` passa a fixar o modo supervisionado (cobre o caminho manual de escolher a capa na liberação).
+
+## TH.04 — Integração A4/A5/A6/A7 (concluída, 17c8ba3)
+
+- `criar(..., reaproveitar=True)`: esteira e Coordenador usam o mesmo pedido vivo da mesma versão do vídeo (problema 10).
+- Coordenador no automático só conclui "Fazer as capas" com capa escolhida e válida (problema 3); sem aprovada → pendência sua.
+- Esteira escolhe a aprovada sozinha no automático.
+- `video_com_capa(arq)`: versão de publicação com a arte como quadro final de 0,5 s (não mexe no gancho). Fica em `thumbnail_embutidos` presa à MESMA escolha; o vídeo liberado pelo A7 não muda e o derivado não vira vídeo novo para o A6 (sem ciclo). Escolha revogada → o derivado perde a capa.
+- Banco: migração 14 (`thumbnail_embutidos`, `thumbnail_aplicacoes`). **Atenção no merge**: se a Fase 2 também criar a migração 14 em `banco.py`, renumerar uma das duas.
+
+Testes TH.04: `teste_agente6_autonomia` 33 ok · `teste_thumbnails` 102 ok · `teste_coordenador` 80 ok · `teste_esteira_7` 70 ok · `teste_redes_independentes` 13 ok.
+
 ## Plano das próximas microetapas
 
 - **TH.02** modo automático por migração única (respeita quem já escolheu manual), seleção automática também depois de refazer.
@@ -58,5 +80,5 @@ Capacidade real das APIs (sem envio real nesta auditoria):
 ```bash
 git fetch origin codex/agente6-autonomia-capas && git checkout codex/agente6-autonomia-capas
 cat ESTADO_ATUAL_AGENTE6.md
-cd servidor && PYTHONPATH=. python3 testes/teste_thumbnails.py
+cd servidor && PYTHONPATH=. python3 testes/teste_agente6_autonomia.py && PYTHONPATH=. python3 testes/teste_thumbnails.py
 ```
