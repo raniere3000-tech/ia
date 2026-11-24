@@ -59,7 +59,7 @@ TEXTO_MIN_PX_120 = 7                    # altura mínima da letra quando a capa 
 CUSTO_IMAGEM_USD = 0.04                 # mesma estimativa usada pelo Agente 3 para uma imagem do Gemini
 
 CONFIG_PADRAO = {
-    'modo': 'supervisionado',           # automatico: escolhe sozinho a melhor aprovada | supervisionado: você escolhe | manual: só quando você pede
+    'modo': 'automatico',               # automatico: escolhe sozinho a melhor aprovada | supervisionado: você escolhe | manual: só quando você pede
     'criar_sozinho': True,              # cria capas sozinho para cortes e vídeos do Agente 3 (automático e supervisionado; no manual, não)
     'metodo_padrao': 'inteligente',
     'variantes_padrao': 3,
@@ -69,7 +69,14 @@ CONFIG_PADRAO = {
     'ia': False,                        # usar o gerador de imagens (Gemini) para o fundo; o texto continua pelo desenho próprio
     'ia_max_por_pedido': 2,
     'ia_fallback_local': False,         # regra salva: se a IA falhar, fazer do jeito local sem perguntar
-    'exigir_capa_youtube': False,       # o Agente 2 só posta no YouTube com capa aprovada para o arquivo
+    'exigir_capa_youtube': True,        # (antigo) o Agente 2 só posta no YouTube com capa aprovada para o arquivo
+    'exigir_capa': True,                # o Agente 2 só publica com capa válida PARA ESTE ARQUIVO nas redes de `redes_exigem_capa`
+    'redes_exigem_capa': ['youtube', 'tiktok', 'instagram', 'facebook', 'kwai'],
+    'recuperacao_automatica': True,     # vídeo mudou, pedido falhou ou ficou sem escolha: o Agente 6 refaz/escolhe sozinho
+    'max_recuperacoes': 3,              # pedidos automáticos novos para a MESMA versão do vídeo (depois disso, exceção para você)
+    'reenviar_capa': True,              # YouTube: se a capa não entrou, tenta de novo só a capa, no vídeo já postado
+    'max_envios_capa': 5,
+    'estrategia_rede': {'youtube': 'imagem', 'tiktok': 'quadro', 'instagram': 'quadro', 'facebook': 'manual', 'kwai': 'manual'},
     'formato_por_rede': {'youtube': 'auto', 'tiktok': '9:16', 'instagram': '9:16', 'facebook': '9:16', 'kwai': '9:16'},
 }
 
@@ -96,15 +103,43 @@ class _Definitivo(RuntimeError):
 
 
 # ---------------------------------------------------------------- configuração
+ESTRATEGIAS = {'imagem': 'Enviar a arte como capa (YouTube)', 'quadro': 'Usar o quadro da capa no próprio vídeo (momento escolhido)',
+               'manual': 'Você troca a capa no app', 'nenhuma': 'Não mexer na capa'}
+AUTONOMIA_V1 = {'modo': 'automatico', 'variantes_padrao': 3, 'nota_min': 70, 'max_correcoes': 5, 'criar_sozinho': True, 'exigir_capa': True,
+                'exigir_capa_youtube': True, 'recuperacao_automatica': True}
+
+
 def config() -> dict:
     salvo = db.kv('agente6.config', {}) or {}
     if salvo and not db.kv('agente6.criar_sozinho_v2'):      # 19/11: criar sozinho passa a ser o padrão (antes vinha desligado e nada era feito)
         salvo['criar_sozinho'] = True
         db.kv_gravar('agente6.config', salvo)
         db.kv_gravar('agente6.criar_sozinho_v2', True)
+    if not db.kv('agente6.autonomia_v1'):
+        # 24/11: configuração aprovada pelo dono (automático, 3 capas, nota 70, 5 correções, capa obrigatória). Roda uma vez;
+        # depois disso o que você mudar na tela vale (inclusive voltar para supervisionado ou manual).
+        antes = {k: salvo.get(k) for k in AUTONOMIA_V1}
+        if salvo:
+            salvo.update(AUTONOMIA_V1)
+            db.kv_gravar('agente6.config', salvo)
+        db.kv_gravar('agente6.autonomia_v1', {'t': time.time(), 'antes': antes})
+        try:
+            db.evento('agente6', 'agente6_autonomia_v1', 'agente6', {'antes': antes})
+        except Exception:  # noqa: BLE001
+            pass
     c = {**CONFIG_PADRAO, **{k: v for k, v in salvo.items() if k in CONFIG_PADRAO}}
     c['formato_por_rede'] = {**CONFIG_PADRAO['formato_por_rede'], **(salvo.get('formato_por_rede') or {})}
+    c['estrategia_rede'] = {**CONFIG_PADRAO['estrategia_rede'], **{r: e for r, e in (salvo.get('estrategia_rede') or {}).items() if e in ESTRATEGIAS}}
+    c['redes_exigem_capa'] = [r for r in (c.get('redes_exigem_capa') or []) if r in REDES_CAPA]
     return c
+
+
+def exige_capa(rede: str) -> bool:
+    """O Agente 2 deve barrar esta rede sem capa válida para o arquivo?"""
+    c = config()
+    if rede == 'youtube' and c['exigir_capa_youtube']:
+        return True
+    return bool(c['exigir_capa']) and rede in c['redes_exigem_capa'] and c['estrategia_rede'].get(rede) != 'nenhuma'
 
 
 def salvar_config(d: dict, quem: str = 'site') -> dict:
@@ -113,14 +148,21 @@ def salvar_config(d: dict, quem: str = 'site') -> dict:
         if d['modo'] not in ('automatico', 'supervisionado', 'manual'):
             raise ErroThumb(400, 'Modo inválido.')
         c['modo'] = d['modo']
-    for k in ('criar_sozinho', 'ia', 'ia_fallback_local', 'exigir_capa_youtube'):
+    for k in ('criar_sozinho', 'ia', 'ia_fallback_local', 'exigir_capa_youtube', 'exigir_capa', 'recuperacao_automatica', 'reenviar_capa'):
         if k in d:
             c[k] = bool(d[k])
+    if isinstance(d.get('redes_exigem_capa'), list):
+        c['redes_exigem_capa'] = [r for r in REDES_CAPA if r in d['redes_exigem_capa']]
+    if isinstance(d.get('estrategia_rede'), dict):
+        for r, e in d['estrategia_rede'].items():
+            if r in REDES_CAPA and e in ESTRATEGIAS:
+                c['estrategia_rede'][r] = e
     if 'metodo_padrao' in d:
         if d['metodo_padrao'] not in METODOS:
             raise ErroThumb(400, 'Método inválido.')
         c['metodo_padrao'] = d['metodo_padrao']
-    for k, lo, hi in (('variantes_padrao', 1, 4), ('max_variantes', 1, 4), ('max_correcoes', 0, 5), ('nota_min', 50, 95), ('ia_max_por_pedido', 0, 4)):
+    for k, lo, hi in (('variantes_padrao', 1, 4), ('max_variantes', 1, 4), ('max_correcoes', 0, 5), ('nota_min', 50, 95), ('ia_max_por_pedido', 0, 4),
+                      ('max_recuperacoes', 0, 10), ('max_envios_capa', 1, 10)):
         if k in d:
             try:
                 c[k] = max(lo, min(hi, int(d[k])))
@@ -132,7 +174,8 @@ def salvar_config(d: dict, quem: str = 'site') -> dict:
             if r in REDES_CAPA and (f in FORMATOS or f == 'auto'):
                 c['formato_por_rede'][r] = f
     db.kv_gravar('agente6.config', c)
-    db.evento(quem, 'agente6_config', 'agente6', {k: c[k] for k in ('modo', 'criar_sozinho', 'ia', 'exigir_capa_youtube')})
+    db.evento(quem, 'agente6_config', 'agente6', {k: c[k] for k in ('modo', 'criar_sozinho', 'ia', 'exigir_capa_youtube', 'exigir_capa',
+                                                                   'recuperacao_automatica', 'variantes_padrao', 'nota_min', 'max_correcoes')})
     return c
 
 
@@ -1081,9 +1124,9 @@ def job_thumbnail(ctx) -> dict:
     aprovadas = [x for x in ativas if x['estado'] == 'aprovada']
     if not aprovadas:
         _estado(tid, 'revisao_manual', 'Nenhuma capa passou na conferência depois das correções. Veja o motivo em cada uma, ou refaça uma.')
-    elif cfg['modo'] == 'automatico' and not refazer_n:
-        melhor = max(aprovadas, key=lambda x: (x['nota'], -x['numero']))
-        selecionar(tid, {'variante_id': melhor['id'], 'versao': melhor['versao']}, 'agente6-automatico')
+    elif cfg['modo'] == 'automatico' and (not refazer_n or not selecao_ativa(tid) or ctx.dados.get('auto')):
+        # automático: escolhe a melhor aprovada, também depois de refazer (se ninguém escolheu ainda, ou se foi o próprio A6 que refez)
+        selecionar_melhor(tid, 'agente6-automatico')
     else:
         _estado(tid, 'aguardando_escolha', '')
     ctx.progresso(100, 'Capas prontas')
@@ -1229,6 +1272,24 @@ def selecionar(tid: str, d: dict, quem: str = 'site') -> dict:
     db.evento('agente6', 'thumbnail.pacote_pronto', 'thumb:' + tid, {'origem': j['origem'], 'ref': j['referencia'], 'video_sha': video_sha[:16],
                                                                      'thumb_sha': sha[:16], 'escolha': 'manual' if manual else 'diretor'})
     return obter(tid)
+
+
+def selecionar_melhor(tid: str, quem: str = 'agente6-automatico') -> dict | None:
+    """Escolhe a capa aprovada de maior nota (empate: a de número menor). Sem aprovada: None. Não troca uma escolha válida feita por você."""
+    j = _job(tid)
+    s = selecao_ativa(tid)
+    if s and s['escolha'] in ('voce', 'manual') and revalidar(tid):
+        return None
+    aprovadas = db.todos("SELECT * FROM thumbnail_variantes WHERE job=? AND estado='aprovada' ORDER BY nota DESC, numero, versao DESC", tid)
+    for v in aprovadas:
+        try:
+            r = selecionar(tid, {'variante_id': v['id'], 'versao': v['versao']}, quem)
+            db.evento(quem, 'thumbnail_auto_selecao', 'thumb:' + tid, {'variante': v['id'], 'nota': v['nota'], 'video_sha': j['video_sha'][:16]})
+            return r
+        except ErroThumb as e:
+            print('agente6: seleção automática pulou', v['id'], e)
+            continue
+    return None
 
 
 def pacote(tid: str) -> dict:
