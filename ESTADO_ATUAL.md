@@ -1,22 +1,22 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T14:19:14-03:00. Executor: Codex.
+Atualizado: 2026-11-24T14:29:10-03:00. Executor: Codex.
 
 ```yaml
 fase: F1
-microetapa: F1.08
+microetapa: F1.09
 status: COMMITTED
 branch: claude/project-thread-hqyqog-fase1
-sha_inicial: 22cf4fd66fcd156d877fbabfdecd1e9d7c341ae2
-sha_final_implementacao: 08317cc0cb83f791fa50d092f89d6de8643a10cc
-proxima_microetapa: F1.09
+sha_inicial: 1a03e4af4284d1ae803c3df5cc626b9ea48c509e
+sha_final_implementacao: 6cc17c7a4315539637572a8f35f547c269acb32c
+proxima_microetapa: F2.01
 mudancas_nao_commitadas: []
-flags_adicionadas: ['THUMB_REJEICAO=0']
+flags_adicionadas: ['A1_MESMA_FONTE=0', 'THUMB_REJEICAO=0']
 migracoes: []
 merge: NAO_REALIZADO
 producao: NAO_PUBLICADA
 sincronizacao_remota: SINCRONIZADA_NA_BRANCH_DE_TRABALHO
-suite_completa: RESERVADA_A_F1_09
+suite_completa: 51_PASS_4_FAIL_2_NAO_EXECUTADOS
 ```
 
 O SHA acima identifica implementação/testes. Checkpoint e logs seguem em commit
@@ -35,12 +35,12 @@ permissão para continuar etapas autorizadas ou sincronizar esta branch.
 
 ## Última microetapa
 
-Nova ação explícita de rejeitar proposta por variante/versão, atrás de THUMB_REJEICAO desligada por padrão. Rejeição preserva seleção aprovada do mesmo vídeo, guarda motivo/autor/data no relatório e evento e não enfileira geração. Variante recusada não pode ser selecionada nem com override; versão errada e render alterado são rejeitados. Capa escolhida exige substituta válida antes de ser recusada. Seleção/substituição é transacional, repetição da mesma escolha é idempotente e corrida com recusa não deixa seleção inválida. UI oferece Recusar quando flag habilitada e mantém recusas no histórico; capacidades/consulta expõem disponibilidade. Testes: teste_rejeitar_thumbnail.py 3/3 (API real, seleção preservada, nova proposta, vínculo SHA, flag off, versões), teste_idempotencia_fila_capa.py 4/4, teste_thumbnails.py 101/101, teste_versao_refeita.py TUDO OK, tsc exit 0 e frontend 16/16. Sem migração. Módulos existentes reaproveitados; nenhuma capa gerada por recusa. Arquivos: thumbnails.py, api_v1.py, teste_rejeitar_thumbnail.py e dois consumidores frontend.
+Regressão integral concluída: 57 arquivos catalogados (51 PASS, 4 FAIL, 1 interativo, 1 yt_dlp ausente). Nenhum timeout. Todos os seis arquivos novos passam. As seis falhas antigas de central/comandos/coordenador/descrição/liberação/skills_agentes foram resolvidas; teste_agente3 integral ainda falha em fixture posterior supervisionada, após aprovação inicial/render passarem. As três outras falhas (estilos força zero, exportação duração/transição e reposição antiga) foram reproduzidas no SHA inicial ca26526 com os mesmos sintomas, sem regressão atribuída à F1. Logs e matriz em fase-1-regressao.md. Frontend tsc exit 0, testes 16/16 e build exit 0. Atenção: não afirmar suíte toda verde nem Fase 1 pronta para produção. Documento baseline informava 52 arquivos, mas inventário Git contém 51 no SHA inicial; agora 57 com seis novos. Funcionalidades ficam com flags off. PR draft da Fase 1 será aberto sem merge. Continuidade das outras fases está autorizada em branches empilhadas; pendências preexistentes rastreadas em F2.02, F2.03, F3.01 e F4.02.
 
-Evidências: docs/estudioclip-2/checkpoints/F1.08-*.
-Último resultado: testes focais e git diff --check aprovados.
+Evidências: docs/estudioclip-2/checkpoints/F1.09-*.
+Último resultado: regressão integral concluída com pendências explícitas; git diff --check aprovado.
 
-## Ponto exato de retomada — F1.09
+## Ponto exato de retomada — F2.01
 
 ```bash
 git status --short
@@ -52,11 +52,10 @@ git rev-list --left-right --count HEAD...origin/claude/project-thread-hqyqog-fas
 cat ESTADO_ATUAL.md
 ```
 
-Ler docs/estudioclip-2/microetapas/11_F1_09_FECHAMENTO.md. Revisar todos checkpoints, executar suíte Python isolada e frontend typecheck/test/build, comparar baseline e abrir PR de Fase 1 sem merge. Resolver ou registrar bloqueios antes de iniciar Fase 2.
+Abrir/consultar PR draft da Fase 1. Criar branch codex/estudioclip-2-fase2 a partir do HEAD da Fase 1 e ler microetapas/12_F2_CORTES_EDICAO_INCREMENTAL.md. Iniciar somente F2.01 (gancho íntegro), sem merge. Não refazer Fase 0 nem F1.01–F1.08.
 
 Não refazer Fase 0 ou microetapas concluídas. Relatórios anteriores permanecem em
-checkpoints/. Flags desligadas por padrão. Rollback: git revert 08317cc0cb83f791fa50d092f89d6de8643a10cc
+checkpoints/. Flags desligadas por padrão. Rollback: git revert 6cc17c7a4315539637572a8f35f547c269acb32c
 (não executar automaticamente). Sem migrações ou publicação em conta real.
-Suite integral/frontend no fechamento F1.09; teste_agente3 integral ainda tem cenários
-antigos pendentes de avaliação, embora o recorte F1.01 de render real passou 18/18.
+Suite integral e frontend executados no fechamento F1.09. Ver fase-1-regressao.md para as quatro falhas; recorte de aprovação/render F1.01 passou 18/18.
 Termux e APIs externas não verificados. Não afirmar aprovação integral da fase.
