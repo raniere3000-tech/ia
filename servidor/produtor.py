@@ -542,7 +542,8 @@ def visao_ia(pid: str, video: Path, sha: str, cenas: list, b: dict, cancelado=No
 
 def continuidade_serie(pid: str, cenas: list, b: dict) -> list:
     """Episódio de série: confere com a bíblia e com o elenco aprovado. Partes fixas (aparência, cenário, voz) são conferidas
-    sem IA; os fatos da bíblia são lidos pela IA (só texto, com cache). Vira alerta no relatório, nunca bloqueia."""
+    sem IA; os fatos da bíblia são lidos pela IA (só texto, com cache). Pendências reais bloqueiam;
+    biblioteca mais recente com snapshot histórico comprovado fica como aviso resolvido."""
     serie = pj.obter(pid)['dados'].get('serie') or {}
     if not serie:
         return []
@@ -557,9 +558,20 @@ def continuidade_serie(pid: str, cenas: list, b: dict) -> list:
     usados = {e['personagem_id'] for c in cenas for e in c.get('elenco') or []} | {c.get('personagem') for c in cenas if c.get('personagem')}
     for x in sorted(usados & set(pers)):
         v0, v1 = (serie.get('versoes') or {}).get(x), atuais.get(x)
+        original = db.um('SELECT dados FROM personagens_versoes WHERE personagem_id=? AND versao=?', x, v0) if v0 else None
+        preservado = bool(original and json.loads(original['dados']) == pers[x])
+        if original and not preservado:
+            out.append(qd._problema('continuidade', 'media', f'O snapshot de {nome(x)} diverge da versão {v0} fixada no projeto.',
+                                    'Restaure a versão escolhida ou selecione explicitamente outra versão.'))
         if v0 and v1 and v1 != v0:
-            out.append(qd._problema('continuidade', 'baixa', f'{nome(x)} mudou de aparência (versão {v0} para {v1}) depois que este episódio foi criado. '
-                                    f'Este episódio continua com a versão {v0}, igual aos anteriores.', 'Se quiser a aparência nova, crie o episódio de novo.'))
+            aviso = qd._problema('continuidade', 'baixa', f'{nome(x)} mudou de aparência (versão {v0} para {v1}) depois que este episódio foi criado. '
+                                 + (f'Este episódio continua com a versão {v0}, igual aos anteriores.' if preservado else 'Não foi possível confirmar a versão preservada.'),
+                                 'Se quiser a aparência nova, selecione a versão explicitamente.')
+            if preservado:
+                # Biblioteca mais recente não é defeito de um episódio comprovadamente fixado.
+                aviso.update(status='resolvido', resolucao='snapshot_preservado',
+                             evidencia=f'{x}@{v0}; hash {_h(pers[x])}')
+            out.append(aviso)
     for c in cenas:
         cid = c.get('id', '')
         for e in c.get('elenco') or []:
@@ -568,6 +580,9 @@ def continuidade_serie(pid: str, cenas: list, b: dict) -> list:
         if c.get('cenario_id') and cens and c['cenario_id'] not in cens:
             out.append(qd._problema('continuidade', 'media', f'O cenário "{c["cenario_id"]}" não existe na série.', 'Escolha um cenário da série.', cid))
         fala = c.get('personagem') or ''
+        if fala and fala not in pers:
+            out.append(qd._problema('continuidade', 'media', f'"{fala}" fala, mas não é personagem do projeto.',
+                                    'Escolha um personagem do elenco.', cid))
         voz_certa = (pers.get(fala) or {}).get('voz')
         if voz_certa and c.get('voz') and c['voz'] != voz_certa and not c.get('audio_manual'):
             out.append(qd._problema('continuidade', 'media', f'{nome(fala)} está com a voz {c["voz"]}, mas a voz dele na série é {voz_certa}.',
