@@ -212,7 +212,7 @@ def visao(p: dict) -> dict:
     e = estado(p)
     r = (p.get('redes') or {}).get('tiktok') or {}
     return {'estado': e, 'rotulo': ROTULOS[e], 'meta': {k: meta.get(k, [] if k in ('hashtags', 'links') else '') for k in CAMPOS},
-            'origem': meta.get('origem') or {}, 'texto': texto_para_copiar(p), 'ja_enviado': r.get('status') == 'postado',
+            'origem': meta.get('origem') or {}, 'texto': texto_para_copiar(p), 'ja_enviado': r.get('status') == 'postado', 'pode_reenviar': r.get('status') not in ('postando', 'agendado', 'liberacao'),
             'modo': modo_envio(p), 'editado': meta.get('editado') or 0, 'copiado': meta.get('copiado') or 0}
 
 
@@ -282,6 +282,8 @@ def registrar(pid: str, acao: str, d: dict | None = None) -> dict:
     """copiado | abrir | confirmar | reabrir. Só anota a etapa; nunca envia nada ao TikTok."""
     pg = _pg()
     d = d or {}
+    if acao == 'reenviar':
+        return reenviar(pid)
     if acao not in ('copiado', 'abrir', 'confirmar', 'reabrir'):
         raise pg.ErroRede('Ação desconhecida.')
 
@@ -311,6 +313,36 @@ def registrar(pid: str, acao: str, d: dict | None = None) -> dict:
         elif acao == 'reabrir':
             p.pop('tiktok_estado', None)
     p = pg._mudar(pid, f)
+    return visao(p)
+
+
+def reenviar(pid: str) -> dict:
+    """Publicar novamente: manda o MESMO arquivo ao TikTok outra vez (novo rascunho), sem precisar achar o envio antigo.
+    O envio anterior fica guardado em `envios_anteriores`; a conferência de sempre vale de novo (arquivo, versão aprovada, conta)."""
+    pg = _pg()
+
+    def f(p):
+        r = (p.get('redes') or {}).get('tiktok')
+        if r and r.get('status') in ('postando', 'agendado', 'liberacao'):
+            raise pg.ErroRede('Este vídeo já está na fila do TikTok. Espere o envio terminar ou use "Postar agora".')
+        if not pg.video_pronto(p['video']) or not pg.video_path(p['video']).is_file():
+            raise pg.ErroRede('O vídeo não está mais no servidor, então não dá para enviar de novo.')
+        completar(p)
+        if r:
+            if r.get('status') in ('postado', 'erro', 'cancelado'):
+                r.setdefault('envios_anteriores', []).append({'estado': estado(p), 'link': str(r.get('link') or '')[:300], 'erro': str(r.get('erro') or '')[:300],
+                                                              'feito': r.get('feito') or 0, 'em': time.time()})
+                r['envios_anteriores'] = r['envios_anteriores'][-10:]
+            for k in ('lote', 'lote_pausado', 'intervalo_api_s', 'quando', 'feito', 'manual', 'ref', 'inicio'):
+                r.pop(k, None)
+            r.update(status='agendado', link='', erro='', tentativas=0, proxima=0, outra_rede=True)
+        else:
+            p['redes']['tiktok'] = {'status': 'agendado', 'link': '', 'erro': '', 'outra_rede': True}
+        p.pop('tiktok_estado', None)
+        (p.get('tiktok_meta') or {})['avisado'] = 0
+        pg._anotar(p, 'tiktok', 'outra_rede', 'Você pediu para publicar novamente no TikTok (mesmo arquivo).')
+    p = pg._mudar(pid, f)
+    pg.acordar()
     return visao(p)
 
 

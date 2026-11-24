@@ -154,6 +154,30 @@ confere(len([a for a in AVISOS if a[0] == 'tiktok_pronto']) == 1, 'o aviso não 
 pg.ciclo()
 confere(ENVIOS == [n['id']], 'não reenvia o vídeo já encaminhado')
 
+# ---- 6b. publicar novamente (mesmo arquivo, sem procurar o envio antigo)
+ENVIOS.clear()
+v = ta.registrar(n['id'], 'reenviar')
+confere(v['estado'] == 'pendente_envio' and not v['pode_reenviar'], 'publicar novamente: entra na fila do TikTok')
+try:
+    ta.reenviar(n['id'])
+    confere(False, 'não enfileira duas vezes')
+except pg.ErroRede:
+    confere(True, 'não enfileira duas vezes')
+pg.ciclo()
+nn = next(p for p in pg.posts() if p['id'] == n['id'])
+confere(ENVIOS == [n['id']] and ta.estado(nn) == 'aguardando_publicacao_manual' and len(nn['redes']['tiktok']['envios_anteriores']) == 1
+        and nn['redes']['youtube']['status'] == 'postado', 'reenviou o mesmo arquivo 1x, guardou o envio anterior e não mexeu no YouTube')
+ENVIOS.clear()
+v = ta.registrar('old4', 'reenviar')
+pg.ciclo()
+confere(ENVIOS == ['old4'], 'também vale para vídeos antigos já publicados')
+(pg.VIDEOS / 'a8.mp4').unlink()
+try:
+    ta.reenviar('old8')
+    confere(False, 'sem o arquivo no servidor, recusa')
+except pg.ErroRede:
+    confere(True, 'sem o arquivo no servidor, recusa')
+
 # ---- 7. Direct Post preparado
 confere(ta.modo_envio({'opcoes': {'tiktok_modo': 'direto'}}) == 'assistido', 'antes da aprovação: pediu direto, mas fica assistido')
 ta.ligar_direct_post(True)

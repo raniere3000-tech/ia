@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Music2, Copy, ExternalLink, Pencil, X, Save, CheckCircle2, Loader2 } from 'lucide-react';
+import { Music2, RefreshCw, Copy, ExternalLink, Pencil, X, Save, CheckCircle2, Loader2 } from 'lucide-react';
 import { useApp } from '../state';
 import { editarTikTok, acaoTikTok, type Post, type TikTokInfo } from '../lib/agenda';
 
@@ -50,10 +50,15 @@ export default function TikTokInfoPainel({p,acao}:{p:Post;acao:(f:()=>Promise<un
     if(link===null) return;
     void acao(()=>acaoTikTok(settings,p.id,'confirmar',link.trim()||undefined),'Marcado como publicado no TikTok.');
   };
+  const reenviar=()=>{
+    if(!window.confirm('Enviar este mesmo vídeo ao TikTok de novo? Ele chega como um novo rascunho. O envio anterior fica guardado no histórico.')) return;
+    void acao(()=>acaoTikTok(settings,p.id,'reenviar'),'Na fila para publicar de novo no TikTok.');
+  };
   const podeConfirmar=!['publicado','cancelado'].includes(info.estado);
   return <div className="post-tiktok">
     <div className="row-gap left">
       <span className={'tag '+(COR[info.estado]||'')}><Music2 size={12}/> TikTok: {info.rotulo}</span>
+      {info.pode_reenviar&&<button className="primary sm" onClick={reenviar}><RefreshCw size={14}/> Publicar novamente no TikTok</button>}
       <button className="subtle sm" aria-expanded={aberto} onClick={()=>setAberto(!aberto)}>{aberto?'Fechar informações':'Informações do TikTok'}</button>
     </div>
     {aberto&&<div className="post-editar">

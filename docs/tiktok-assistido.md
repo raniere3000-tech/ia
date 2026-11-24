@@ -8,6 +8,8 @@ Para cada post o servidor guarda título, descrição, hashtags e links do TikTo
 
 **Atualização retroativa:** roda sozinha na primeira listagem de posts depois de atualizar, ou por `POST /posts/tiktok/migrar` (`{"simular": true}` só conta). Só preenche o que falta, não troca o que existe ou foi editado, não renderiza, não cria capa, não envia ao TikTok e não apaga nada. Faz uma cópia `posts.antes-tiktok.json` antes de gravar. Textos faltantes são montados do título (sem IA, sem custo).
 
+**Publicar novamente:** botão no post (qualquer vídeo, mesmo já publicado): manda o mesmo arquivo ao TikTok outra vez como novo rascunho; o envio anterior fica em `envios_anteriores`. A conferência de sempre vale; recusa se já está na fila ou se o arquivo saiu do servidor.
+
 **Vídeo novo:** as informações são preparadas ao criar o post. Quando o vídeo chega ao TikTok, um aviso (sino, e-mail e WhatsApp, tipo `a2_tiktok`) diz que está pronto para publicar.
 
 **Direct Post:** `modo_envio()` mantém tudo assistido até o TikTok aprovar o app. Depois, `ligar_direct_post(True)` (ou `TIKTOK_DIRECT_POST_APROVADO=1`) faz quem pediu "direto" postar direto.

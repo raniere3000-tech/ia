@@ -8,7 +8,7 @@ export type StatusRede = {status:'agendado'|'postando'|'postado'|'erro'|'manual'
 export type Post = {id:string;video:string;hash?:string;arquivo_disponivel?:boolean;criado:number;quando:number;titulo:string;legenda:string;opcoes:{youtube_privacidade:string;tiktok_modo:string};redes:Partial<Record<Rede,StatusRede>>;preparando?:boolean;relatorio?:{t:number;rede:string;evento:string;detalhe:string}[];tiktok?:TikTokInfo};
 
 export type EstadoTikTok='pendente_envio'|'agendado'|'enviado_tiktok'|'aguardando_publicacao_manual'|'aguardando_confirmacao'|'publicado'|'falha'|'cancelado';
-export type TikTokInfo={estado:EstadoTikTok;rotulo:string;meta:{titulo:string;descricao:string;hashtags:string[];links:{rotulo:string;url:string}[]};origem:Record<string,string>;texto:string;ja_enviado:boolean;modo:'assistido'|'direto';editado:number;copiado:number};
+export type TikTokInfo={estado:EstadoTikTok;rotulo:string;meta:{titulo:string;descricao:string;hashtags:string[];links:{rotulo:string;url:string}[]};origem:Record<string,string>;texto:string;ja_enviado:boolean;pode_reenviar:boolean;modo:'assistido'|'direto';editado:number;copiado:number};
 export const ESTADOS_TIKTOK:[EstadoTikTok,string][]=[['pendente_envio','Pendente de envio'],['agendado','Agendado'],['enviado_tiktok','Enviado ao TikTok'],['aguardando_publicacao_manual','Aguardando publicação manual'],['aguardando_confirmacao','Aguardando confirmação'],['publicado','Publicado'],['falha','Falha'],['cancelado','Cancelado']];
 
 export const REDES:{id:Rede;nome:string;prov:Prov|null}[] = [
@@ -96,5 +96,5 @@ export const acaoLote=(c:Cfg,id:string,acao:'pausar'|'retomar'|'cancelar')=>cham
 
 /** Publicação assistida do TikTok: ver, editar, copiar e confirmar. Nada disso envia o vídeo de novo. */
 export const editarTikTok=(c:Cfg,id:string,d:{titulo?:string;descricao?:string;hashtags?:string[];links?:{rotulo:string;url:string}[]})=>chamar<TikTokInfo>(c,'POST',`/posts/${id}/tiktok`,{acao:'editar',...d});
-export const acaoTikTok=(c:Cfg,id:string,acao:'copiado'|'abrir'|'confirmar'|'reabrir',link?:string)=>chamar<TikTokInfo>(c,'POST',`/posts/${id}/tiktok`,{acao,link});
+export const acaoTikTok=(c:Cfg,id:string,acao:'copiado'|'abrir'|'confirmar'|'reabrir'|'reenviar',link?:string)=>chamar<TikTokInfo>(c,'POST',`/posts/${id}/tiktok`,{acao,link});
 export const migrarTikTok=(c:Cfg,simular=false)=>chamar<{posts:number;atualizados:number;ja_prontos:number;campos_gerados:number}>(c,'POST','/posts/tiktok/migrar',{simular});
