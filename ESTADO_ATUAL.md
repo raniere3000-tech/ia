@@ -1,18 +1,18 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T20:10:10-03:00.
+Atualizado: 2026-11-24T20:18:15-03:00.
 
 ```yaml
 fase: "F3"
-microetapa: "F3.03"
+microetapa: "F3.04"
 status: "COMMITTED"
 branch: "codex/estudioclip-2-fase3"
-sha_inicial: "278aede88a472a4c2c71c04850c1a0caef760903"
-sha_final_implementacao: "525d2ba8e175bcb2f3f62002c00fa514655cb2d8"
-proxima_microetapa: "F3.04"
+sha_inicial: "93f14dee040493e4accecc7b9e18e284a5c63dc2"
+sha_final_implementacao: "10cb6711f43f71744e0cea1b628f7e0c45033c7f"
+proxima_microetapa: "FECHO_F3"
 mudancas_nao_commitadas: []
-testes: {"compartilhado": 9, "agente3_integral": "176_PASS_0_FAIL", "efeitos": 6, "integridade": 7, "portao": 15, "pipeline": 51, "diretor": "PASS"}
-flags_adicionadas: ["A3_EDICAO_COMPARTILHADA=0"]
+testes: {"formatos": 7, "frontend": 16, "typescript": "PASS", "build": "PASS", "criativo": "PASS", "serie_completa": "PASS", "diretor": "PASS", "agente3_fecho_inicial": "175_PASS_1_FAIL_CORRIDA_EMAIL_TESTE", "agente3_fecho_final": "RUNNING"}
+flags_adicionadas: ["FORMATOS_IA=0"]
 migracoes: []
 merge: "NAO_REALIZADO"
 producao: "NAO_PUBLICADA"
@@ -35,11 +35,11 @@ commitadas; flags novas desligadas. Falhas antigas de estilos e exportação
 corrigidas. F3.01: 23 verificações de roteiro e 10 de concorrência. F3.02: seis
 testes de consistência, incluindo render real de duas cenas/duas versões.
 
-A3 usa EditPlan/executor importado do A5 e A4 existentes quando A3_EDICAO_COMPARTILHADA=1. Recibo de efeitos comprovado por plano/SHA e registrado no pipeline, projeto e asset; cancelamento/falha/SHA falso não publicam nova saída. Sem timeline nova: duração segue imagem, preservando voz/SRT. Reframe manter é sem alteração. Testes focais 9 aprovados, efeitos 6, integridade 7, portão 15, pipeline 51 e diretor aprovados. Teste agente3 integral: 176 aprovados, zero falhas. Preservado o contrato atual que bloqueia opinião pendente; a instrução anterior de afrouxar esse gate foi rejeitada pela evidência dos testes existentes. Ajustados simuladores positivos, mantendo negativos reais em testes. Frontend não alterado. Sem produção, migração ou banco novo.
+Três pontos de partida (curiosidade, história narrada, explicativo) editáveis nos campos existentes e salvos/versionados como template_pack em criativo_assets. GET de formatos e interface em Criar com IA; flag FORMATOS_IA=0 por padrão. Leitura não grava nada; somente salvar cria asset. Não gera nem publica vídeos. Sete testes API, 16 testes frontend, TypeScript/build e regressões criativo/série completa/diretor aprovados. Fecho inicial agente3:175 ok/1 falha por corrida do teste de e-mail; helper corrigido para aguardar conclusão do job. Nova execução integral em andamento, sem afirmar PASS até terminar. F3.03 já teve integral176/176. Nenhuma migração ou serviço novo.
 
-Evidências: docs/estudioclip-2/checkpoints/F3.03-*.
+Evidências: docs/estudioclip-2/checkpoints/F3.04-*.
 
-## Retomada exata — F3.04
+## Retomada exata — FECHO_F3
 
 ```bash
 git status --short
@@ -49,7 +49,7 @@ git fetch origin codex/estudioclip-2-fase3:refs/remotes/origin/codex/estudioclip
 git rev-list --left-right --count HEAD...origin/codex/estudioclip-2-fase3
 ```
 
-Ler 13_F3_CRIACAO_IA_INCREMENTAL.md, F3.04. Reutilizar biblioteca de modelos/assets editáveis de criativo.py e telas existentes para presets curiosidade, história narrada e explicativo. Adicionar somente configurações necessárias, sem gerar dezenas de modelos. Testar listagem/edição/uso, rodar fecho F3 (agente3, serie_completa, criativo, diretor e correlatos/frontend afetado), abrir PR separado de F3 sobre codex/estudioclip-2-fase2, sem merge.
+Concluir o fecho F3 sem parar no checkpoint. Aguardar a execução iniciada de teste_agente3 (log externo ../logs/F3-fecho-agente3-final.log; sessão 71903 nesta execução). Verificar código de saída e total. Salvar log final no repositório, registrar relatório de entrega e atualizar este checkpoint. Abrir PR draft codex/estudioclip-2-fase3 -> codex/estudioclip-2-fase2, com flags desligadas e sem merge. Depois criar branch F4 a partir do HEAD F3 e continuar F4.01. Não repetir fases concluídas.
 
 ## Pendências e limites
 
@@ -57,4 +57,4 @@ F4.02: teste_reposicao histórico ainda pendente. Termux, email e APIs de contas
 
 Não afirmar aceite integral de produção. Não abrir segunda implementação de
 editor, métrica ou memória quando o módulo existente cobrir. Rollback se
-solicitado: git revert 525d2ba8e175bcb2f3f62002c00fa514655cb2d8.
+solicitado: git revert 10cb6711f43f71744e0cea1b628f7e0c45033c7f.
