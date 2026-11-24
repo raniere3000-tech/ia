@@ -1,15 +1,15 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T14:11:19-03:00. Executor: Codex.
+Atualizado: 2026-11-24T14:15:28-03:00. Executor: Codex.
 
 ```yaml
 fase: F1
-microetapa: F1.06
+microetapa: F1.07
 status: COMMITTED
 branch: claude/project-thread-hqyqog-fase1
-sha_inicial: 9d3906a236bbc3f857c1c4339050126b3ed4ff05
-sha_final_implementacao: e68e2a73010531017f9796583f387a9411a30d7f
-proxima_microetapa: F1.07
+sha_inicial: ea6a61317917270a1e128862529781564aa0136c
+sha_final_implementacao: 1bfe5a64a56fa90467808e14a2aba395f19931bd
+proxima_microetapa: F1.08
 mudancas_nao_commitadas: []
 flags_adicionadas: []
 migracoes: []
@@ -35,12 +35,12 @@ permissão para continuar etapas autorizadas ou sincronizar esta branch.
 
 ## Última microetapa
 
-Reutilizados controles de fila e render já existentes. Cancelar/ignorar atualizam job, projeto, desafios de aprovação e thumbnail relacionados na mesma transação; apagam sinal liberar:<job>. Ação repetida não repete atualização de entidades nem evento de decisão. Registro job/eventos preservado, pendência removida. Recuperação de cancelamento interrompido completa limpeza das entidades; pausa continua impedindo _proximo após processo novo. Testes: teste_cancelamento.py 15/15 (inclui WAITING_USER/auditoria e queda no cancelamento), teste_aprovacao_roteiro_corrida.py 10/10, teste_painel.py 34/34, teste_esteira_7.py 70/70, teste_versao_refeita.py TUDO OK; todos exit 0. Regressões cobrem sucesso/transição/espera/erro concorrendo com cancelamento, interrupção real de subprocesso falso de render, IA não chamada após cancelamento e cleanup da esteira. ResourceWarning preexistente de arquivo no teste de subprocesso; sem falha. Arquivos: servidor/fila.py e testes/teste_cancelamento.py. Sem flags novas, conserto de consistência.
+Fila.enfileirar consulta chave e insere o job na mesma transação, devolvendo repetido para concorrente sem IntegrityError. Criar thumbnail serializa pedido com chave por origem/ref/SHA/config, recupera ligação de fila se houver queda entre registros e não duplica evento. Refazer capa usa chave por pedido, vídeo, variante, versão, texto e job anterior: dois cliques não geram duas refações; nova ação após falha/versão diferente continua possível. Aprovação com chave de cliente reutilizada em outro render é isolada pelo projeto/SHA; não retorna posts antigos. Testes: teste_idempotencia_fila_capa.py 4/4 (inclui oito solicitações simultâneas na fila, duas em criar/refazer, cancelar/liberar), teste_portao_diretor.py 15/15 (duas aprovações simultâneas e chave entre renders), teste_thumbnails.py exit 0, teste_agente3.py --somente-aprovacao-roteiro 18/18 com FFmpeg real. Sem nova fila/migração/flags. Arquivos: fila.py, aprovacoes.py, thumbnails.py e dois testes.
 
-Evidências: docs/estudioclip-2/checkpoints/F1.06-*.
+Evidências: docs/estudioclip-2/checkpoints/F1.07-*.
 Último resultado: testes focais e git diff --check aprovados.
 
-## Ponto exato de retomada — F1.07
+## Ponto exato de retomada — F1.08
 
 ```bash
 git status --short
@@ -52,10 +52,10 @@ git rev-list --left-right --count HEAD...origin/claude/project-thread-hqyqog-fas
 cat ESTADO_ATUAL.md
 ```
 
-Ler docs/estudioclip-2/microetapas/09_F1_07_IDEMPOTENCIA.md. Verificar enfileirar(chave), aprovar e refazer capa com duas solicitações concorrentes e versões distintas; sem nova fila.
+Ler docs/estudioclip-2/microetapas/10_F1_08_THUMB_REJEITAR.md. Verificar seleção/rejeição por video_sha e preservar capa já aprovada da versão atual. Não gerar capa automaticamente ao rejeitar.
 
 Não refazer Fase 0 ou microetapas concluídas. Relatórios anteriores permanecem em
-checkpoints/. Flags desligadas por padrão. Rollback: git revert e68e2a73010531017f9796583f387a9411a30d7f
+checkpoints/. Flags desligadas por padrão. Rollback: git revert 1bfe5a64a56fa90467808e14a2aba395f19931bd
 (não executar automaticamente). Sem migrações ou publicação em conta real.
 Suite integral/frontend no fechamento F1.09; teste_agente3 integral ainda tem cenários
 antigos pendentes de avaliação, embora o recorte F1.01 de render real passou 18/18.
