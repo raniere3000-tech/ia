@@ -535,11 +535,20 @@ def indicadores(filtros: dict | None = None) -> dict:
         if old is None or (instante if instante is not None else r['t']) >= (old['medido_em'] if old['medido_em'] is not None else old['registrado_em']):
             ultimos[key] = atual
     itens = list(ultimos.values())
+    metrica = str(f.get('metrica') or 'views')
+    if metrica not in ('views', 'curtidas', 'comentarios', 'compartilhamentos'):
+        raise ErroAprendizado('Métrica desconhecida.')
+    destaques = []
+    for plataforma in sorted({x['rede'] for x in itens}):
+        grupo = [x for x in itens if x['rede'] == plataforma]
+        ordem = sorted((x for x in grupo if metrica in x['metricas']),
+                       key=lambda x: (-x['metricas'][metrica], x['item']))
+        destaques.append({'rede': plataforma, 'metrica': metrica, 'sem_metrica': len(grupo)-len(ordem), 'videos': ordem[:10]})
     medidas = {}
     for k in ('views', 'curtidas', 'comentarios', 'compartilhamentos'):
         vals = [x['metricas'][k] for x in itens if k in x['metricas']]
         medidas[k] = {'valor': sum(vals) if vals else None, 'amostras': len(vals)}
     medidas['retencao'] = {'valor': None, 'amostras': 0}
     return {'filtros': {'vertente': vertente, 'rede': rede, 'canal': canal, 'de': f.get('de') or '', 'ate': f.get('ate') or ''},
-            'publicacoes': len(itens), 'medidas': medidas, 'canais': sorted(canais), 'itens': itens,
+            'destaques': destaques, 'publicacoes': len(itens), 'medidas': medidas, 'canais': sorted(canais), 'itens': itens,
             'aviso': 'Última leitura disponível por publicação/rede no período de medição. Ausência não é zero. ' + AVISO_CAUSA}
