@@ -1,17 +1,17 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T14:04:45-03:00. Executor: Codex.
+Atualizado: 2026-11-24T14:09:02-03:00. Executor: Codex.
 
 ```yaml
 fase: F1
-microetapa: F1.04
+microetapa: F1.05
 status: COMMITTED
 branch: claude/project-thread-hqyqog-fase1
-sha_inicial: 299fd52be73f14e615b2ccf9a350636b3e1f3c61
-sha_final_implementacao: 1b0483b6ff3a0928ac3d5dd79029af3e095ee2f7
-proxima_microetapa: F1.05
+sha_inicial: 88a3fa0cbb57400660055e0dcc41b77e4ae57c27
+sha_final_implementacao: 93e0a157cd23e606944c39ad6f9bc6656bee08a4
+proxima_microetapa: F1.06
 mudancas_nao_commitadas: []
-flags_adicionadas: []
+flags_adicionadas: ['A1_MESMA_FONTE=0']
 migracoes: []
 merge: NAO_REALIZADO
 producao: NAO_PUBLICADA
@@ -35,12 +35,12 @@ permissão para continuar etapas autorizadas ou sincronizar esta branch.
 
 ## Última microetapa
 
-Adaptador fila.estado_publico acrescenta estado_comum, heartbeat_atrasado e estado_motivo sem alterar status persistido. Fila e consulta individual expõem CREATED/QUEUED/RUNNING/WAITING_USER/PAUSED/RETRYABLE_ERROR/CANCEL_REQUESTED/CANCELLED/FAILED/COMPLETED. Heartbeat ausente/vencido ou lease vencida não é RUNNING e não recebe ETA de execução. Coordenador/painel separam jobs recuperáveis dos ativos. UI de fila e painel de agentes consomem sinal de leitura; dados legados continuam suportados. Sem colunas novas. Testes: teste_estados_fila.py 3 testes (mapeamento, precedência, lease, API, lista, painel sem escrita e subprocesso de reinício), teste_painel.py 34 verificações, teste_esteira_7.py 70 verificações; todos exit 0. Frontend npx tsc --noEmit exit 0 e npm test 16/16. git diff --check aprovado. Arquivos: fila.py, api_v1.py, coordenador.py, painel.py, teste_estados_fila.py e três consumidores frontend.
+A1 reaproveita trabalhar_cortes, processar_video, fila.Esperar e kv existente. Flag A1_MESMA_FONTE desligada por padrão; quando ativa, fonte é salva antes do trabalho, falhas transitórias repetem o mesmo vídeo com backoff 60/180/540s e limite A1_FONTE_MAX_TENTATIVAS (padrão 3, máximo 10). Não marca visto no erro recuperável. Esperar usa o mesmo job sem consumir orçamento infinito de tentativas. Definitivos/limites de custo param com BLOCKED; canal anteriormente aprovado é revalidado antes de repetir. Cancelamento impede a execução e limpa a fonte pendente do job cancelado. Sucesso encerra a pendência mantendo registro por fonte. Sem legenda não é classificado como erro; segue processar_video existente. Testes: teste_retry_fonte_a1.py 8/8 (inclui processo novo após reinício, fila com max_tentativas=1, cancelamento, FFmpeg temporário, permissão revogada e flag off), teste_busca_canais.py 13/13, teste_estilos_agente1.py 6/6; todos exit 0. Arquivos: servidor/agente.py e teste_retry_fonte_a1.py. Todos dados temporários, sem contas reais. Retry de banco de trechos segue mecanismo custo_corte existente; não foi substituído.
 
-Evidências: docs/estudioclip-2/checkpoints/F1.04-*.
+Evidências: docs/estudioclip-2/checkpoints/F1.05-*.
 Último resultado: testes focais e git diff --check aprovados.
 
-## Ponto exato de retomada — F1.05
+## Ponto exato de retomada — F1.06
 
 ```bash
 git status --short
@@ -52,10 +52,10 @@ git rev-list --left-right --count HEAD...origin/claude/project-thread-hqyqog-fas
 cat ESTADO_ATUAL.md
 ```
 
-Ler docs/estudioclip-2/microetapas/07_F1_05_REPETIR_FONTE_A1.md. Inventariar agente.rodar, fila A1 e _marcar_visto; testar repetição persistente da mesma fonte atrás de A1_MESMA_FONTE=0. Não refazer F1.04.
+Ler docs/estudioclip-2/microetapas/08_F1_06_CANCELAR_IGNORAR.md. Reutilizar teste_cancelamento.py, fila.cancelar/ignorar/recuperar e rotas existentes; testar WAITING_USER, auditoria e reinício.
 
 Não refazer Fase 0 ou microetapas concluídas. Relatórios anteriores permanecem em
-checkpoints/. Flags desligadas por padrão. Rollback: git revert 1b0483b6ff3a0928ac3d5dd79029af3e095ee2f7
+checkpoints/. Flags desligadas por padrão. Rollback: git revert 93e0a157cd23e606944c39ad6f9bc6656bee08a4
 (não executar automaticamente). Sem migrações ou publicação em conta real.
 Suite integral/frontend no fechamento F1.09; teste_agente3 integral ainda tem cenários
 antigos pendentes de avaliação, embora o recorte F1.01 de render real passou 18/18.
