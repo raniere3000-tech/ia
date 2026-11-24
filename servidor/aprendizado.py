@@ -497,3 +497,49 @@ def painel() -> dict:
             'historico_pesos': db.todos('SELECT versao, t, variavel, motivo, ativo FROM aprendizado_pesos ORDER BY versao DESC LIMIT 20'),
             'aviso_causa': AVISO_CAUSA, 'aviso_frequencia': FREQUENCIA, 'boas_praticas': apoio,
             'como_voltar': 'Cada peso aprendido tem versão: "Desfazer" volta ao anterior (ou ao sorteio igual). "Apagar dados" tira o efeito dos números apagados.'}
+
+
+def indicadores(filtros: dict | None = None) -> dict:
+    """Leitura dos snapshots existentes: última observação por publicação/rede."""
+    f = filtros or {}
+    vertente, rede, canal = (str(f.get(k) or '') for k in ('vertente', 'rede', 'canal'))
+    if vertente and vertente not in ('cortes', 'criacao_ia', 'manual', 'indisponivel'):
+        raise ErroAprendizado('Vertente desconhecida.')
+    if rede and rede not in REDES:
+        raise ErroAprendizado('Rede desconhecida.')
+    ini, fim = _data(f.get('de')), _data(f.get('ate'))
+    if ini is not None and fim is not None and ini > fim:
+        raise ErroAprendizado('Período invertido.')
+    ultimos = {}
+    canais = set()
+    for r in db.todos('SELECT * FROM aprendizado_snapshots ORDER BY t, id'):
+        v = json.loads(r['variaveis'])
+        ctx = v.get('_publicacao') or {}
+        ch = str(ctx.get('canal') or '')
+        if ch:
+            canais.add(ch)
+        vt = ctx.get('vertente') or 'indisponivel'
+        instante = r['periodo_fim']
+        if ((vertente and vt != vertente) or (rede and r['rede'] != rede) or (canal and ch != canal)
+                or (ini is not None and (instante is None or instante < ini))
+                or (fim is not None and (instante is None or instante >= fim + 86400))):
+            continue
+        # Um ID de publicação é estável mesmo que o corte e o post tenham IDs locais diferentes.
+        identidade = ctx.get('ref') or ctx.get('post') or r['item'] or r['id']
+        key = (r['fonte'], r['rede'], identidade, ctx.get('render_sha'))
+        atual = {'snapshot': r['id'], 'fonte': r['fonte'], 'rede': r['rede'], 'item': r['item'],
+                 'vertente': vt, 'canal': ch or None, 'medido_em': instante,
+                 'metricas': metricas_validas(json.loads(r['metricas'])), 'publicacao': ctx or None,
+                 'registrado_em': r['t']}
+        old = ultimos.get(key)
+        if old is None or (instante if instante is not None else r['t']) >= (old['medido_em'] if old['medido_em'] is not None else old['registrado_em']):
+            ultimos[key] = atual
+    itens = list(ultimos.values())
+    medidas = {}
+    for k in ('views', 'curtidas', 'comentarios', 'compartilhamentos'):
+        vals = [x['metricas'][k] for x in itens if k in x['metricas']]
+        medidas[k] = {'valor': sum(vals) if vals else None, 'amostras': len(vals)}
+    medidas['retencao'] = {'valor': None, 'amostras': 0}
+    return {'filtros': {'vertente': vertente, 'rede': rede, 'canal': canal, 'de': f.get('de') or '', 'ate': f.get('ate') or ''},
+            'publicacoes': len(itens), 'medidas': medidas, 'canais': sorted(canais), 'itens': itens,
+            'aviso': 'Última leitura disponível por publicação/rede no período de medição. Ausência não é zero. ' + AVISO_CAUSA}

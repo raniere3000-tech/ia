@@ -636,6 +636,10 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == '/agente/modos':
             self.token_ok()
             return self.json(200, {'modos': mr.resumo()})
+        if caminho == '/agente/aprendizado/indicadores':
+            self.token_ok()
+            filtros = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+            return self.json(200, apz.indicadores(filtros))
         if caminho == '/agente/aprendizado':
             self.token_ok()
             return self.json(200, apz.painel())

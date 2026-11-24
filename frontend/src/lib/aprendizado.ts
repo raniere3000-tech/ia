@@ -18,3 +18,8 @@ export const aplicarPesos=(c:CfgSrv,variavel:string)=>api<PainelAprend>(c,'POST'
 export const desfazerPesos=(c:CfgSrv,variavel:string)=>api<PainelAprend>(c,'POST','/agente/aprendizado/desfazer',{variavel});
 export const criarTeste=(c:CfgSrv,d:{variavel:string;a:string;b:string;fixos:Record<string,string>;min_amostras?:number})=>api<Experimento>(c,'POST','/agente/aprendizado/experimento',d);
 export const encerrarTeste=(c:CfgSrv,id:string)=>api<Experimento>(c,'POST','/agente/aprendizado/experimento/encerrar',{id});
+
+export type FiltrosInteligencia={vertente:string;rede:string;canal:string;de:string;ate:string};
+export type Indicadores={publicacoes:number;medidas:Record<string,{valor:number|null;amostras:number}>;canais:string[];aviso:string};
+export const lerIndicadores=(c:CfgSrv,f:FiltrosInteligencia)=>api<Indicadores>(c,'GET','/agente/aprendizado/indicadores?'+new URLSearchParams(f));
+export const valorMetrica=(v:number|null|undefined)=>v==null?'Indisponível':v.toLocaleString('pt-BR');
