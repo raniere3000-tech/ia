@@ -6,9 +6,9 @@ Checkpoint próprio desta frente. **Não substitui** o `ESTADO_ATUAL.md` (Estúd
 frente: DOWNLOAD_EM_LOTE
 branch: claude/project-thread-hqyqog
 sha_origem: 1e89d59 (origin/main depois do PR #20)
-microetapa_atual: DL.01
+microetapa_atual: DL.02
 status: CONCLUIDA
-proxima_microetapa: DL.02
+proxima_microetapa: DL.03
 merge: NAO_REALIZADO
 producao: NAO_PUBLICADA
 publicacoes_reais_em_teste: NENHUMA
@@ -43,6 +43,12 @@ publicacoes_reais_em_teste: NENHUMA
 - **DL.04** mesmo módulo: preparo do ZIP por streaming (ZIP_STORED), progresso, cancelar, falha parcial + `RELATORIO.txt`, limpeza, espaço livre, Range.
 - **DL.05** rotas em `api_v1.py`/`servidor.py`, `frontend/src/lib/download.ts`, teste no navegador (Playwright) com o servidor de teste.
 - **DL.06** regressão, doc e PR.
+
+## DL.02 — Seleção em lote e janela (concluída)
+
+- `Agendar.tsx`: botão **Baixar selecionados (N)** ao lado de **Agendar selecionados (N)**; seleção reaproveitada (agora aceita também vídeos já publicados; o agendamento usa só os agendáveis, `idsAgendar`, com o mesmo limite de 200). "Selecionar todos do filtro (N)" cobre toda a lista filtrada (não há paginação), limite 300 por vez, texto de alcance na janela.
+- `components/DownloadLote.tsx` + `lib/download.ts`: janela com 3 formatos (pacote completo recomendado), progresso, cancelar, falhas, tentar novamente, fila de MP4 um por vez. **Chama rotas `/api/v1/downloads` que nascem em DL.03/DL.04** (até lá o botão abre a janela e o servidor responde 404).
+- Testes: `tsc` limpo, `npm test` 16 ok. Servidor não mudou nesta etapa.
 
 ## Como retomar
 
