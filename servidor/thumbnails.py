@@ -1534,6 +1534,11 @@ def diagnosticar(f: dict, cfg: dict | None = None) -> dict:
         return {'acao': 'nada', 'motivo': 'Vídeo não encontrado no servidor.'}
     if not j:
         return {'acao': 'criar', 'motivo': 'Vídeo sem pedido de capa.', 'sha': sha}
+    for s in db.todos('SELECT job FROM thumbnail_selecoes WHERE video_sha=? AND revogado IS NULL AND aprovado=1 ORDER BY criado DESC', sha):
+        if revalidar(s['job']):        # algum pedido desta versão já tem capa escolhida e válida (mesmo que não seja o mais novo)
+            return {'job': s['job'], 'estado': 'pronto', 'sha': sha, 'acao': 'nada', 'motivo': 'Capa escolhida e válida.'}
+    if f'{origem}:{ref}' in ignorados():
+        return {'job': j['id'], 'estado': j['estado'], 'sha': sha, 'acao': 'nada', 'motivo': 'Você mandou ignorar este vídeo no Agente 6.'}
     base = {'job': j['id'], 'estado': j['estado'], 'sha': sha}
     if j['video_sha'] != sha:
         atual = db.um('SELECT * FROM thumbnail_jobs WHERE origem=? AND referencia=? AND video_sha=? ORDER BY criado DESC LIMIT 1', origem, ref, sha)
@@ -1613,6 +1618,166 @@ def recuperar(limite_pesados: int = 2, simular: bool = False) -> dict:
             out['criados'].append(item)
         elif d['acao'] == 'excecao':
             out['excecoes'].append(item)
+    return out
+
+
+def ignorados() -> dict:
+    return db.kv('agente6.ignorados', {}) or {}
+
+
+def ignorar(d: dict, quem: str = 'site') -> dict:
+    """Você tira (ou devolve) um vídeo da recuperação automática: ele para de aparecer como pendência e o Agente 6 não insiste."""
+    origem = d.get('origem')
+    if origem not in ORIGENS:
+        raise ErroThumb(400, 'Origem inválida.')
+    chave = f'{origem}:{_ref_ok(d.get("referencia"))}'
+    ig = ignorados()
+    if d.get('ignorar', True):
+        ig[chave] = {'t': _agora(), 'por': str(quem)[:60], 'motivo': str(d.get('motivo') or '')[:200]}
+    else:
+        ig.pop(chave, None)
+    db.kv_gravar('agente6.ignorados', ig)
+    db.evento(quem, 'thumbnail_ignorar', chave, {'ignorar': bool(d.get('ignorar', True))})
+    return {'ignorados': ig}
+
+
+def painel_autonomia(dias: int = 30) -> dict:
+    """Números REAIS do banco para a tela "Autonomia e Integração de Capas" (nada estimado)."""
+    desde = _agora() - dias * 86400
+    um = lambda sql, *a: (db.um(sql, *a) or {}).get('n') or 0  # noqa: E731
+    geradas = um("SELECT COUNT(*) n FROM thumbnail_variantes WHERE criado>=? AND estado<>'substituida'", desde)
+    aprovadas = um("SELECT COUNT(*) n FROM thumbnail_variantes WHERE criado>=? AND estado='aprovada'", desde)
+    escolhas = db.todos('SELECT escolha, COUNT(*) n FROM thumbnail_selecoes WHERE criado>=? GROUP BY escolha', desde)
+    por_escolha = {e['escolha']: e['n'] for e in escolhas}
+    total_esc = sum(por_escolha.values())
+    aplic = db.todos('SELECT estado, COUNT(*) n FROM thumbnail_aplicacoes WHERE atualizado>=? GROUP BY estado', desde)
+    por_aplic = {a['estado']: a['n'] for a in aplic}
+    pedidos = db.todos('SELECT por, COUNT(*) n FROM thumbnail_jobs WHERE criado>=? GROUP BY por', desde)
+    automaticos = sum(p['n'] for p in pedidos if str(p['por'] or '').startswith(('agente6', 'agente7')))
+    rec = recuperar(simular=True)
+    posts_sem = []
+    for p in pg.posts():
+        try:
+            arq = pg.video_path(p['video'])
+        except pg.ErroRede:
+            continue
+        redes = [r for r, x in (p.get('redes') or {}).items() if x.get('status') in ('agendado', 'liberacao', 'erro') and exige_capa(r)]
+        if redes and not capa_para_video(arq):
+            posts_sem.append({'post': p['id'], 'titulo': p.get('titulo') or '', 'redes': redes, 'quando': p.get('quando')})
+    titulos = {p['id']: p.get('titulo') or '' for p in pg.posts()}
+    status = [dict(a, titulo=titulos.get(a['post'], '')) for a in
+              db.todos('SELECT post, rede, estrategia, estado, thumb_sha, ref_rede, tentativas, erro, atualizado FROM thumbnail_aplicacoes '
+                       'ORDER BY atualizado DESC LIMIT 60')]
+    return {
+        'dias': dias,
+        'config': config(),
+        'numeros': {'capas_geradas': geradas, 'capas_aprovadas': aprovadas, 'capas_escolhidas': total_esc,
+                    'escolhidas_automatico': por_escolha.get('automatica', 0), 'escolhidas_por_voce': por_escolha.get('voce', 0) + por_escolha.get('manual', 0),
+                    'capas_usadas': por_aplic.get('aplicada', 0) + por_aplic.get('indicada', 0), 'capas_aplicadas_confirmadas': por_aplic.get('aplicada', 0),
+                    'capas_manual_no_app': por_aplic.get('manual', 0), 'capas_falharam': por_aplic.get('falhou', 0) + por_aplic.get('bloqueada', 0),
+                    'posts_sem_capa': len(posts_sem), 'pedidos_automaticos': automaticos, 'pedidos_total': sum(p['n'] for p in pedidos)},
+        # taxa real: das capas escolhidas no período, quantas o Agente 6 escolheu sem você (None = ainda sem dados)
+        'taxa_autonomia': round(100 * por_escolha.get('automatica', 0) / total_esc) if total_esc else None,
+        'pendencias': rec['excecoes'],
+        'a_fazer': {'criar': len(rec['criados']), 'escolher': len(rec['selecionados'])},
+        'posts_sem_capa': posts_sem[:50],
+        'aplicacoes': status,
+        'ignorados': ignorados(),
+        'ultima_auditoria': db.kv('agente6.ultima_auditoria'),
+        'estrategias': ESTRATEGIAS,
+    }
+
+
+REDUNDANTE = 'Redundante: outro pedido do mesmo vídeo já resolveu a capa.'
+
+
+def _redundantes() -> list:
+    """Pedidos parados (fila, esperando escolha, revisão) de uma versão de vídeo que JÁ tem capa escolhida e válida em outro pedido,
+    ou pedidos na fila repetidos para a mesma versão (fica o mais antigo)."""
+    out = []
+    vivos = db.todos("SELECT * FROM thumbnail_jobs WHERE estado IN ('na_fila','aguardando_video','aguardando_escolha','revisao_manual') ORDER BY criado")
+    vistos = {}
+    for j in vivos:
+        chave = (j['origem'], j['referencia'], j['video_sha'])
+        ok = next((s for s in db.todos('SELECT job FROM thumbnail_selecoes WHERE video_sha=? AND revogado IS NULL AND aprovado=1 AND job<>?',
+                                       j['video_sha'], j['id']) if revalidar(s['job'])), None)
+        if ok and not selecao_ativa(j['id']):
+            out.append({'job': j['id'], 'origem': j['origem'], 'referencia': j['referencia'], 'estado': j['estado'], 'titulo': j['titulo'],
+                        'por': j['por'], 'motivo': 'Outro pedido desta versão já tem capa escolhida.', 'resolvido_por': ok['job']})
+        elif j['estado'] in ('na_fila', 'aguardando_video') and chave in vistos:
+            out.append({'job': j['id'], 'origem': j['origem'], 'referencia': j['referencia'], 'estado': j['estado'], 'titulo': j['titulo'],
+                        'por': j['por'], 'motivo': 'Pedido repetido na fila para a mesma versão do vídeo.', 'resolvido_por': vistos[chave]})
+        elif j['estado'] in ('na_fila', 'aguardando_video'):
+            vistos[chave] = j['id']
+    return out
+
+
+def auditar_estoque(aplicar: bool = False, quem: str = 'site', limite_pesados: int = 2, limite_youtube: int = 5) -> dict:
+    """Auditoria (e recuperação, com aplicar=True) do estoque: vídeos sem capa escolhida, pedidos redundantes, posts agendados
+    sem capa e vídeos já no YouTube sem capa confirmada. Nunca posta vídeo de novo: no YouTube só a capa é trocada."""
+    cfg = config()
+    out = {'aplicado': bool(aplicar), 't': _agora(), 'modo': cfg['modo']}
+    # 1) pedidos redundantes
+    red = _redundantes()
+    if aplicar:
+        for r in red:
+            j = _job(r['job'])
+            if j['fila_job']:
+                try:
+                    fila.cancelar(j['fila_job'])
+                except Exception:  # noqa: BLE001
+                    pass
+            _estado(r['job'], 'cancelado', REDUNDANTE)
+            db.evento(quem, 'thumbnail_redundante_resolvido', 'thumb:' + r['job'], {'resolvido_por': r['resolvido_por']})
+    out['redundantes'] = red
+    # 2) vídeos sem capa escolhida: escolhe a aprovada, refaz o que falhou, pede capa da versão nova
+    out['recuperacao'] = recuperar(limite_pesados=limite_pesados, simular=not aplicar)
+    cand = _candidatas()
+    sem = [f for f in cand if diagnosticar(f, cfg)['acao'] != 'nada']
+    out['videos'] = {'total': len(cand), 'com_capa': len(cand) - len(sem), 'sem_capa': len(sem)}
+    # 3) posts agendados e 4) já postados
+    agendados, reabertos, youtube, reenviados, manuais = [], [], [], [], []
+    for p in pg.posts():
+        try:
+            arq = pg.video_path(p['video'])
+        except pg.ErroRede:
+            continue
+        cap = capa_para_video(arq)
+        for rede, r in (p.get('redes') or {}).items():
+            st = r.get('status')
+            if st in ('agendado', 'liberacao', 'erro') and exige_capa(rede) and not cap:
+                agendados.append({'post': p['id'], 'rede': rede, 'titulo': p.get('titulo') or '', 'quando': p.get('quando')})
+            elif st == 'erro' and cap and 'Falta a capa aprovada' in (r.get('erro') or ''):
+                reabertos.append({'post': p['id'], 'rede': rede, 'titulo': p.get('titulo') or ''})
+                if aplicar:        # a capa chegou: o post volta para a fila (é o MESMO post, não duplica)
+                    def reabrir(q, rede=rede):
+                        if q['redes'][rede].get('status') == 'erro':
+                            q['redes'][rede].update(status='agendado', erro='', proxima=pg.agora(), esperando_esteira=0)
+                            pg._anotar(q, rede, 'capa', 'O Agente 6 resolveu a capa: o post voltou para a fila.')
+                    pg._mudar(p['id'], reabrir)
+            elif st == 'postado':
+                c = r.get('capa') or {}
+                if c.get('estado') in ('aplicada', 'indicada'):
+                    continue
+                if rede == 'youtube':
+                    item = {'post': p['id'], 'rede': rede, 'titulo': p.get('titulo') or '', 'estado_capa': c.get('estado') or 'desconhecido',
+                            'tem_capa_agora': bool(cap)}
+                    youtube.append(item)
+                    if aplicar and cap and c.get('estado') != 'bloqueada' and len(reenviados) < limite_youtube:
+                        try:
+                            novo = pg.reenviar_capa(p['id'], 'youtube', quem)
+                            reenviados.append({**item, 'resultado': novo['estado']})
+                        except (pg.ErroRede, pg.ErroTemporario) as e:
+                            reenviados.append({**item, 'resultado': 'erro', 'erro': str(e)[:200]})
+                else:
+                    manuais.append({'post': p['id'], 'rede': rede, 'titulo': p.get('titulo') or '', 'estado_capa': c.get('estado') or 'desconhecido'})
+    out.update(agendados_sem_capa=agendados, posts_reabertos=reabertos, youtube_sem_capa=youtube, youtube_reenviados=reenviados,
+               postados_capa_manual=manuais)
+    db.evento(quem, 'thumbnail_auditoria_estoque', 'agente6', {'aplicar': bool(aplicar), 'redundantes': len(red), 'sem_capa': len(sem),
+                                                                'agendados_sem_capa': len(agendados), 'youtube_reenviados': len(reenviados)})
+    if aplicar:
+        db.kv_gravar('agente6.ultima_auditoria', {k: (len(v) if isinstance(v, list) else v) for k, v in out.items() if k != 'recuperacao'} |
+                     {'criados': len(out['recuperacao']['criados']), 'selecionados': len(out['recuperacao']['selecionados'])})
     return out
 
 

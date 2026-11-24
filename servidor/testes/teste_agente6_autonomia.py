@@ -276,7 +276,6 @@ for rede in ('youtube', 'tiktok', 'instagram', 'facebook'):
 th.salvar_config({'exigir_capa': False, 'exigir_capa_youtube': False})
 confere(not any(x['item'] == 'capa' for x in pg.conferencia(p5, 'tiktok')), 'com "exigir capa" desligado, a capa não barra')
 th.salvar_config({'exigir_capa': True, 'exigir_capa_youtube': True})
-pg.cancelar_post(p5['id']) if hasattr(pg, 'cancelar_post') else None
 
 # capa da versão antiga não vale
 arq1 = pg.VIDEOS / 'v1.mp4'
@@ -359,6 +358,92 @@ q = next(x for x in pg.posts() if x['id'] == pa['id'])
 ca = q['redes']['tiktok'].get('capa') or {}
 confere(ca.get('estado') == 'manual' and 'ÚLTIMO quadro' in ca.get('detalhe', ''), 'TikTok assistido: capa fica manual, com a instrução do quadro (sem fingir aplicada)')
 pg.http = http_real
+
+# ---------------------------------------------------------------- TH.06
+print('TH.06 Auditoria e recuperação do estoque')
+sha1 = th.capa_para_video(arq1)['original_sha']
+db.executar("INSERT INTO thumbnail_jobs (id, origem, referencia, video_sha, config, estado, criado, atualizado, chave, titulo, metodo, por) "
+            "VALUES ('abcdef123456','corte','k1',?,'{}','aguardando_escolha',?,?,'abcdef123456','Virada','frame','voce')", sha1, time.time(), time.time())
+# post do YouTube já no ar sem capa registrada; TikTok já no ar (não dá para trocar pela integração)
+pyt = pg.criar_post({'video': 'v1', 'redes': ['youtube', 'tiktok'], 'quando': pg.agora() - 5, 'titulo': 'Antigo', 'legenda': 'x', 'repetir': True})
+pg._mudar(pyt['id'], lambda q: (q['redes']['youtube'].update(status='postado', link='https://youtube.com/shorts/antigoID123'),
+                                q['redes']['tiktok'].update(status='postado', link='Enviado')))
+# post do v5 (sem capa) que ficou em erro por falta de capa
+pg._mudar(p5['id'], lambda q: q['redes']['youtube'].update(status='erro', erro='Conferência antes de postar: Falta a capa aprovada para este arquivo (Agente 6).'))
+n_posts = len(pg.posts())
+sim = th.auditar_estoque(aplicar=False)
+confere(any(r['job'] == 'abcdef123456' for r in sim['redundantes']), 'simular: acha o pedido redundante')
+confere(any(a['post'] == p5['id'] for a in sim['agendados_sem_capa']), 'simular: acha o post agendado sem capa')
+confere(any(a['post'] == pyt['id'] for a in sim['youtube_sem_capa']) and any(a['post'] == pyt['id'] and a['rede'] == 'tiktok' for a in sim['postados_capa_manual']),
+        'simular: acha o vídeo do YouTube sem capa e o TikTok que só troca no app')
+confere(th.obter('abcdef123456')['estado'] == 'aguardando_escolha' and not sim['youtube_reenviados'] and
+        any(c['referencia'] == 'k5' for c in sim['recuperacao']['criados']) and not th._ultimo_job('corte', 'k5'), 'simular não muda nada')
+n_capas = len(CAPAS_YT)
+ap = th.auditar_estoque(aplicar=True, quem='teste')
+confere(th.obter('abcdef123456')['estado'] == 'cancelado' and th.obter('abcdef123456')['erro'] == th.REDUNDANTE, 'aplicar: redundante resolvido')
+confere(th.diagnosticar({'origem': 'corte', 'referencia': 'k1'})['acao'] == 'nada', 'o vídeo continua com a capa escolhida (sem refazer)')
+yr = next((x for x in ap['youtube_reenviados'] if x['post'] == pyt['id']), {})
+confere(yr.get('resultado') == 'aplicada' and 'videoId=antigoID123' in CAPAS_YT[-1][0] and len(CAPAS_YT) == n_capas + 1,
+        f'aplicar: capa enviada ao vídeo que já estava no YouTube, pelo ID ({yr.get("resultado")})')
+confere(len(pg.posts()) == n_posts and len(ENVIOS) == 1, 'nenhum post novo e nenhum vídeo reenviado')
+confere(any(c['referencia'] == 'k5' for c in ap['recuperacao']['criados']), 'aplicar: pediu capa para o vídeo sem capa')
+esperar_fila()
+confere(th.capa_para_video(pg.VIDEOS / 'v5.mp4') is not None, 'o vídeo sem capa ganhou capa escolhida sozinho')
+ap2 = th.auditar_estoque(aplicar=True, quem='teste')
+q5 = next(x for x in pg.posts() if x['id'] == p5['id'])
+confere(any(x['post'] == p5['id'] for x in ap2['posts_reabertos']) and q5['redes']['youtube']['status'] == 'agendado',
+        'post que tinha travado por falta de capa voltou para a fila (o mesmo post)')
+ap3 = th.auditar_estoque(aplicar=True, quem='teste')
+confere(not ap3['redundantes'] and not ap3['youtube_reenviados'] and not ap3['recuperacao']['criados'], 'passada seguinte: nada a fazer (idempotente)')
+
+# ---------------------------------------------------------------- TH.07 (API da tela)
+print('TH.07 API da tela "Autonomia e Integração de Capas"')
+import urllib.request  # noqa: E402
+import urllib.error  # noqa: E402
+porta = livre()
+threading.Thread(target=ThreadingHTTPServer(('127.0.0.1', porta), S.Handler).serve_forever, daemon=True).start()
+SES = {}
+
+
+def api(metodo, caminho, corpo=None):
+    req = urllib.request.Request(f'http://127.0.0.1:{porta}' + caminho, data=json.dumps(corpo).encode() if corpo is not None else None, method=metodo,
+                                 headers={'Content-Type': 'application/json', **SES})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return r.status, json.loads(r.read() or b'{}')
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b'{}')
+
+
+st, r = api('GET', '/api/v1/thumbnails/autonomia')
+confere(st in (401, 403), f'sem sessão: recusado ({st})')
+st, r = api('POST', '/api/v1/sessao/login', {'senha': 'senha-de-teste-123', 'nome': 'Celular'})
+SES['X-Sessao'] = r['sessao']
+st, pa = api('GET', '/api/v1/thumbnails/autonomia')
+n = pa.get('numeros', {})
+reais = db.um("SELECT COUNT(*) n FROM thumbnail_selecoes WHERE escolha='automatica'")['n']
+tot = db.um('SELECT COUNT(*) n FROM thumbnail_selecoes')['n']
+confere(st == 200 and n['escolhidas_automatico'] == reais and n['capas_escolhidas'] == tot and pa['taxa_autonomia'] == round(100 * reais / tot),
+        f'painel: números e taxa de autonomia vêm do banco ({pa.get("taxa_autonomia")}%)')
+confere(n['capas_aplicadas_confirmadas'] >= 1 and n['capas_usadas'] >= 2 and n['capas_manual_no_app'] >= 1 and n['capas_falharam'] >= 1 and any(a['rede'] == 'tiktok' for a in pa['aplicacoes']),
+        'painel: capa por post e rede (aplicada, indicada, manual)')
+st, cfg = api('PATCH', '/api/v1/thumbnails/config', {'estrategia_rede': {'facebook': 'nenhuma'}, 'redes_exigem_capa': ['youtube', 'tiktok', 'instagram'],
+                                                      'max_recuperacoes': 2, 'reenviar_capa': False})
+confere(st == 200 and cfg['estrategia_rede']['facebook'] == 'nenhuma' and cfg['max_recuperacoes'] == 2 and not cfg['reenviar_capa'] and
+        th.config()['redes_exigem_capa'] == ['youtube', 'tiktok', 'instagram'], 'configurações salvas no servidor')
+confere(not th.exige_capa('facebook'), 'Facebook fora da lista: não barra por capa')
+api('PATCH', '/api/v1/thumbnails/config', {'estrategia_rede': {'facebook': 'manual'}, 'redes_exigem_capa': list(th.CONFIG_PADRAO['redes_exigem_capa']),
+                                            'max_recuperacoes': 3, 'reenviar_capa': True})
+st, r = api('POST', '/api/v1/thumbnails/autonomia/auditar', {})
+confere(st == 200 and r['aplicado'] is False, 'auditar sem "aplicar" só simula')
+st, r = api('POST', '/api/v1/thumbnails/autonomia/ignorar', {'origem': 'corte', 'referencia': 'k2'})
+confere(st == 200 and 'corte:k2' in r['ignorados'] and th.diagnosticar({'origem': 'corte', 'referencia': 'k2'})['acao'] == 'nada',
+        'ignorar: o vídeo sai das pendências e o Agente 6 não insiste')
+api('POST', '/api/v1/thumbnails/autonomia/ignorar', {'origem': 'corte', 'referencia': 'k2', 'ignorar': False})
+st, r = api('POST', '/api/v1/thumbnails/autonomia/reenviar-capa', {'post': pyt['id'], 'rede': 'youtube'})
+confere(st == 200 and r['estado'] == 'aplicada' and 'videoId=antigoID123' in CAPAS_YT[-1][0], 'botão "reenviar capa": só a capa, no mesmo vídeo')
+st, r = api('POST', '/api/v1/thumbnails/autonomia/reenviar-capa', {'post': pyt['id'], 'rede': 'tiktok'})
+confere(st == 409, 'TikTok: trocar capa depois de postado é no app (409 com explicação)')
 
 print(f'\n{ok_n} ok, {falhas} falha(s)   (pasta {TMP})')
 sys.exit(1 if falhas else 0)

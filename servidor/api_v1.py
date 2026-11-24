@@ -520,6 +520,19 @@ def _thumbs(metodo: str, caminho: str, q: dict, corpo, quem: str):
         return th.criar(corpo(), quem)
     if rota == ('GET', base + '/desempenho'):
         return th.desempenho()
+    if rota == ('GET', base + '/autonomia'):              # Agente 6 autônomo: números reais, pendências e capa por post/rede
+        return th.painel_autonomia(_int(q.get('dias', ['30'])[0], 30))
+    if rota == ('POST', base + '/autonomia/auditar'):     # auditoria do estoque: simular (padrão) ou aplicar
+        d = corpo()
+        return th.auditar_estoque(bool(d.get('aplicar')), quem)
+    if rota == ('POST', base + '/autonomia/ignorar'):
+        return th.ignorar(corpo(), quem)
+    if rota == ('POST', base + '/autonomia/reenviar-capa'):  # troca SÓ a capa de um vídeo já postado (YouTube)
+        d = corpo()
+        try:
+            return pg.reenviar_capa(str(d.get('post') or ''), str(d.get('rede') or 'youtube'), quem, forcar=True)
+        except pg.ErroRede as e:
+            raise th.ErroThumb(409, str(e))
     if rota == ('GET', base + '/perfis'):
         return {'perfis': th.perfis()}
     if rota == ('POST', base + '/perfis'):
