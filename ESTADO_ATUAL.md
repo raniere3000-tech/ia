@@ -1,74 +1,46 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T13:55:19-03:00. Executor: Codex. Uma microetapa de desenvolvimento nesta retomada: F1.02.
+Atualizado: 2026-11-24T14:00:53-03:00. Executor: Codex.
 
 ```yaml
-projeto: EstudioClip-2.0
 fase: F1
-microetapa: F1.02
+microetapa: F1.03
 status: COMMITTED
 branch: claude/project-thread-hqyqog-fase1
-sha_inicial: 598597778437068f3da0954ffe931dc031d694ac
-sha_final_implementacao: f7fd7418c521efb42f6ea532607de770488e38d5
-proxima_microetapa: F1.03
-mudancas_nao_commitadas_implementacao: []
+sha_inicial: cd3fb72404a6b2672ec55648a8a284d0e23f4d3a
+sha_final_implementacao: ff413f08bceb06740b349c29bd3da12286318ed0
+proxima_microetapa: F1.04
+mudancas_nao_commitadas: []
 flags_adicionadas: []
 migracoes: []
-suite_completa: NAO_EXECUTADA_NESTA_MICROETAPA
 merge: NAO_REALIZADO
 producao: NAO_PUBLICADA
 sincronizacao_remota: SINCRONIZADA_NA_BRANCH_DE_TRABALHO
-commits_automaticos: AUTORIZADOS_PELO_USUARIO
+suite_completa: RESERVADA_A_F1_09
 ```
 
-O SHA final acima identifica a implementação e seus testes; este checkpoint e as
-saídas de validação seguem em commit documental posterior. Obter o HEAD completo
-com `git rev-parse HEAD` e comparar com o remoto antes de alterar qualquer coisa.
+O SHA acima identifica implementação/testes. Checkpoint e logs seguem em commit
+documental posterior; consultar git rev-parse HEAD para o HEAD final. Cada árvore
+local/remota é comparada antes de sincronizar. Histórico local original preservado
+em branches de segurança. Sem diffs pendentes após sincronização.
 
-## Resultado da F1.02
+## Autorização persistente
 
-- Cinco fixtures antigas simulavam vídeo pronto sem preencher todo o contrato
-  atual do Diretor: parecer preso ao SHA + relatório de qualidade sem pendências.
-  Asserções e regras de produção foram preservadas; corrigidos somente os dados simulados.
-- Defeito real corrigido em `comandos.executar`: o SIM de uma confirmação antiga
-  reconsultava o vídeo e podia aprovar outro render, mesmo que não tivesse sido apresentado
-  no pedido original. Agora compara o SHA guardado na confirmação com o SHA atual.
-  Render alterado exige novo pedido de aprovação; nada é agendado pelo SIM antigo.
-- O teste de regressão novo falhou no SHA inicial, demonstrando a aprovação indevida,
-  e passa com a correção. Nenhuma regra do Diretor foi afrouxada.
-- Certificado ausente, revogado ou de versão anterior, parecer antigo e problemas
-  técnicos/de qualidade continuam impedindo criação de aprovação e publicação.
-- Reutilizados aprovacoes.diretor_ok/aprovar/rejeitar, qualidade.veredito,
-  pipeline.certificado e comandos.responder. Sem novo serviço, agente ou banco.
+O usuário autorizou seguir e fazer todas as fases em 24/11/2026. Executar várias
+microetapas sequenciais por sessão está autorizado, mantendo teste e checkpoint
+por microetapa e respeitando limites de uso. Isso substitui a restrição dos cartões
+de uma única microetapa por sessão. Commits e envio à branch de trabalho automáticos.
+Merge e publicação em produção continuam sem autorização. Não pedir novamente
+permissão para continuar etapas autorizadas ou sincronizar esta branch.
 
-## Testes e último comando
+## Última microetapa
 
-| Teste | Antes | Depois |
-| --- | --- | --- |
-| teste_comandos.py | exit 1, cinco falhas | 17 verificações, exit 0 |
-| teste_descricao.py | exit 1, falta parecer | 36 verificações, exit 0 |
-| teste_liberacao.py | exit 1, falta parecer | 10 verificações, exit 0 |
-| teste_central_automacao.py | exit 1, StopIteration após bloqueio de aprovação | 138 verificações, exit 0 |
-| teste_coordenador.py | exit 1, StopIteration após bloqueio do pacote | 80 verificações, exit 0 |
-| teste_portao_diretor.py (novo) | regressão do SIM falha no SHA inicial | 13 testes, exit 0 |
+Reproduzido KeyError redes em postagem.conferencia. A leitura agora trata mapeamentos ausentes/parciais, retorna bloqueio explícito de destino e não habilita envio com dados incompletos. Dados completos preservam horário vencido e regras de nova tentativa. Reutilizados conferencia e _destino_pronto. Testes: cd servidor && PYTHONPATH=. python3 testes/teste_skills_agentes.py (exit 0, sete verificações novas) e teste_redes_independentes.py (13 verificações, exit 0). Antes: teste_skills_agentes.py exit 1 em KeyError redes. Arquivos: servidor/postagem.py e servidor/testes/teste_skills_agentes.py. Sem flags (conserto de defeito).
 
-Total focal: **294 verificações/testes aprovados**, sem publicação em conta real.
-Todos usam dados/bancos temporários; central/coordenador usam também FFmpeg/Pillow reais.
-O teste novo usa arquivos mínimos para testar identidade e os portões; não mede codecs.
-As funções reais de aprovação, certificação e comandos não são substituídas nesse teste.
+Evidências: docs/estudioclip-2/checkpoints/F1.03-*.
+Último resultado: testes focais e git diff --check aprovados.
 
-Comandos: `cd servidor && PYTHONPATH=. python3 testes/<arquivo>.py`.
-Último grupo focal executado: `teste_portao_diretor`, `teste_comandos`,
-`teste_descricao`, `teste_liberacao`, todos exit 0; os outros dois também exit 0.
-`git diff --check`: aprovado. Logs: `docs/estudioclip-2/checkpoints/F1.02-*`.
-
-## Arquivos tocados
-
-`servidor/comandos.py`, cinco testes focais acima, novo
-`servidor/testes/teste_portao_diretor.py`, `ESTADO_ATUAL.md`, relatório e logs
-`docs/estudioclip-2/checkpoints/F1.02-*`, cartão F1.03.
-
-## Próxima ação exata — F1.03, ainda NÃO iniciada
+## Ponto exato de retomada — F1.04
 
 ```bash
 git status --short
@@ -78,32 +50,13 @@ git log -3 --oneline
 git fetch origin claude/project-thread-hqyqog-fase1
 git rev-list --left-right --count HEAD...origin/claude/project-thread-hqyqog-fase1
 cat ESTADO_ATUAL.md
-cat docs/estudioclip-2/checkpoints/F1.02-relatorio.md
-cat docs/estudioclip-2/microetapas/05_F1_03_ERRO_REDES.md
-cd servidor
-PYTHONPATH=. python3 testes/teste_skills_agentes.py
 ```
 
-Não reiniciar Fase 0, F1.01 ou F1.02. Comparar mudanças concorrentes antes de editar.
-F1.03 trata o KeyError de redes na conferência da postagem, sem novas funcionalidades.
+Ler docs/estudioclip-2/microetapas/06_F1_04_ESTADOS_LEITURA.md; inventariar fila.resumo, painel e rotas de leitura, sem renomear status persistidos. Depois rodar cd servidor && PYTHONPATH=. python3 testes/teste_painel.py.
 
-## Continuidade, autorização e riscos não verificados
-
-- F1.01 foi sincronizada nesta retomada antes de iniciar a F1.02: código remoto
-  72ab6c3474a15837d1d6958c74c5cb7bd11e3afc, checkpoint 5985977.
-- Conector Codex configurado pelo usuário; gravação na branch validada. HTTPS via
-  Git local não dispõe de credencial: usar conexão autenticada para commits remotos.
-  Árvores locais/remotas foram comparadas para garantir conteúdo idêntico; metadados
-  da integração alteram o SHA dos commits. Históricos locais originais preservados
-  em branches de segurança antes de alinhar o trabalho ao remoto.
-- Commits e sincronização da branch autorizados automaticamente pelo usuário;
-  merge e publicação em produção continuam dependendo de autorização específica.
-- Nenhum PR para merge aberto nesta retomada. Suite integral e frontend aguardam F1.09.
-- `teste_agente3.py` integral continua pendente de avaliação das outras modalidades:
-  seus cenários supervisionados/alertas antigos ainda não foram adaptados ao contrato
-  de revisão manual. F1.01 validou o recorte de aprovação e render real (18/18).
-  Não declarar este arquivo inteiro aprovado, nem retomar a F1.01 por esse motivo.
-- Não verificados nesta etapa: celular Termux, contas reais, WhatsApp externo,
-  e-mail externo e esteira completa em produção.
-- Rollback de código, se necessário: `git revert f7fd7418c521efb42f6ea532607de770488e38d5` na branch de trabalho;
-  sem migrações ou mudanças destrutivas de dados. Não executar rollback automaticamente.
+Não refazer Fase 0 ou microetapas concluídas. Relatórios anteriores permanecem em
+checkpoints/. Flags desligadas por padrão. Rollback: git revert ff413f08bceb06740b349c29bd3da12286318ed0
+(não executar automaticamente). Sem migrações ou publicação em conta real.
+Suite integral/frontend no fechamento F1.09; teste_agente3 integral ainda tem cenários
+antigos pendentes de avaliação, embora o recorte F1.01 de render real passou 18/18.
+Termux e APIs externas não verificados. Não afirmar aprovação integral da fase.

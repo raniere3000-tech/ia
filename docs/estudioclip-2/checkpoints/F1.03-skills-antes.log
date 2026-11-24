@@ -1,0 +1,12 @@
+ok    133 definições instaladas (arquivos simulados, hash conferido)
+Traceback (most recent call last):
+  File "/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/testes/teste_skills_agentes.py", line 105, in <module>
+    r = rodada('um')
+        ^^^^^^^^^^^^
+  File "/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/testes/teste_skills_agentes.py", line 93, in rodada
+    out['a2'] = pg.conferencia({'id': 'post-' + tag, 'video': vid, 'origem': 'manual'}, 'kwai')
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/postagem.py", line 1084, in conferencia
+    if not p['redes'].get(rede, {}).get('outra_rede') and ag2.get('ate') and ag2.get('politica') != 'publish_when_online' and agora() > ag2['ate'] and not p['redes'].get(rede, {}).get('tentativas'):
+           ~^^^^^^^^^
+KeyError: 'redes'
