@@ -931,8 +931,11 @@ def corrigir_etapa(ctx, pid, etapa, destino, motivos):
         db.evento('agente3', 'etapa_parada_limite', 'projeto:' + pid, {'etapa': etapa, 'motivos': motivos[:5]})
         if etapa in ('pauta', 'roteiro'):
             # você decide: aprovar o roteiro como está (o diretor deixa de bloquear) ou pedir uma correção sua
-            pj.mudar_dados(pid, lambda d, _p: (d.update(aprovacao_roteiro={'aprovado': False, 'motivo_parada': msg[:400]}),
-                                               {'status': 'waiting_brief_approval'})[1])
+            def esperar_aprovacao(d, _p):
+                if not pj.roteiro_aprovado(d):
+                    d['aprovacao_roteiro'] = {'aprovado': False, 'motivo_parada': msg[:400]}
+                return {}
+            pj.mudar_dados(pid, esperar_aprovacao)
             ctx.dados['correcao'] = ''
             ctx.dados['etapa'] = 'roteiro'
             try:
@@ -940,7 +943,8 @@ def corrigir_etapa(ctx, pid, etapa, destino, motivos):
                 emails.avisar_roteiro(pid)
             except Exception as e:  # noqa: BLE001
                 print('produtor: aviso de roteiro', e)
-            raise fila.Esperar(0, 'Precisa da sua revisão: ' + msg[:250], 'aguardando_aprovacao')
+            raise fila.Esperar(0, 'Precisa da sua revisão: ' + msg[:250], 'aguardando_aprovacao',
+                               chave_aprovacao=pj.hash_roteiro(pj.obter(pid)['dados']))
         raise ErroProdutor('Precisa da sua revisão: ' + msg, True)
     if destino == 'revisar':
         ctx.dados['correcao'] = 'Diretor de qualidade: ' + ' '.join(motivos)[:1800]
@@ -955,7 +959,7 @@ def conferir_roteiro(ctx, pid, p, b):
     motivos = [f['evidence'] + ' ' + f['instruction'] for f in rel['findings']] if not rel['passed'] else []
     for achado in revisao_narrativa(pid, cenas, b):
         motivos.append(achado['descricao'] + ' ' + achado.get('proposta', ''))
-    if motivos and (p['dados'].get('aprovacao_roteiro') or {}).get('aprovado') and _reprovacoes(pid, 'roteiro') > MAX_REPROVACOES_ETAPA:
+    if motivos and pj.roteiro_aprovado(pj.obter(pid)['dados']) and _reprovacoes(pid, 'roteiro') > MAX_REPROVACOES_ETAPA:
         # você já aprovou este roteiro depois que o diretor parou de insistir: os apontamentos ficam registrados, sem novo laço
         parecer_etapa(pid, 'roteiro', [])
         return None
@@ -1048,14 +1052,14 @@ def etapa_roteiro(ctx, pid, p, b):
     revisao = conferir_roteiro(ctx, pid, p, b)
     if revisao:
         return revisao
-    if b['modo_aprovacao'] == 'assistido' and not p['dados'].get('aprovacao_roteiro', {}).get('aprovado'):
-        _status(pid, 'waiting_brief_approval')
+    if b['modo_aprovacao'] == 'assistido' and not pj.roteiro_aprovado(pj.obter(pid)['dados']):
         try:
             import emails
             emails.avisar_roteiro(pid)
         except Exception as e:  # noqa: BLE001
             print('produtor: aviso de roteiro', e)
-        raise fila.Esperar(0, 'Esperando você aprovar o roteiro e o storyboard', 'aguardando_aprovacao')
+        raise fila.Esperar(0, 'Esperando você aprovar o roteiro e o storyboard', 'aguardando_aprovacao',
+                           chave_aprovacao=pj.hash_roteiro(pj.obter(pid)['dados']))
     return {'proxima': True, 'recurso': 'leve', 'etapa': 'Narração'}
 
 
@@ -1404,7 +1408,14 @@ def etapa_render(ctx, pid, p, b):
     pasta = _pasta(pid, 'scenes')
     total = sum(_dur_cena(c) for c in cenas) or 1
     feito = 0.0
-    problemas = qd.antes(cenas, b['estilo']) + revisao_narrativa(pid, cenas, b) + continuidade_serie(pid, cenas, b)
+    narrativa = revisao_narrativa(pid, cenas, b)
+    aprovado = pj.obter(pid)['dados']
+    if pj.roteiro_aprovado(aprovado) and _reprovacoes(pid, 'roteiro') > MAX_REPROVACOES_ETAPA:
+        # Os mesmos apontamentos já foram aceitos pelo dono ao aprovar este roteiro.
+        # Permanecem auditáveis, sem iniciar outra correção do mesmo texto no render.
+        narrativa = [dict(x, status='resolvido', resolucao='roteiro_aceito_pelo_usuario',
+                          aprovacao_hash=aprovado['aprovacao_roteiro']['hash']) for x in narrativa]
+    problemas = qd.antes(cenas, b['estilo']) + narrativa + continuidade_serie(pid, cenas, b)
     inicio = 0.0
     for i, c in enumerate(cenas):
         dur = _dur_cena(c)

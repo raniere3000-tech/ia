@@ -1,6 +1,7 @@
 """Teste de ponta a ponta do servidor 2.0 (sem internet): Gemini, SMTP falsos; FFmpeg de verdade.
 
 Rodar:  python servidor/testes/teste_agente3.py
+Recorte F1.01: acrescente --somente-aprovacao-roteiro (até render real e revisão).
 Cobre: login e pareamento, projeto com conflito 409, fila, Agente 3 (roteiro -> aprovação do roteiro ->
 narração -> render -> conferência), e-mail com código, resposta por e-mail (remetente, código, replay),
 regra de ouro da publicação, link assinado com Range, backup e restauração de teste.
@@ -311,6 +312,9 @@ confere((vs['width'], vs['height'], vs['codec_name']) == (1080, 1920, 'h264'), '
 confere(any(s['codec_type'] == 'audio' and s['codec_name'] == 'aac' for s in info['streams']), 'ffprobe: áudio AAC')
 confere(rd.sha256(arq) == render['sha'], 'hash do arquivo confere com o registrado')
 confere(pg.posts() == [], 'nada foi publicado ao terminar o render')
+if '--somente-aprovacao-roteiro' in sys.argv:
+    print(f'\n{ok_n} ok, {falhas} falhas; recorte F1.01 concluído (pasta {TMP})', flush=True)
+    sys.exit(1 if falhas else 0)
 pronto = [m for m in EMAILS if 'aprovação' in (m['Subject'] or '')]
 confere(len(pronto) == 1, 'e-mail de vídeo pronto enviado')
 corpo = pronto[0].get_body(('plain',)).get_content()

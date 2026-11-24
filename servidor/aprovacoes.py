@@ -352,13 +352,17 @@ def aprovar_roteiro(pid: str, por: str, revisao: int | None = None) -> dict:
     if not p['dados'].get('cenas'):
         raise ErroAprovacao(400, 'Ainda não há roteiro para aprovar.')
 
+    chave = pj.hash_roteiro(p['dados'])
+
     def f(d, _p):
-        d['aprovacao_roteiro'] = {'aprovado': True, 't': time.time(), 'por': por, 'revisao': p['revisao']}
+        if pj.hash_roteiro(d) != chave:
+            raise ErroAprovacao(409, 'O roteiro mudou enquanto você aprovava. Confira de novo.')
+        d['aprovacao_roteiro'] = {'aprovado': True, 't': time.time(), 'por': por, 'revisao': p['revisao'], 'hash': chave}
         return {}
     pj.mudar_dados(pid, f)
     esperando = db.todos("SELECT id FROM jobs WHERE projeto=? AND status IN ('aguardando_aprovacao','rodando') AND tipo='agente3.produzir'", pid)
     for j in esperando:
-        fila.liberar(j['id'])     # rodando: a aprovação fica guardada e vale quando a etapa pedir
+        fila.liberar(j['id'], chave_aprovacao=chave)
     db.evento(por, 'roteiro_aprovado', 'projeto:' + pid)
     if esperando:
         return {'ok': True, 'job': fila.obter(esperando[0]['id'])}

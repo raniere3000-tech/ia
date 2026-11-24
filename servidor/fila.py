@@ -39,11 +39,12 @@ class Cancelado(Exception):
 
 class Esperar(Exception):
     """A etapa precisa esperar algo (aprovação, API ocupada): volta para a fila sem contar tentativa."""
-    def __init__(self, segundos: float, motivo: str, status: str = 'na_fila'):
+    def __init__(self, segundos: float, motivo: str, status: str = 'na_fila', *, chave_aprovacao: str = ''):
         super().__init__(motivo)
         self.segundos = segundos
         self.motivo = motivo
         self.status = status
+        self.chave_aprovacao = chave_aprovacao
 
 
 class Contexto:
@@ -182,13 +183,31 @@ def _executar(job: dict):
     except Esperar as e:
         dur = time.time() - inicio
         status, motivo = e.status, e.motivo
-        if status == 'aguardando_aprovacao' and db.kv('liberar:' + ctx.id):
-            # a sua aprovação chegou enquanto a etapa ainda rodava: não fica parado esperando algo que já aconteceu
-            status, motivo = 'na_fila', 'Na fila (aprovado)'
-        if _atualizar_execucao(ctx, dur, 'UPDATE jobs SET status=?, proxima=?, etapa=?, dados=?, decorrido=decorrido+?, lease=0 WHERE id=?',
-                               status, time.time() + (0 if status != e.status else e.segundos), motivo[:200],
-                               json.dumps(ctx.dados, ensure_ascii=False), dur):
-            db.executar('DELETE FROM kv WHERE chave=?', 'liberar:' + ctx.id)
+        ctx.dados['_chave_aprovacao'] = e.chave_aprovacao
+        # Ler/consumir o sinal e gravar a espera na mesma transação: liberar()
+        # não pode entrar entre a leitura do sinal e a gravação da espera.
+        with db.tx() as c:
+            sinal = c.execute('SELECT valor FROM kv WHERE chave=?', ('liberar:' + ctx.id,)).fetchone()
+            sinal = json.loads(sinal['valor']) if sinal else None
+            liberado = isinstance(sinal, dict) and sinal == {'chave': e.chave_aprovacao, 'etapa': ctx.dados.get('etapa')}
+            if e.chave_aprovacao and job.get('projeto'):
+                import projetos as pj
+                atual = c.execute('SELECT dados FROM projetos WHERE id=?', (job['projeto'],)).fetchone()
+                dados = json.loads(atual['dados']) if atual else {}
+                # A aprovação persistida também cobre reinício entre aprovar e liberar.
+                liberado = pj.roteiro_aprovado(dados) and pj.hash_roteiro(dados) == e.chave_aprovacao
+            if status == 'aguardando_aprovacao' and liberado:
+                status, motivo = 'na_fila', 'Na fila (aprovado)'
+            mudou = c.execute("UPDATE jobs SET status=?, proxima=?, etapa=?, dados=?, decorrido=decorrido+?, lease=0 "
+                              "WHERE id=? AND status='rodando' AND cancelar=0 AND pausado=0",
+                              (status, time.time() + (0 if status != e.status else e.segundos), motivo[:200],
+                               json.dumps(ctx.dados, ensure_ascii=False), dur, ctx.id)).rowcount
+            if mudou and status == 'aguardando_aprovacao' and e.chave_aprovacao and job.get('projeto'):
+                c.execute("UPDATE projetos SET status='waiting_brief_approval', atualizado=? WHERE id=?",
+                          (time.time(), job['projeto']))
+            c.execute('DELETE FROM kv WHERE chave=?', ('liberar:' + ctx.id,))
+        if not mudou:
+            _encerrar_interrompido(ctx, dur)
     except Cancelado:
         _encerrar_interrompido(ctx, time.time() - inicio)
     except Exception as e:  # noqa: BLE001
@@ -322,11 +341,26 @@ def ignorar(jid: str) -> dict:
     return job
 
 
-def liberar(jid: str) -> dict:
-    """Trabalho que esperava uma aprovação volta para a fila (continua da mesma etapa)."""
-    if not db.executar("UPDATE jobs SET status='na_fila', proxima=0, etapa='Na fila (aprovado)' WHERE id=? AND status='aguardando_aprovacao'", jid):
-        if (obter(jid) or {}).get('status') == 'rodando':
-            db.kv_gravar('liberar:' + jid, time.time())      # chegou antes de a etapa terminar de pedir: vale quando ela pedir
+def liberar(jid: str, *, chave_aprovacao: str = '') -> dict:
+    """Libera a espera atual; o sinal antecipado pertence à etapa e ao conteúdo."""
+    with db.tx() as c:
+        j = c.execute('SELECT * FROM jobs WHERE id=?', (jid,)).fetchone()
+        if j and not j['cancelar'] and not j['pausado']:
+            dados = json.loads(j['dados'] or '{}')
+            if j['status'] == 'aguardando_aprovacao':
+                roteiro_atual = False
+                if chave_aprovacao and dados.get('etapa') == 'roteiro' and j['projeto']:
+                    import projetos as pj
+                    atual = c.execute('SELECT dados FROM projetos WHERE id=?', (j['projeto'],)).fetchone()
+                    projeto = json.loads(atual['dados']) if atual else {}
+                    roteiro_atual = pj.roteiro_aprovado(projeto) and pj.hash_roteiro(projeto) == chave_aprovacao
+                if not chave_aprovacao or roteiro_atual:
+                    c.execute("UPDATE jobs SET status='na_fila', proxima=0, etapa='Na fila (aprovado)' WHERE id=?", (jid,))
+                c.execute('DELETE FROM kv WHERE chave=?', ('liberar:' + jid,))
+            elif j['status'] == 'rodando':
+                sinal = {'chave': chave_aprovacao, 'etapa': dados.get('etapa')}
+                c.execute('INSERT INTO kv (chave, valor) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor',
+                          ('liberar:' + jid, json.dumps(sinal)))
     ACORDAR.set()
     return obter(jid)
 
