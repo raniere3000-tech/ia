@@ -6,7 +6,7 @@ import Progresso from '../components/Progresso';
 import { urlServidor } from '../lib/api';
 import { tempoTexto } from '../lib/alertas';
 import { ESTADOS, LAYOUT, METODOS, cancelarJob, criarPerfil, escolherCapa, lerCapacidades, lerCfgThumb, lerDesempenho, lerFontes, lerJob, lerJobs, lerPerfis,
-  mudarPerfil, pedirCapas, refazerCapa, salvarCfgThumb, type CfgThumb, type Fonte, type Metodo, type Pedido, type Perfil, type Variante } from '../lib/thumbnails';
+  mudarPerfil, pedirCapas, refazerCapa, rejeitarCapa, salvarCfgThumb, type CfgThumb, type Fonte, type Metodo, type Pedido, type Perfil, type Variante } from '../lib/thumbnails';
 
 type Aba='fila'|'criar'|'galeria'|'modelos'|'desempenho'|'config';
 const ABAS:[Aba,string,typeof ImgIcon][]=[['fila','Fila',ListChecks],['criar','Criar',Plus],['galeria','Galeria',ImgIcon],['modelos','Modelos',Palette],['desempenho','Desempenho',BarChart3],['config','Configurações',Settings2]];
@@ -51,7 +51,7 @@ function FilaThumbs({abrir,criar}:{abrir:(id:string)=>void;criar:()=>void}){
         {(()=>{ const v=j.variantes.find(x=>x.id===j.selecao?.variante)||j.variantes.find(x=>x.estado==='aprovada')||j.variantes[0];
           return v?<img src={urlServidor(cfg,v.url)} alt="" loading="lazy" className={v.formato==='9:16'?'vert':''}/>:<span className="thumb-vazio"><ImgIcon size={20}/></span>; })()}
         <span className="thumb-job-txt"><b>{j.titulo}</b><small className="muted">{j.origem==='corte'?'Corte do Agente 1':j.origem==='render'?'Vídeo do Agente 3':'Post'} · {quando(j.criado)}</small>
-          <span><Tag estado={j.estado}/> {j.variantes.filter(v=>v.estado!=='substituida').length} capa(s)</span>
+          <span><Tag estado={j.estado}/> {j.variantes.filter(v=>v.estado!=='substituida'&&v.estado!=='rejeitada').length} capa(s)</span>
           {j.erro&&j.estado!=='pronto'&&<small className="muted">{j.erro}</small>}
           {j.progresso&&RODANDO.includes(j.estado)&&<Progresso pct={j.progresso.pct} restante={j.progresso.restante_s} estimado={j.progresso.estimado} status={j.progresso.status}/>}</span>
       </button></li>)}</ul>}
@@ -113,8 +113,8 @@ function Galeria({id,voltar}:{id:string;voltar:()=>void}){
   const r=useServidor(c=>id?lerJob(c,id):Promise.resolve(null),4,[id]);
   const [busy,setBusy]=useState(false); const [comparar,setComparar]=useState<string[]>([]); const [refTxt,setRefTxt]=useState<Record<number,string>>({});
   const j=r.dados;
-  const ativas=useMemo(()=>j?j.variantes.filter(v=>v.estado!=='substituida'):[],[j]);
-  const historico=useMemo(()=>j?j.variantes.filter(v=>v.estado==='substituida'):[],[j]);
+  const ativas=useMemo(()=>j?j.variantes.filter(v=>v.estado!=='substituida'&&v.estado!=='rejeitada'):[],[j]);
+  const historico=useMemo(()=>j?j.variantes.filter(v=>v.estado==='substituida'||v.estado==='rejeitada'):[],[j]);
   if(!id) return <section className="panel"><p className="muted">Escolha um pedido na <button className="link-btn" onClick={voltar}>Fila</button>.</p></section>;
   if(!j) return <section className="panel">{r.erro?<p className="hint bad">{r.erro}</p>:<p className="muted"><Loader2 size={14} className="spin"/> Carregando…</p>}</section>;
   async function fazer(f:()=>Promise<unknown>,msg:string){ setBusy(true); try{ await f(); toast(msg,'ok'); await r.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(false); } }
@@ -157,6 +157,7 @@ function Galeria({id,voltar}:{id:string;voltar:()=>void}){
         <details><summary>Notas do diretor</summary><ul className="thumb-crit">{(['fidelidade','legibilidade','area_segura','tecnica','identidade','rede'] as const).map(k=><li key={k}>{({fidelidade:'Fiel ao vídeo (25)',legibilidade:'Leitura no celular (20)',area_segura:'Área segura (15)',tecnica:'Arquivo (15)',identidade:'Identidade (15)',rede:'Formato da rede (10)'})[k]}: <b>{v.relatorio.criterios[k]??'-'}</b></li>)}</ul>
           <small className="muted">{v.relatorio.metodo}</small></details>
         <div className="row-gap left">
+          {j.rejeicao_habilitada&&!sel&&<button className="subtle sm" disabled={busy||rodando} onClick={()=>fazer(()=>rejeitarCapa(cfg,j.id,v),'Proposta recusada. A capa escolhida foi preservada.')}><XCircle size={13}/> Recusar</button>}
           {!sel&&<button className="primary sm" disabled={busy||rodando||!!v.relatorio.bloqueios.length} onClick={()=>escolher(v)}><CheckCircle2 size={13}/> Escolher</button>}
           <a className="subtle sm btn-link" href={urlServidor(cfg,v.baixar)} download><Download size={13}/> Baixar</a>
           <label className="check sm"><input type="checkbox" checked={comparar.includes(v.id)} onChange={e=>setComparar(e.target.checked?[...comparar.slice(-1),v.id]:comparar.filter(x=>x!==v.id))}/> comparar</label>
@@ -167,8 +168,8 @@ function Galeria({id,voltar}:{id:string;voltar:()=>void}){
           <small className="muted">Só esta capa muda. O vídeo não é refeito.</small></details>
       </article>; })}
       {!ativas.length&&!rodando&&<section className="panel"><p className="muted">Nenhuma capa neste pedido.</p></section>}</div>
-    {historico.length>0&&<section className="panel"><details><summary>Histórico ({historico.length} versão(ões) corrigida(s) pelo diretor)</summary>
-      <div className="thumb-hist">{historico.map(v=><figure key={v.id}><img src={urlServidor(cfg,v.url)} alt=""/><figcaption>Capa {v.numero} v{v.versao} · nota {v.nota}<br/>{v.relatorio.bloqueios[0]||v.relatorio.notas[0]||''}</figcaption></figure>)}</div></details></section>}
+    {historico.length>0&&<section className="panel"><details><summary>Histórico ({historico.length} versão(ões) substituída(s) ou recusada(s))</summary>
+      <div className="thumb-hist">{historico.map(v=><figure key={v.id}><img src={urlServidor(cfg,v.url)} alt=""/><figcaption>Capa {v.numero} v{v.versao} · {v.estado==='rejeitada'?'recusada por você':`nota ${v.nota}`}<br/>{v.relatorio.bloqueios[0]||v.relatorio.notas[0]||''}</figcaption></figure>)}</div></details></section>}
   </>;
 }
 

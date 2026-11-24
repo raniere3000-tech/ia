@@ -148,6 +148,10 @@ def ia_disponivel() -> tuple[bool, str]:
     return True, ''
 
 
+def rejeicao_ativa() -> bool:
+    return os.getenv('THUMB_REJEICAO', '0').lower() in ('1','true','sim')
+
+
 def capacidades() -> dict:
     ok_ia, motivo_ia = ia_disponivel()
     redes = {}
@@ -155,7 +159,7 @@ def capacidades() -> dict:
         t = db.kv('agente6.rede_ok.' + r)
         redes[r] = {'tipo': tipo, 'detalhe': det, 'testado': bool(t), 'testado_em': t,
                     'estado': 'funcionou num envio real' if t else ('não testado com conta real' if tipo != 'manual_only' else 'manual')}
-    return {'ffmpeg': bool(shutil.which('ffmpeg')) and bool(shutil.which('ffprobe')), 'pillow': PIL_OK, 'pillow_aviso': '' if PIL_OK else SEM_PIL, 'fonte': FONTE.exists(),
+    return {'rejeicao_habilitada': rejeicao_ativa(), 'ffmpeg': bool(shutil.which('ffmpeg')) and bool(shutil.which('ffprobe')), 'pillow': PIL_OK, 'pillow_aviso': '' if PIL_OK else SEM_PIL, 'fonte': FONTE.exists(),
             'ia': {'disponivel': ok_ia, 'motivo': motivo_ia}, 'redes': redes, 'formatos': list(FORMATOS), 'metodos': list(METODOS),
             'aviso': 'A nota das capas é conferência técnica (leitura, área segura, arquivo). Não prevê cliques e não é teste A/B oficial.'}
 
@@ -1143,6 +1147,37 @@ def revalidar(tid: str) -> dict | None:
     return s
 
 
+def rejeitar(tid: str, d: dict, quem: str = 'site') -> dict:
+    """Recusa proposta sem gerar outra nem revogar a seleção atual."""
+    if not rejeicao_ativa():
+        raise ErroThumb(409, 'A recusa de propostas ainda não está habilitada no servidor.')
+    j = _job(tid)
+    if j['estado'] in ('na_fila','analisando','criando','validando'):
+        raise ErroThumb(409, 'Espere terminar a geração das capas.')
+    if _video_atual_sha(j) != j['video_sha']:
+        raise ErroThumb(409, 'O vídeo mudou. Abra o pedido da versão atual.')
+    vid = str(d.get('variante_id') or '')
+    repetido = False
+    with db.tx() as c:
+        v = c.execute('SELECT * FROM thumbnail_variantes WHERE id=? AND job=?', (vid,tid)).fetchone()
+        if not v:
+            raise ErroThumb(404, 'Proposta não encontrada neste pedido.')
+        if d.get('versao') != v['versao']:
+            raise ErroThumb(409, 'A versão da capa mudou. Atualize a tela.')
+        if v['estado'] == 'substituida':
+            raise ErroThumb(409, 'Esta proposta já foi substituída.')
+        if c.execute('SELECT id FROM thumbnail_selecoes WHERE variante=? AND revogado IS NULL', (vid,)).fetchone():
+            raise ErroThumb(409, 'Esta é a capa escolhida. Escolha uma substituta antes de recusar esta versão.')
+        repetido = v['estado'] == 'rejeitada'
+        if not repetido:
+            rel = json.loads(v['relatorio'] or '{}')
+            rel['rejeicao'] = {'por': str(quem)[:80], 't': _agora(), 'motivo': str(d.get('motivo') or '')[:500]}
+            c.execute("UPDATE thumbnail_variantes SET estado='rejeitada', relatorio=? WHERE id=?", (json.dumps(rel,ensure_ascii=False),vid))
+    if not repetido:
+        db.evento(quem, 'thumbnail_proposta_rejeitada', 'thumb:' + tid, {'variante': vid, 'versao': d['versao']})
+    return dict(obter(tid), repetido=True) if repetido else obter(tid)
+
+
 def selecionar(tid: str, d: dict, quem: str = 'site') -> dict:
     j = _job(tid)
     vid = str(d.get('variante_id') or '')
@@ -1151,8 +1186,8 @@ def selecionar(tid: str, d: dict, quem: str = 'site') -> dict:
         raise ErroThumb(404, 'Capa não encontrada neste pedido.')
     if d.get('versao') is not None and int(d['versao']) != v['versao']:
         raise ErroThumb(409, 'Esta capa tem uma versão mais nova. Atualize a tela.')
-    if v['estado'] == 'substituida':
-        raise ErroThumb(409, 'Esta versão foi substituída por uma correção.')
+    if v['estado'] in ('substituida','rejeitada'):
+        raise ErroThumb(409, 'Esta versão foi substituída ou recusada. Escolha outra proposta.')
     video_sha = _video_atual_sha(j)
     if video_sha != j['video_sha']:
         raise ErroThumb(409, 'O vídeo mudou depois que as capas foram feitas. Peça capas para a versão nova.')
@@ -1165,11 +1200,24 @@ def selecionar(tid: str, d: dict, quem: str = 'site') -> dict:
     manual = v['estado'] != 'aprovada'
     if manual and not d.get('confirmacao'):
         raise ErroThumb(409, f'O diretor deu nota {v["nota"]} (mínimo {config()["nota_min"]}). Para usar mesmo assim, confirme.')
-    for s in db.todos('SELECT id FROM thumbnail_selecoes WHERE (job=? OR video_sha=?) AND revogado IS NULL', tid, video_sha):
-        _revogar(s['id'], 'Outra capa foi escolhida para este vídeo.')
-    sid = secrets.token_hex(6)
-    db.executar('INSERT INTO thumbnail_selecoes (id, job, variante, video_sha, thumb_sha, escolha, por, aprovado, criado) VALUES (?,?,?,?,?,?,?,?,?)',
-                sid, tid, v['id'], video_sha, sha, 'manual' if manual else ('automatica' if quem.startswith('agente6') else 'voce'), str(quem)[:60], 1, _agora())
+    with db.tx() as c:
+        atual = c.execute('SELECT estado FROM thumbnail_variantes WHERE id=?', (vid,)).fetchone()
+        if not atual or atual['estado'] in ('substituida','rejeitada'):
+            raise ErroThumb(409, 'Esta proposta foi substituída ou recusada. Atualize a tela.')
+        repetido = c.execute('SELECT id FROM thumbnail_selecoes WHERE job=? AND variante=? AND video_sha=? AND thumb_sha=? AND revogado IS NULL',
+                             (tid,vid,video_sha,sha)).fetchone()
+        antigas = []
+        if not repetido:
+            antigas = c.execute('SELECT id FROM thumbnail_selecoes WHERE (job=? OR video_sha=?) AND revogado IS NULL', (tid,video_sha)).fetchall()
+            c.execute('UPDATE thumbnail_selecoes SET revogado=?, motivo=? WHERE (job=? OR video_sha=?) AND revogado IS NULL',
+                      (_agora(),'Outra capa foi escolhida para este vídeo.',tid,video_sha))
+            sid = secrets.token_hex(6)
+            c.execute('INSERT INTO thumbnail_selecoes (id, job, variante, video_sha, thumb_sha, escolha, por, aprovado, criado) VALUES (?,?,?,?,?,?,?,?,?)',
+                      (sid,tid,v['id'],video_sha,sha,'manual' if manual else ('automatica' if quem.startswith('agente6') else 'voce'),str(quem)[:60],1,_agora()))
+    if repetido:
+        return dict(obter(tid), repetido=True)
+    for antiga in antigas:
+        db.evento('agente6','thumbnail_selecao_revogada','thumbsel:'+antiga['id'],{'motivo':'Outra capa foi escolhida para este vídeo.'})
     _estado(tid, 'pronto', '')
     if j['origem'] == 'corte':
         try:
@@ -1247,7 +1295,7 @@ def obter(tid: str) -> dict:
                      'tentativas': fj['tentativas']}
     vs = db.todos('SELECT * FROM thumbnail_variantes WHERE job=? ORDER BY numero, versao DESC', tid)
     return {**{k: j[k] for k in ('id', 'origem', 'referencia', 'video_sha', 'estado', 'criado', 'atualizado', 'erro', 'titulo', 'metodo', 'correcoes', 'custo', 'por')},
-            'config': j['config'], 'progresso': progresso, 'selecao': s, 'variantes': [_variante_publica(v) for v in vs]}
+            'rejeicao_habilitada': rejeicao_ativa(), 'config': j['config'], 'progresso': progresso, 'selecao': s, 'variantes': [_variante_publica(v) for v in vs]}
 
 
 def listar(estado: str = '', limite: int = 50) -> dict:

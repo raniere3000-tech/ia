@@ -531,7 +531,7 @@ def _thumbs(metodo: str, caminho: str, q: dict, corpo, quem: str):
     if m and metodo == 'GET':
         arq, nome = th.midia(m.group(1))
         raise Resposta(arq, 'image/jpeg', nome, 'baixar' in q)
-    m = re.fullmatch(base + r'/jobs/(\w+)(?:/(cancelar|refazer|variantes|selecionar|validar|pacote))?', caminho)
+    m = re.fullmatch(base + r'/jobs/(\w+)(?:/(cancelar|refazer|variantes|selecionar|rejeitar|validar|pacote))?', caminho)
     if m:
         tid, acao = m.group(1), m.group(2)
         if metodo == 'GET' and not acao:
@@ -544,6 +544,8 @@ def _thumbs(metodo: str, caminho: str, q: dict, corpo, quem: str):
             return th.cancelar(tid, quem)
         if metodo == 'POST' and acao == 'refazer':
             return th.refazer(tid, corpo(), quem)
+        if metodo == 'POST' and acao == 'rejeitar':
+            return th.rejeitar(tid, corpo(), quem)
         if metodo == 'POST' and acao == 'selecionar':
             return th.selecionar(tid, corpo(), quem)
         if metodo == 'POST' and acao == 'validar':        # o diretor confere de novo a escolha (vídeo e capa ainda iguais?)
