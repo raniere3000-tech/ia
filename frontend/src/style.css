@@ -1262,3 +1262,5 @@ body.sem-rolar{overflow:hidden}
 .lote-campos{border:0;padding:0;min-width:0}.lote-campos legend{font-weight:700;margin-bottom:12px}
 .lote-ordem{padding-left:24px;max-height:260px;overflow:auto}.lote-ordem li{display:flex;align-items:center;gap:6px;padding:6px 0}.lote-ordem li>span{flex:1}
 .lote-tabela{max-height:360px;overflow:auto}.lote-tabela table{width:100%;border-collapse:collapse}.lote-tabela th,.lote-tabela td{text-align:left;padding:10px;border-bottom:1px solid var(--line);font-size:13px}.lote-tabela th{background:var(--panel2);position:sticky;top:0}
+
+.post-tiktok{margin-top:8px;display:grid;gap:6px}.post-tiktok .field-label{margin-top:6px}.post-tiktok ul{margin:4px 0;padding-left:16px;overflow-wrap:anywhere}.post-tiktok textarea{width:100%}

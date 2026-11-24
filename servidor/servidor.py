@@ -857,6 +857,14 @@ def _rotas_agenda(self, caminho: str):
     if m:
         import publicacao_lotes as lotes
         return lotes.acao(*m.groups())
+    if caminho == '/posts/tiktok/migrar':
+        import tiktok_assistido as ta
+        return ta.migrar(simular=bool(d.get('simular')))
+    m = re.fullmatch(r'/posts/(\w+)/tiktok', caminho)
+    if m:
+        import tiktok_assistido as ta
+        acao = str(d.get('acao') or 'editar')
+        return ta.editar(m.group(1), d) if acao == 'editar' else ta.registrar(m.group(1), acao, d)
     m = re.fullmatch(r'/posts/(\w+)/(agora|cancelar|feito|editar|liberar|outras-redes)', caminho)
     if m:
         pid, acao = m.groups()

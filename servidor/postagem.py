@@ -7,6 +7,7 @@ Só usa a biblioteca padrão do Python (roda no Termux).
 from __future__ import annotations
 
 import descricao as ds
+import tiktok_assistido as ta
 import hashlib
 import json
 import os
@@ -524,6 +525,7 @@ def criar_post(d: dict) -> dict:
         'projeto': re.sub(r'[^a-zA-Z0-9]', '', str(d.get('projeto', '')))[:40], 'render_sha': re.sub(r'[^a-f0-9]', '', str(d.get('render_sha', '')))[:64],
         'creditos': [str(x)[:160] for x in (d.get('creditos') or [])[:12]] if isinstance(d.get('creditos'), list) else [],
     }
+    ta.completar(p)          # TikTok assistido: título, descrição, hashtags e links já ficam prontos antes do envio
     with LOCK:
         ps = posts()
         ps.append(p)
@@ -531,9 +533,20 @@ def criar_post(d: dict) -> dict:
     return p
 
 
+_MIGROU_TIKTOK = False
+
+
 def lista_posts() -> list:
+    global _MIGROU_TIKTOK
+    if not _MIGROU_TIKTOK:               # atualização retroativa: preenche só o que falta nos posts antigos (1x por execução)
+        _MIGROU_TIKTOK = True
+        try:
+            ta.migrar()
+        except Exception as e:  # noqa: BLE001
+            print('postagem: migração do TikTok assistido', e)
     ps = sorted(posts(), key=lambda p: p['quando'])
     for p in ps:
+        p['tiktok'] = ta.visao(p)
         p['preparando'] = not video_pronto(p['video'])
         try:
             p['arquivo_disponivel'] = video_path(p['video']).is_file()
@@ -833,13 +846,13 @@ def postar_tiktok(p: dict, arq: Path) -> str:
         pedaco = 10 * 1024 * 1024
         n = tam // pedaco
     fonte = {'source': 'FILE_UPLOAD', 'video_size': tam, 'chunk_size': pedaco, 'total_chunk_count': n}
-    direto = p['opcoes'].get('tiktok_modo') == 'direto'
+    direto = ta.modo_envio(p) == 'direto'     # antes da aprovação do TikTok, tudo é assistido (rascunho)
     caiu_rascunho = False
     if direto:
         st, _, j = http('POST', URL['tiktok_api'] + '/v2/post/publish/creator_info/query/', js={}, cab=cab)
         opcoes = ((j.get('data') or {}).get('privacy_level_options') or ['SELF_ONLY']) if st < 300 else ['SELF_ONLY']
         priv = 'PUBLIC_TO_EVERYONE' if 'PUBLIC_TO_EVERYONE' in opcoes else opcoes[0]
-        corpo = {'post_info': {'title': _texto(p, 2200), 'privacy_level': priv}, 'source_info': fonte}
+        corpo = {'post_info': {'title': ta.texto_do_envio(p, 2200), 'privacy_level': priv}, 'source_info': fonte}
         cap = _capa(arq)
         if cap and cap['tempo_ms']:            # o TikTok só aceita o MOMENTO do vídeo como capa (não a arte)
             corpo['post_info']['video_cover_timestamp_ms'] = cap['tempo_ms']
@@ -1318,6 +1331,8 @@ def _publicar_um(pid: str, rede: str):
             q['redes'][rede].update(status='postado', link=link, erro='', feito=agora(), ref=ref)
             _anotar(q, rede, 'postado', link)
         _mudar(pid, ok)
+        if rede == 'tiktok':
+            ta.notificar_pronto(pid)
     except ErroTemporario as e:
         n = int(p['redes'][rede].get('tentativas', 0))
         _adiar_rede(rede, max(0, getattr(e, 'retry_after', 0)))

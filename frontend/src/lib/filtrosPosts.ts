@@ -1,4 +1,4 @@
-import type { Post, Rede, StatusRede } from './agenda.ts';
+import type { Post, Rede, StatusRede, EstadoTikTok } from './agenda.ts';
 
 export type FiltroPost='pendentes'|'nao_agendados'|'agendados'|'atrasados'|'erros'|'publicados'|'pausados'|'cancelados'|'todos';
 export const FILTROS_POST:[FiltroPost,string][]=[['pendentes','Todos os pendentes'],['nao_agendados','Ainda não agendados'],['agendados','Agendados'],['atrasados','Atrasados'],['erros','Com erro'],['publicados','Publicados'],['pausados','Pausados'],['cancelados','Cancelados'],['todos','Todos']];
@@ -32,3 +32,6 @@ export function filtrarPosts(posts:Post[],rede:Rede|'',filtro:FiltroPost,agora=D
     return corresponde(p,filtro,rede,agora);
   }).sort((a,b)=>horaDaRede(a,rede?a.redes[rede]:undefined)-horaDaRede(b,rede?b.redes[rede]:undefined));
 }
+
+/** Filtro pelo status do TikTok (vale para qualquer vídeo, publicado ou não). '' = todos. */
+export const filtrarTikTok=(posts:Post[],estado:EstadoTikTok|'')=>estado?posts.filter(p=>p.tiktok?.estado===estado):posts;

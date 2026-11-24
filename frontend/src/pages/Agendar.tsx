@@ -4,9 +4,10 @@ import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import AgendarPost from '../components/AgendarPost';
 import AgendarLote from '../components/AgendarLote';
-import { FILTROS_POST, filtrarPosts, horaDaRede, type FiltroPost } from '../lib/filtrosPosts';
+import { FILTROS_POST, filtrarPosts, filtrarTikTok, horaDaRede, type FiltroPost } from '../lib/filtrosPosts';
 import ConferenciaPost from '../components/ConferenciaPost';
-import { REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, editarPost, publicarEmOutrasRedes, cancelarPost, marcarFeito, baixarVideoPost, enderecoRetorno, listarLotes, acaoLote, type LotePosts, type Contas, type Prov, type Post, type Rede, type StatusRede, liberarPost, AVISO_LIBERAR } from '../lib/agenda';
+import TikTokInfoPainel from '../components/TikTokInfo';
+import { ESTADOS_TIKTOK, type EstadoTikTok, REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, editarPost, publicarEmOutrasRedes, cancelarPost, marcarFeito, baixarVideoPost, enderecoRetorno, listarLotes, acaoLote, type LotePosts, type Contas, type Prov, type Post, type Rede, type StatusRede, liberarPost, AVISO_LIBERAR } from '../lib/agenda';
 
 const PROVS:{id:Prov;nome:string;redes:string;icone:typeof Youtube;help:'app_google'|'app_meta'|'app_tiktok';idLabel:string;segLabel:string}[] = [
   {id:'google',nome:'YouTube',redes:'Shorts no seu canal',icone:Youtube,help:'app_google',idLabel:'ID do cliente OAuth',segLabel:'Chave secreta do cliente'},
@@ -111,6 +112,7 @@ function PostLinha({p,acao,redeFiltro='',selecionado,onSelecionar,onAgendar}:{p:
      {Object.entries(p.redes).filter(([r,s])=>(!redeFiltro||r===redeFiltro)&&s&&(s.status==='erro'||s.status==='liberacao'||(s.status==='agendado'&&!!s.erro)||(s.status==='postado'&&!s.link.startsWith('http'))||s.link.includes('('))).map(([r,s])=><p key={r} className={'hint '+(s!.status==='erro'?'bad':s!.status==='agendado'?'warn':'')}><b>{REDES.find(x=>x.id===r)?.nome}:</b> {s!.erro||s!.link}
        {s!.status==='erro'&&<> <button className="subtle sm" onClick={()=>acao(()=>postarAgora(settings,p.id,r),`Tentando de novo no ${REDES.find(x=>x.id===r)?.nome}...`)}><RefreshCw size={13}/> Tentar de novo no {REDES.find(x=>x.id===r)?.nome.replace(' (manual)','')}</button></>}</p>)}
      {settings.servidor&&pendente(p)&&<ConferenciaPost id={p.id} rede={redeFiltro||undefined} onLiberado={()=>acao(async()=>{},'Liberado. Postando...')}/>}
+     <TikTokInfoPainel p={p} acao={acao}/>
      {!!p.relatorio?.length&&<details className="post-rel"><summary>Relatório da publicação</summary><ul>{p.relatorio.slice().reverse().map((e,k)=><li key={k}><small className="muted">{fmtData(e.t)}</small> <b>{REDES.find(x=>x.id===e.rede)?.nome.replace(' (manual)','')||e.rede}</b>: {EV[e.evento]||e.evento}{e.detalhe&&e.evento!=='postado'?` — ${e.detalhe}`:''}{e.evento==='postado'&&e.detalhe.startsWith('http')&&<a href={e.detalhe} target="_blank" rel="noreferrer"> abrir</a>}</li>)}</ul></details>}
      {outras&&<div className="post-editar">
        <div className="field-label">Escolha as redes para este vídeo</div>
@@ -148,6 +150,7 @@ export default function Agendar(){
   const [posts,setPosts]=useState<Post[]|null>(null);
   const [rede,setRede]=useState<Rede|''>('');
   const [filtro,setFiltro]=useState<FiltroPost>('pendentes');
+  const [filtroTk,setFiltroTk]=useState<EstadoTikTok|''>('');
   const [selecionados,setSelecionados]=useState<Set<string>>(new Set());
   const [abrirLote,setAbrirLote]=useState(false);
   const [lotes,setLotes]=useState<LotePosts[]>([]);
@@ -168,7 +171,7 @@ export default function Agendar(){
    <button className="primary" onClick={()=>go('config')}>Ligar servidor em Chaves e ajustes</button> <HelpButton topic="servidor" label="Como ligar?"/>
   </section>;
 
-  const lista=filtrarPosts(posts||[],rede,filtro);
+  const lista=filtrarTikTok(filtrarPosts(posts||[],rede,filtroTk?'todos':filtro),filtroTk);
   const podeSelecionar=(p:Post)=>p.arquivo_disponivel!==false&&!p.preparando&&(!rede||!['postado','postando'].includes(p.redes[rede]?.status||''));
   const elegiveis=lista.filter(podeSelecionar);
   const porDia=new Map<string,Post[]>(); for(const p of lista){ const d=rede&&!p.redes[rede]?'Ainda não agendados nesta rede':dia(horaDaRede(p,rede?p.redes[rede]:undefined)); porDia.set(d,[...(porDia.get(d)||[]),p]); }
@@ -187,6 +190,8 @@ export default function Agendar(){
     <p className="subtitle">Filtre por rede para encontrar o que falta publicar. Um vídeo publicado no YouTube continua pendente no TikTok. Os horários e as ações valem para a rede selecionada.</p>
     <div className="chips mt" aria-label="Filtrar por rede"><button className={'chip '+(!rede?'on':'')} aria-pressed={!rede} onClick={()=>{setRede('');if(filtro==='nao_agendados')setFiltro('pendentes');setSelecionados(new Set());}}>Todas as redes</button>{REDES.map(r=><button key={r.id} className={'chip '+(rede===r.id?'on':'')} aria-pressed={rede===r.id} onClick={()=>{setRede(r.id);setSelecionados(new Set());}}>{r.nome.replace(' (manual)','')} ({filtrarPosts(posts||[],r.id,'pendentes').length})</button>)}</div>
     <label className="mt">Situação<select value={filtro} onChange={e=>{setFiltro(e.target.value as FiltroPost);setSelecionados(new Set());}}>{FILTROS_POST.map(([v,n])=><option key={v} value={v} disabled={v==='nao_agendados'&&!rede}>{n}</option>)}</select></label>
+    <label className="mt">Status do TikTok<select value={filtroTk} onChange={e=>{setFiltroTk(e.target.value as EstadoTikTok|'');setSelecionados(new Set());}}><option value="">Todos</option>{ESTADOS_TIKTOK.map(([v,n])=><option key={v} value={v}>{n} ({(posts||[]).filter(p=>p.tiktok?.estado===v).length})</option>)}</select></label>
+    {filtroTk&&<p className="hint">Filtrando pelo status do TikTok: a lista mostra o vídeo em qualquer situação das outras redes.</p>}
     {!rede&&<p className="hint">Escolha uma rede para incluir os vídeos que ainda não foram agendados nela. Os números dos botões contam pendências de cada rede.</p>}
     {erro&&<p className="hint bad" role="alert">{erro}</p>}
     {!!elegiveis.length&&<div className="posts-lote-barra mt"><label className="check"><input type="checkbox" checked={elegiveis.slice(0,200).every(p=>selecionados.has(p.id))} onChange={e=>setSelecionados(e.target.checked?new Set(elegiveis.slice(0,200).map(p=>p.id)):new Set())}/> Selecionar resultados do filtro (até 200)</label><span>{selecionados.size} selecionado(s)</span><button className="primary sm" disabled={!selecionados.size} onClick={()=>setAbrirLote(true)}><CalendarClock size={14}/> Agendar selecionados</button>{!!selecionados.size&&<button className="subtle sm" onClick={()=>setSelecionados(new Set())}>Limpar seleção</button>}</div>}
