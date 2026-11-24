@@ -36,3 +36,26 @@ test('erros, pausados e cancelados mantêm filtros distintos',()=>{
  assert.equal(filtrarPosts(posts,'tiktok','pendentes').length,2);
  assert.equal(filtrarPosts(posts,'tiktok','atrasados').length,0);
 });
+
+test('YouTube concluído, TikTok com erro e Instagram manual preservam situações próprias',()=>{
+ const youtubePublicado={...feito,feito:123,ref:'yt-original'};
+ const posts=[p('a',{youtube:youtubePublicado,
+   tiktok:{...agendado,status:'erro',erro:'limite de rascunhos'},instagram:{...agendado,status:'manual'}})];
+ assert.deepEqual(filtrarPosts(posts,'youtube','publicados').map(x=>x.id),['a']);
+ assert.deepEqual(filtrarPosts(posts,'youtube','pendentes'),[]);
+ assert.deepEqual(filtrarPosts(posts,'tiktok','erros').map(x=>x.id),['a']);
+ assert.deepEqual(filtrarPosts(posts,'instagram','pendentes').map(x=>x.id),['a']);
+ assert.deepEqual(filtrarPosts(posts,'instagram','publicados'),[]);
+});
+
+test('consultar filtros não modifica status, link, referência ou data de publicação',()=>{
+ const youtubePublicado={...feito,feito:123,ref:'yt-original'};
+ const instagramPublicado={...feito,feito:222,ref:'ig-original'};
+ const posts=[p('a',{youtube:youtubePublicado,tiktok:{...agendado,quando:500}}),
+   p('b',{instagram:instagramPublicado})];
+ const antes=structuredClone(posts);
+ for(const rede of ['youtube','tiktok','instagram',''] as const){
+   for(const filtro of ['pendentes','publicados','agendados','erros','todos'] as const) filtrarPosts(posts,rede,filtro,200);
+ }
+ assert.deepEqual(posts,antes);
+});
