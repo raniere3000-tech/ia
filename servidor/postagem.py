@@ -1081,7 +1081,11 @@ def conferencia(p: dict, rede: str) -> list[dict]:
     except Exception as e:  # noqa: BLE001
         item('liberacao', False, f'Não consegui conferir a liberação do coordenador: {str(e)[:120]}')
     ag2 = p.get('agenda') or {}
-    if not p['redes'].get(rede, {}).get('outra_rede') and ag2.get('ate') and ag2.get('politica') != 'publish_when_online' and agora() > ag2['ate'] and not p['redes'].get(rede, {}).get('tentativas'):
+    redes = p.get('redes') if isinstance(p.get('redes'), dict) else {}
+    destino = redes.get(rede) if isinstance(redes.get(rede), dict) else {}
+    item('destino', bool(destino.get('status')), 'Destino de publicação configurado.' if destino.get('status') else
+         'Falta configurar esta rede no post antes de publicar.')
+    if not destino.get('outra_rede') and ag2.get('ate') and ag2.get('politica') != 'publish_when_online' and agora() > ag2['ate'] and not destino.get('tentativas'):
         item('horario', False, 'O horário da programação diária já passou (servidor estava desligado): não posto atrasado.')
     if p.get('hash'):
         atual = assinatura(p['video'])
@@ -1258,7 +1262,8 @@ def _adiar_rede(rede: str, segundos: float):
 
 
 def _destino_pronto(p: dict, rede: str) -> bool:
-    r = p['redes'].get(rede, {})
+    redes = p.get('redes') if isinstance(p.get('redes'), dict) else {}
+    r = redes.get(rede) if isinstance(redes.get(rede), dict) else {}
     return (r.get('status') == 'agendado' and not r.get('lote_pausado')
             and (r.get('outra_rede') and 'quando' not in r or horario_rede(p, r) <= agora())
             and float(r.get('proxima') or 0) <= agora() and _proxima_rede(rede) <= agora())
