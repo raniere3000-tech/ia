@@ -1,0 +1,126 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> estudio-de-cortes-web@0.1.0 build
+> tsc -b && vite build
+
+vite v6.4.6 building for production...
+transforming...
+node_modules/zod/v4/core/util.js (400:0): A comment
+
+"// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+
+in "node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/zod/v4/core/regexes.js (74:0): A comment
+
+"/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+ * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+ * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+
+in "node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+✓ 2184 modules transformed.
+rendering chunks...
+[plugin vite:reporter] 
+(!) /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/api.ts is dynamically imported by /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/App.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/Central.tsx but also statically imported by /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/App.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/components/Aparelhos.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/components/ConferenciaPost.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/components/Diretor.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/components/EditorVideo.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/components/EsteiraSete.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/components/EstiloVisual.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/components/PacotePublicacao.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/components/PainelAgentes.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/components/PainelInicio.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/components/PainelPartes.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/components/Prontidao.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/components/StoryboardVisual.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/components/VozGravada.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/agenda.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/agente.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/alertas.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/aprendizado.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/automacao.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/coordenador.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/criativo.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/dashboard.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/decisoes.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/diretor.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/esteira.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/esteira7.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/estudio3.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/exportServidor.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/live.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/modelos.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/series.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/servidor.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/sincronia.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/skills.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/lib/thumbnails.ts, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/Agente.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/AgentesHome.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/Automatico.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/Central.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/Coordenador.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/CriarIA.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/EstudioIAHome.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/Fila.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/Galeria.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/Inicio.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/Projetos.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/Revisar.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/Series.tsx, /workspace/scratch/ecb4bcf1d97f/estudioclip/frontend/src/pages/Thumbnails.tsx, dynamic import will not move module into another chunk.
+
+computing gzip size...
+dist/index.html                                                 1.62 kB │ gzip:     0.81 kB
+dist/assets/whisper.worker-ZD41PT0H.js                        563.36 kB
+dist/assets/ort-wasm-simd-threaded.asyncify-CxOG5pUO.wasm  26,861.78 kB │ gzip: 6,690.35 kB
+dist/assets/index-vTyhlxx2.css                                124.97 kB │ gzip:    24.91 kB
+dist/assets/chevron-right-DFvK7zzk.js                           0.30 kB │ gzip:     0.25 kB
+dist/assets/square-CsMcgz7o.js                                  0.32 kB │ gzip:     0.26 kB
+dist/assets/plus-BM1_PA3V.js                                    0.32 kB │ gzip:     0.26 kB
+dist/assets/arrow-left-Dpw6LPfV.js                              0.33 kB │ gzip:     0.27 kB
+dist/assets/gauge-DXr4HfXO.js                                   0.35 kB │ gzip:     0.27 kB
+dist/assets/node.browser-D0dRkMU7.js                            0.35 kB │ gzip:     0.28 kB
+dist/assets/rotate-ccw-DDNDhrg1.js                              0.37 kB │ gzip:     0.29 kB
+dist/assets/circle-x-Bc2_x2xB.js                                0.37 kB │ gzip:     0.28 kB
+dist/assets/undo-2-CEYHcXvb.js                                  0.38 kB │ gzip:     0.28 kB
+dist/assets/pause-tl4WLRMY.js                                   0.38 kB │ gzip:     0.27 kB
+dist/assets/music-DrlAEO5F.js                                   0.38 kB │ gzip:     0.29 kB
+dist/assets/mail-B42L8Fhc.js                                    0.38 kB │ gzip:     0.30 kB
+dist/assets/copy-BpNJJrOA.js                                    0.40 kB │ gzip:     0.31 kB
+dist/assets/history-BpHccR09.js                                 0.41 kB │ gzip:     0.30 kB
+dist/assets/link-2-BEb3ohWU.js                                  0.41 kB │ gzip:     0.31 kB
+dist/assets/settings-2-6FwOqrjs.js                              0.42 kB │ gzip:     0.30 kB
+dist/assets/eye-Dnzg-xTy.js                                     0.42 kB │ gzip:     0.30 kB
+dist/assets/pencil-DzxZlilD.js                                  0.45 kB │ gzip:     0.33 kB
+dist/assets/book-open-BvyPM5_I.js                               0.45 kB │ gzip:     0.31 kB
+dist/assets/send-p-gbU_Ev.js                                    0.46 kB │ gzip:     0.33 kB
+dist/assets/flask-conical-2VI-jKWw.js                           0.47 kB │ gzip:     0.33 kB
+dist/assets/scissors-Ct9Dd5d4.js                                0.48 kB │ gzip:     0.32 kB
+dist/assets/refresh-ccw-CYlJqOpI.js                             0.49 kB │ gzip:     0.33 kB
+dist/assets/save-Du0irqA_.js                                    0.50 kB │ gzip:     0.33 kB
+dist/assets/youtube-CBzaZLqL.js                                 0.50 kB │ gzip:     0.32 kB
+dist/assets/file-text-DjC_qhSL.js                               0.50 kB │ gzip:     0.32 kB
+dist/assets/trash-2-COdGEaAN.js                                 0.53 kB │ gzip:     0.35 kB
+dist/assets/image-plus-iybTiCkP.js                              0.53 kB │ gzip:     0.35 kB
+dist/assets/package-C4SRQ7v9.js                                 0.56 kB │ gzip:     0.36 kB
+dist/assets/layers-B7AhBZ9C.js                                  0.59 kB │ gzip:     0.34 kB
+dist/assets/arrow-up-Cg7g70l-.js                                0.61 kB │ gzip:     0.31 kB
+dist/assets/type-C8Ikhxjy.js                                    0.65 kB │ gzip:     0.33 kB
+dist/assets/wand-sparkles-B-VfM5fj.js                           0.68 kB │ gzip:     0.40 kB
+dist/assets/Progresso-BEuU6LAa.js                               0.76 kB │ gzip:     0.41 kB
+dist/assets/esteira-DHCV2ZR5.js                                 0.89 kB │ gzip:     0.40 kB
+dist/assets/hard-drive-DMNLSYUp.js                              1.18 kB │ gzip:     0.52 kB
+dist/assets/skills-3IXCJbDj.js                                  1.18 kB │ gzip:     0.54 kB
+dist/assets/EstudioIAHome-E3YHnfKt.js                           1.67 kB │ gzip:     0.84 kB
+dist/assets/SkillPicker-BoZ7Voe1.js                             1.76 kB │ gzip:     0.96 kB
+dist/assets/thumbnails-D3HY20r_.js                              1.86 kB │ gzip:     0.92 kB
+dist/assets/node.browser-Dk7E2AJV.js                            1.95 kB │ gzip:     0.77 kB
+dist/assets/agente-BkIkHL0H.js                                  2.00 kB │ gzip:     0.99 kB
+dist/assets/exporter-BPxcUD-6.js                                2.15 kB │ gzip:     1.17 kB
+dist/assets/diretor-D36Ypage.js                                 2.15 kB │ gzip:     0.90 kB
+dist/assets/ia-Cd7PdiCG.js                                      2.59 kB │ gzip:     1.07 kB
+dist/assets/EdicaoHome-xnDONOSO.js                              2.67 kB │ gzip:     1.11 kB
+dist/assets/criativo-B8HCezns.js                                2.69 kB │ gzip:     1.33 kB
+dist/assets/servidor-OG6xyIsZ.js                                2.95 kB │ gzip:     1.51 kB
+dist/assets/automacao-BxOSzCGj.js                               2.98 kB │ gzip:     1.05 kB
+dist/assets/Ficha-D8a60qdL.js                                   3.07 kB │ gzip:     1.23 kB
+dist/assets/muapi-EQD2XeEW.js                                   3.71 kB │ gzip:     1.70 kB
+dist/assets/Estilos-CvZR33WD.js                                 3.81 kB │ gzip:     1.65 kB
+dist/assets/EstiloVisual-WHMi-npX.js                            3.86 kB │ gzip:     1.71 kB
+dist/assets/agenda-B-W3Swjd.js                                  4.02 kB │ gzip:     1.92 kB
+dist/assets/radar-BMkbFTgO.js                                   4.22 kB │ gzip:     1.92 kB
+dist/assets/AgendarPost-CzSnQxQT.js                             4.65 kB │ gzip:     2.02 kB
+dist/assets/dublagem-DUQe2H_p.js                                4.78 kB │ gzip:     2.39 kB
+dist/assets/transcribe-hUq_LWzx.js                              5.19 kB │ gzip:     2.55 kB
+dist/assets/analyze-VPzt52ot.js                                 5.71 kB │ gzip:     2.61 kB
+dist/assets/AgentesHome-COClAMTK.js                             7.16 kB │ gzip:     2.64 kB
+dist/assets/sincronia-BrEg0VP7.js                               7.71 kB │ gzip:     3.23 kB
+dist/assets/Automatico-lBVwxYlp.js                              9.39 kB │ gzip:     3.83 kB
+dist/assets/Live-DtU__qzm.js                                    9.65 kB │ gzip:     3.78 kB
+dist/assets/Projetos-BRygdrDr.js                                9.77 kB │ gzip:     3.65 kB
+dist/assets/Galeria-D-zx6CR8.js                                11.77 kB │ gzip:     4.51 kB
+dist/assets/Fila-ALo7gPbP.js                                   11.87 kB │ gzip:     4.35 kB
+dist/assets/vozes-CRgZm2qH.js                                  15.90 kB │ gzip:     7.08 kB
+dist/assets/gemini-D06mK3KG.js                                 15.96 kB │ gzip:     6.47 kB
+dist/assets/Templates-DumcTLMA.js                              20.22 kB │ gzip:     6.70 kB
+dist/assets/Radar-DlIOUtwx.js                                  20.85 kB │ gzip:     7.71 kB
+dist/assets/ProgramacaoDiaria-B3_bV_zj.js                      22.20 kB │ gzip:     7.41 kB
+dist/assets/ModelagemIA-DiYlWcFJ.js                            23.35 kB │ gzip:     7.55 kB
+dist/assets/Revisar-DVV_mSWI.js                                24.38 kB │ gzip:     8.21 kB
+dist/assets/Thumbnails-BIuBEQce.js                             27.80 kB │ gzip:     8.16 kB
+dist/assets/montagem-CDfs-Y1l.js                               31.45 kB │ gzip:    12.88 kB
+dist/assets/Series-DSRbH-OX.js                                 33.44 kB │ gzip:    10.09 kB
+dist/assets/Agendar-BSBxqPml.js                                40.28 kB │ gzip:    13.00 kB
+dist/assets/CriarIA-DlM-ub-3.js                                46.92 kB │ gzip:    15.25 kB
+dist/assets/Central-C9PMhZQM.js                                48.04 kB │ gzip:    13.86 kB
+dist/assets/Config-CnJhNPiZ.js                                 48.76 kB │ gzip:    14.64 kB
+dist/assets/Coordenador-Def3je7l.js                            52.25 kB │ gzip:    15.41 kB
+dist/assets/VideoCodigo-DyXdq2Hk.js                            54.96 kB │ gzip:    20.49 kB
+dist/assets/Vozes-Bwfy2GIz.js                                  57.99 kB │ gzip:    19.12 kB
+dist/assets/Manual-CSDI_Ml7.js                                 74.95 kB │ gzip:    25.05 kB
+dist/assets/Agente-C0ggmh4x.js                                 97.26 kB │ gzip:    27.19 kB
+dist/assets/jszip.min-CNJkxPjw.js                              97.69 kB │ gzip:    30.38 kB
+dist/assets/Cortes-CGgkAfx6.js                                110.76 kB │ gzip:    35.77 kB
+dist/assets/vision_bundle-BGI2aZNJ.js                         145.08 kB │ gzip:    43.97 kB
+dist/assets/index-BpWbSD-f.js                                 432.46 kB │ gzip:   135.43 kB
+dist/assets/ai-CHqseohU.js                                    482.65 kB │ gzip:   113.08 kB
+dist/assets/src-CcF7_GTY.js                                   754.26 kB │ gzip:   191.96 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 6.01s

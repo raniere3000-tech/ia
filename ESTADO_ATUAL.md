@@ -1,18 +1,18 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T20:39:17-03:00.
+Atualizado: 2026-11-24T20:42:02-03:00.
 
 ```yaml
-fase: "F4"
-microetapa: "F4.04"
+fase: "F5"
+microetapa: "F5.01"
 status: "COMMITTED"
-branch: "codex/estudioclip-2-fase4"
-sha_inicial: "6bf556bb35559a063f062794fa56af93b4ee28af"
-sha_final_implementacao: "177c4206e0f39b98b80b11602774789187b3827d"
-proxima_microetapa: "F5.01"
+branch: "codex/estudioclip-2-fase5"
+sha_inicial: "448089b3da6b4d6f694622b1a25da6ffab2b3696"
+sha_final_implementacao: "20c00c02215bb577d94fb0c6a27b2ca717873262"
+proxima_microetapa: "F5.02"
 mudancas_nao_commitadas: []
-testes: ["histórico 4 PASS", "métricas 7 PASS", "agenda 45 PASS", "redes 13 PASS", "aprendizado 47 PASS", "painel 34 PASS"]
-flags_adicionadas: ["PUBLICACAO_CONTEXTO=0"]
+testes: ["indicadores 4 PASS", "frontend 18 PASS", "TypeScript/Vite PASS"]
+flags_adicionadas: []
 migracoes: []
 merge: "NAO_REALIZADO"
 producao: "NAO_PUBLICADA"
@@ -37,26 +37,26 @@ commitadas; flags novas desligadas. Falhas antigas de estilos e exportação
 corrigidas. F3.01: 23 verificações de roteiro e 10 de concorrência. F3.02: seis
 testes de consistência, incluindo render real de duas cenas/duas versões.
 
-Histórico aditivo por rede com SHA real do render, origem, metadados e seleção de capa, vinculado aos snapshots existentes. Fase 4 validada com contas simuladas; frontend F4.01 teve 18 testes PASS.
+Indicadores na área existente de Aprendizado, com filtros combinados por vertente, rede, canal e período. Leitura dos snapshots com deduplicação de contagens cumulativas e cobertura por métrica; desconhecido não é zero.
 
-Evidências: docs/estudioclip-2/checkpoints/F4.04-*.
+Evidências: docs/estudioclip-2/checkpoints/F5.01-*.
 
-## Retomada exata — F5.01
+## Retomada exata — F5.02
 
 ```bash
 git status --short
 git branch --show-current
 git rev-parse HEAD
-git fetch origin codex/estudioclip-2-fase4:refs/remotes/origin/codex/estudioclip-2-fase4
-git rev-list --left-right --count HEAD...origin/codex/estudioclip-2-fase4
+git fetch origin codex/estudioclip-2-fase5:refs/remotes/origin/codex/estudioclip-2-fase5
+git rev-list --left-right --count HEAD...origin/codex/estudioclip-2-fase5
 ```
 
-Abrir PR de F4 em rascunho sem merge. Criar branch F5 a partir de F4. Executar F5.01: filtros de métricas por vertente, plataforma, canal e período, sem duplicar snapshots.
+F5.02: listar vídeos de maior resultado com rastreabilidade do contexto congelado e separar dados ausentes de zero.
 
 ## Pendências e limites
 
-Regressão global final, Termux e contas reais pendentes.
+Fecho F5, regressão global, Termux e contas reais pendentes.
 
 Não afirmar aceite integral de produção. Não abrir segunda implementação de
 editor, métrica ou memória quando o módulo existente cobrir. Rollback se
-solicitado: git revert 177c4206e0f39b98b80b11602774789187b3827d.
+solicitado: git revert 20c00c02215bb577d94fb0c6a27b2ca717873262.
