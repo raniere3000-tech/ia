@@ -1,18 +1,18 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T20:36:51-03:00.
+Atualizado: 2026-11-24T20:39:17-03:00.
 
 ```yaml
 fase: "F4"
-microetapa: "F4.03"
+microetapa: "F4.04"
 status: "COMMITTED"
 branch: "codex/estudioclip-2-fase4"
-sha_inicial: "4ebbcc7dd9d8231a4b688b5519a21d14d7b83a55"
-sha_final_implementacao: "e704ae82d43a49b740447fe258fea527ba58c0d3"
-proxima_microetapa: "F4.04"
+sha_inicial: "6bf556bb35559a063f062794fa56af93b4ee28af"
+sha_final_implementacao: "177c4206e0f39b98b80b11602774789187b3827d"
+proxima_microetapa: "F5.01"
 mudancas_nao_commitadas: []
-testes: ["métricas 7 PASS", "aprendizado 47 PASS", "painel 34 PASS"]
-flags_adicionadas: ["METRICAS_PUBLICACOES=0"]
+testes: ["histórico 4 PASS", "métricas 7 PASS", "agenda 45 PASS", "redes 13 PASS", "aprendizado 47 PASS", "painel 34 PASS"]
+flags_adicionadas: ["PUBLICACAO_CONTEXTO=0"]
 migracoes: []
 merge: "NAO_REALIZADO"
 producao: "NAO_PUBLICADA"
@@ -37,11 +37,11 @@ commitadas; flags novas desligadas. Falhas antigas de estilos e exportação
 corrigidas. F3.01: 23 verificações de roteiro e 10 de concorrência. F3.02: seis
 testes de consistência, incluindo render real de duas cenas/duas versões.
 
-Inventário do coletor e snapshots de publicações IA/manuais, reutilizando aprendizado_snapshots. Valores indisponíveis preservados; data real da medição; sem duplicação por corte/post/rede. Documentação: fase-4-coleta-metricas.md.
+Histórico aditivo por rede com SHA real do render, origem, metadados e seleção de capa, vinculado aos snapshots existentes. Fase 4 validada com contas simuladas; frontend F4.01 teve 18 testes PASS.
 
-Evidências: docs/estudioclip-2/checkpoints/F4.03-*.
+Evidências: docs/estudioclip-2/checkpoints/F4.04-*.
 
-## Retomada exata — F4.04
+## Retomada exata — F5.01
 
 ```bash
 git status --short
@@ -51,12 +51,12 @@ git fetch origin codex/estudioclip-2-fase4:refs/remotes/origin/codex/estudioclip
 git rev-list --left-right --count HEAD...origin/codex/estudioclip-2-fase4
 ```
 
-Implementar histórico imutável ligando publicação por rede à versão/render/capa/gancho, sem alterar contexto antigo ao editar o projeto.
+Abrir PR de F4 em rascunho sem merge. Criar branch F5 a partir de F4. Executar F5.01: filtros de métricas por vertente, plataforma, canal e período, sem duplicar snapshots.
 
 ## Pendências e limites
 
-Termux, email e APIs reais não validados. Regressão global final pendente; as quatro falhas históricas já foram corrigidas e verificadas individualmente.
+Regressão global final, Termux e contas reais pendentes.
 
 Não afirmar aceite integral de produção. Não abrir segunda implementação de
 editor, métrica ou memória quando o módulo existente cobrir. Rollback se
-solicitado: git revert e704ae82d43a49b740447fe258fea527ba58c0d3.
+solicitado: git revert 177c4206e0f39b98b80b11602774789187b3827d.
