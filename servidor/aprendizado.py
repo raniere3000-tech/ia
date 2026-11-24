@@ -16,6 +16,7 @@ import hashlib
 import io
 import json
 import math
+import os
 import re
 import time
 import uuid
@@ -110,7 +111,9 @@ def _hash(d: dict) -> str:
 
 def _gravar_retrato(fonte: str, rede: str, item: str, variaveis: dict, metricas: dict, ini, fim, imp: str = '') -> bool:
     variaveis = {k: _txt(v) for k, v in variaveis.items() if k in VARIAVEIS and _txt(v)}
-    metricas = {k: metricas.get(k) for k in ('views', 'curtidas', 'comentarios', 'compartilhamentos') if metricas.get(k) is not None}
+    metricas = metricas_validas(metricas)
+    if not metricas:
+        return False
     base = {'fonte': fonte, 'rede': rede, 'item': item, 'v': variaveis, 'm': metricas, 'ini': ini, 'fim': fim}
     h = _hash(base)
     if db.um('SELECT 1 FROM aprendizado_snapshots WHERE hash=?', h):
@@ -121,6 +124,18 @@ def _gravar_retrato(fonte: str, rede: str, item: str, variaveis: dict, metricas:
 
 
 # ---------------------------------------------------------------- entrada 1: o que o servidor leu das redes
+def metricas_validas(m: dict) -> dict:
+    out = {}
+    for k in ('views', 'curtidas', 'comentarios', 'compartilhamentos'):
+        try:
+            n = _num(m.get(k))
+        except (ValueError, TypeError, OverflowError):
+            n = None
+        if n is not None:
+            out[k] = n
+    return out
+
+
 def variaveis_do_corte(c: dict) -> dict:
     ini, fim = c.get('ini'), c.get('fim')
     return {'estilo': c.get('estilo_visual') or '', 'modelo': c.get('modelo_nome') or c.get('modelo') or '', 'faixa': c.get('faixa') or '',
@@ -129,17 +144,32 @@ def variaveis_do_corte(c: dict) -> dict:
             'arranjo': {'empilhado': 'Um em cima do outro', 'lado': 'Lado a lado'}.get(c.get('arranjo') or '', '')}
 
 
-def capturar() -> dict:
+def capturar(publicacoes: list | None = None) -> dict:
     """Guarda um retrato de cada corte já medido numa rede (idempotente). Só números que a rede entregou."""
     import agente as ag
     novos = 0
+    representados = set()
     for c in ag.estado()['cortes']:
         if not c.get('medido') or not c.get('metricas'):
             continue
         fim = c.get('postado') or c.get('criado') or 0
         for rede, m in c['metricas'].items():
-            if rede in REDES and isinstance(m, dict) and resultado(m) is not None:
-                novos += _gravar_retrato('rede', rede, c.get('id', ''), variaveis_do_corte(c), m, fim, fim)
+            if rede in REDES and isinstance(m, dict) and resultado(metricas_validas(m)) is not None:
+                novos += _gravar_retrato('rede', rede, c.get('id', ''), variaveis_do_corte(c), m, fim, c.get('metricas_em') or fim)
+                if c.get('post'):
+                    representados.add((c['post'], rede))
+    if os.getenv('METRICAS_PUBLICACOES', '0') == '1':
+        for p in publicacoes or []:
+            if not p.get('medido') or not isinstance(p.get('metricas'), dict):
+                continue
+            for rede, m in p['metricas'].items():
+                destino = (p.get('redes') or {}).get(rede) or {}
+                if (rede not in REDES or destino.get('status') != 'postado' or not isinstance(m, dict)
+                        or (p['id'], rede) in representados):
+                    continue
+                inicio = destino.get('feito') or p.get('quando')
+                novos += _gravar_retrato('rede', rede, 'post:' + p['id'],
+                                        {'modelo': p.get('modelo') or ''}, m, inicio, p.get('metricas_em'))
     if novos:
         db.evento('aprendizado', 'capturar', '', {'novos': novos})
     return {'novos': novos}
@@ -435,6 +465,7 @@ def apagar(d: dict) -> dict:
 
 # ---------------------------------------------------------------- painel
 def painel() -> dict:
+    import agente as ag
     ret = _retratos()
     fontes: dict = {}
     for r in db.todos('SELECT fonte, rede, COUNT(*) AS n, MIN(periodo_ini) AS a, MAX(periodo_fim) AS b FROM aprendizado_snapshots GROUP BY fonte, rede'):
@@ -457,6 +488,7 @@ def painel() -> dict:
     except Exception:  # noqa: BLE001
         pass
     return {'retratos': len(ret), 'minimo': MIN_AMOSTRAS, 'fontes': list(fontes.values()), 'variaveis': vars_, 'experimentos': exps,
+            'coleta': ag.inventario_metricas(),
             'importacoes': db.todos('SELECT id, nome, formato, linhas, recusadas, t FROM aprendizado_importacoes ORDER BY t DESC LIMIT 20'),
             'historico_pesos': db.todos('SELECT versao, t, variavel, motivo, ativo FROM aprendizado_pesos ORDER BY versao DESC LIMIT 20'),
             'aviso_causa': AVISO_CAUSA, 'aviso_frequencia': FREQUENCIA, 'boas_praticas': apoio,

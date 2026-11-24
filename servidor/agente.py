@@ -2648,9 +2648,49 @@ def acompanhar():
 
 def _numero(v):
     try:
-        return int(v)
-    except (TypeError, ValueError):
+        if isinstance(v, bool):
+            return None
+        n = int(v)
+        if isinstance(v, float) and v != n:
+            return None
+        return n if n >= 0 else None
+    except (TypeError, ValueError, OverflowError):
         return None
+
+
+def _id_youtube_publicado(destino: dict) -> str:
+    u = urllib.parse.urlsplit(str(destino.get('link') or '').split(' ')[0])
+    host = (u.hostname or '').lower()
+    if host in ('youtu.be', 'www.youtu.be'):
+        vid = u.path.strip('/')
+    elif host in ('youtube.com', 'www.youtube.com', 'm.youtube.com'):
+        if u.path.rstrip('/') == '/watch':
+            vid = urllib.parse.parse_qs(u.query).get('v', [''])[0]
+        else:
+            m = re.fullmatch(r'/(?:shorts|embed|live)/([\w-]{11})/?', u.path)
+            vid = m.group(1) if m else ''
+    else:
+        vid = ''
+    return vid if re.fullmatch(r'[\w-]{11}', vid) else ''
+
+
+def inventario_metricas() -> dict:
+    """Capacidade do código, não prova de autorização de uma conta. Não faz HTTP."""
+    escopos = {k: v.replace(',', ' ').split() for k, v in pg.ESCOPOS.items()}
+    redes = {
+        'youtube': {'coletor': True, 'campos': ['views', 'curtidas', 'comentarios'],
+                    'endpoint': 'youtube/v3/videos?part=statistics', 'escopos_solicitados': escopos['google']},
+        'instagram': {'coletor': True, 'campos': ['curtidas', 'comentarios'],
+                      'endpoint': pg.GRAPH_V + '/{media_id}?fields=like_count,comments_count', 'escopos_solicitados': escopos['meta']},
+        'facebook': {'coletor': True, 'campos': ['curtidas', 'comentarios'], 'campos_condicionais': ['views'],
+                     'endpoint': pg.GRAPH_V + '/{video_id}', 'escopos_solicitados': escopos['meta'],
+                     'limite': 'Views dependem do campo/versão e autorização. Video Insights não é consultado.'},
+        'tiktok': {'coletor': False, 'campos': [], 'escopos_solicitados': escopos['tiktok'],
+                   'limite': 'Sem adaptador de métricas; video.list não é solicitado por este cliente.'},
+        'kwai': {'coletor': False, 'campos': [], 'limite': 'Sem integração de métricas.'},
+    }
+    return {'publicacoes_habilitadas': os.getenv('METRICAS_PUBLICACOES', '0') == '1',
+            'redes': {r: dict(d, autorizacao_verificada=False, retencao='nao_coletada') for r, d in redes.items()}}
 
 
 def medir_post(p: dict) -> dict:
@@ -2662,9 +2702,9 @@ def medir_post(p: dict) -> dict:
         m = {'views': None, 'curtidas': None, 'comentarios': None}
         try:
             if rede == 'youtube':
-                achou = re.search(r'shorts/([\w-]{11})', r.get('link', ''))
-                if achou:
-                    st, _, j = pg.http('GET', pg.URL['google_api'] + '/youtube/v3/videos?part=statistics&id=' + achou.group(1),
+                vid = _id_youtube_publicado(r)
+                if vid:
+                    st, _, j = pg.http('GET', pg.URL['google_api'] + '/youtube/v3/videos?part=statistics&id=' + vid,
                                        cab={'Authorization': 'Bearer ' + pg._token_google()}, tempo=30)
                     itens = (j.get('items') or []) if st < 300 else []
                     if itens:
@@ -2709,11 +2749,12 @@ def aprender(ajustar: bool = True):
         p = ps.get(c.get('post'))
         medida = medir_post(p) if p else {}
         views = (medida.get('youtube') or {}).get('views')
+        medido_em = time.time()
 
-        def f(e, cid=c['id'], fx=c.get('faixa', ''), v=views, md=medida, c=c):
+        def f(e, cid=c['id'], fx=c.get('faixa', ''), v=views, md=medida, c=c, em=medido_em):
             for x in e['cortes']:
                 if x['id'] == cid:
-                    x.update(medido=True, views=v, metricas=md)
+                    x.update(medido=True, views=v, metricas=md, metricas_em=em)
             if v is not None and fx:
                 h = e['horarios'].setdefault(fx, {'n': 0, 'views': 0})
                 h['n'] += 1
@@ -2725,6 +2766,7 @@ def aprender(ajustar: bool = True):
         _mudar(f)
     for p in soltos[:20]:
         medida = medir_post(p)
+        medido_em = time.time()
 
         def g(e, md=medida, p=p):
             for rede, m in md.items():
@@ -2732,13 +2774,13 @@ def aprender(ajustar: bool = True):
             e['medidas'] = e['medidas'][-3000:]
         _mudar(g)
         try:
-            pg._mudar(p['id'], lambda q, md=medida: q.update(medido=True, metricas=md))
+            pg._mudar(p['id'], lambda q, md=medida, em=medido_em: q.update(medido=True, metricas=md, metricas_em=em))
         except pg.ErroRede:
             pass
     if pend or soltos:
         try:
             import aprendizado as apr
-            apr.capturar()                  # guarda o retrato dos números lidos agora (sem editar depois)
+            apr.capturar(publicacoes=pg.posts())  # guarda o retrato dos números lidos agora (sem editar depois)
         except Exception as e:  # noqa: BLE001
             print('agente: retratos do aprendizado', e)
     if ajustar and (pend or soltos) and config()['cortes']['aprender']:

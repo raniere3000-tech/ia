@@ -783,7 +783,7 @@ def _rotas_agenda(self, caminho: str):
         return apz.importar(str(d.get('nome', '')), str(d.get('formato', '')), d.get('conteudo'))
     if caminho == '/agente/aprendizado/capturar':
         ag.aprender(ajustar=False)
-        return {**apz.capturar(), 'painel': apz.painel()}
+        return {**apz.capturar(publicacoes=pg.posts()), 'painel': apz.painel()}
     if caminho == '/agente/aprendizado/apagar':
         return apz.apagar(d)
     if caminho == '/agente/aprendizado/aplicar':
