@@ -125,14 +125,17 @@ def _proximo(recurso: str) -> dict | None:
     return dict(r, status='rodando')
 
 
-def _cancelar_entidades(job: dict):
+def _cancelar_entidades(job: dict, conexao=None):
     """Uma produção cancelada não continua aparecendo como aprovação pendente."""
+    def executar(sql, *args):
+        return conexao.execute(sql, args) if conexao is not None else db.executar(sql, *args)
     agora = time.time()
+    executar('DELETE FROM kv WHERE chave=?', 'liberar:' + job['id'])
     if job.get('projeto'):
-        db.executar("UPDATE projetos SET status='cancelled', atualizado=? WHERE id=? "
+        executar("UPDATE projetos SET status='cancelled', atualizado=? WHERE id=? "
                     "AND status NOT IN ('queued_to_publish','posted','rejected')", agora, job['projeto'])
-        db.executar('UPDATE desafios SET usado=? WHERE projeto=? AND usado IS NULL', agora, job['projeto'])
-    db.executar("UPDATE thumbnail_jobs SET estado='cancelado', erro='Cancelado por você.', atualizado=? "
+        executar('UPDATE desafios SET usado=? WHERE projeto=? AND usado IS NULL', agora, job['projeto'])
+    executar("UPDATE thumbnail_jobs SET estado='cancelado', erro='Cancelado por você.', atualizado=? "
                 "WHERE fila_job=? AND estado NOT IN ('pronto','cancelado')", agora, job['id'])
 
 
@@ -268,12 +271,16 @@ def _trabalhador(recurso: str):
 
 
 def recuperar():
-    """Depois de um reinício: o que estava 'rodando' volta para a fila (as etapas já feitas ficam salvas)."""
+    """Reinicia trabalhos interrompidos, preservando pausa/cancelamento e entidades."""
     agora = time.time()
-    n = db.executar("UPDATE jobs SET status='na_fila', etapa='Retomando depois de reinício', lease=0 WHERE status='rodando' AND cancelar=0 AND (lease<? OR ?=1)",
-                    agora, 1 if not _rodando else 0)
-    db.executar("UPDATE jobs SET status='cancelado', etapa='Cancelado por você', terminado=?, lease=0 "
-                "WHERE status='rodando' AND cancelar=1 AND (lease<? OR ?=1)", agora, agora, 1 if not _rodando else 0)
+    with db.tx() as c:
+        params = (agora, 1 if not _rodando else 0)
+        cancelados = c.execute("SELECT * FROM jobs WHERE status='rodando' AND cancelar=1 AND (lease<? OR ?=1)", params).fetchall()
+        n = c.execute("UPDATE jobs SET status='na_fila', etapa='Retomando depois de reinício', lease=0 WHERE status='rodando' AND cancelar=0 AND (lease<? OR ?=1)", params).rowcount
+        c.execute("UPDATE jobs SET status='cancelado', etapa='Cancelado por você', terminado=?, lease=0 "
+                  "WHERE status='rodando' AND cancelar=1 AND (lease<? OR ?=1)", (agora, *params))
+        for j in cancelados:
+            _cancelar_entidades(dict(j), c)
     if n:
         db.evento('fila', 'jobs_recuperados', '', {'quantos': n})
     return n
@@ -317,28 +324,33 @@ def retomar(jid: str) -> dict:
 
 
 def cancelar(jid: str) -> dict:
-    db.executar("""UPDATE jobs SET cancelar=1,
-                status=CASE WHEN status='rodando' THEN status ELSE 'cancelado' END,
-                etapa=CASE WHEN status='rodando' THEN 'Cancelando…' ELSE 'Cancelado por você' END,
-                terminado=CASE WHEN status='rodando' THEN terminado ELSE ? END,
-                pausado=0
-                WHERE id=? AND status NOT IN ('concluido','falhou','cancelado')""", time.time(), jid)
-    j = obter(jid)
-    if not j:
-        raise ValueError('Trabalho não encontrado.')
-    if j['cancelar']:
-        _cancelar_entidades(j)
-    return j
+    with db.tx() as c:
+        mudou = c.execute("""UPDATE jobs SET cancelar=1,
+                    status=CASE WHEN status='rodando' THEN status ELSE 'cancelado' END,
+                    etapa=CASE WHEN status='rodando' THEN 'Cancelando…' ELSE 'Cancelado por você' END,
+                    terminado=CASE WHEN status='rodando' THEN terminado ELSE ? END, pausado=0
+                    WHERE id=? AND cancelar=0 AND status NOT IN ('concluido','falhou','cancelado')""", (time.time(), jid)).rowcount
+        j = c.execute('SELECT * FROM jobs WHERE id=?', (jid,)).fetchone()
+        if not j:
+            raise ValueError('Trabalho não encontrado.')
+        if mudou:
+            _cancelar_entidades(dict(j), c)
+    if mudou:
+        db.evento('fila', 'job_cancelado', 'job:' + jid)
+    return obter(jid)
 
 
 def ignorar(jid: str) -> dict:
-    db.executar("""UPDATE jobs SET status='cancelado', cancelar=1, pausado=0, etapa='Ignorado por você', terminado=?
-                WHERE id=? AND status IN ('na_fila','agendado','aguardando_tentativa','aguardando_aprovacao')""",
-                time.time(), jid)
-    job = obter(jid)
-    if job and job['status'] == 'cancelado':
-        _cancelar_entidades(job)
-    return job
+    with db.tx() as c:
+        mudou = c.execute("""UPDATE jobs SET status='cancelado', cancelar=1, pausado=0, etapa='Ignorado por você', terminado=?
+                    WHERE id=? AND status IN ('na_fila','agendado','aguardando_tentativa','aguardando_aprovacao')""",
+                    (time.time(), jid)).rowcount
+        j = c.execute('SELECT * FROM jobs WHERE id=?', (jid,)).fetchone()
+        if mudou:
+            _cancelar_entidades(dict(j), c)
+    if mudou:
+        db.evento('fila', 'job_ignorado', 'job:' + jid)
+    return obter(jid)
 
 
 def liberar(jid: str, *, chave_aprovacao: str = '') -> dict:

@@ -1,5 +1,6 @@
 """Cancelamento durante sucesso, transição, espera, falha e recuperação."""
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -103,6 +104,31 @@ class Cancelamento(unittest.TestCase):
         fila.cancelar(j['id'])
         self.assertEqual(db.um('SELECT status FROM projetos WHERE id=?', 'a' * 12)['status'], 'cancelled')
         self.assertFalse(any(p['projeto'] == 'a' * 12 for p in aprovacoes.pendentes()))
+
+    def test_ignorar_waiting_user_preserva_auditoria_e_remove_pendencia(self):
+        import aprovacoes
+        import projetos as pj
+        p=pj.criar({'tipo':'agente3','status':'waiting_brief_approval','dados':{'briefing':{}}})
+        j=self.job('aguardando_aprovacao',p['id'])
+        db.kv_gravar('liberar:'+j['id'],123)
+        fila.ignorar(j['id']);fila.ignorar(j['id'])
+        self.assertIsNotNone(fila.obter(j['id']))
+        self.assertIsNone(db.kv('liberar:'+j['id']))
+        self.assertFalse(any(x['projeto']==p['id'] for x in aprovacoes.pendentes()))
+        self.assertEqual(db.um("SELECT COUNT(*) n FROM eventos WHERE recurso=? AND acao='job_ignorado'",'job:'+j['id'])['n'],1)
+
+    def test_reinicio_com_cancelamento_incompleto_e_pausa(self):
+        import projetos as pj
+        p=pj.criar({'tipo':'agente3','status':'waiting_brief_approval','dados':{'briefing':{}}})
+        j=self.job('rodando',p['id'])
+        # Simula queda de uma versão antiga após gravar o pedido de cancelamento.
+        db.executar('UPDATE jobs SET cancelar=1 WHERE id=?',j['id'])
+        db.kv_gravar('liberar:'+j['id'],123)
+        pausado=self.job('rodando');fila.pausar(pausado['id'])
+        code="import fila,banco as db; fila.recuperar(); assert fila.obter('"+j['id']+"')['status']=='cancelado'; assert db.um('SELECT status FROM projetos WHERE id=?','"+p['id']+"')['status']=='cancelled'; assert fila.obter('"+pausado['id']+"')['pausado']==1; assert fila._proximo('leve') is None"
+        r=subprocess.run([sys.executable,'-c',code],capture_output=True,text=True,timeout=15)
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertIsNone(db.kv('liberar:'+j['id']))
 
     def test_capa_cancelada_nao_volta(self):
         j = self.job('rodando')
