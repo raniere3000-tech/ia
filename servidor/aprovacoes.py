@@ -356,9 +356,9 @@ def aprovar_roteiro(pid: str, por: str, revisao: int | None = None) -> dict:
         d['aprovacao_roteiro'] = {'aprovado': True, 't': time.time(), 'por': por, 'revisao': p['revisao']}
         return {}
     pj.mudar_dados(pid, f)
-    esperando = db.todos("SELECT id FROM jobs WHERE projeto=? AND status='aguardando_aprovacao'", pid)
+    esperando = db.todos("SELECT id FROM jobs WHERE projeto=? AND status IN ('aguardando_aprovacao','rodando') AND tipo='agente3.produzir'", pid)
     for j in esperando:
-        fila.liberar(j['id'])
+        fila.liberar(j['id'])     # rodando: a aprovação fica guardada e vale quando a etapa pedir
     db.evento(por, 'roteiro_aprovado', 'projeto:' + pid)
     if esperando:
         return {'ok': True, 'job': fila.obter(esperando[0]['id'])}

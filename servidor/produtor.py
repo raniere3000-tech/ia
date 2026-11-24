@@ -915,8 +915,33 @@ def parecer_etapa(pid, etapa, motivos):
     pj.mudar_dados(pid, gravar)
 
 
+# Rodadas seguidas de "diretor reprovou -> corrige" numa mesma etapa. Passou disso, para e pede você (sem laço infinito).
+MAX_REPROVACOES_ETAPA = int(os.getenv('MAX_REPROVACOES_ETAPA', '3'))
+
+
+def _reprovacoes(pid, etapa) -> int:
+    return int(((pj.obter(pid)['dados'].get('pareceres_etapas') or {}).get(etapa) or {}).get('reprovacoes') or 0)
+
+
 def corrigir_etapa(ctx, pid, etapa, destino, motivos):
     parecer_etapa(pid, etapa, motivos)
+    if _reprovacoes(pid, etapa) > MAX_REPROVACOES_ETAPA:
+        msg = (f'O diretor pediu correção de {etapa} {MAX_REPROVACOES_ETAPA + 1} vezes seguidas e o problema continuou: '
+               + motivos[0][:200])
+        db.evento('agente3', 'etapa_parada_limite', 'projeto:' + pid, {'etapa': etapa, 'motivos': motivos[:5]})
+        if etapa in ('pauta', 'roteiro'):
+            # você decide: aprovar o roteiro como está (o diretor deixa de bloquear) ou pedir uma correção sua
+            pj.mudar_dados(pid, lambda d, _p: (d.update(aprovacao_roteiro={'aprovado': False, 'motivo_parada': msg[:400]}),
+                                               {'status': 'waiting_brief_approval'})[1])
+            ctx.dados['correcao'] = ''
+            ctx.dados['etapa'] = 'roteiro'
+            try:
+                import emails
+                emails.avisar_roteiro(pid)
+            except Exception as e:  # noqa: BLE001
+                print('produtor: aviso de roteiro', e)
+            raise fila.Esperar(0, 'Precisa da sua revisão: ' + msg[:250], 'aguardando_aprovacao')
+        raise ErroProdutor('Precisa da sua revisão: ' + msg, True)
     if destino == 'revisar':
         ctx.dados['correcao'] = 'Diretor de qualidade: ' + ' '.join(motivos)[:1800]
     return {'proxima': True, 'recurso': 'pesado' if destino == 'render' else 'leve',
@@ -930,6 +955,10 @@ def conferir_roteiro(ctx, pid, p, b):
     motivos = [f['evidence'] + ' ' + f['instruction'] for f in rel['findings']] if not rel['passed'] else []
     for achado in revisao_narrativa(pid, cenas, b):
         motivos.append(achado['descricao'] + ' ' + achado.get('proposta', ''))
+    if motivos and (p['dados'].get('aprovacao_roteiro') or {}).get('aprovado') and _reprovacoes(pid, 'roteiro') > MAX_REPROVACOES_ETAPA:
+        # você já aprovou este roteiro depois que o diretor parou de insistir: os apontamentos ficam registrados, sem novo laço
+        parecer_etapa(pid, 'roteiro', [])
+        return None
     if motivos:
         return corrigir_etapa(ctx, pid, 'roteiro', 'revisar', motivos)
     parecer_etapa(pid, 'roteiro', [])

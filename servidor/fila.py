@@ -167,6 +167,7 @@ def _executar(job: dict):
             raise Cancelado()
         r = funcao(ctx) or {}
         dur = time.time() - inicio
+        db.executar('DELETE FROM kv WHERE chave=?', 'liberar:' + ctx.id)    # a etapa passou sem pedir aprovação: o aviso guardado não vale para a próxima
         if r.get('proxima'):           # etapa seguinte do mesmo trabalho
             _atualizar_execucao(ctx, dur, "UPDATE jobs SET status='na_fila', recurso=?, etapa=?, dados=?, decorrido=decorrido+?, lease=0, tentativas=0 WHERE id=?",
                         r.get('recurso', 'leve'), r.get('etapa', 'Na fila'), json.dumps(ctx.dados, ensure_ascii=False), dur)
@@ -180,8 +181,14 @@ def _executar(job: dict):
                 db.evento('fila', 'job_concluido', 'job:' + job['id'])
     except Esperar as e:
         dur = time.time() - inicio
-        _atualizar_execucao(ctx, dur, 'UPDATE jobs SET status=?, proxima=?, etapa=?, dados=?, decorrido=decorrido+?, lease=0 WHERE id=?',
-                            e.status, time.time() + e.segundos, e.motivo[:200], json.dumps(ctx.dados, ensure_ascii=False), dur)
+        status, motivo = e.status, e.motivo
+        if status == 'aguardando_aprovacao' and db.kv('liberar:' + ctx.id):
+            # a sua aprovação chegou enquanto a etapa ainda rodava: não fica parado esperando algo que já aconteceu
+            status, motivo = 'na_fila', 'Na fila (aprovado)'
+        if _atualizar_execucao(ctx, dur, 'UPDATE jobs SET status=?, proxima=?, etapa=?, dados=?, decorrido=decorrido+?, lease=0 WHERE id=?',
+                               status, time.time() + (0 if status != e.status else e.segundos), motivo[:200],
+                               json.dumps(ctx.dados, ensure_ascii=False), dur):
+            db.executar('DELETE FROM kv WHERE chave=?', 'liberar:' + ctx.id)
     except Cancelado:
         _encerrar_interrompido(ctx, time.time() - inicio)
     except Exception as e:  # noqa: BLE001
@@ -317,7 +324,9 @@ def ignorar(jid: str) -> dict:
 
 def liberar(jid: str) -> dict:
     """Trabalho que esperava uma aprovação volta para a fila (continua da mesma etapa)."""
-    db.executar("UPDATE jobs SET status='na_fila', proxima=0, etapa='Na fila (aprovado)' WHERE id=? AND status='aguardando_aprovacao'", jid)
+    if not db.executar("UPDATE jobs SET status='na_fila', proxima=0, etapa='Na fila (aprovado)' WHERE id=? AND status='aguardando_aprovacao'", jid):
+        if (obter(jid) or {}).get('status') == 'rodando':
+            db.kv_gravar('liberar:' + jid, time.time())      # chegou antes de a etapa terminar de pedir: vale quando ela pedir
     ACORDAR.set()
     return obter(jid)
 
