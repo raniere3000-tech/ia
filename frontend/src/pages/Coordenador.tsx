@@ -289,6 +289,12 @@ function Aprendizado(){
     <h3><Lightbulb size={16}/> Aprendizado</h3>
     <p className="hint">{r.dados?.nota||'Padrões encontrados no que aconteceu de verdade neste servidor.'} Nada muda sozinho.</p>
     <Erro e={r.erro}/>
+    <h4>Feedback dos resultados por agente</h4>
+    <ul className="coord-lista">{r.dados?.feedback_metricas?.map((m,i)=><li key={i} className="coord-item">
+      <b>{m.agente} • {m.alvo} • {m.estado==='dados_insuficientes'?'Dados insuficientes':'Hipótese observacional'}</b>
+      <small>{m.vertente||'Vertente indisponível'} • {m.rede||'Rede indisponível'} • {m.canal||'Canal indisponível'} • {m.amostras} amostra(s)</small>
+      <p>{m.recomendacao}</p><details><summary>Evidências</summary>{m.snapshots.join(', ')||'Nenhuma medida com contexto suficiente.'}</details>
+    </li>)}</ul>
     {r.dados&&!r.dados.sugestoes.length&&<p className="muted">Ainda não há evidência suficiente para sugerir algo.</p>}
     <ul className="coord-lista">{(r.dados?.sugestoes||[]).map(s=><li key={s.id} className="coord-item">
       <b>{s.titulo}</b>

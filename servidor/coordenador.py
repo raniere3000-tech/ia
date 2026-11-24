@@ -1997,7 +1997,7 @@ def sugestoes() -> dict:
     dis = set(_dispensadas())
     ja = {m['chave'] for m in memorias() if m['status'] in ('proposta', 'confirmada')}
     out = [s for s in out if s['id'] not in dis and s['proposta']['chave'] not in ja]
-    return {'sugestoes': out, 'nota': 'Sugestões com base no que foi medido neste servidor. Nada muda sem você confirmar.'}
+    return {'sugestoes': out, 'feedback_metricas': feedback_metricas(), 'nota': 'Sugestões com base no que foi medido neste servidor. Nada muda sem você confirmar.'}
 
 
 def propor_sugestao(sid: str, quem: str = 'site') -> dict:
@@ -2448,3 +2448,50 @@ def iniciar():
     if os.getenv('COORDENADOR_SEM_VIGIA') == '1':
         return
     threading.Thread(target=_vigia, daemon=True, name='coordenador').start()
+
+
+def feedback_metricas(filtros: dict | None = None) -> list:
+    """A7 descreve evidências por agente; não altera memória, prompt ou configuração."""
+    import aprendizado as ap
+    dados = ap.indicadores(filtros)
+    grupos = {}
+    for x in dados['itens']:
+        grupos.setdefault((x['vertente'], x['rede'], x['canal']), []).append(x)
+    if not grupos:
+        grupos[('', '', None)] = []
+    out = []
+    for (vertente, rede, canal), itens in sorted(grupos.items(), key=lambda p: str(p[0])):
+        metrica = str((filtros or {}).get('metrica') or 'views')
+        for agente, alvo in [('agente1', 'gancho'), ('agente3', 'roteiro'), ('agente5', 'efeitos'),
+                             ('agente6', 'capa'), ('agente2', 'horario'), ('agente4', 'criterios')]:
+            vals = {}
+            evidencias = []
+            for x in itens:
+                c = x['publicacao'] or {}
+                valor = None
+                if alvo == 'gancho':
+                    valor = c.get('gancho')
+                elif alvo == 'roteiro':
+                    valor = c.get('roteiro_sha')  # não inferir roteiro a partir do título/projeto atual
+                elif alvo == 'efeitos' and isinstance(c.get('efeitos'), dict):
+                    valor = ','.join(sorted({e['tipo'] for e in c['efeitos'].get('efeitos', []) if e.get('status') == 'aplicado'})) or 'nenhum'
+                elif alvo == 'capa':
+                    valor = (c.get('capa_selecionada') or {}).get('sha')
+                elif alvo == 'horario' and c.get('publicado_em'):
+                    valor = time.strftime('%Hh UTC', time.gmtime(c['publicado_em']))
+                elif alvo == 'criterios':
+                    valor = c.get('criterio_qa')
+                if valor is not None and metrica in x['metricas']:
+                    vals.setdefault(str(valor), []).append(x['metricas'][metrica])
+                    evidencias.append(x['snapshot'])
+            comparaveis = [dict(valor=k, **ap._estat(v)) for k, v in vals.items() if len(v) >= ap.MIN_AMOSTRAS]
+            comparaveis.sort(key=lambda x: (-x['media'], x['valor']))
+            suficiente = len(comparaveis) >= 2 and bool(canal) and vertente in ('cortes', 'criacao_ia')
+            texto = (f'Comparar {alvo} em teste controlado no mesmo canal e vertente; o grupo {comparaveis[0]["valor"][:60]} '
+                     f'teve maior média de {metrica}. Associação não prova causa.' if suficiente else
+                     f'Dados insuficientes para recomendar alteração de {alvo}. Coletar pelo menos {ap.MIN_AMOSTRAS} vídeos por valor, com canal e versão conhecidos.')
+            out.append({'agente': agente, 'alvo': alvo, 'vertente': vertente, 'rede': rede, 'canal': canal,
+                        'metrica': metrica, 'estado': 'hipotese_observacional' if suficiente else 'dados_insuficientes',
+                        'recomendacao': texto, 'amostras': len(evidencias), 'sem_contexto_ou_metrica': len(itens)-len(evidencias),
+                        'comparacoes': comparaveis, 'snapshots': sorted(evidencias), 'aviso': ap.AVISO_CAUSA})
+    return out
