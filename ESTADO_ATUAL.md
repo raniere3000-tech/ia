@@ -1,15 +1,15 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T14:00:53-03:00. Executor: Codex.
+Atualizado: 2026-11-24T14:04:45-03:00. Executor: Codex.
 
 ```yaml
 fase: F1
-microetapa: F1.03
+microetapa: F1.04
 status: COMMITTED
 branch: claude/project-thread-hqyqog-fase1
-sha_inicial: cd3fb72404a6b2672ec55648a8a284d0e23f4d3a
-sha_final_implementacao: ff413f08bceb06740b349c29bd3da12286318ed0
-proxima_microetapa: F1.04
+sha_inicial: 299fd52be73f14e615b2ccf9a350636b3e1f3c61
+sha_final_implementacao: 1b0483b6ff3a0928ac3d5dd79029af3e095ee2f7
+proxima_microetapa: F1.05
 mudancas_nao_commitadas: []
 flags_adicionadas: []
 migracoes: []
@@ -35,12 +35,12 @@ permissão para continuar etapas autorizadas ou sincronizar esta branch.
 
 ## Última microetapa
 
-Reproduzido KeyError redes em postagem.conferencia. A leitura agora trata mapeamentos ausentes/parciais, retorna bloqueio explícito de destino e não habilita envio com dados incompletos. Dados completos preservam horário vencido e regras de nova tentativa. Reutilizados conferencia e _destino_pronto. Testes: cd servidor && PYTHONPATH=. python3 testes/teste_skills_agentes.py (exit 0, sete verificações novas) e teste_redes_independentes.py (13 verificações, exit 0). Antes: teste_skills_agentes.py exit 1 em KeyError redes. Arquivos: servidor/postagem.py e servidor/testes/teste_skills_agentes.py. Sem flags (conserto de defeito).
+Adaptador fila.estado_publico acrescenta estado_comum, heartbeat_atrasado e estado_motivo sem alterar status persistido. Fila e consulta individual expõem CREATED/QUEUED/RUNNING/WAITING_USER/PAUSED/RETRYABLE_ERROR/CANCEL_REQUESTED/CANCELLED/FAILED/COMPLETED. Heartbeat ausente/vencido ou lease vencida não é RUNNING e não recebe ETA de execução. Coordenador/painel separam jobs recuperáveis dos ativos. UI de fila e painel de agentes consomem sinal de leitura; dados legados continuam suportados. Sem colunas novas. Testes: teste_estados_fila.py 3 testes (mapeamento, precedência, lease, API, lista, painel sem escrita e subprocesso de reinício), teste_painel.py 34 verificações, teste_esteira_7.py 70 verificações; todos exit 0. Frontend npx tsc --noEmit exit 0 e npm test 16/16. git diff --check aprovado. Arquivos: fila.py, api_v1.py, coordenador.py, painel.py, teste_estados_fila.py e três consumidores frontend.
 
-Evidências: docs/estudioclip-2/checkpoints/F1.03-*.
+Evidências: docs/estudioclip-2/checkpoints/F1.04-*.
 Último resultado: testes focais e git diff --check aprovados.
 
-## Ponto exato de retomada — F1.04
+## Ponto exato de retomada — F1.05
 
 ```bash
 git status --short
@@ -52,10 +52,10 @@ git rev-list --left-right --count HEAD...origin/claude/project-thread-hqyqog-fas
 cat ESTADO_ATUAL.md
 ```
 
-Ler docs/estudioclip-2/microetapas/06_F1_04_ESTADOS_LEITURA.md; inventariar fila.resumo, painel e rotas de leitura, sem renomear status persistidos. Depois rodar cd servidor && PYTHONPATH=. python3 testes/teste_painel.py.
+Ler docs/estudioclip-2/microetapas/07_F1_05_REPETIR_FONTE_A1.md. Inventariar agente.rodar, fila A1 e _marcar_visto; testar repetição persistente da mesma fonte atrás de A1_MESMA_FONTE=0. Não refazer F1.04.
 
 Não refazer Fase 0 ou microetapas concluídas. Relatórios anteriores permanecem em
-checkpoints/. Flags desligadas por padrão. Rollback: git revert ff413f08bceb06740b349c29bd3da12286318ed0
+checkpoints/. Flags desligadas por padrão. Rollback: git revert 1b0483b6ff3a0928ac3d5dd79029af3e095ee2f7
 (não executar automaticamente). Sem migrações ou publicação em conta real.
 Suite integral/frontend no fechamento F1.09; teste_agente3 integral ainda tem cenários
 antigos pendentes de avaliação, embora o recorte F1.01 de render real passou 18/18.
