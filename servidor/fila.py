@@ -88,17 +88,18 @@ def enfileirar(tipo: str, *, agente: str, dados: dict | None = None, run_at: flo
                recurso: str | None = None, projeto: str = '', titulo: str = '', chave: str = '', max_tentativas: int = 3) -> dict:
     if tipo not in HANDLERS:
         raise ValueError('tipo de trabalho desconhecido: ' + tipo)
-    if chave:
-        ja = db.um('SELECT * FROM jobs WHERE chave=?', chave)
-        if ja:                 # pedido repetido (duplo clique, reinício): não cria outro
-            return ja
     agora = time.time()
     quando = float(run_at) if run_at else agora
     jid = uuid.uuid4().hex[:12]
-    db.executar('INSERT INTO jobs (id, agente, tipo, projeto, titulo, status, run_at, prioridade, recurso, max_tentativas, criado, dados, chave, etapa) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', jid, agente, tipo, projeto, titulo[:160], 'agendado' if quando > agora + 1 else 'na_fila',
-                quando, int(prioridade), recurso or HANDLERS[tipo][1], max_tentativas, agora, json.dumps(dados or {}, ensure_ascii=False), chave or None,
-                'Esperando o horário' if quando > agora + 1 else 'Na fila')
+    with db.tx() as c:
+        if chave:
+            ja = c.execute('SELECT * FROM jobs WHERE chave=?', (chave,)).fetchone()
+            if ja:
+                return dict(ja, repetido=True)
+        c.execute('INSERT INTO jobs (id, agente, tipo, projeto, titulo, status, run_at, prioridade, recurso, max_tentativas, criado, dados, chave, etapa) '
+                  'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', (jid, agente, tipo, projeto, titulo[:160], 'agendado' if quando > agora + 1 else 'na_fila',
+                  quando, int(prioridade), recurso or HANDLERS[tipo][1], max_tentativas, agora, json.dumps(dados or {}, ensure_ascii=False), chave or None,
+                  'Esperando o horário' if quando > agora + 1 else 'Na fila'))
     db.evento(agente, 'job_criado', 'job:' + jid, {'tipo': tipo, 'run_at': quando})
     ACORDAR.set()
     return db.um('SELECT * FROM jobs WHERE id=?', jid)

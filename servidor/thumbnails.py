@@ -345,20 +345,28 @@ def criar(d: dict, quem: str = 'site') -> dict:
                 raise ErroThumb(503, motivo + ' Escolha "Quadro do vídeo" ou "Editorial", ou marque "usar o jeito local se a IA não der".')
     conf = {'metodo': metodo, 'variantes': n, 'formato': formato, 'texto_modo': texto_modo, 'texto': texto, 'descricao': descricao,
             'perfil_id': perfil_id, 'aviso': aviso, 'destino': d.get('destino') if d.get('destino') in REDES_CAPA else ''}
-    chave = str(d.get('chave_idempotencia') or '')[:80] or hashlib.sha256(json.dumps([origem, ref, sha, conf], sort_keys=True).encode()).hexdigest()[:40]
-    ja = db.um('SELECT id FROM thumbnail_jobs WHERE chave=?', chave)
-    if ja:                          # duplo clique ou pedido repetido: devolve o mesmo
-        return dict(obter(ja['id']), repetido=True)
+    cliente = str(d.get('chave_idempotencia') or '')[:80]
+    identidade = [origem, ref, sha, conf] + ([cliente] if cliente else [])
+    chave = hashlib.sha256(json.dumps(identidade, sort_keys=True).encode()).hexdigest()[:40]
     tid = secrets.token_hex(6)
     agora = _agora()
-    db.executar('INSERT INTO thumbnail_jobs (id, origem, referencia, video_sha, config, estado, criado, atualizado, chave, titulo, metodo, por) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', tid, origem, ref, sha, json.dumps(conf, ensure_ascii=False), 'na_fila', agora, agora, chave,
-                info['titulo'][:150], metodo, str(quem)[:60])
-    fj = fila.enfileirar('agente6.thumbnail', agente='agente6', dados={'job': tid}, titulo='Capa: ' + info['titulo'][:80], chave='thumb:' + tid,
-                         prioridade=5, max_tentativas=3)
-    db.executar('UPDATE thumbnail_jobs SET fila_job=? WHERE id=?', fj['id'], tid)
-    db.evento(quem, 'thumbnail_pedido', 'thumb:' + tid, {'origem': origem, 'ref': ref, 'metodo': metodo, 'variantes': n})
-    return obter(tid)
+    with db.tx() as c:
+        ja = c.execute('SELECT id FROM thumbnail_jobs WHERE chave=?', (chave,)).fetchone()
+        repetido = bool(ja)
+        if ja:
+            tid = ja['id']
+        else:
+            c.execute('INSERT INTO thumbnail_jobs (id, origem, referencia, video_sha, config, estado, criado, atualizado, chave, titulo, metodo, por) '
+                      'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', (tid, origem, ref, sha, json.dumps(conf, ensure_ascii=False), 'na_fila', agora, agora, chave,
+                      info['titulo'][:150], metodo, str(quem)[:60]))
+    # Se houve queda entre criar o pedido e enfileirar, o pedido repetido completa a ligação.
+    if not (_job(tid).get('fila_job')):
+        fj = fila.enfileirar('agente6.thumbnail', agente='agente6', dados={'job': tid}, titulo='Capa: ' + info['titulo'][:80], chave='thumb:' + tid,
+                             prioridade=5, max_tentativas=3)
+        db.executar('UPDATE thumbnail_jobs SET fila_job=? WHERE id=? AND fila_job IS NULL', fj['id'], tid)
+    if not repetido:
+        db.evento(quem, 'thumbnail_pedido', 'thumb:' + tid, {'origem': origem, 'ref': ref, 'metodo': metodo, 'variantes': n})
+    return dict(obter(tid), repetido=True) if repetido else obter(tid)
 
 
 def cancelar(tid: str, quem: str = 'site') -> dict:
@@ -390,8 +398,12 @@ def refazer(tid: str, d: dict, quem: str = 'site') -> dict:
     if j['correcoes'] >= cfg['max_correcoes'] + 3:
         raise ErroThumb(429, 'Limite de refações deste pedido atingido. Crie um pedido novo.')
     texto = _texto_completo(d.get('texto')) if 'texto' in d else None
+    versao = (db.um('SELECT MAX(versao) v FROM thumbnail_variantes WHERE job=? AND numero=?', tid, numero) or {}).get('v') or 0
+    chave = 'thumb-refazer:' + hashlib.sha256(json.dumps([tid, j['video_sha'], numero, versao, texto, j.get('fila_job')]).encode()).hexdigest()
     j2 = fila.enfileirar('agente6.thumbnail', agente='agente6', dados={'job': tid, 'refazer': numero, 'texto': texto},
-                         titulo=f'Capa {numero}: refazer', prioridade=6, max_tentativas=2)
+                         titulo=f'Capa {numero}: refazer', prioridade=6, max_tentativas=2, chave=chave)
+    if j2.get('repetido'):
+        return dict(obter(tid), repetido=True)
     db.executar('UPDATE thumbnail_jobs SET fila_job=?, estado=?, atualizado=?, erro=NULL WHERE id=?', j2['id'], 'na_fila', _agora(), tid)
     db.evento(quem, 'thumbnail_refazer', 'thumb:' + tid, {'numero': numero})
     return obter(tid)

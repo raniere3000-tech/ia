@@ -208,6 +208,9 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
         raise ErroAprovacao(409, 'O vídeo mudou depois que você abriu. Assista a versão nova antes de aprovar.')
     chave = chave or f'aprovar:{pid}:{render_sha}'
     ja = db.um('SELECT * FROM aprovacoes WHERE chave=?', chave)
+    if ja and (ja['projeto'] != pid or ja['render_sha'] != render_sha):
+        chave = f'{chave}:{pid}:{render_sha}'
+        ja = db.um('SELECT * FROM aprovacoes WHERE chave=?', chave)
     if ja:
         return {'ok': True, 'repetido': True, 'aprovacao': ja, 'posts': db.todos('SELECT * FROM publicacoes WHERE aprovacao=?', ja['id'])}
     if p['status'] != 'ready_for_review':

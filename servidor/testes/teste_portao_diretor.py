@@ -1,5 +1,7 @@
 """F1.02: porta real de aprovação e confirmação WhatsApp por SHA, sem redes reais."""
 import hashlib
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import os
 import sys
 import tempfile
@@ -114,6 +116,28 @@ class PortaoDiretor(unittest.TestCase):
         self.assertEqual(db.um('SELECT COUNT(*) n FROM aprovacoes WHERE projeto=?', self.pid)['n'], 1)
         self.assertEqual(db.um('SELECT COUNT(*) n FROM publicacoes WHERE aprovacao IN (SELECT id FROM aprovacoes WHERE projeto=?)', self.pid)['n'], 1)
         self.assertEqual(len([p for p in pg.posts() if p.get('projeto') == self.pid]), 1)
+
+    def test_aprovacao_concorrente_tem_um_efeito(self):
+        self.certificado()
+        barreira=threading.Barrier(2)
+        def aprovar():
+            barreira.wait(timeout=5)
+            return ap.aprovar(self.pid,self.sha,None,'site','teste')
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            rs=list(executor.map(lambda _:aprovar(),range(2)))
+        self.assertTrue(all(r['ok'] for r in rs))
+        self.assertEqual(db.um('SELECT COUNT(*) n FROM aprovacoes WHERE projeto=?',self.pid)['n'],1)
+        self.assertEqual(db.um('SELECT COUNT(*) n FROM publicacoes WHERE aprovacao IN (SELECT id FROM aprovacoes WHERE projeto=?)',self.pid)['n'],1)
+
+    def test_chave_cliente_reutilizada_em_versao_diferente(self):
+        self.certificado()
+        ap.aprovar(self.pid,self.sha,None,'site','teste',chave='pedido-do-cliente')
+        self.sha=self.render('render novo',2)
+        self.parecer();self.certificado()
+        r=ap.aprovar(self.pid,self.sha,None,'site','teste',chave='pedido-do-cliente')
+        self.assertFalse(r.get('repetido'))
+        self.assertEqual(db.um('SELECT COUNT(*) n FROM aprovacoes WHERE projeto=?',self.pid)['n'],2)
+        self.assertTrue(ap.aprovar(self.pid,self.sha,None,'site','teste',chave='pedido-do-cliente')['repetido'])
 
     def test_rejeicao_nao_cria_posts(self):
         self.certificado()
