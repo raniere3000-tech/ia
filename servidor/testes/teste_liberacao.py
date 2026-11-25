@@ -19,6 +19,7 @@ import banco as db  # noqa: E402
 import api_v1  # noqa: E402
 import aprovacoes as apv  # noqa: E402
 import postagem as pg  # noqa: E402
+import thumbnails as _th  # noqa: E402
 import produtor  # noqa: E402
 import projetos as pj  # noqa: E402
 
@@ -32,6 +33,7 @@ def confere(c, nome):
 
 
 db.migrar()
+_th.salvar_config({'exigir_capa': False, 'exigir_capa_youtube': False})   # este teste cobre outros portões; a capa obrigatória está em teste_agente6_autonomia
 api_v1.iniciar()
 pg.status_contas = lambda: {k: {'conectado': True, 'erro': '', 'paginas': [], 'pagina': ''} for k in set(pg.PROV.values())}
 enviados = []

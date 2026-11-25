@@ -59,7 +59,7 @@ TEXTO_MIN_PX_120 = 7                    # altura mínima da letra quando a capa 
 CUSTO_IMAGEM_USD = 0.04                 # mesma estimativa usada pelo Agente 3 para uma imagem do Gemini
 
 CONFIG_PADRAO = {
-    'modo': 'supervisionado',           # automatico: escolhe sozinho a melhor aprovada | supervisionado: você escolhe | manual: só quando você pede
+    'modo': 'automatico',               # automatico: escolhe sozinho a melhor aprovada | supervisionado: você escolhe | manual: só quando você pede
     'criar_sozinho': True,              # cria capas sozinho para cortes e vídeos do Agente 3 (automático e supervisionado; no manual, não)
     'metodo_padrao': 'inteligente',
     'variantes_padrao': 3,
@@ -69,7 +69,14 @@ CONFIG_PADRAO = {
     'ia': False,                        # usar o gerador de imagens (Gemini) para o fundo; o texto continua pelo desenho próprio
     'ia_max_por_pedido': 2,
     'ia_fallback_local': False,         # regra salva: se a IA falhar, fazer do jeito local sem perguntar
-    'exigir_capa_youtube': False,       # o Agente 2 só posta no YouTube com capa aprovada para o arquivo
+    'exigir_capa_youtube': True,        # (antigo) o Agente 2 só posta no YouTube com capa aprovada para o arquivo
+    'exigir_capa': True,                # o Agente 2 só publica com capa válida PARA ESTE ARQUIVO nas redes de `redes_exigem_capa`
+    'redes_exigem_capa': ['youtube', 'tiktok', 'instagram', 'facebook', 'kwai'],
+    'recuperacao_automatica': True,     # vídeo mudou, pedido falhou ou ficou sem escolha: o Agente 6 refaz/escolhe sozinho
+    'max_recuperacoes': 3,              # pedidos automáticos novos para a MESMA versão do vídeo (depois disso, exceção para você)
+    'reenviar_capa': True,              # YouTube: se a capa não entrou, tenta de novo só a capa, no vídeo já postado
+    'max_envios_capa': 5,
+    'estrategia_rede': {'youtube': 'imagem', 'tiktok': 'quadro', 'instagram': 'quadro', 'facebook': 'manual', 'kwai': 'manual'},
     'formato_por_rede': {'youtube': 'auto', 'tiktok': '9:16', 'instagram': '9:16', 'facebook': '9:16', 'kwai': '9:16'},
 }
 
@@ -96,15 +103,43 @@ class _Definitivo(RuntimeError):
 
 
 # ---------------------------------------------------------------- configuração
+ESTRATEGIAS = {'imagem': 'Enviar a arte como capa (YouTube)', 'quadro': 'Usar o quadro da capa no próprio vídeo (momento escolhido)',
+               'manual': 'Você troca a capa no app', 'nenhuma': 'Não mexer na capa'}
+AUTONOMIA_V1 = {'modo': 'automatico', 'variantes_padrao': 3, 'nota_min': 70, 'max_correcoes': 5, 'criar_sozinho': True, 'exigir_capa': True,
+                'exigir_capa_youtube': True, 'recuperacao_automatica': True}
+
+
 def config() -> dict:
     salvo = db.kv('agente6.config', {}) or {}
     if salvo and not db.kv('agente6.criar_sozinho_v2'):      # 19/11: criar sozinho passa a ser o padrão (antes vinha desligado e nada era feito)
         salvo['criar_sozinho'] = True
         db.kv_gravar('agente6.config', salvo)
         db.kv_gravar('agente6.criar_sozinho_v2', True)
+    if not db.kv('agente6.autonomia_v1'):
+        # 24/11: configuração aprovada pelo dono (automático, 3 capas, nota 70, 5 correções, capa obrigatória). Roda uma vez;
+        # depois disso o que você mudar na tela vale (inclusive voltar para supervisionado ou manual).
+        antes = {k: salvo.get(k) for k in AUTONOMIA_V1}
+        if salvo:
+            salvo.update(AUTONOMIA_V1)
+            db.kv_gravar('agente6.config', salvo)
+        db.kv_gravar('agente6.autonomia_v1', {'t': time.time(), 'antes': antes})
+        try:
+            db.evento('agente6', 'agente6_autonomia_v1', 'agente6', {'antes': antes})
+        except Exception:  # noqa: BLE001
+            pass
     c = {**CONFIG_PADRAO, **{k: v for k, v in salvo.items() if k in CONFIG_PADRAO}}
     c['formato_por_rede'] = {**CONFIG_PADRAO['formato_por_rede'], **(salvo.get('formato_por_rede') or {})}
+    c['estrategia_rede'] = {**CONFIG_PADRAO['estrategia_rede'], **{r: e for r, e in (salvo.get('estrategia_rede') or {}).items() if e in ESTRATEGIAS}}
+    c['redes_exigem_capa'] = [r for r in (c.get('redes_exigem_capa') or []) if r in REDES_CAPA]
     return c
+
+
+def exige_capa(rede: str) -> bool:
+    """O Agente 2 deve barrar esta rede sem capa válida para o arquivo?"""
+    c = config()
+    if rede == 'youtube' and c['exigir_capa_youtube']:
+        return True
+    return bool(c['exigir_capa']) and rede in c['redes_exigem_capa'] and c['estrategia_rede'].get(rede) != 'nenhuma'
 
 
 def salvar_config(d: dict, quem: str = 'site') -> dict:
@@ -113,14 +148,21 @@ def salvar_config(d: dict, quem: str = 'site') -> dict:
         if d['modo'] not in ('automatico', 'supervisionado', 'manual'):
             raise ErroThumb(400, 'Modo inválido.')
         c['modo'] = d['modo']
-    for k in ('criar_sozinho', 'ia', 'ia_fallback_local', 'exigir_capa_youtube'):
+    for k in ('criar_sozinho', 'ia', 'ia_fallback_local', 'exigir_capa_youtube', 'exigir_capa', 'recuperacao_automatica', 'reenviar_capa'):
         if k in d:
             c[k] = bool(d[k])
+    if isinstance(d.get('redes_exigem_capa'), list):
+        c['redes_exigem_capa'] = [r for r in REDES_CAPA if r in d['redes_exigem_capa']]
+    if isinstance(d.get('estrategia_rede'), dict):
+        for r, e in d['estrategia_rede'].items():
+            if r in REDES_CAPA and e in ESTRATEGIAS:
+                c['estrategia_rede'][r] = e
     if 'metodo_padrao' in d:
         if d['metodo_padrao'] not in METODOS:
             raise ErroThumb(400, 'Método inválido.')
         c['metodo_padrao'] = d['metodo_padrao']
-    for k, lo, hi in (('variantes_padrao', 1, 4), ('max_variantes', 1, 4), ('max_correcoes', 0, 5), ('nota_min', 50, 95), ('ia_max_por_pedido', 0, 4)):
+    for k, lo, hi in (('variantes_padrao', 1, 4), ('max_variantes', 1, 4), ('max_correcoes', 0, 5), ('nota_min', 50, 95), ('ia_max_por_pedido', 0, 4),
+                      ('max_recuperacoes', 0, 10), ('max_envios_capa', 1, 10)):
         if k in d:
             try:
                 c[k] = max(lo, min(hi, int(d[k])))
@@ -132,7 +174,8 @@ def salvar_config(d: dict, quem: str = 'site') -> dict:
             if r in REDES_CAPA and (f in FORMATOS or f == 'auto'):
                 c['formato_por_rede'][r] = f
     db.kv_gravar('agente6.config', c)
-    db.evento(quem, 'agente6_config', 'agente6', {k: c[k] for k in ('modo', 'criar_sozinho', 'ia', 'exigir_capa_youtube')})
+    db.evento(quem, 'agente6_config', 'agente6', {k: c[k] for k in ('modo', 'criar_sozinho', 'ia', 'exigir_capa_youtube', 'exigir_capa',
+                                                                   'recuperacao_automatica', 'variantes_padrao', 'nota_min', 'max_correcoes')})
     return c
 
 
@@ -339,6 +382,13 @@ def criar(d: dict, quem: str = 'site') -> dict:
     sha = pl.sha_arquivo(info['arquivo'])
     if not sha:
         raise ErroThumb(404, 'Não consegui ler o vídeo.')
+    if d.get('reaproveitar'):
+        # Esteira e Coordenador pedem capa do MESMO vídeo por caminhos diferentes: um pedido vivo para a mesma versão serve aos dois.
+        ja = db.um("SELECT id FROM thumbnail_jobs WHERE origem=? AND referencia=? AND video_sha=? AND estado NOT IN ('falhou','cancelado') "
+                   "ORDER BY criado DESC LIMIT 1", origem, ref, sha)
+        if ja:
+            db.evento(str(quem)[:60], 'thumbnail_pedido_reaproveitado', 'thumb:' + ja['id'], {'video_sha': sha[:16]})
+            return dict(obter(ja['id']), reaproveitado=True)
     aviso = ''
     if metodo == 'ia':
         ok, motivo = ia_disponivel()
@@ -1081,9 +1131,9 @@ def job_thumbnail(ctx) -> dict:
     aprovadas = [x for x in ativas if x['estado'] == 'aprovada']
     if not aprovadas:
         _estado(tid, 'revisao_manual', 'Nenhuma capa passou na conferência depois das correções. Veja o motivo em cada uma, ou refaça uma.')
-    elif cfg['modo'] == 'automatico' and not refazer_n:
-        melhor = max(aprovadas, key=lambda x: (x['nota'], -x['numero']))
-        selecionar(tid, {'variante_id': melhor['id'], 'versao': melhor['versao']}, 'agente6-automatico')
+    elif cfg['modo'] == 'automatico' and (not refazer_n or not selecao_ativa(tid) or ctx.dados.get('auto')):
+        # automático: escolhe a melhor aprovada, também depois de refazer (se ninguém escolheu ainda, ou se foi o próprio A6 que refez)
+        selecionar_melhor(tid, 'agente6-automatico')
     else:
         _estado(tid, 'aguardando_escolha', '')
     ctx.progresso(100, 'Capas prontas')
@@ -1231,6 +1281,24 @@ def selecionar(tid: str, d: dict, quem: str = 'site') -> dict:
     return obter(tid)
 
 
+def selecionar_melhor(tid: str, quem: str = 'agente6-automatico') -> dict | None:
+    """Escolhe a capa aprovada de maior nota (empate: a de número menor). Sem aprovada: None. Não troca uma escolha válida feita por você."""
+    j = _job(tid)
+    s = selecao_ativa(tid)
+    if s and s['escolha'] in ('voce', 'manual') and revalidar(tid):
+        return None
+    aprovadas = db.todos("SELECT * FROM thumbnail_variantes WHERE job=? AND estado='aprovada' ORDER BY nota DESC, numero, versao DESC", tid)
+    for v in aprovadas:
+        try:
+            r = selecionar(tid, {'variante_id': v['id'], 'versao': v['versao']}, quem)
+            db.evento(quem, 'thumbnail_auto_selecao', 'thumb:' + tid, {'variante': v['id'], 'nota': v['nota'], 'video_sha': j['video_sha'][:16]})
+            return r
+        except ErroThumb as e:
+            print('agente6: seleção automática pulou', v['id'], e)
+            continue
+    return None
+
+
 def pacote(tid: str) -> dict:
     """Vínculo imutável vídeo + capa + metadados. valido=False se o vídeo ou a capa mudaram."""
     j = _job(tid)
@@ -1252,14 +1320,110 @@ def capa_para_video(arq: Path) -> dict | None:
         return None
     if not sha:
         return None
+    e = db.um('SELECT * FROM thumbnail_embutidos WHERE video_sha=?', sha)
+    if e:                         # versão de publicação com a capa embutida: vale a MESMA escolha do vídeo original
+        s = db.um('SELECT * FROM thumbnail_selecoes WHERE id=? AND revogado IS NULL AND aprovado=1', e['selecao'])
+        v = db.um('SELECT * FROM thumbnail_variantes WHERE id=?', s['variante']) if s else None
+        if not s or not v or s['thumb_sha'] != e['thumb_sha'] or _arquivo_sha(v['arquivo']) != s['thumb_sha']:
+            return None
+        return {'arquivo': Path(v['arquivo']), 'sha': s['thumb_sha'], 'formato': v['formato'], 'tempo_ms': e['tempo_ms'], 'job': s['job'],
+                'variante': v['id'], 'selecao': s['id'], 'embutida': True, 'original_sha': e['original_sha']}
     for s in db.todos('SELECT * FROM thumbnail_selecoes WHERE video_sha=? AND revogado IS NULL AND aprovado=1 ORDER BY criado DESC', sha):
         v = db.um('SELECT * FROM thumbnail_variantes WHERE id=?', s['variante'])
         if not v or _arquivo_sha(v['arquivo']) != s['thumb_sha']:
             _revogar(s['id'], 'A capa mudou ou sumiu depois da aprovação.')
             continue
         return {'arquivo': Path(v['arquivo']), 'sha': s['thumb_sha'], 'formato': v['formato'], 'tempo_ms': int((v['quadro_t'] or 0) * 1000),
-                'job': s['job'], 'variante': v['id']}
+                'job': s['job'], 'variante': v['id'], 'selecao': s['id'], 'embutida': False, 'original_sha': sha}
     return None
+
+
+SEG_CAPA_EMBUTIDA = 0.5      # quadro final curto: não mexe no gancho (começo) nem corta o conteúdo
+
+
+def _sondar_pub(arq: Path) -> dict:
+    r = subprocess.run(['ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(arq)],
+                       capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60, check=True)
+    info = json.loads(r.stdout or '{}')
+    v = next(s for s in info.get('streams', []) if s.get('codec_type') == 'video')
+    a = any(s.get('codec_type') == 'audio' for s in info.get('streams', []))
+    num, _, den = str(v.get('r_frame_rate') or '30/1').partition('/')
+    try:
+        fps = float(num) / float(den or 1)
+    except (ValueError, ZeroDivisionError):
+        fps = 30.0
+    fps = fps if 10 <= fps <= 120 else 30.0
+    return {'w': int(v['width']), 'h': int(v['height']), 'fps': round(fps, 3), 'audio': a,
+            'dur': float(info.get('format', {}).get('duration') or v.get('duration') or 0)}
+
+
+def video_com_capa(arq: Path) -> dict | None:
+    """Versão de PUBLICAÇÃO para redes que só aceitam um momento do vídeo como capa (TikTok, Instagram).
+
+    A arte escolhida vira um quadro final curto (SEG_CAPA_EMBUTIDA s) e a rede recebe o tempo desse quadro. O arquivo
+    derivado fica registrado em thumbnail_embutidos preso à MESMA escolha (vídeo original + capa): não é um vídeo novo
+    para o Agente 6 (não gera pedido de capa) nem muda o vídeo aprovado/liberado — o que o A7 liberou continua igual.
+    Devolve None quando não há capa escolhida e válida para este arquivo."""
+    cap = capa_para_video(arq)
+    if not cap:
+        return None
+    if cap.get('embutida'):
+        return {'arquivo': Path(arq), 'tempo_ms': cap['tempo_ms'], 'capa': cap, 'original_sha': cap['original_sha'], 'reaproveitado': True}
+    orig = cap['original_sha']
+    ja = db.um('SELECT * FROM thumbnail_embutidos WHERE original_sha=? AND thumb_sha=? AND selecao=? ORDER BY criado DESC LIMIT 1',
+               orig, cap['sha'], cap['selecao'])
+    if ja and Path(ja['arquivo']).exists() and _arquivo_sha(ja['arquivo']) == ja['video_sha']:
+        return {'arquivo': Path(ja['arquivo']), 'tempo_ms': ja['tempo_ms'], 'capa': cap, 'original_sha': orig, 'sha': ja['video_sha'], 'reaproveitado': True}
+    try:
+        m = _sondar_pub(Path(arq))
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError, OSError, StopIteration):
+        return None
+    if m['dur'] <= 0:
+        return None
+    pasta = PASTA / 'embutidos'
+    pasta.mkdir(parents=True, exist_ok=True)
+    dest = pasta / f'{orig[:16]}_{cap["sha"][:16]}.mp4'
+    tmp = pasta / f'{orig[:16]}_{cap["sha"][:16]}.tmp.mp4'
+    seg = SEG_CAPA_EMBUTIDA
+    w, h, fps = m['w'] - m['w'] % 2, m['h'] - m['h'] % 2, m['fps']
+    filtro = (f'[0:v]scale={w}:{h},setsar=1,fps={fps},format=yuv420p[v0];'
+              f'[1:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps={fps},format=yuv420p[c];'
+              '[v0][c]concat=n=2:v=1:a=0[v]')
+    cmd = ['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', str(arq), '-loop', '1', '-t', f'{seg}', '-i', str(cap['arquivo'])]
+    mapa = ['-map', '[v]']
+    if m['audio']:
+        filtro += f';[0:a]apad=pad_dur={seg}[a]'
+        mapa += ['-map', '[a]', '-c:a', 'aac', '-b:a', '128k']
+    cmd += ['-filter_complex', filtro] + mapa + ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+                                                  '-t', f'{m["dur"] + seg:.3f}', '-movflags', '+faststart', str(tmp)]
+    try:
+        subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL, timeout=1800, check=True)
+        os.replace(tmp, dest)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+        tmp.unlink(missing_ok=True)
+        print('agente6: não consegui embutir a capa no vídeo:', e)
+        return None
+    sha = _arquivo_sha(str(dest))
+    tempo_ms = int(m['dur'] * 1000 + seg * 500)          # meio do quadro final
+    with db.tx() as c:
+        c.execute('INSERT OR REPLACE INTO thumbnail_embutidos (video_sha, original_sha, selecao, thumb_sha, tempo_ms, segundos, arquivo, criado) '
+                  'VALUES (?,?,?,?,?,?,?,?)', (sha, orig, cap['selecao'], cap['sha'], tempo_ms, seg, str(dest), _agora()))
+    db.evento('agente6', 'thumbnail_capa_embutida', 'thumb:' + cap['job'], {'original_sha': orig[:16], 'video_sha': sha[:16], 'tempo_ms': tempo_ms})
+    return {'arquivo': dest, 'tempo_ms': tempo_ms, 'capa': cap, 'original_sha': orig, 'sha': sha, 'reaproveitado': False}
+
+
+def registrar_aplicacao(post: str, rede: str, c: dict, quem: str = 'agente2'):
+    """Estado da capa por post e rede, SEPARADO do estado do post (o vídeo pode estar postado e a capa ter falhado)."""
+    agora = _agora()
+    with db.tx() as cx:
+        cx.execute('INSERT INTO thumbnail_aplicacoes (post, rede, estrategia, estado, video_sha, thumb_sha, ref_rede, tentativas, erro, criado, atualizado) '
+                   'VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(post, rede) DO UPDATE SET estrategia=excluded.estrategia, estado=excluded.estado, '
+                   'thumb_sha=excluded.thumb_sha, ref_rede=COALESCE(NULLIF(excluded.ref_rede, \'\'), ref_rede), tentativas=excluded.tentativas, '
+                   'erro=excluded.erro, atualizado=excluded.atualizado',
+                   (post, rede, c.get('estrategia') or '', c.get('estado') or '', c.get('original_sha') or '', c.get('sha') or '',
+                    c.get('ref_rede') or '', int(c.get('tentativas') or 0), (c.get('detalhe') or '')[:300] if c.get('estado') != 'aplicada' else '',
+                    agora, agora))
+    db.evento(quem, 'thumbnail_aplicacao', f'post:{post}', {'rede': rede, 'estado': c.get('estado'), 'thumb_sha': (c.get('sha') or '')[:16]})
 
 
 def marcar_rede_ok(rede: str):
@@ -1347,9 +1511,279 @@ def desempenho() -> dict:
 
 
 # ---------------------------------------------------------------- automático
+def _sha_atual(origem: str, ref: str) -> str:
+    try:
+        import pipeline as pl
+        return pl.sha_arquivo(resolver(origem, ref)['arquivo']) or ''
+    except (ErroThumb, Exception):  # noqa: BLE001 - vídeo sumiu: nada a recuperar
+        return ''
+
+
+def _recuperacoes(origem: str, ref: str, sha: str) -> int:
+    r = db.um("SELECT COUNT(*) n FROM thumbnail_jobs WHERE origem=? AND referencia=? AND video_sha=? AND por='agente6-recuperacao'", origem, ref, sha)
+    return int(r['n'] if r else 0)
+
+
+def diagnosticar(f: dict, cfg: dict | None = None) -> dict:
+    """O que o Agente 6 precisa fazer por este vídeo agora. acao: nada | criar | selecionar | refazer_pedido | excecao."""
+    cfg = cfg or config()
+    origem, ref = f['origem'], f['referencia']
+    j = _ultimo_job(origem, ref)
+    sha = _sha_atual(origem, ref)
+    if not sha:
+        return {'acao': 'nada', 'motivo': 'Vídeo não encontrado no servidor.'}
+    if not j:
+        return {'acao': 'criar', 'motivo': 'Vídeo sem pedido de capa.', 'sha': sha}
+    for s in db.todos('SELECT job FROM thumbnail_selecoes WHERE video_sha=? AND revogado IS NULL AND aprovado=1 ORDER BY criado DESC', sha):
+        if revalidar(s['job']):        # algum pedido desta versão já tem capa escolhida e válida (mesmo que não seja o mais novo)
+            return {'job': s['job'], 'estado': 'pronto', 'sha': sha, 'acao': 'nada', 'motivo': 'Capa escolhida e válida.'}
+    if f'{origem}:{ref}' in ignorados():
+        return {'job': j['id'], 'estado': j['estado'], 'sha': sha, 'acao': 'nada', 'motivo': 'Você mandou ignorar este vídeo no Agente 6.'}
+    base = {'job': j['id'], 'estado': j['estado'], 'sha': sha}
+    if j['video_sha'] != sha:
+        atual = db.um('SELECT * FROM thumbnail_jobs WHERE origem=? AND referencia=? AND video_sha=? ORDER BY criado DESC LIMIT 1', origem, ref, sha)
+        if not atual:
+            return {**base, 'acao': 'criar', 'motivo': 'O vídeo mudou: a capa precisa ser da versão nova.', 'recuperacao': True}
+        j = atual
+        base = {'job': j['id'], 'estado': j['estado'], 'sha': sha}
+    est = j['estado']
+    if est in ('na_fila', 'analisando', 'criando', 'validando', 'aguardando_video'):
+        return {**base, 'acao': 'nada', 'motivo': 'Pedido em andamento.'}
+    if est == 'cancelado' and (j.get('erro') or '').startswith('Cancelado por você'):
+        return {**base, 'acao': 'nada', 'motivo': 'Você cancelou este pedido.'}
+    if est in ('pronto', 'aguardando_escolha'):
+        s = revalidar(j['id']) if est == 'pronto' else selecao_ativa(j['id'])
+        if s and s.get('video_sha') == sha:
+            return {**base, 'acao': 'nada', 'motivo': 'Capa escolhida e válida.'}
+        tem_aprovada = db.um("SELECT 1 FROM thumbnail_variantes WHERE job=? AND estado='aprovada'", j['id'])
+        if tem_aprovada:
+            return {**base, 'acao': 'selecionar' if cfg['modo'] == 'automatico' else 'excecao',
+                    'motivo': 'Há capa aprovada sem escolha.' if cfg['modo'] == 'automatico' else 'Capas prontas esperando a sua escolha (modo supervisionado).'}
+    # falhou, cancelado pelo sistema, revisão manual ou sem nenhuma aprovada: pedido novo, até o limite
+    if _recuperacoes(origem, ref, sha) >= cfg['max_recuperacoes']:
+        return {**base, 'acao': 'excecao', 'motivo': f'Nenhuma capa válida depois de {cfg["max_recuperacoes"]} pedidos automáticos: precisa de você.'}
+    return {**base, 'acao': 'refazer_pedido', 'motivo': {'falhou': 'O pedido falhou.', 'revisao_manual': 'Nenhuma capa passou no diretor.',
+                                                        'cancelado': 'O pedido foi cancelado pelo sistema.'}.get(est, 'Sem capa aprovada.')}
+
+
+def _candidatas() -> list:
+    """Vídeos que precisam de capa: cortes prontos/agendados e vídeos finais do Agente 3, os que vão ao ar mais cedo primeiro."""
+    import agente as ag
+    quando = {c['id']: c.get('quando') or 0 for c in ag.estado()['cortes']}
+    cand = [f for f in fontes(limite=200) if
+            ((f['origem'] == 'corte' and f['status'] in ('pronto', 'agendado')) or (f['origem'] == 'render' and f['status'] in ('ready_for_review', 'approved', 'scheduled')))]
+    cand.sort(key=lambda f: (quando.get(f['referencia']) or float('inf')) if f['origem'] == 'corte' else float('inf'))
+    return cand
+
+
+def recuperar(limite_pesados: int = 2, simular: bool = False) -> dict:
+    """Uma passada do Agente 6 autônomo: cria o que falta, escolhe a melhor aprovada e refaz pedidos que não deram capa.
+    Pedidos novos são pesados (FFmpeg + Pillow), então no máximo `limite_pesados` por passada."""
+    cfg = config()
+    out = {'criados': [], 'selecionados': [], 'excecoes': [], 'simulado': simular}
+    if cfg['modo'] == 'manual':
+        return out
+    novos = 0
+    for f in _candidatas():
+        d = diagnosticar(f, cfg)
+        item = {'origem': f['origem'], 'referencia': f['referencia'], 'titulo': f['titulo'], **{k: d.get(k) for k in ('acao', 'motivo', 'job')}}
+        if d['acao'] == 'selecionar':
+            if not simular:
+                r = selecionar_melhor(d['job'], 'agente6-automatico')
+                if not r:
+                    continue
+            out['selecionados'].append(item)
+        elif d['acao'] in ('criar', 'refazer_pedido'):
+            if not cfg['criar_sozinho'] or novos >= limite_pesados:
+                continue
+            if d['acao'] == 'refazer_pedido' or d.get('recuperacao'):
+                if not cfg['recuperacao_automatica']:
+                    continue
+                quem = 'agente6-recuperacao'
+                chave = f'recuperar:{f["referencia"]}:{d["sha"][:16]}:{_recuperacoes(f["origem"], f["referencia"], d["sha"])}'
+                # a cada nova tentativa muda o método, para não repetir a mesma composição que não passou
+                metodo = ('inteligente', 'editorial', 'frame')[_recuperacoes(f['origem'], f['referencia'], d['sha']) % 3]
+            else:
+                quem, chave, metodo = 'agente6-automatico', '', (cfg['metodo_padrao'] if cfg['metodo_padrao'] != 'ia' else 'inteligente')
+            if not simular:
+                try:
+                    j = criar({'origem': f['origem'], 'referencia': f['referencia'], 'metodo': metodo, 'variantes': cfg['variantes_padrao'],
+                               'formato': 'auto', 'texto_modo': 'auto', **({'chave_idempotencia': chave} if chave else {})}, quem)
+                    item['job'] = j['id']
+                except ErroThumb as e:
+                    item['motivo'] = str(e)
+                    out['excecoes'].append(item)
+                    continue
+            novos += 1
+            out['criados'].append(item)
+        elif d['acao'] == 'excecao':
+            out['excecoes'].append(item)
+    return out
+
+
+def ignorados() -> dict:
+    return db.kv('agente6.ignorados', {}) or {}
+
+
+def ignorar(d: dict, quem: str = 'site') -> dict:
+    """Você tira (ou devolve) um vídeo da recuperação automática: ele para de aparecer como pendência e o Agente 6 não insiste."""
+    origem = d.get('origem')
+    if origem not in ORIGENS:
+        raise ErroThumb(400, 'Origem inválida.')
+    chave = f'{origem}:{_ref_ok(d.get("referencia"))}'
+    ig = ignorados()
+    if d.get('ignorar', True):
+        ig[chave] = {'t': _agora(), 'por': str(quem)[:60], 'motivo': str(d.get('motivo') or '')[:200]}
+    else:
+        ig.pop(chave, None)
+    db.kv_gravar('agente6.ignorados', ig)
+    db.evento(quem, 'thumbnail_ignorar', chave, {'ignorar': bool(d.get('ignorar', True))})
+    return {'ignorados': ig}
+
+
+def painel_autonomia(dias: int = 30) -> dict:
+    """Números REAIS do banco para a tela "Autonomia e Integração de Capas" (nada estimado)."""
+    desde = _agora() - dias * 86400
+    um = lambda sql, *a: (db.um(sql, *a) or {}).get('n') or 0  # noqa: E731
+    geradas = um("SELECT COUNT(*) n FROM thumbnail_variantes WHERE criado>=? AND estado<>'substituida'", desde)
+    aprovadas = um("SELECT COUNT(*) n FROM thumbnail_variantes WHERE criado>=? AND estado='aprovada'", desde)
+    escolhas = db.todos('SELECT escolha, COUNT(*) n FROM thumbnail_selecoes WHERE criado>=? GROUP BY escolha', desde)
+    por_escolha = {e['escolha']: e['n'] for e in escolhas}
+    total_esc = sum(por_escolha.values())
+    aplic = db.todos('SELECT estado, COUNT(*) n FROM thumbnail_aplicacoes WHERE atualizado>=? GROUP BY estado', desde)
+    por_aplic = {a['estado']: a['n'] for a in aplic}
+    pedidos = db.todos('SELECT por, COUNT(*) n FROM thumbnail_jobs WHERE criado>=? GROUP BY por', desde)
+    automaticos = sum(p['n'] for p in pedidos if str(p['por'] or '').startswith(('agente6', 'agente7')))
+    rec = recuperar(simular=True)
+    posts_sem = []
+    for p in pg.posts():
+        try:
+            arq = pg.video_path(p['video'])
+        except pg.ErroRede:
+            continue
+        redes = [r for r, x in (p.get('redes') or {}).items() if x.get('status') in ('agendado', 'liberacao', 'erro') and exige_capa(r)]
+        if redes and not capa_para_video(arq):
+            posts_sem.append({'post': p['id'], 'titulo': p.get('titulo') or '', 'redes': redes, 'quando': p.get('quando')})
+    titulos = {p['id']: p.get('titulo') or '' for p in pg.posts()}
+    status = [dict(a, titulo=titulos.get(a['post'], '')) for a in
+              db.todos('SELECT post, rede, estrategia, estado, thumb_sha, ref_rede, tentativas, erro, atualizado FROM thumbnail_aplicacoes '
+                       'ORDER BY atualizado DESC LIMIT 60')]
+    return {
+        'dias': dias,
+        'config': config(),
+        'numeros': {'capas_geradas': geradas, 'capas_aprovadas': aprovadas, 'capas_escolhidas': total_esc,
+                    'escolhidas_automatico': por_escolha.get('automatica', 0), 'escolhidas_por_voce': por_escolha.get('voce', 0) + por_escolha.get('manual', 0),
+                    'capas_usadas': por_aplic.get('aplicada', 0) + por_aplic.get('indicada', 0), 'capas_aplicadas_confirmadas': por_aplic.get('aplicada', 0),
+                    'capas_manual_no_app': por_aplic.get('manual', 0), 'capas_falharam': por_aplic.get('falhou', 0) + por_aplic.get('bloqueada', 0),
+                    'posts_sem_capa': len(posts_sem), 'pedidos_automaticos': automaticos, 'pedidos_total': sum(p['n'] for p in pedidos)},
+        # taxa real: das capas escolhidas no período, quantas o Agente 6 escolheu sem você (None = ainda sem dados)
+        'taxa_autonomia': round(100 * por_escolha.get('automatica', 0) / total_esc) if total_esc else None,
+        'pendencias': rec['excecoes'],
+        'a_fazer': {'criar': len(rec['criados']), 'escolher': len(rec['selecionados'])},
+        'posts_sem_capa': posts_sem[:50],
+        'aplicacoes': status,
+        'ignorados': ignorados(),
+        'ultima_auditoria': db.kv('agente6.ultima_auditoria'),
+        'estrategias': ESTRATEGIAS,
+    }
+
+
+REDUNDANTE = 'Redundante: outro pedido do mesmo vídeo já resolveu a capa.'
+
+
+def _redundantes() -> list:
+    """Pedidos parados (fila, esperando escolha, revisão) de uma versão de vídeo que JÁ tem capa escolhida e válida em outro pedido,
+    ou pedidos na fila repetidos para a mesma versão (fica o mais antigo)."""
+    out = []
+    vivos = db.todos("SELECT * FROM thumbnail_jobs WHERE estado IN ('na_fila','aguardando_video','aguardando_escolha','revisao_manual') ORDER BY criado")
+    vistos = {}
+    for j in vivos:
+        chave = (j['origem'], j['referencia'], j['video_sha'])
+        ok = next((s for s in db.todos('SELECT job FROM thumbnail_selecoes WHERE video_sha=? AND revogado IS NULL AND aprovado=1 AND job<>?',
+                                       j['video_sha'], j['id']) if revalidar(s['job'])), None)
+        if ok and not selecao_ativa(j['id']):
+            out.append({'job': j['id'], 'origem': j['origem'], 'referencia': j['referencia'], 'estado': j['estado'], 'titulo': j['titulo'],
+                        'por': j['por'], 'motivo': 'Outro pedido desta versão já tem capa escolhida.', 'resolvido_por': ok['job']})
+        elif j['estado'] in ('na_fila', 'aguardando_video') and chave in vistos:
+            out.append({'job': j['id'], 'origem': j['origem'], 'referencia': j['referencia'], 'estado': j['estado'], 'titulo': j['titulo'],
+                        'por': j['por'], 'motivo': 'Pedido repetido na fila para a mesma versão do vídeo.', 'resolvido_por': vistos[chave]})
+        elif j['estado'] in ('na_fila', 'aguardando_video'):
+            vistos[chave] = j['id']
+    return out
+
+
+def auditar_estoque(aplicar: bool = False, quem: str = 'site', limite_pesados: int = 2, limite_youtube: int = 5) -> dict:
+    """Auditoria (e recuperação, com aplicar=True) do estoque: vídeos sem capa escolhida, pedidos redundantes, posts agendados
+    sem capa e vídeos já no YouTube sem capa confirmada. Nunca posta vídeo de novo: no YouTube só a capa é trocada."""
+    cfg = config()
+    out = {'aplicado': bool(aplicar), 't': _agora(), 'modo': cfg['modo']}
+    # 1) pedidos redundantes
+    red = _redundantes()
+    if aplicar:
+        for r in red:
+            j = _job(r['job'])
+            if j['fila_job']:
+                try:
+                    fila.cancelar(j['fila_job'])
+                except Exception:  # noqa: BLE001
+                    pass
+            _estado(r['job'], 'cancelado', REDUNDANTE)
+            db.evento(quem, 'thumbnail_redundante_resolvido', 'thumb:' + r['job'], {'resolvido_por': r['resolvido_por']})
+    out['redundantes'] = red
+    # 2) vídeos sem capa escolhida: escolhe a aprovada, refaz o que falhou, pede capa da versão nova
+    out['recuperacao'] = recuperar(limite_pesados=limite_pesados, simular=not aplicar)
+    cand = _candidatas()
+    sem = [f for f in cand if diagnosticar(f, cfg)['acao'] != 'nada']
+    out['videos'] = {'total': len(cand), 'com_capa': len(cand) - len(sem), 'sem_capa': len(sem)}
+    # 3) posts agendados e 4) já postados
+    agendados, reabertos, youtube, reenviados, manuais = [], [], [], [], []
+    for p in pg.posts():
+        try:
+            arq = pg.video_path(p['video'])
+        except pg.ErroRede:
+            continue
+        cap = capa_para_video(arq)
+        for rede, r in (p.get('redes') or {}).items():
+            st = r.get('status')
+            if st in ('agendado', 'liberacao', 'erro') and exige_capa(rede) and not cap:
+                agendados.append({'post': p['id'], 'rede': rede, 'titulo': p.get('titulo') or '', 'quando': p.get('quando')})
+            elif st == 'erro' and cap and 'Falta a capa aprovada' in (r.get('erro') or ''):
+                reabertos.append({'post': p['id'], 'rede': rede, 'titulo': p.get('titulo') or ''})
+                if aplicar:        # a capa chegou: o post volta para a fila (é o MESMO post, não duplica)
+                    def reabrir(q, rede=rede):
+                        if q['redes'][rede].get('status') == 'erro':
+                            q['redes'][rede].update(status='agendado', erro='', proxima=pg.agora(), esperando_esteira=0)
+                            pg._anotar(q, rede, 'capa', 'O Agente 6 resolveu a capa: o post voltou para a fila.')
+                    pg._mudar(p['id'], reabrir)
+            elif st == 'postado':
+                c = r.get('capa') or {}
+                if c.get('estado') in ('aplicada', 'indicada'):
+                    continue
+                if rede == 'youtube':
+                    item = {'post': p['id'], 'rede': rede, 'titulo': p.get('titulo') or '', 'estado_capa': c.get('estado') or 'desconhecido',
+                            'tem_capa_agora': bool(cap)}
+                    youtube.append(item)
+                    if aplicar and cap and c.get('estado') != 'bloqueada' and len(reenviados) < limite_youtube:
+                        try:
+                            novo = pg.reenviar_capa(p['id'], 'youtube', quem)
+                            reenviados.append({**item, 'resultado': novo['estado']})
+                        except (pg.ErroRede, pg.ErroTemporario) as e:
+                            reenviados.append({**item, 'resultado': 'erro', 'erro': str(e)[:200]})
+                else:
+                    manuais.append({'post': p['id'], 'rede': rede, 'titulo': p.get('titulo') or '', 'estado_capa': c.get('estado') or 'desconhecido'})
+    out.update(agendados_sem_capa=agendados, posts_reabertos=reabertos, youtube_sem_capa=youtube, youtube_reenviados=reenviados,
+               postados_capa_manual=manuais)
+    db.evento(quem, 'thumbnail_auditoria_estoque', 'agente6', {'aplicar': bool(aplicar), 'redundantes': len(red), 'sem_capa': len(sem),
+                                                                'agendados_sem_capa': len(agendados), 'youtube_reenviados': len(reenviados)})
+    if aplicar:
+        db.kv_gravar('agente6.ultima_auditoria', {k: (len(v) if isinstance(v, list) else v) for k, v in out.items() if k != 'recuperacao'} |
+                     {'criados': len(out['recuperacao']['criados']), 'selecionados': len(out['recuperacao']['selecionados'])})
+    return out
+
+
 def varrer() -> int:
-    """Cria capas sozinho (modos automático e supervisionado, com "criar sozinho" ligado): até 2 vídeos por vez,
-    primeiro os que vão ao ar mais cedo. Cortes já agendados também entram, enquanto o post ainda não saiu."""
+    """Cria capas sozinho (modos automático e supervisionado, com "criar sozinho" ligado), recupera pedidos que não deram capa e,
+    no automático, escolhe a melhor aprovada. Até 2 pedidos novos por vez, primeiro os vídeos que vão ao ar mais cedo."""
     cfg = config()
     if cfg['modo'] == 'manual' or not cfg['criar_sozinho']:
         return 0
@@ -1362,23 +1796,8 @@ def varrer() -> int:
             except Exception as e:  # noqa: BLE001
                 print('agente6: aviso', e)
         return 0
-    import agente as ag
-    quando = {c['id']: c.get('quando') or 0 for c in ag.estado()['cortes']}
-    cand = [f for f in fontes(limite=200) if not f['job'] and
-            ((f['origem'] == 'corte' and f['status'] in ('pronto', 'agendado')) or (f['origem'] == 'render' and f['status'] in ('ready_for_review', 'approved', 'scheduled')))]
-    cand.sort(key=lambda f: (quando.get(f['referencia']) or float('inf')) if f['origem'] == 'corte' else float('inf'))
-    n = 0
-    for f in cand:
-        if n >= 2:
-            break
-        try:
-            criar({'origem': f['origem'], 'referencia': f['referencia'], 'metodo': cfg['metodo_padrao'] if cfg['metodo_padrao'] != 'ia' else 'inteligente',
-                   'variantes': cfg['variantes_padrao'], 'formato': 'auto', 'texto_modo': 'auto'}, 'agente6-automatico')
-            n += 1
-        except ErroThumb as e:
-            print('agente6: não criei capa para', f['referencia'], e)
-            continue
-    return n
+    r = recuperar()
+    return len(r['criados']) + len(r['selecionados'])
 
 
 def _vigia():

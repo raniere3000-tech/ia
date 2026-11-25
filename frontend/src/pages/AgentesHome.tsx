@@ -18,7 +18,7 @@ const DESTINO:Record<string,{abrir:Ir;configurar:Ir;atividade:Ir}>={
   agente3:{abrir:['ia','','estudio-ia'],configurar:['agente','agente3'],atividade:['fila','']},
   agente4:{abrir:['agente','esteira'],configurar:['agente','esteira'],atividade:['central','qualidade']},
   agente5:{abrir:['agente','esteira'],configurar:['agente','esteira'],atividade:['fila','']},
-  agente6:{abrir:['thumbnails','fila'],configurar:['thumbnails','config'],atividade:['thumbnails','desempenho']},
+  agente6:{abrir:['thumbnails','fila'],configurar:['thumbnails','autonomia'],atividade:['thumbnails','desempenho']},
   agente7:{abrir:['coordenador','conversar'],configurar:['coordenador','config'],atividade:['coordenador','ordens']},
 };
 

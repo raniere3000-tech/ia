@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import banco as db  # noqa: E402
 import pipeline as pl  # noqa: E402
 import postagem as pg  # noqa: E402
+import thumbnails as _th  # noqa: E402
 
 falhas = 0
 
@@ -29,6 +30,7 @@ def confere(c, nome):
 
 
 db.migrar()
+_th.salvar_config({'exigir_capa': False, 'exigir_capa_youtube': False})   # este teste cobre outros portões; a capa obrigatória está em teste_agente6_autonomia
 pg.status_contas = lambda: {k: {'conectado': True, 'erro': '', 'paginas': [], 'pagina': ''} for k in set(pg.PROV.values())}
 enviados = []
 pg.PUBLICAR['youtube'] = lambda p, arq: (enviados.append(p['id']), 'https://youtu.be/teste')[1]

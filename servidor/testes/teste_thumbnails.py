@@ -149,6 +149,10 @@ db.executar('INSERT INTO renders (id, projeto, versao, arquivo, sha256, duracao,
 pj.mudar_dados(p['id'], lambda d, _p: (d.update(render={'id': 'r1', 'versao': 1, 'sha': rsha, 'validado': True}), {'status': 'ready_for_review'})[1])
 
 # ---------------------------------------------------------------- segurança
+# 24/11: o padrão do Agente 6 virou automático com capa obrigatória (aprovado pelo dono). Este teste cobre o fluxo
+# supervisionado e o portão "exigir capa" ligado/desligado; o automático tem o teste próprio (teste_agente6_autonomia.py).
+confere(th.config()['modo'] == 'automatico' and th.config()['exigir_capa'], 'padrão novo: automático e capa obrigatória')
+th.salvar_config({'modo': 'supervisionado', 'exigir_capa': False, 'exigir_capa_youtube': False})
 print('1. Segurança da API')
 st, _, _ = api('GET', '/api/v1/thumbnails/jobs', cab={'X-Sessao': 'errada'})
 confere(st in (401, 403), f'sem sessão válida: recusado ({st})')
