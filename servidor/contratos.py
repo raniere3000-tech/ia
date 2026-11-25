@@ -183,6 +183,17 @@ def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
         if schema == SCHEMA_TIMELINE and tipo == 'cor':
             efeitos.append({'tipo': tipo, **_params(COR, e, 'cor')})
             continue
+        if schema == SCHEMA_TIMELINE and tipo == 'caption':
+            escolha = {**EFEITOS['caption'], 'animacao': ('normal', 'pulso')}
+            params = _params(escolha, {k: v for k, v in e.items() if k != 'enfase'}, 'legenda')
+            enfase = e.get('enfase', [])
+            if not isinstance(enfase, list) or len(enfase) > 12 or any(
+                    not isinstance(s, str) or not 1 <= len(s) <= 24 or not s.isalnum() for s in enfase):
+                raise ErroContrato('Legenda aceita até 12 palavras de 24 caracteres para ênfase.')
+            if enfase:
+                params['enfase'] = sorted({s.casefold() for s in enfase})
+            efeitos.append({'tipo': tipo, **params})
+            continue
         if schema == SCHEMA_TIMELINE and tipo == 'audio':
             params = _params(AUDIO, e, 'áudio')
             if ('eq_hz' in params) != ('eq_db' in params):
@@ -238,8 +249,8 @@ def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
 
 
 def _validar_composicao(tipo: str, efeito: dict) -> dict:
-    assets = {k: efeito[k] for k in ('asset', 'direitos', 'mascara_asset') if k in efeito} if tipo == 'camada' else {}
-    params = _params(COMPOSICAO[tipo], {k: v for k, v in efeito.items() if k not in assets}, tipo)
+    extras = {k: efeito[k] for k in ('asset', 'direitos', 'mascara_asset', 'keyframes') if k in efeito} if tipo == 'camada' else {}
+    params = _params(COMPOSICAO[tipo], {k: v for k, v in efeito.items() if k not in extras}, tipo)
     if not INTERVALO.keys() <= params.keys() or params['fim_ms'] <= params['ini_ms']:
         raise ErroContrato('Composição exige intervalo positivo.')
     if tipo != 'desfoque_movimento':
@@ -247,20 +258,44 @@ def _validar_composicao(tipo: str, efeito: dict) -> dict:
             raise ErroContrato('A composição exige um retângulo dentro da imagem.')
     if tipo == 'camada':
         for k in ('asset', 'mascara_asset'):
-            value = assets.get(k)
+            value = extras.get(k)
             if k == 'mascara_asset' and value is None:
                 continue
             if not isinstance(value, str) or not re.fullmatch(r'[a-f0-9]{12,64}', value):
                 raise ErroContrato('A camada e a máscara exigem identificadores de assets registrados.')
-        if assets.get('direitos') not in ('meu', 'autorizado', 'regra'):
+        if extras.get('direitos') not in ('meu', 'autorizado', 'regra'):
             raise ErroContrato('A camada e a máscara exigem autorização de uso.')
-        if assets.get('mascara_asset') and params.get('chroma'):
+        if extras.get('mascara_asset') and params.get('chroma'):
             raise ErroContrato('Use uma máscara externa ou chroma key na mesma camada.')
+        if 'keyframes' in extras:
+            extras['keyframes'] = _validar_keyframes(extras['keyframes'], params)
     if tipo == 'desfoque_movimento' and 'quadros' in params:
         if not params['quadros'].is_integer():
             raise ErroContrato('Quantidade de quadros de desfoque precisa ser inteira.')
         params['quadros'] = int(params['quadros'])
-    return {'tipo': tipo, **assets, **params}
+    return {'tipo': tipo, **extras, **params}
+
+
+def _validar_keyframes(bruto: list, camada: dict) -> list:
+    if not isinstance(bruto, list) or not 2 <= len(bruto) <= 12:
+        raise ErroContrato('O movimento exige de 2 a 12 keyframes.')
+    limite = camada['fim_ms'] - camada['ini_ms']
+    quadros = []
+    anterior = -1
+    for q in bruto:
+        if not isinstance(q, dict) or set(q) - {'ms', 'x', 'y', 'easing'} or not {'ms', 'x', 'y'} <= q.keys():
+            raise ErroContrato('Keyframe inválido.')
+        ms = q['ms']
+        easing = q.get('easing', 'linear')
+        if type(ms) is not int or not anterior < ms <= limite or easing not in ('linear', 'suave'):
+            raise ErroContrato('Keyframes precisam estar em ordem e dentro da camada.')
+        x = _num(q['x'], (0, 1 - camada['w']), 'keyframe x')
+        y = _num(q['y'], (0, 1 - camada['h']), 'keyframe y')
+        quadros.append({'ms': ms, 'x': x, 'y': y, 'easing': easing})
+        anterior = ms
+    if quadros[0]['ms'] != 0:
+        raise ErroContrato('O primeiro keyframe precisa começar junto da camada.')
+    return quadros
 
 
 def _timeline_v2(bruto: dict, plano: dict) -> dict:

@@ -1135,13 +1135,24 @@ def montar_ass(palavras: list, ini: float, fim: float, tpl: dict, gancho: str, L
                 grupos.append(grupo)
                 grupo = []
         dest = _ass_cor(tpl['cor_destaque'])
+        enfase = set(tpl.get('legenda_enfase', []))
+        escala = r'\fscx108\fscy108'
+        if tpl.get('legenda_animacao') == 'pulso':
+            escala = r'\fscx96\fscy96\t(0,90,\fscx114\fscy114)\t(90,200,\fscx100\fscy100)'
         fmt = (lambda s: s.upper()) if tpl['maiusculas'] else (lambda s: s)
         for gi, g in enumerate(grupos):
             fim_g = min(grupos[gi + 1][0][0] if gi + 1 < len(grupos) else dur, g[-1][1] + 0.6)
             if tpl['legenda'] == 'destaque':
                 for k, w in enumerate(g):
                     b = g[k + 1][0] if k + 1 < len(g) else fim_g
-                    txt = ' '.join((f'{{\\c{dest}\\fscx108\\fscy108}}{_ass_txt(fmt(x[2]))}{{\\r}}' if j == k else _ass_txt(fmt(x[2]))) for j, x in enumerate(g))
+                    partes = []
+                    for j, x in enumerate(g):
+                        palavra = _ass_txt(fmt(x[2]))
+                        chave = ''.join(c for c in x[2].casefold() if c.isalnum())
+                        if j == k and (not enfase or chave in enfase):
+                            palavra = f'{{\\c{dest}{escala}}}{palavra}{{\\r}}'
+                        partes.append(palavra)
+                    txt = ' '.join(partes)
                     if b > w[0]:
                         ev(w[0], b, 'Leg', txt)
             else:

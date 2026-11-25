@@ -33,6 +33,20 @@ def requisitos(e: dict) -> set[str]:
     return nomes
 
 
+def _trajeto(keyframes: list, eixo: str, pixels: int, inicio: float) -> str:
+    ultimo = keyframes[-1][eixo] * pixels
+    expr = f'{ultimo:.4f}'
+    for pronto, proximo in reversed(list(zip(keyframes, keyframes[1:]))):
+        a, b = (inicio + q['ms'] / 1000 for q in (pronto, proximo))
+        p = f'clip((t-{a:.3f})/{b-a:.3f},0,1)'
+        if proximo['easing'] == 'suave':
+            p = f'(({p})^2*(3-2*({p})))'
+        pos = pronto[eixo] * pixels
+        delta = (proximo[eixo] - pronto[eixo]) * pixels
+        expr = f'if(lt(t,{b:.3f}),{pos:.4f}+({delta:.4f})*({p}),{expr})'
+    return f"'{expr}'"
+
+
 def aplicar(e: dict, cmd: list, filtros: list, atual: str, indice: int, entrada: int,
             largura: int, altura: int, total: float) -> tuple[int, dict]:
     a, b = e['ini_ms'] / 1000, e['fim_ms'] / 1000
@@ -67,8 +81,10 @@ def aplicar(e: dict, cmd: list, filtros: list, atual: str, indice: int, entrada:
                         f'{camada}[m{indice}]alphamerge[alpha{indice}]'])
         entrada += 1
         camada = f'[alpha{indice}]'
+    keyframes = e.get('keyframes')
+    pos_x, pos_y = (_trajeto(keyframes, 'x', largura, a), _trajeto(keyframes, 'y', altura, a)) if keyframes else (x, y)
     filtros.extend([f'{camada}setpts=PTS+{a:.3f}/TB[tempo{indice}]',
-                    f'{atual}[tempo{indice}]overlay={x}:{y}:repeatlast=1:{ativo}{saida}'])
+                    f'{atual}[tempo{indice}]overlay=x={pos_x}:y={pos_y}:eval=frame:repeatlast=1:{ativo}{saida}'])
     if midia['mime'].startswith('image/') and not (e.get('chroma') or e.get('mascara_asset')) and (w, h) == (largura, altura):
         evidencias['imagem_estatica'] = [a, b]
     return entrada, evidencias

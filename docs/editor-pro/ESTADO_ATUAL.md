@@ -8,6 +8,7 @@
 - EP2.04: parcial. Cor SDR e finalização verificadas em MP4 no Linux. LUT e correspondência entre cenas permanecem abertas.
 - EP2.05: parcial. Tratamento e mixagem com ducking comprovados no Linux. Separação de fontes e escolha autônoma pendentes.
 - EP2.06: parcial. Camadas, máscaras, chroma e desfoque verificados no Linux. Rotoscopia automática pendente.
-- Próxima frente independente: EP2.07, motion e tipografia.
+- EP2.07: parcial. Keyframes, easing e ênfase na legenda comprovados. Texto rastreado e integração com motion 3D pendentes.
+- Próxima frente independente: EP2.08, direção artística.
 - Android físico: PENDENTE_TERMUX.
 - Os checkpoints anteriores do EstúdioClip 2.0 estão no `ESTADO_ATUAL.md` da raiz.

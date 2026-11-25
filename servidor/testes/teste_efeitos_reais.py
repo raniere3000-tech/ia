@@ -259,4 +259,51 @@ class EfeitosReais(unittest.TestCase):
         self.assertGreater(max(frame(mascara, 0.3)[:120]), 60)
         self.assertGreater(dif(frame(temporal, 1.3), frame(controle, 1.3)), 3)
 
+    def test_keyframes_e_easing_movem_camada_na_saida(self):
+        cinza = TMP / 'cinza-motion.mp4'
+        figura = TMP / 'quadrado.png'
+        for fonte, destino, opcoes in [('gray:s=160x90:d=3', cinza, ['-c:v', 'libx264']),
+                                        ('red:s=32x20', figura, ['-frames:v', '1'])]:
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'color={fonte}', *opcoes, str(destino)], check=True)
+        aid = pj.registrar_asset(figura, figura.name, 'image/png')['asset']['id']
+        inicio = {'ms': 0, 'x': 0.1, 'y': 0.2}
+        fim = {'ms': 1600, 'x': 0.7, 'y': 0.2}
+        camada = {'tipo': 'camada', 'asset': aid, 'direitos': 'meu', 'x': 0.1, 'y': 0.2, 'w': 0.2, 'h': 0.3,
+                  'ini_ms': 500, 'fim_ms': 2300}
+        plano = dict(self.plano([]), schema_version=ct.SCHEMA_TIMELINE)
+        linear, suave = (TMP / f'{x}-movimento.mp4' for x in ('linear', 'suave'))
+        ed._finalizar_efeitos(dict(plano, effects=[dict(camada, keyframes=[inicio, fim])]), cinza, linear)
+        ed._finalizar_efeitos(dict(plano, effects=[dict(camada, keyframes=[inicio, dict(fim, easing='suave')])]), cinza, suave)
+
+        def coluna(arq, t):
+            pixels = frame(arq, t)
+            return next(i for i in range(160) if pixels[(30 * 160 + i) * 3] > 220)
+
+        self.assertGreater(coluna(linear, 0.9), coluna(suave, 0.9) + 6)
+        self.assertGreater(coluna(suave, 1.9), coluna(suave, 0.9) + 45)
+        self.assertEqual(json.loads(suave.with_suffix('.efeitos.json').read_text())['aplicados'], 1)
+        with self.assertRaises(ct.ErroContrato):
+            ct.validar_plano(dict(plano, effects=[dict(camada, keyframes=[inicio, dict(fim, x=0.99)])]))
+
+    def test_legenda_pulsa_apenas_na_palavra_com_enfase(self):
+        cinza = TMP / 'cinza-legenda.mp4'
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=gray:s=320x180:d=3',
+                        '-c:v', 'libx264', str(cinza)], check=True)
+        tpl = dict(ag.PADRAO['cortes']['template'], gancho=False, legenda='destaque')
+        cap = {'tipo': 'caption', 'ligado': 1, 'altura': 0.5, 'animacao': 'pulso', 'enfase': ['lua']}
+        plano = dict(self.plano([]), schema_version=ct.SCHEMA_TIMELINE, effects=[cap])
+        ass = TMP / 'pulso.ass'
+        t = ed.tpl_do_plano(tpl, ct.validar_plano(plano))
+        ass.write_text(ag.montar_ass([(0.6, 1.1, 'MAR'), (1.2, 1.7, 'LUA!')], 0, 3, t, '', 320, 180))
+        destino = TMP / 'pulso.mp4'
+        ed._finalizar_efeitos(plano, cinza, destino, ass=ass)
+
+        def amarelos(t):
+            pixels = frame(destino, t)
+            return sum(r > 160 and g > 130 and b < 130 for r, g, b in zip(pixels[0::3], pixels[1::3], pixels[2::3]))
+
+        self.assertLess(amarelos(0.85), 5)
+        self.assertGreater(amarelos(1.4), 15)
+        self.assertIn(r'\t(0,90', ass.read_text())
+
 if __name__=='__main__':unittest.main()

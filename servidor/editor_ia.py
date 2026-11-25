@@ -74,6 +74,10 @@ def tpl_do_plano(tpl: dict, plano: dict) -> dict:
         t['legenda_pos'] = 'topo' if alt < 0.35 else 'meio' if alt < 0.65 else 'baixo'
         if t.get('legenda', 'nenhuma') == 'nenhuma':
             t['legenda'] = 'destaque'
+        if cap.get('animacao') == 'pulso' or cap.get('enfase'):
+            t['legenda'] = 'destaque'
+            t['legenda_animacao'] = cap.get('animacao')
+            t['legenda_enfase'] = cap.get('enfase', [])
     rf = _efeito(plano, 'reframe')
     if rf and rf['modo'] in MODO_PARA_QUADRO and t.get('enquadramento') not in ('gameplay-streamer', 'comparacao'):
         t['enquadramento'] = MODO_PARA_QUADRO[rf['modo']]

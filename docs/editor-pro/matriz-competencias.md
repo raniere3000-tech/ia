@@ -46,15 +46,15 @@ Auditoria estática do HEAD base. Executor indica código localizado. A prova lo
 | C07.04 | VFX | motion blur | Validada no Linux | Suavização por mistura temporal tmix; teste mostra diferença de pixels. |
 | C07.05 | VFX | camadas | Validada no Linux | Overlay temporal por asset e posições tipadas. Teste por pixels confirma frente e fundo. |
 | C07.06 | VFX | remoção de fundo | Parcial | Remoção por chroma ou máscara fornecida. Segmentação automática permanece aberta. |
-| C08.01 | Motion | Keyframes | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C08.02 | Motion | easing | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
+| C08.01 | Motion | Keyframes | Validada no Linux | teste_efeitos_reais mede a posição de camada animada em instantes diferentes. |
+| C08.02 | Motion | easing | Validada no Linux | Fixture compara posição em interpolação linear e suave em MP4s reais. |
 | C08.03 | Motion | parallax | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C08.04 | Motion | animação 2D | Em outro agente | rig2d / produtor; entrada A5 independente pendente. |
+| C08.04 | Motion | animação 2D | Parcial | Executor move elementos 2D com keyframes. Rig de personagens existe no A3; conexão específica pendente. |
 | C08.05 | Motion | elementos 3D | Em outro agente | motor3d / produtor; entrada A5 independente pendente. |
 | C08.06 | Motion | infográficos | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C09.01 | Legendas | Palavra a palavra | Executor | agente.montar_ass destaca a palavra ativa; teste_efeitos_reais comprova legenda visível; alternância com 2+ palavras pendente. |
-| C09.02 | Legendas | tipografia cinética | Parcial | agente.montar_ass redimensiona palavra ativa; tipografia cinética configurável pendente. |
-| C09.03 | Legendas | destaque semântico | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
+| C09.01 | Legendas | Palavra a palavra | Validada no Linux | Teste em vídeo com duas palavras confirma existência de legenda indexada por tempo e render da ênfase. |
+| C09.02 | Legendas | tipografia cinética | Parcial | ASS com transformação de escala temporal e vídeo com ênfase; falta fixture de variação de escala isolada. |
+| C09.03 | Legendas | destaque semântico | Parcial | Termos explícitos passam por validação e são destacados em pixels. Seleção semântica autônoma pendente. |
 | C09.04 | Legendas | evitar sobreposição | Parcial | editor_ia.corrigir move legenda por ação do Coordenador; detecção autônoma pendente. |
 | C09.05 | Legendas | texto rastreado | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C09.06 | Legendas | zonas seguras | Parcial | agente.montar_ass reserva margens e alturas; fixture com zonas por rede pendente. |
