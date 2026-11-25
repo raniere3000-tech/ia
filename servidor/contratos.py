@@ -12,6 +12,7 @@ import os
 import re
 
 SCHEMA = 1
+SCHEMA_TIMELINE = 2
 NOTA_MINIMA = 70             # nota total para aprovar (0 a 100)
 MAX_CORRECOES = 5            # correções por etapa; a 1ª avaliação não conta
 VERSAO_POLITICA = 'p1-70-5'
@@ -116,6 +117,19 @@ def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
     """EditPlan: confere tudo e devolve uma cópia limpa. Caminhos de arquivo nunca vêm do cliente: só ids de fontes conhecidas."""
     if not isinstance(p, dict):
         raise ErroContrato('Plano de edição inválido.')
+    schema = p.get('schema_version', SCHEMA)
+    if type(schema) is not int or schema not in (SCHEMA, SCHEMA_TIMELINE):
+        raise ErroContrato('Versão do plano de edição não suportada.')
+    versao = p.get('timeline_version', 1)
+    if schema == SCHEMA_TIMELINE:
+        if type(versao) is not int or not 1 <= versao <= 2_147_483_647:
+            raise ErroContrato('Revisão da timeline inválida.')
+        for campo, limite in (('source_assets', 1), ('effects', 24), ('manual_locks', 40)):
+            valores = p.get(campo, [])
+            if not isinstance(valores, list) or len(valores) > limite:
+                raise ErroContrato(f'{campo}: lista inválida ou acima do limite.')
+        if p.get('source_assets') not in (None, ['principal']):
+            raise ErroContrato('A timeline atual aceita uma única fonte principal.')
     clipes = p.get('clips') or []
     if not isinstance(clipes, list) or not 1 <= len(clipes) <= LIMITE_CLIPES:
         raise ErroContrato(f'O plano precisa de 1 a {LIMITE_CLIPES} trechos.')
@@ -151,7 +165,7 @@ def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
             raise ErroContrato(f'Efeito {i + 1}: tipo não permitido ({tipo}). Permitidos: {", ".join(EFEITOS)}.')
         efeitos.append({'tipo': tipo, **_params(EFEITOS[tipo], e, f'efeito {tipo}')})
     asp = p.get('target_aspect_ratio', '9:16')
-    if asp not in ASPECTOS:
+    if not isinstance(asp, str) or asp not in ASPECTOS:
         raise ErroContrato('Formato de tela não permitido.')
     perfil = p.get('output_profile', 'final')
     if perfil not in PERFIS_SAIDA:
@@ -161,10 +175,31 @@ def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
         if not isinstance(t, (list, tuple)) or len(t) != 2:
             raise ErroContrato('Trecho travado inválido.')
         travas.append([int(_num(t[0], (0, 36_000_000), 'trava')), int(_num(t[1], (0, 36_000_000), 'trava'))])
-    return {'schema_version': SCHEMA, 'source_assets': [str(x)[:40] for x in (p.get('source_assets') or ['principal'])][:5],
-            'timeline_version': int(p.get('timeline_version') or 1), 'clips': limpos, 'effects': efeitos,
+    out = {'schema_version': schema, 'source_assets': [str(x)[:40] for x in (p.get('source_assets') or ['principal'])][:5],
+            'timeline_version': int(versao or 1), 'clips': limpos, 'effects': efeitos,
             'template_id': str(p.get('template_id') or '')[:40], 'target_aspect_ratio': asp, 'output_profile': perfil,
             'manual_locks': travas, 'edit_reason': str(p.get('edit_reason') or '')[:300]}
+    if schema == SCHEMA_TIMELINE:
+        return _timeline_v2(p, out)
+    return out
+
+
+def _timeline_v2(bruto: dict, plano: dict) -> dict:
+    clipes = plano['clips']
+    if any(a['out_ms'] > b['in_ms'] for a, b in zip(clipes, clipes[1:])):
+        raise ErroContrato('Os trechos da timeline precisam estar em ordem e sem sobreposição.')
+    if any(fim <= ini for ini, fim in plano['manual_locks']):
+        raise ErroContrato('Trava precisa ter duração positiva.')
+    gancho = bruto.get('protected_hook')
+    if gancho is not None:
+        if not isinstance(gancho, dict) or set(gancho) != {'in_ms', 'out_ms'}:
+            raise ErroContrato('Intervalo de gancho inválido.')
+        ini, fim = gancho['in_ms'], gancho['out_ms']
+        if (type(ini) is not int or type(fim) is not int
+                or not clipes[0]['in_ms'] <= ini < fim <= clipes[0]['out_ms']):
+            raise ErroContrato('O gancho protegido precisa estar inteiro no primeiro trecho.')
+        plano['protected_hook'] = {'in_ms': ini, 'out_ms': fim}
+    return plano
 
 
 def hash_plano(p: dict) -> str:

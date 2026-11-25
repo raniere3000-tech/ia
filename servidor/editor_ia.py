@@ -90,7 +90,11 @@ def _saida_para_fonte(clipes: list, ms: int) -> tuple[int, int] | None:
 
 
 def _travado(plano: dict, a: int, b: int) -> bool:
-    return any(not (b <= t[0] or a >= t[1]) for t in plano.get('manual_locks') or [])
+    travas = list(plano.get('manual_locks') or [])
+    gancho = plano.get('protected_hook')
+    if gancho:
+        travas.append((gancho['in_ms'], gancho['out_ms']))
+    return any(b > ini and a < fim for ini, fim in travas)
 
 
 def corrigir(plano: dict, acoes: list, dur_fonte: float | None = None) -> tuple[dict, list]:
