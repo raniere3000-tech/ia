@@ -12,9 +12,19 @@ import subprocess
 import time
 
 import banco as db
+from visual_presets import filtros_disponiveis
 
 CACHE = 600
 _memo: dict = {'t': 0.0, 'v': None}
+
+EDITOR = {
+    'montagem': ('Montagem A/V', ('trim', 'atrim', 'concat'), 'Usar o vídeo recebido ou sinalizar revisão.'),
+    'zoom': ('Zoom por intervalo', ('crop', 'scale', 'overlay'), 'Manter o enquadramento de origem.'),
+    'legenda': ('Legenda ASS', ('ass',), 'Preservar a mídia e oferecer revisão da legenda.'),
+    'normalizacao': ('Normalização sonora', ('loudnorm',), 'Preservar o áudio e informar a limitação.'),
+    'broll': ('Camadas de B-roll', ('scale', 'crop', 'overlay'), 'Manter a tomada principal.'),
+    'integridade': ('Verificação de integridade', ('blackdetect', 'freezedetect', 'silencedetect'), 'Marcar o teste técnico como indisponível.'),
+}
 
 CATALOGO = [
     {'id': 'ffmpeg', 'nome': 'FFmpeg (editor e medições)', 'agentes': ['agent5', 'agent4', 'agent1'], 'tipo': 'executor',
@@ -72,15 +82,34 @@ def _detectar(cid: str) -> dict:
     return {'estado': 'nao_adotado'}
 
 
+def _editor() -> list[dict]:
+    filtros = filtros_disponiveis()
+    texto = _rodar(['ffmpeg', '-hide_banner', '-encoders']) if filtros else ''
+    codificadores = frozenset(re.findall(r'^\s*[VAS][\w.]{5}\s+(\w+)\s', texto, re.M))
+    ffprobe = shutil.which('ffprobe')
+    resultado = []
+    for id_, (nome, exigidos, fallback) in EDITOR.items():
+        faltam = sorted(set(exigidos) - filtros)
+        if id_ != 'integridade':
+            faltam += sorted({'libx264', 'aac'} - codificadores)
+        if not ffprobe:
+            faltam.append('ffprobe')
+        detalhe = 'Faltam: ' + ', '.join(faltam) if faltam else 'Pré-requisitos detectados; a execução é comprovada por recibo.'
+        resultado.append({'id': 'editor-' + id_, 'nome': nome, 'agentes': ['agent5'], 'tipo': 'executor',
+                          'uso': nome, 'versao': '1', 'estado': 'ausente' if faltam else 'ok',
+                          'detalhe': detalhe, 'fallback': fallback, 'faltam': faltam})
+    return resultado
+
+
 def listar(forcar: bool = False) -> dict:
     if not forcar and _memo['v'] and time.time() - _memo['t'] < CACHE:
         return _memo['v']
-    itens = []
-    for c in CATALOGO:
-        d = _detectar(c['id'])
-        itens.append({**c, **d})
-        db.executar('INSERT OR REPLACE INTO capability_installs (id, versao, estado, detalhe, conferido) VALUES (?,?,?,?,?)', c['id'], d.get('versao', ''),
-                    d['estado'], d.get('detalhe', ''), time.time())
+    if forcar:
+        filtros_disponiveis.cache_clear()
+    itens = [{**c, **_detectar(c['id'])} for c in CATALOGO] + _editor()
+    for item in itens:
+        db.executar('INSERT OR REPLACE INTO capability_installs (id, versao, estado, detalhe, conferido) VALUES (?,?,?,?,?)',
+                    item['id'], item.get('versao', ''), item['estado'], item.get('detalhe', ''), time.time())
     out = {'capacidades': itens, 'conferido': time.time(),
            'regra': 'Nada é instalado sozinho. Ferramentas externas são só detectadas; skills de texto não executam nada.'}
     _memo.update(t=time.time(), v=out)
