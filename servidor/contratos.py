@@ -52,6 +52,8 @@ EFEITOS = {          # tipo: {parâmetro: (mínimo, máximo)} ou tupla de escolh
     'caption': {'ligado': (0, 1), 'tamanho': (0.05, 0.09), 'altura': (0.15, 0.82)},
     'loudnorm': {'alvo_lufs': (-18.0, -12.0)},
 }
+COR = {'exposicao_ev': (-1.5, 1.5), 'temperatura_k': (3200, 9500),
+       'saturacao': (0.5, 1.5), 'contraste': (0.65, 1.4)}
 PERFIS_SAIDA = ('final', 'previa')
 # correções que o diretor pode pedir ao editor (cada uma vira mudança tipada no plano)
 ACOES = {
@@ -166,6 +168,9 @@ def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
                 raise ErroContrato('A região de interesse precisa estar dentro da imagem.')
             efeitos.append({'tipo': tipo, **roi})
             continue
+        if schema == SCHEMA_TIMELINE and tipo == 'cor':
+            efeitos.append({'tipo': tipo, **_params(COR, e, 'cor')})
+            continue
         if tipo == 'broll' and efeitos_reais_ativos():
             asset = str(e.get('asset') or '')
             if not re.fullmatch(r'[a-f0-9]{12,64}',asset) or e.get('direitos') not in ('meu','autorizado','regra'):
@@ -225,6 +230,19 @@ def _timeline_v2(bruto: dict, plano: dict) -> dict:
     if any(e['tipo'] == 'reframe' and e['modo'] == 'roi' for e in efeitos):
         if sum(e['tipo'] == 'reframe' for e in efeitos) != 1 or any(e['tipo'] == 'zoom' and e.get('nivel', 1) > 1 for e in efeitos):
             raise ErroContrato('O reenquadramento por região de interesse exige uma única região e zoom neutro.')
+    entrega = bruto.get('delivery')
+    if entrega is not None:
+        limites = {'fps': (24, 60), 'crf': (17, 30), 'limite_kbps': (400, 24000)}
+        if not isinstance(entrega, dict) or set(entrega) - limites.keys():
+            raise ErroContrato('Opções de exportação inválidas.')
+        for k, v in entrega.items():
+            a, b = limites[k]
+            if type(v) is not int or not a <= v <= b:
+                raise ErroContrato(f'Exportação: {k} fora da faixa.')
+        if 'fps' in entrega and entrega['fps'] not in (24, 25, 30, 50, 60):
+            raise ErroContrato('FPS permitido: 24, 25, 30, 50 ou 60.')
+        if entrega:
+            plano['delivery'] = dict(entrega)
     return plano
 
 

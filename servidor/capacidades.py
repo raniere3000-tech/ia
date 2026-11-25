@@ -23,6 +23,8 @@ EDITOR = {
     'legenda': ('Legenda ASS', ('ass',), 'Preservar a mídia e oferecer revisão da legenda.'),
     'normalizacao': ('Normalização sonora', ('loudnorm',), 'Preservar o áudio e informar a limitação.'),
     'broll': ('Camadas de B-roll', ('scale', 'crop', 'overlay'), 'Manter a tomada principal.'),
+    'cor': ('Tratamento de cor SDR', ('eq', 'exposure', 'colortemperature'), 'Preservar a cor do vídeo.'),
+    'exportacao': ('Exportação configurada', ('fps', 'format'), 'Usar o perfil de exportação existente.'),
     'integridade': ('Verificação de integridade', ('blackdetect', 'freezedetect', 'silencedetect'), 'Marcar o teste técnico como indisponível.'),
 }
 

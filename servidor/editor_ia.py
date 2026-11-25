@@ -512,6 +512,20 @@ def _registrar_efeitos(destino: Path, recibo: dict):
     tmp.replace(p)
 
 
+def _filtros_cor(e: dict) -> list[tuple[str, str]]:
+    exposicao = e.get('exposicao_ev', 0)
+    temperatura = e.get('temperatura_k', 6500)
+    saturacao, contraste = e.get('saturacao', 1), e.get('contraste', 1)
+    filtros = []
+    if exposicao != 0:
+        filtros.append(('exposure', f'exposure=exposure={exposicao:.4f}'))
+    if temperatura != 6500:
+        filtros.append(('colortemperature', f'colortemperature=temperature={temperatura:.2f}:pl=1'))
+    if (saturacao, contraste) != (1, 1):
+        filtros.append(('eq', f'eq=saturation={saturacao:.4f}:contrast={contraste:.4f}'))
+    return filtros
+
+
 def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | None = None, base_aplicados=(), cancelado=None, roi=None) -> Path:
     import projetos as pj
     import renderizador as rd
@@ -539,6 +553,19 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
                 filtros += [f'{atual}split[z{k}a][z{k}b]',f'[z{k}b]crop={cw}:{ch},scale={w}:{h}[z{k}c]',
                             f"[z{k}a][z{k}c]overlay=0:0:enable='between(t,{a:.3f},{b:.3f})'[e{k}]"]
                 atual=f'[e{k}]'
+            elif tipo == 'cor':
+                from visual_presets import filtros_disponiveis
+                tratamentos = _filtros_cor(e)
+                faltam = [nome for nome, _ in tratamentos if nome not in filtros_disponiveis()]
+                if not tratamentos:
+                    status, motivo = 'sem_alteracao', 'Ajustes de cor neutros.'
+                elif v.get('color_transfer') in ('smpte2084', 'arib-std-b67'):
+                    status, motivo = 'fallback', 'Tratamento de cor SDR omitido em mídia HDR.'
+                elif faltam:
+                    status, motivo = 'fallback', 'Filtros de cor indisponíveis: ' + ', '.join(faltam)
+                else:
+                    filtros.append(atual + ','.join(expr for _, expr in tratamentos) + f'[e{k}]')
+                    atual = f'[e{k}]'
             elif tipo=='broll':
                 midia=pj.asset(e['asset']);mime=midia['mime']
                 if not mime.startswith(('image/','video/')):
@@ -570,9 +597,13 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
         if ass:
             esc=lambda p:str(p).replace('\\','/').replace(':','\\:').replace("'","\\'")
             filtros.append(f"{atual}ass='{esc(ass)}'[leg]");atual='[leg]'
-        filtros.append(f'{atual}format=yuv420p[v]')
+        entrega = plano.get('delivery', {})
+        fps = f"fps={entrega['fps']}," if 'fps' in entrega else ''
+        filtros.append(f'{atual}{fps}format=yuv420p[v]')
+        bitrate = entrega.get('limite_kbps')
+        vbv = ['-maxrate', f'{bitrate}k', '-bufsize', f'{2 * bitrate}k'] if bitrate else []
         cmd += ['-filter_complex',';'.join(filtros),'-map','[v]','-map','0:a?','-t',str(total),
-                '-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac']
+                '-c:v','libx264','-preset','veryfast','-crf',str(entrega.get('crf', 21)),*vbv,'-pix_fmt','yuv420p','-c:a','aac']
         ln=_efeito(plano,'loudnorm')
         if ln:
             cmd += ['-af',f"loudnorm=I={ln['alvo_lufs']:.1f}:TP=-1.5:LRA=11"]
@@ -596,6 +627,11 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
         if plano['schema_version'] == ct.SCHEMA_TIMELINE:
             recibo['montagem'] = {'versao': plano['timeline_version'], 'trechos': plano['clips'],
                                   'gancho_protegido': plano.get('protected_hook')}
+        if entrega:
+            metadados = rd.sonda(tmp)
+            stream = next(s for s in metadados['streams'] if s['codec_type'] == 'video')
+            recibo['exportacao'] = {'configuracao': entrega, 'fps': stream['avg_frame_rate'],
+                                    'codec': stream['codec_name'], 'bitrate_bps': stream.get('bit_rate')}
         _registrar_efeitos(destino,recibo)
         tmp.replace(destino)
         return destino
@@ -644,7 +680,7 @@ def executar_importado(plano: dict, fonte: Path, destino: Path, inicial_hash: st
         return _executar_importado_base(plano,fonte,destino,inicial_hash,cancelado=cancelado)
     p=copy.deepcopy(ct.validar_plano(plano));base=destino.with_name(destino.stem+'-base-efeitos.mp4')
     roi = _quadro_roi(p, fonte, ct.ASPECTOS[p['target_aspect_ratio']])
-    p['effects']=[e for e in p['effects'] if e['tipo'] not in ('zoom','broll','caption')]
+    p['effects']=[e for e in p['effects'] if e['tipo'] not in ('zoom','broll','caption','cor')]
     try:
         _executar_importado_base(p,fonte,base,cancelado=cancelado,roi=roi)
         return _finalizar_efeitos(plano,base,destino,base_aplicados=('reframe','fade','loudnorm'),cancelado=cancelado,roi=roi)

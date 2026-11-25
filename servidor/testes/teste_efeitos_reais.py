@@ -150,4 +150,34 @@ class EfeitosReais(unittest.TestCase):
         self.assertEqual(recibo['efeitos'][0]['status'], 'fallback')
         self.assertEqual(recibo['aplicados'], 0)
 
+    def test_cor_e_entrega_tem_efeito_no_mp4(self):
+        destino = TMP / 'cor-entrega.mp4'
+        controle = TMP / 'cor-controle.mp4'
+        plano = dict(self.plano([]), schema_version=ct.SCHEMA_TIMELINE,
+                     delivery={'fps': 25, 'crf': 25, 'limite_kbps': 650})
+        e = {'tipo': 'cor', 'exposicao_ev': 0.6, 'temperatura_k': 4500, 'saturacao': 0.7, 'contraste': 1.1}
+        with patch.dict(ct.ASPECTOS, {'16:9': (160, 90)}):
+            ed.executar_importado(plano, BASE, controle)
+            ed.executar_importado(dict(plano, effects=[e]), BASE, destino)
+        antes, depois = frame(controle, 1.2), frame(destino, 1.2)
+        self.assertGreater(dif(antes, depois), 8)
+        self.assertGreater(sum(depois) / len(depois), sum(antes) / len(antes))
+        recibo = json.loads(destino.with_suffix('.efeitos.json').read_text())
+        self.assertEqual(recibo['efeitos'][0]['status'], 'aplicado')
+        self.assertEqual(recibo['exportacao']['codec'], 'h264')
+        self.assertEqual(recibo['exportacao']['fps'], '25/1')
+        self.assertEqual(recibo['exportacao']['configuracao'], plano['delivery'])
+        self.assertLess(int(recibo['exportacao']['bitrate_bps']), 650_000)
+        subprocess.run(['ffmpeg', '-v', 'error', '-xerror', '-i', str(destino), '-f', 'null', '-'], check=True)
+
+    def test_cor_sem_filtro_disponivel_registra_fallback(self):
+        saida = TMP / 'cor-fallback.mp4'
+        plano = dict(self.plano([]), schema_version=ct.SCHEMA_TIMELINE, effects=[{'tipo': 'cor', 'exposicao_ev': 0.5}])
+        with patch('visual_presets.filtros_disponiveis', return_value=frozenset()):
+            ed._finalizar_efeitos(plano, BASE, saida)
+        recibo = json.loads(saida.with_suffix('.efeitos.json').read_text())
+        self.assertEqual(recibo['efeitos'][0]['status'], 'fallback')
+        self.assertIn('exposure', recibo['efeitos'][0]['motivo'])
+        self.assertEqual(recibo['aplicados'], 0)
+
 if __name__=='__main__':unittest.main()

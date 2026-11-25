@@ -22,11 +22,11 @@ Auditoria estática do HEAD base. Executor indica código localizado. A prova lo
 | C03.04 | Enquadramento | reenquadramento | Executor | editor_ia._quadro_roi / teste_efeitos_reais: região estática na borda, confirmação por pixels e fallback de encaixe. |
 | C03.05 | Enquadramento | estabilização | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C03.06 | Enquadramento | multicâmera | Parcial | agente.filtro_video compõe HUD/webcam do mesmo sinal; edição multicâmera real pendente. |
-| C04.01 | Cor | Correção de cor | Parcial | visual_presets.grafo no legado A1; correção medida A5 pendente. |
-| C04.02 | Cor | grading | Parcial | visual_presets.grafo no legado A1; grading tipado A5 pendente. |
+| C04.01 | Cor | Correção de cor | Validada no Linux | editor_ia._filtros_cor / teste_efeitos_reais: cor SDR alterada em frames, com fallback quando falta filtro. |
+| C04.02 | Cor | grading | Parcial | Saturação, contraste, exposição e temperatura tipados no editor_ia. Perfis de grading por conteúdo pendentes. |
 | C04.03 | Cor | LUT | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C04.04 | Cor | balanço de branco | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C04.05 | Cor | exposição | Parcial | visual_presets tem ajustes fixos; medição e compensação A5 pendentes. |
+| C04.04 | Cor | balanço de branco | Parcial | Ajuste de temperatura implementado e renderizado em combinação. Medição de branco neutro e fixture isolada pendentes. |
+| C04.05 | Cor | exposição | Validada no Linux | Teste de cor mede aumento de luminância após ajuste de exposição. |
 | C04.06 | Cor | correspondência de cenas | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C05.01 | Áudio | Redução de ruído | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C05.02 | Áudio | EQ | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
@@ -64,9 +64,9 @@ Auditoria estática do HEAD base. Executor indica código localizado. A prova lo
 | C10.04 | Arte | estética por nicho | Parcial | agente e visual_presets aplicam estilos; seleção A5 por nicho pendente. |
 | C10.05 | Arte | transições | Executor | editor_ia._passo_final e teste_efeitos_reais: fade medido; transições entre tomadas pendentes. |
 | C10.06 | Arte | coerência visual | Parcial | templates e snapshots A3 em produtor; teste comparativo A5 pendente. |
-| C11.01 | Finalização | FPS | Executor | editor_ia._executar_importado_base padroniza 30 fps; matriz com VFR pendente. |
-| C11.02 | Finalização | compressão | Executor | editor_ia._finalizar_efeitos codifica H.264/CRF 21 e AAC; ajuste de perfil pendente. |
-| C11.03 | Finalização | bitrate | Parcial | editor_ia controla bitrate de áudio e CRF; perfil com teto de bitrate de vídeo pendente. |
+| C11.01 | Finalização | FPS | Validada no Linux | Finalização a 25 fps confirmada por ffprobe; matriz com VFR pendente. |
+| C11.02 | Finalização | compressão | Validada no Linux | Recibo confirma H.264 e perfil CRF; teste decodifica o MP4 inteiro. |
+| C11.03 | Finalização | bitrate | Validada no Linux | Parâmetro VBV com limite tipado; ffprobe confirma bitrate médio abaixo de 650 kbps na fixture. |
 | C11.04 | Finalização | sincronia A/V | Parcial | editor_ia corta A/V e renderizador.conferir mede streams; fixture de sincronismo após montagem pendente. |
 | C11.05 | Finalização | multiformato | Executor | contratos.ASPECTOS / editor_ia._executar_importado_base; fixtures nas quatro proporções pendentes. |
 | C11.06 | Finalização | validação do render | Executor | renderizador.conferir / teste_integridade_render sob RENDER_INTEGRIDADE, com SHA no recibo. |
