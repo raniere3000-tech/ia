@@ -261,7 +261,7 @@ def portao_postagem(arq: Path) -> dict:
         return {'ok': False, 'ativo': True, 'sha': sha, 'detalhe': 'Este arquivo não tem a aprovação do diretor de qualidade (Agente 4) para esta versão. '
                 'Mande para o editor e o diretor antes de postar.'}
     return {'ok': True, 'ativo': True, 'sha': sha, 'certificado': c['id'], 'nota': c['nota'], 'manual': bool(c['manual']),
-            'detalhe': f'Aprovado pelo diretor (nota {c["nota"]}{", revisão manual" if c["manual"] else ""}) para este arquivo.'}
+            'detalhe': ('Arquivo aprovado em revisão manual.' if c['manual'] else f'Aprovado pelo diretor (nota {c["nota"]}) para este arquivo.')}
 
 
 # ---------------------------------------------------------------- revisão manual

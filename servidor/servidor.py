@@ -898,7 +898,14 @@ Handler.TOKEN = TOKEN
 def _job_agente1(ctx):
     """Pedido manual do agente de cortes, agora pela fila (antes era recusado quando estava ocupado)."""
     oque, link = ctx.dados.get('oque', ''), ctx.dados.get('link', '')
-    ag.CONTROLE_TRABALHO.etapa = lambda p, t: ctx.progresso(float(p) if p else None, t)       # a barra do site acompanha o Agente 1
+    def _progresso(pct, texto):
+        ctx.progresso(float(pct) if pct else None, texto)       # a barra do site acompanha o Agente 1
+        historico = ctx.dados.setdefault('etapas_corte', [])
+        if not historico or historico[-1]['texto'] != texto:
+            historico.append({'texto': texto, 't': time.time()})
+            del historico[:-40]
+            ctx.salvar()
+    ag.CONTROLE_TRABALHO.etapa = _progresso
     ag.CONTROLE_TRABALHO.cancelado = ctx.cancelado
     ag.CONTROLE_TRABALHO.job = ctx.id                     # cada corte guarda de qual trabalho saiu (o Coordenador acompanha por ele)
     nome = {'buscar': 'Buscando canais', 'cortar': 'Fazendo cortes', 'link': 'Cortando o link', 'tema': 'Procurando vídeo pelo tema', 'postar': 'Agendando cortes'}.get(oque, ctx.job['titulo'] or oque)

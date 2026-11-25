@@ -166,6 +166,37 @@ reg = pj.obter(pid_etapas)['dados']['pareceres_etapas']['roteiro']
 confere(ctx_etapas.dados['etapa'] == 'narracao' and reg['aprovado'] and reg['reprovacoes'] == 1,
         'o novo parecer libera a narração e preserva a contagem')
 
+# Aprovação manual na versão disponível, com o parecer original preservado.
+import hashlib
+import pipeline as pl
+
+pid_manual = projeto('documentario')
+arquivo = TMP / 'versao-manual.mp4'
+arquivo.write_bytes(b'versao validada para o teste')
+sha = hashlib.sha256(arquivo.read_bytes()).hexdigest()
+render = render_de(sha)
+db.executar('INSERT INTO renders (id, projeto, versao, arquivo, sha256, duracao, validado, criado) VALUES (?,?,?,?,?,?,?,?)',
+            render['id'], pid_manual, 1, str(arquivo), sha, 3, 1, 0)
+qa(pid_manual, ruim)
+produtor.entregar_revisao_manual(pid_manual, render, ['Ajustar o enquadramento.'])
+confere(any(x['projeto'] == pid_manual for x in apv.pendentes()), 'render conferido aparece para revisão com pendências')
+try:
+    apv.aprovar(pid_manual, sha, {'redes': []}, 'site', 'teste')
+    confere(False, 'atalho normal continua exigindo parecer favorável')
+except apv.ErroAprovacao:
+    confere(True, 'atalho normal continua exigindo parecer favorável')
+qa(pid_manual, {'status': 'falha_tecnica'})
+try:
+    apv.aprovar(pid_manual, sha, {'redes': []}, 'site', 'teste', manual=True)
+    confere(False, 'aceite manual preserva o bloqueio técnico')
+except apv.ErroAprovacao:
+    confere(True, 'aceite manual preserva o bloqueio técnico')
+qa(pid_manual, ruim)
+res = apv.aprovar(pid_manual, sha, {'redes': []}, 'site', 'teste', manual=True)
+confere(res['ok'] and pl.certificado(sha)['manual'] and apv.historico(pid_manual)[0]['origem'] == 'site_manual',
+        'aceite manual grava autor e certificado da versão')
+confere(not apv.diretor_ok(pj.obter(pid_manual), sha)['aprovado'], 'aceite manual preserva o parecer desfavorável')
+
 # ---- cortes do Radar (Agente 1)
 import agente  # noqa: E402
 
