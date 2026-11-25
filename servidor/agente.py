@@ -837,8 +837,31 @@ def _sem_link(s) -> str:
     return re.sub(r'\s+', ' ', re.sub(r'[\x00-\x1f@<>]', ' ', s)).strip()
 
 
+def gancho_integro_ativo() -> bool:
+    return os.getenv('A1_GANCHO_INTEGRO','0').lower() in ('1','true','sim')
+
+
+def _fronteira_fala(frs: list, i: int) -> bool:
+    texto = str(frs[i].get('texto') or '').rstrip('"”’) ')
+    return bool(re.search(r'[.!?…]$', texto)) or (i + 1 < len(frs) and frs[i+1]['ini'] - frs[i]['fim'] > 0.7)
+
+
+def _limites_integros(frs: list, i0: int, i1: int, co: dict):
+    # Chunks de 12 palavras não são necessariamente frases. Junta até pontuação/pausa.
+    while i0 > 0 and not _fronteira_fala(frs, i0-1):
+        i0 -= 1
+    finais = [k for k in range(i0,len(frs)) if _fronteira_fala(frs,k) and
+              co['dur_min'] <= frs[k]['fim'] - frs[i0]['ini'] <= co['dur_max']]
+    if not finais:
+        return None
+    fim = min(finais,key=lambda k:abs(frs[k]['fim']-frs[i1]['fim']))
+    return i0,fim
+
+
 def validar(achados: list, frs: list, co: dict) -> list:
     """Confere o que a IA devolveu: tempos reais, duração, nota, proibidos e repetidos."""
+    if not frs:
+        return []
     notas = []
     for a in achados:
         try:
@@ -867,8 +890,14 @@ def validar(achados: list, frs: list, co: dict) -> list:
         # a IA às vezes devolve um trecho curto no fim do vídeo: tenta completar a duração puxando o começo para trás
         while frs[i1]['fim'] - frs[i0]['ini'] < co['dur_min'] and i0 > 0:
             i0 -= 1
+        integro = gancho_integro_ativo()
+        if integro:
+            limites = _limites_integros(frs,i0,i1,co)
+            if not limites:
+                continue
+            i0,i1 = limites
         ini, fim = frs[i0]['ini'], frs[i1]['fim']
-        if fim - ini > co['dur_max'] + 0.5 and fim - ini - co['dur_max'] <= 6 and i1 > i0:
+        if not integro and fim - ini > co['dur_max'] + 0.5 and fim - ini - co['dur_max'] <= 6 and i1 > i0:
             fim = ini + co['dur_max']           # passou por pouco (frase comprida): termina no limite em vez de perder o trecho
         if not (co['dur_min'] <= fim - ini <= co['dur_max'] + 0.5):
             continue
@@ -877,9 +906,20 @@ def validar(achados: list, frs: list, co: dict) -> list:
             continue
         tags = [re.sub(r'[^\w#]', '', str(h)) for h in (a.get('hashtags') or []) if isinstance(h, str)]
         tags = [h if h.startswith('#') else '#' + h for h in tags if len(h) > 1][:6]
-        out.append({'ini': round(max(0, ini - 0.15), 2), 'fim': round(fim + 0.25, 2), 'nota': int(max(0, min(99, round(nota)))),
+        ini_saida, fim_saida = max(0, ini - 0.15), fim + 0.25
+        if integro:
+            folga = max(0,co['dur_max']-(fim-ini))
+            antes = min(0.15,folga,max(0,ini-(frs[i0-1]['fim'] if i0 else 0)))
+            depois = min(0.25,folga-antes,max(0,(frs[i1+1]['ini'] if i1+1<len(frs) else fim+0.25)-fim))
+            ini_saida,fim_saida=ini-antes,fim+depois
+        out.append({'ini': round(ini_saida, 2), 'fim': round(fim_saida, 2), 'nota': int(max(0, min(99, round(nota)))),
                     'titulo': _sem_link(a.get('titulo', ''))[:90] or texto[:60], 'gancho': _sem_link(a.get('gancho', ''))[:60],
                     'hashtags': tags, 'motivo': _sem_link(a.get('motivo', ''))[:200], 'texto': texto[:600]})
+        if integro:
+            out[-1]['gancho_integridade'] = {'verificado':True,'fonte':'transcricao',
+                'inicio_solicitado':float(a['inicio']),'fim_solicitado':float(a['fim']),
+                'inicio_frase':ini,'fim_frase':fim,'criterio':'pontuacao_ou_pausa',
+                'motivo':'Mantidas palavras inteiras e fronteiras observadas de fala, dentro do limite de duração.'}
     out.sort(key=lambda c: -c['nota'])
     limpos = []
     for c in out:
@@ -969,6 +1009,9 @@ def escolher_sem_fala(arq: Path, dur: float, palavras: list, quantos: int, co: d
                     'gancho': _sem_link(str(tx.get('gancho') or ''))[:60] or 'OLHA ESSE MOMENTO', 'hashtags': tags or ['#gameplay', '#live'],
                     'motivo': c['motivo'] + (f' Na imagem: {str(tx.get("descricao"))[:120]}' if tx.get('descricao') else ''),
                     'texto': '', 'sem_legenda': True})
+        if gancho_integro_ativo():
+            out[-1]['gancho_integridade']={'verificado':False,'fonte':'som_imagem',
+                'motivo':'Sem transcrição: limites medidos por eventos de som/imagem; integridade da fala não confirmada.'}
     return out
 
 
@@ -1084,10 +1127,11 @@ def montar_ass(palavras: list, ini: float, fim: float, tpl: dict, gancho: str, L
     if tpl['legenda'] != 'nenhuma':
         ps = [(max(0, a - ini), min(dur, b - ini), p) for a, b, p in palavras if b > ini and a < fim]
         grupo, grupos = [], []
+        max_palavras, max_letras = {'calmo': (4, 24), 'dinamico': (2, 12)}.get(tpl.get('ritmo'), (3, 16))
         for i, w in enumerate(ps):
             grupo.append(w)
             prox = ps[i + 1][0] if i + 1 < len(ps) else None
-            if len(grupo) >= 3 or sum(len(x[2]) for x in grupo) >= 16 or prox is None or prox - w[1] > 0.6:
+            if len(grupo) >= max_palavras or sum(len(x[2]) for x in grupo) >= max_letras or prox is None or prox - w[1] > 0.6:
                 grupos.append(grupo)
                 grupo = []
         dest = _ass_cor(tpl['cor_destaque'])
@@ -1535,10 +1579,10 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             mid = mo.sortear(estado()['pesos'], [m['id'] for m in ativos], cfg['postagem']['redes'], rnd)
             modelo = next(m for m in ativos if m['id'] == mid)
             tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
-            if c.get('sem_legenda'):
-                tpl['legenda'] = 'nenhuma'          # momento sem fala: não há o que legendar
             if perfil:
                 usadas.append(f'Perfil {perfil["nome"]}: ' + ('; '.join(pf.aplicar_ao_tpl(tpl, perfil, rnd)) or 'sem mudanças de identidade'))
+            if c.get('sem_legenda'):
+                tpl['legenda'] = 'nenhuma'          # momento sem fala: não há o que legendar
             usadas += _sortear_estilo(tpl, co, rnd)
             arranjo = cmp.sortear_arranjo(tpl, rnd)       # comparação: um em cima do outro ou lado a lado, sorteado por corte
             if arranjo:
@@ -1573,6 +1617,8 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
                 ajuste = ajustar_corte(c, palavras, qa, co, dur)
                 if qa.get('erros') or not ajuste:
                     tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
+                    if perfil:
+                        usadas += pf.aplicar_ao_tpl(tpl, perfil, rnd)
                     if c.get('sem_legenda'):
                         tpl['legenda'] = 'nenhuma'
                     tpl['estilo_visual'], tpl['estilo_forca'], tpl['estilo_off'], tpl['estilo_texto'] = estilo_ant
@@ -1990,12 +2036,67 @@ def _marcar_visto(vid: str, resultado: str):
     _mudar(f)
 
 
+def mesma_fonte_ativa() -> bool:
+    return os.getenv('A1_MESMA_FONTE', '0').lower() in ('1', 'true', 'sim')
+
+
+def _fonte_transitoria(erro: Exception) -> bool:
+    texto = str(erro)
+    # Sem autorização, fonte removida e limites financeiros nunca entram em retry.
+    if re.search(r'privad|private|removid|removed|404|copyright|sem (direito|autoriza)|url inv[aá]lida|teto|or[cç]amento|falta.*chave', texto, re.I):
+        return False
+    return isinstance(erro, (TimeoutError, ConnectionError)) or bool(re.search(
+        r'timeout|timed out|429|502|503|504|tempor[aá]ri|temporar|connection|conex[aã]o|rede indispon|network|ffmpeg.*(busy|recurso|broken pipe)', texto, re.I))
+
+
+def _salvar_fonte(chave: str, registro: dict, *, encerrar=False):
+    import banco as db
+    with db.tx() as c:
+        c.execute('INSERT INTO kv (chave,valor) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor',
+                  ('a1.fonte:' + registro['video']['id'], json.dumps(registro, ensure_ascii=False)))
+        if encerrar:
+            c.execute('DELETE FROM kv WHERE chave=?', (chave,))
+        else:
+            c.execute('INSERT INTO kv (chave,valor) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor',
+                      (chave, json.dumps(registro, ensure_ascii=False)))
+
+
+def _esperar_fonte(segundos: float, motivo: str) -> str:
+    if getattr(CONTROLE_TRABALHO, 'job', ''):
+        from fila import Esperar
+        raise Esperar(max(0, segundos), motivo)
+    return motivo
+
+
 def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '', limite: int = 0) -> str:
     """Um passo do agente de cortes: no máximo um vídeo por vez. limite > 0: quem manda é o estoque da Central de Automação."""
     co = config()['cortes']
+    retry = mesma_fonte_ativa()
+    registro = None
+    chave_fonte = 'a1.pendente:' + hashlib.sha256((link + '\0' + tema).encode()).hexdigest()[:20]
+    max_fonte = max(1, min(10, int(os.getenv('A1_FONTE_MAX_TENTATIVAS', '3')))) if retry else 1
+    if retry:
+        import banco as db
+        verificar_cancelamento()
+        registro = db.kv(chave_fonte)
+        if registro:
+            dono = db.um('SELECT status,cancelar FROM jobs WHERE id=?', registro.get('job') or '')
+            if dono and (dono['cancelar'] or dono['status'] == 'cancelado'):
+                registro.update(estado='CANCELLED')
+                _salvar_fonte(chave_fonte, registro, encerrar=True)
+                return 'A tentativa desta fonte foi cancelada.'
+            if registro.get('tentativas', 0) >= max_fonte:
+                registro.update(estado='BLOCKED', erro='Limite de tentativas atingido.')
+                _salvar_fonte(chave_fonte, registro, encerrar=True)
+                _marcar_visto(registro['video']['id'], registro['erro'])
+                return registro['erro']
+            if registro.get('proxima', 0) > time.time():
+                return _esperar_fonte(registro['proxima'] - time.time(), 'Esperando para tentar novamente a mesma fonte.')
     if limite > 0 and not link:
         forcar = True
-    if link:
+    if registro:
+        v, quantos = registro['video'], registro['quantos']
+    elif link:
         m = re.search(r'(?:v=|youtu\.be/|shorts/|live/)([\w-]{11})', link)
         v = {'id': m.group(1) if m else 'x' + uuid.uuid4().hex[:10], 'url': link, 'titulo': '', 'canal': '', 'canal_nome': 'link enviado por você'}
         quantos = co['por_video']
@@ -2022,13 +2123,39 @@ def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '', limit
             return 'Nenhum vídeo novo nos canais aprovados.' if any(c['status'] == 'aprovado' for c in estado()['canais']) else 'Nenhum canal aprovado ainda. Aprove canais na aba Agente.'
         v['url'] = os.getenv('URL_VIDEO_TESTE') or 'https://www.youtube.com/watch?v=' + v['id']
         quantos = max(1, min(co['por_video'], limite if limite > 0 else (falta if falta > 0 else co['por_video'])))
+    if retry:
+        registro = registro or {'video': v, 'quantos': quantos, 'tentativas': 0,
+                                'job': getattr(CONTROLE_TRABALHO, 'job', ''),
+                                'canal_aprovado': any(c.get('id') == v.get('canal') and c.get('status') == 'aprovado' for c in estado()['canais'])}
+        registro.update(tentativas=registro['tentativas'] + 1, estado='RUNNING', proxima=0)
+        _salvar_fonte(chave_fonte, registro)  # fonte salva antes de baixar/IA: sobrevive à queda
     try:
+        if retry:
+            verificar_cancelamento()
+            if registro.get('canal_aprovado') and not any(
+                    c.get('id') == v.get('canal') and c.get('status') == 'aprovado' for c in estado()['canais']):
+                raise ErroAgente('Sem autorização atual do canal para repetir esta fonte.')
         criados = processar_video(v, quantos)
-    except (ErroAgente, pg.ErroRede) as e:
+    except (ErroAgente, pg.ErroRede, TimeoutError, ConnectionError) as e:
+        if not retry and not isinstance(e, (ErroAgente, pg.ErroRede)):
+            raise  # flag desligada conserva inclusive o contrato de erro antigo
+        if retry:
+            transitorio = _fonte_transitoria(e)
+            repetir = transitorio and registro['tentativas'] < max_fonte
+            atraso = min(1800, 60 * 3 ** (registro['tentativas'] - 1))
+            registro.update(estado='RETRYABLE_ERROR' if repetir else 'BLOCKED', erro=str(e)[:500],
+                            proxima=time.time() + atraso if repetir else 0)
+            _salvar_fonte(chave_fonte, registro, encerrar=not repetir)
+            if repetir:
+                anotar(f'Tentativa {registro["tentativas"]}/{max_fonte}: vou repetir a fonte {v["id"]} em {atraso}s.', 'erro')
+                return _esperar_fonte(atraso, 'Nova tentativa na mesma fonte: ' + str(e)[:160])
         _marcar_visto(v['id'], 'erro: ' + str(e))
         anotar(f'Não deu para cortar "{v.get("titulo") or link}": {e}', 'erro')
         avisar('falha', 'Um vídeo não pôde ser cortado', f'Vídeo: {v.get("titulo") or link}\nMotivo: {e}', zap_tipo='a1_falha')
         return str(e)
+    if retry:
+        registro.update(estado='COMPLETED', proxima=0)
+        _salvar_fonte(chave_fonte, registro, encerrar=True)
     _marcar_visto(v['id'], f'{len(criados)} corte(s)')
     anotar(f'{len(criados)} corte(s) pronto(s) de "{v["titulo"][:80]}".', 'ok')
     return _depois_de_cortar(v, criados)
@@ -2521,9 +2648,49 @@ def acompanhar():
 
 def _numero(v):
     try:
-        return int(v)
-    except (TypeError, ValueError):
+        if isinstance(v, bool):
+            return None
+        n = int(v)
+        if isinstance(v, float) and v != n:
+            return None
+        return n if n >= 0 else None
+    except (TypeError, ValueError, OverflowError):
         return None
+
+
+def _id_youtube_publicado(destino: dict) -> str:
+    u = urllib.parse.urlsplit(str(destino.get('link') or '').split(' ')[0])
+    host = (u.hostname or '').lower()
+    if host in ('youtu.be', 'www.youtu.be'):
+        vid = u.path.strip('/')
+    elif host in ('youtube.com', 'www.youtube.com', 'm.youtube.com'):
+        if u.path.rstrip('/') == '/watch':
+            vid = urllib.parse.parse_qs(u.query).get('v', [''])[0]
+        else:
+            m = re.fullmatch(r'/(?:shorts|embed|live)/([\w-]{11})/?', u.path)
+            vid = m.group(1) if m else ''
+    else:
+        vid = ''
+    return vid if re.fullmatch(r'[\w-]{11}', vid) else ''
+
+
+def inventario_metricas() -> dict:
+    """Capacidade do código, não prova de autorização de uma conta. Não faz HTTP."""
+    escopos = {k: v.replace(',', ' ').split() for k, v in pg.ESCOPOS.items()}
+    redes = {
+        'youtube': {'coletor': True, 'campos': ['views', 'curtidas', 'comentarios'],
+                    'endpoint': 'youtube/v3/videos?part=statistics', 'escopos_solicitados': escopos['google']},
+        'instagram': {'coletor': True, 'campos': ['curtidas', 'comentarios'],
+                      'endpoint': pg.GRAPH_V + '/{media_id}?fields=like_count,comments_count', 'escopos_solicitados': escopos['meta']},
+        'facebook': {'coletor': True, 'campos': ['curtidas', 'comentarios'], 'campos_condicionais': ['views'],
+                     'endpoint': pg.GRAPH_V + '/{video_id}', 'escopos_solicitados': escopos['meta'],
+                     'limite': 'Views dependem do campo/versão e autorização. Video Insights não é consultado.'},
+        'tiktok': {'coletor': False, 'campos': [], 'escopos_solicitados': escopos['tiktok'],
+                   'limite': 'Sem adaptador de métricas; video.list não é solicitado por este cliente.'},
+        'kwai': {'coletor': False, 'campos': [], 'limite': 'Sem integração de métricas.'},
+    }
+    return {'publicacoes_habilitadas': os.getenv('METRICAS_PUBLICACOES', '0') == '1',
+            'redes': {r: dict(d, autorizacao_verificada=False, retencao='nao_coletada') for r, d in redes.items()}}
 
 
 def medir_post(p: dict) -> dict:
@@ -2535,9 +2702,9 @@ def medir_post(p: dict) -> dict:
         m = {'views': None, 'curtidas': None, 'comentarios': None}
         try:
             if rede == 'youtube':
-                achou = re.search(r'shorts/([\w-]{11})', r.get('link', ''))
-                if achou:
-                    st, _, j = pg.http('GET', pg.URL['google_api'] + '/youtube/v3/videos?part=statistics&id=' + achou.group(1),
+                vid = _id_youtube_publicado(r)
+                if vid:
+                    st, _, j = pg.http('GET', pg.URL['google_api'] + '/youtube/v3/videos?part=statistics&id=' + vid,
                                        cab={'Authorization': 'Bearer ' + pg._token_google()}, tempo=30)
                     itens = (j.get('items') or []) if st < 300 else []
                     if itens:
@@ -2582,11 +2749,12 @@ def aprender(ajustar: bool = True):
         p = ps.get(c.get('post'))
         medida = medir_post(p) if p else {}
         views = (medida.get('youtube') or {}).get('views')
+        medido_em = time.time()
 
-        def f(e, cid=c['id'], fx=c.get('faixa', ''), v=views, md=medida, c=c):
+        def f(e, cid=c['id'], fx=c.get('faixa', ''), v=views, md=medida, c=c, em=medido_em):
             for x in e['cortes']:
                 if x['id'] == cid:
-                    x.update(medido=True, views=v, metricas=md)
+                    x.update(medido=True, views=v, metricas=md, metricas_em=em)
             if v is not None and fx:
                 h = e['horarios'].setdefault(fx, {'n': 0, 'views': 0})
                 h['n'] += 1
@@ -2598,6 +2766,7 @@ def aprender(ajustar: bool = True):
         _mudar(f)
     for p in soltos[:20]:
         medida = medir_post(p)
+        medido_em = time.time()
 
         def g(e, md=medida, p=p):
             for rede, m in md.items():
@@ -2605,13 +2774,13 @@ def aprender(ajustar: bool = True):
             e['medidas'] = e['medidas'][-3000:]
         _mudar(g)
         try:
-            pg._mudar(p['id'], lambda q, md=medida: q.update(medido=True, metricas=md))
+            pg._mudar(p['id'], lambda q, md=medida, em=medido_em: q.update(medido=True, metricas=md, metricas_em=em))
         except pg.ErroRede:
             pass
     if pend or soltos:
         try:
             import aprendizado as apr
-            apr.capturar()                  # guarda o retrato dos números lidos agora (sem editar depois)
+            apr.capturar(publicacoes=pg.posts())  # guarda o retrato dos números lidos agora (sem editar depois)
         except Exception as e:  # noqa: BLE001
             print('agente: retratos do aprendizado', e)
     if ajustar and (pend or soltos) and config()['cortes']['aprender']:

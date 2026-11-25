@@ -39,6 +39,14 @@ export default function Perfis({atual,escolher,modelos}:{atual:string;escolher:(
         <label>Modo de montagem<select value={ed.modo_qualidade} onChange={e=>up('modo_qualidade',e.target.value as PerfilCampos['modo_qualidade'])}><option value="">Padrão do site</option><option value="rapido">Rápido</option><option value="caprichado">Caprichado</option></select></label></div>
       <span className="field-label">Templates do canal</span>
       <div className="chips">{modelos.map(m=><button key={m.id} type="button" className={'chip '+(ed.templates.includes(m.id)?'on':'')} onClick={()=>up('templates',ed.templates.includes(m.id)?ed.templates.filter(x=>x!==m.id):[...ed.templates,m.id].slice(0,3))}>{m.nome}</button>)}</div>
+      {ps.dados?.dna_corte_habilitado&&<fieldset className="mt"><legend>DNA dos cortes</legend>
+        <small className="hint">Usa os templates e a cor do canal acima. O ritmo muda a quantidade de palavras por bloco da legenda, preservando a velocidade da fala.</small>
+        <div className="small-grid">
+          <label>Fonte<select value={ed.dna_corte?.fonte||''} onChange={e=>up('dna_corte',{...ed.dna_corte,fonte:(e.target.value||undefined) as 'Inter'|undefined})}><option value="">Do template</option><option value="Inter">Inter (incluída no servidor)</option></select></label>
+          <label>Legenda<select value={ed.dna_corte?.legenda||''} onChange={e=>up('dna_corte',{...ed.dna_corte,legenda:(e.target.value||undefined) as NonNullable<PerfilCampos['dna_corte']>['legenda']})}><option value="">Do template</option><option value="destaque">Palavra em destaque</option><option value="simples">Simples</option><option value="caixa">Caixa</option><option value="nenhuma">Sem legenda</option></select></label>
+          <label>Zoom<input type="number" min={1} max={1.6} step={.05} placeholder="Do template" value={ed.dna_corte?.zoom??''} onChange={e=>up('dna_corte',{...ed.dna_corte,zoom:e.target.value===''?undefined:Number(e.target.value)})}/></label>
+          <label>Ritmo da legenda<select value={ed.dna_corte?.ritmo||''} onChange={e=>up('dna_corte',{...ed.dna_corte,ritmo:(e.target.value||undefined) as NonNullable<PerfilCampos['dna_corte']>['ritmo']})}><option value="">Do template</option><option value="calmo">Calmo (até 4 palavras)</option><option value="padrao">Padrão (até 3 palavras)</option><option value="dinamico">Dinâmico (até 2 palavras)</option></select></label>
+        </div></fieldset>}
       <span className="field-label mt">Estilos visuais permitidos</span>
       <div className="chips">{ESTILOS.map(s=><button key={s.id} type="button" className={'chip '+(ed.estilos_permitidos.includes(s.id)?'on':'')} onClick={()=>up('estilos_permitidos',ed.estilos_permitidos.includes(s.id)?ed.estilos_permitidos.filter(x=>x!==s.id):[...ed.estilos_permitidos,s.id])}>{s.nome}</button>)}</div>
       <span className="field-label mt">Redes de destino (só as conectadas em Postagem funcionam)</span>

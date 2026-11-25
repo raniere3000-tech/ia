@@ -88,7 +88,8 @@ def projeto(titulo, hashtags, link=''):
     def pronto(d, _p):
         d['render'] = {'id': 'r' + pid, 'versao': 1, 'sha': sha, 'validado': True}
         d['cenas'][0]['imagem'] = {'credito': cred}
-        d['qualidade'] = {'status': 'apto_para_revisao_humana', 'problemas': []}   # passou no diretor de qualidade
+        d['qualidade'] = {'status': 'apto_para_revisao_humana', 'problemas': []}
+        d['diretor'] = {'sha': sha, 'veredito': 'aprovado', 'motivos': []}  # parecer desta versão
         return {'status': 'ready_for_review'}
     pj.mudar_dados(pid, pronto)
     return pid, sha

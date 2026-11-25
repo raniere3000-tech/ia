@@ -526,6 +526,17 @@ def _dados_memoria(d) -> dict:
         out['capa_layout'] = re.sub(r'[^a-z_]', '', str(out['capa_layout']))[:20]
     if 'ritmo' in out:
         out['ritmo'] = re.sub(r'[^a-z_]', '', str(out['ritmo']))[:20]
+    if isinstance(d.get('_aprendizado'), dict):
+        import aprendizado as ap
+        a = d['_aprendizado']
+        ctx = ap.contexto_teste(a)
+        alvo = str(a.get('variavel') or '')
+        if alvo not in ap.ALVOS_TESTE:
+            raise ErroCoord(400, 'Variável da hipótese inválida.')
+        out['_aprendizado'] = dict(ctx, variavel=alvo, responsavel=str(a.get('responsavel') or '')[:40],
+            hipotese=str(a.get('hipotese') or '')[:500], amostra=int(a.get('amostra') or 0),
+            snapshots=[str(x)[:80] for x in a.get('snapshots', [])[:500]], a=str(a.get('a') or '')[:60], b=str(a.get('b') or '')[:60],
+            teste_id=str(a.get('teste_id') or '')[:40], rollback='desativar_memoria_ou_reverter_versao')
     return out
 
 
@@ -609,6 +620,13 @@ def _mudar_memoria(mid: str, novos: dict, motivo: str, quem: str, versao_esperad
         c.execute('UPDATE coordenador_memorias SET tipo=:tipo, escopo=:escopo, chave=:chave, texto=:texto, dados_json=:dados_json, status=:status, confianca=:confianca, '
                   'confirmada_por=:confirmada_por, versao=:versao, atualizada=:atualizada, travada=:travada WHERE id=:id', m)
         _versao(mid, antes, _mem_publica(m), motivo, quem, c)
+    a = (antes.get('dados') or {}).get('_aprendizado') or {}
+    b = _l(m['dados_json'], {}).get('_aprendizado') or {}
+    if a.get('teste_id') and (m['status'] == 'desativada' or a['teste_id'] != b.get('teste_id')):
+        import aprendizado as ap
+        teste = ap.ler_experimento(a['teste_id'])
+        if teste['status'] == 'ativo':
+            ap.encerrar_experimento(a['teste_id'])
     evento(None, None, quem, 'memoria', {'acao': motivo, 'id': mid, 'versao': m['versao']})
     return memoria(mid)
 
@@ -662,6 +680,10 @@ def memorias_aplicaveis(ctx: dict) -> list:
     tema = str(ctx.get('tema') or '').lower()
     ms = []
     for m in db.todos("SELECT * FROM coordenador_memorias WHERE status='confirmada'"):
+        aprendizado = _l(m['dados_json'], {}).get('_aprendizado')
+        if aprendizado and (str(ctx.get('canal') or '').lower() != aprendizado['canal'].lower() or
+                            ctx.get('vertente') != aprendizado['vertente'] or aprendizado['rede'] not in (ctx.get('redes') or [])):
+            continue
         tipo, _, valor = m['escopo'].partition(':')
         if m['escopo'] in escopos or (tipo == 'tema' and valor and valor in tema):
             ms.append(m)
@@ -1994,10 +2016,25 @@ def sugestoes() -> dict:
                 out.append({'id': 'lento_' + tipo.replace('.', '_'), 'tipo': 'fato', 'titulo': f'"{tipo}" ficou mais lento: {round(rec / 60, 1)} min (antes {round(ant / 60, 1)} min)',
                             'evidencia': {'ultimos_3_s': [round(x) for x in ds[:3]], 'media_antes_s': round(ant), 'amostras': len(ds)}, 'confianca': None,
                             'proposta': {'texto': f'"{tipo}" está mais lento no celular; evite pedir muitos de uma vez.', 'escopo': 'global', 'chave': 'lento.' + tipo, 'tipo': 'fato'}})
+    # Hipóteses de métricas entram no fluxo existente de proposta/versão/aprovação.
+    import aprendizado as ap
+    feedbacks = feedback_metricas() if ap.inteligencia_ativa() else []
+    for f in feedbacks:
+        if f['estado'] != 'hipotese_observacional':
+            continue
+        assinatura = hashlib.sha256(_j(f).encode()).hexdigest()[:20]
+        chave = 'metricas.' + f['agente'] + '.' + assinatura
+        meta = {k: f[k] for k in ('canal', 'vertente', 'rede', 'metrica', 'snapshots')}
+        meta.update(variavel=f['alvo'], responsavel=f['agente'], hipotese=f['recomendacao'], amostra=f['amostras'],
+                    a=f['comparacoes'][0]['valor'], b=f['comparacoes'][1]['valor'])
+        out.append({'id': chave, 'tipo': 'fato', 'titulo': f['agente'] + ': hipótese sobre ' + f['alvo'],
+                    'evidencia': meta, 'confianca': None,
+                    'proposta': {'texto': f['recomendacao'], 'tipo': 'fato', 'escopo': 'canal:' + f['canal'],
+                                 'chave': chave, 'dados': {'_aprendizado': meta}}})
     dis = set(_dispensadas())
     ja = {m['chave'] for m in memorias() if m['status'] in ('proposta', 'confirmada')}
     out = [s for s in out if s['id'] not in dis and s['proposta']['chave'] not in ja]
-    return {'sugestoes': out, 'nota': 'Sugestões com base no que foi medido neste servidor. Nada muda sem você confirmar.'}
+    return {'sugestoes': out, 'feedback_metricas': feedbacks, 'nota': 'Sugestões com base no que foi medido neste servidor. Nada muda sem você confirmar.'}
 
 
 def propor_sugestao(sid: str, quem: str = 'site') -> dict:
@@ -2035,6 +2072,9 @@ def agentes() -> dict:
     for ag_id, nomes in AGENTES_JOBS.items():
         ph = ','.join('?' * len(nomes))
         rod = db.todos(f"SELECT * FROM jobs WHERE agente IN ({ph}) AND status='rodando' ORDER BY iniciado", *nomes)
+        lidos = [fila.estado_publico(j, agora) for j in rod]
+        recuperaveis = [j for j in lidos if j['heartbeat_atrasado']]
+        rod = [j for j in lidos if j['estado_comum'] == 'RUNNING']
         fila_n = (db.um(f"SELECT COUNT(*) AS n FROM jobs WHERE agente IN ({ph}) AND status IN ('na_fila','agendado','aguardando_tentativa')", *nomes) or {'n': 0})['n']
         falhas = (db.um(f"SELECT COUNT(*) AS n FROM jobs WHERE agente IN ({ph}) AND status='falhou' AND terminado>?", *nomes, agora - 86400) or {'n': 0})['n']
         feitos = (db.um(f"SELECT COUNT(*) AS n FROM jobs WHERE agente IN ({ph}) AND status='concluido' AND terminado>?", *nomes, agora - 86400) or {'n': 0})['n']
@@ -2059,6 +2099,8 @@ def agentes() -> dict:
         item = {'id': ag_id, 'nome': NOMES_AGENTE[ag_id], 'estado': 'trabalhando' if atual else ('na_fila' if fila_n else 'parado'), 'atual': atual,
                 'na_fila': fila_n, 'feitos_24h': feitos, 'falhas_24h': falhas, 'tempos_medios': medias,
                 'custo_30d': {'valor': round(custo.get('s') or 0, 4), 'moeda': custo.get('moeda') or '', 'registros': custo.get('n') or 0}}
+        item['jobs_recuperaveis'] = [{'job': j['id'], 'estado_comum': j['estado_comum'],
+                                     'motivo': j['estado_motivo']} for j in recuperaveis]
         item.update(_esteira_do_agente(ag_id, agora))
         if ag_id == 'agente6':
             try:
@@ -2443,3 +2485,68 @@ def iniciar():
     if os.getenv('COORDENADOR_SEM_VIGIA') == '1':
         return
     threading.Thread(target=_vigia, daemon=True, name='coordenador').start()
+
+
+def feedback_metricas(filtros: dict | None = None) -> list:
+    """A7 descreve evidências por agente; não altera memória, prompt ou configuração."""
+    import aprendizado as ap
+    dados = ap.indicadores(filtros)
+    grupos = {}
+    for x in dados['itens']:
+        grupos.setdefault((x['vertente'], x['rede'], x['canal']), []).append(x)
+    if not grupos:
+        grupos[('', '', None)] = []
+    out = []
+    for (vertente, rede, canal), itens in sorted(grupos.items(), key=lambda p: str(p[0])):
+        metrica = str((filtros or {}).get('metrica') or 'views')
+        for agente, alvo in [('agente1', 'gancho'), ('agente3', 'roteiro'), ('agente5', 'efeitos'),
+                             ('agente6', 'capa'), ('agente2', 'horario'), ('agente4', 'criterios')]:
+            vals = {}
+            evidencias = []
+            renders_vistos = set()
+            for x in itens:
+                c = x['publicacao'] or {}
+                render = c.get('render_sha')
+                if not render or render in renders_vistos:
+                    continue
+                valor = ap.valor_contexto(c, alvo)
+                if valor is not None and metrica in x['metricas']:
+                    renders_vistos.add(render)
+                    vals.setdefault(str(valor), []).append(x['metricas'][metrica])
+                    evidencias.append(x['snapshot'])
+            comparaveis = [dict(valor=k, **ap._estat(v)) for k, v in vals.items() if len(v) >= ap.MIN_AMOSTRAS]
+            comparaveis.sort(key=lambda x: (-x['media'], x['valor']))
+            suficiente = len(comparaveis) >= 2 and bool(canal) and vertente in ('cortes', 'criacao_ia')
+            texto = (f'Comparar {alvo} em teste controlado no mesmo canal e vertente; o grupo {comparaveis[0]["valor"][:60]} '
+                     f'teve maior média de {metrica}. Associação não prova causa.' if suficiente else
+                     f'Dados insuficientes para recomendar alteração de {alvo}. Coletar pelo menos {ap.MIN_AMOSTRAS} vídeos por valor, com canal e versão conhecidos.')
+            out.append({'agente': agente, 'alvo': alvo, 'vertente': vertente, 'rede': rede, 'canal': canal,
+                        'metrica': metrica, 'estado': 'hipotese_observacional' if suficiente else 'dados_insuficientes',
+                        'recomendacao': texto, 'amostras': len(evidencias), 'fora_da_amostra': len(itens)-len(evidencias),
+                        'comparacoes': comparaveis, 'snapshots': sorted(evidencias), 'aviso': ap.AVISO_CAUSA})
+    return out
+
+
+def testar_hipotese(mid: str, quem: str = 'site', versao=None) -> dict:
+    """Confirmação/CAS e criação do experimento na mesma transação."""
+    import aprendizado as ap
+    if not ap.inteligencia_ativa():
+        raise ErroCoord(409, 'Inteligência de métricas desativada neste servidor.')
+    with db.tx() as c:
+        m = memoria(mid)
+        if versao is None or int(versao) != m['versao']:
+            raise ErroCoord(409, 'Atualize a versão da memória antes de iniciar o teste.')
+        a = m['dados'].get('_aprendizado')
+        if m['status'] != 'confirmada' or not a:
+            raise ErroCoord(409, 'Confirme uma hipótese de métricas antes do teste.')
+        if a.get('teste_id'):
+            return ap.ler_experimento(a['teste_id'])
+        ex = ap.criar_experimento({'variavel': a['variavel'], 'a': a['a'], 'b': a['b'], 'contexto': a}, c=c)
+        depois = {k: v for k, v in m.items() if k not in ('versoes', 'evidencias')}
+        depois.update(dados=dict(m['dados'], _aprendizado=dict(a, teste_id=ex['id'])), versao=m['versao']+1, atualizada=_agora())
+        c.execute('UPDATE coordenador_memorias SET dados_json=?, versao=?, atualizada=? WHERE id=?',
+                  (_j(depois['dados']), depois['versao'], depois['atualizada'], mid))
+        antes = {k: v for k, v in m.items() if k not in ('versoes', 'evidencias')}
+        _versao(mid, antes, depois, 'teste controlado criado', quem, c)
+    evento(None, None, quem, 'aprendizado', {'memoria': mid, 'teste': ex['id']})
+    return ex

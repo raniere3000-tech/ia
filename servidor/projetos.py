@@ -114,6 +114,20 @@ def atualizar(pid: str, d: dict, dispositivo: str = '', origem: str = 'site') ->
     return _meta(obter(pid))
 
 
+def hash_roteiro(dados: dict) -> str:
+    """Identifica o conteúdo conferido, sem depender das revisões de status/parecer."""
+    gerados = {'audio', 'imagem', 'clipe', 'fotos_planos', 'refazer', 'variante_imagem',
+               'variante_voz', 'fotos_recusadas', 'duracao_real'}
+    cenas = [{k: v for k, v in c.items() if k not in gerados} for c in dados.get('cenas') or []]
+    conteudo = {'briefing': dados.get('briefing'), 'roteiro': dados.get('roteiro'), 'cenas': cenas}
+    return hashlib.sha256(json.dumps(conteudo, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def roteiro_aprovado(dados: dict) -> bool:
+    ap = dados.get('aprovacao_roteiro') or {}
+    return bool(ap.get('aprovado') and ap.get('hash') == hash_roteiro(dados))
+
+
 def mudar_dados(pid: str, f, origem: str = 'servidor') -> dict:
     """Mudança feita pelo próprio servidor (Agente 3): lê, altera e grava numa revisão nova, sem conflito."""
     for _ in range(5):

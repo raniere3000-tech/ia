@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/testes/teste_liberacao.py", line 58, in <module>
+    pid = novo_post()
+          ^^^^^^^^^^^
+  File "/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/testes/teste_liberacao.py", line 51, in novo_post
+    apv.aprovar(pid, sha, {'redes': ['youtube'], 'quando': 'data', 'data': 4102444800}, 'site', 'teste')
+  File "/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/aprovacoes.py", line 217, in aprovar
+    raise ErroAprovacao(409, 'O diretor de qualidade não aprovou esta versão: ' + ' '.join(dr['motivos'])[:400] + ' Refaça as cenas apontadas.')
+aprovacoes.ErroAprovacao: O diretor de qualidade não aprovou esta versão: Falta o parecer favorável do diretor para esta versão. Refaça as cenas apontadas.

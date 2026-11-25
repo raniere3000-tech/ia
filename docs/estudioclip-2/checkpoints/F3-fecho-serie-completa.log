@@ -1,0 +1,18 @@
+ok    sem chave do Gemini: avisa (não inventa série)
+ok    sem tema: pede o tema
+ok    pedido vira trabalho na fila (não trava a tela)
+ok    duplo toque não cria duas séries
+ok    IA caiu no episódio 3: guarda o que já fez
+ok    nova tentativa continua: 5 episódios, sem repetir
+ok    3 principais e 2 extras (o que passou do pedido fica de fora)
+ok    cenários criados
+ok    pedido original guardado nas regras; duração entre 60 e 90 s
+ok    cada episódio já tem roteiro (cenas) pronto para revisar
+ok    episódios usam o elenco da série
+ok    nada foi produzido nem postado
+ok    roteiro de cada episódio escrito com o resumo dele e o elenco
+ok    progresso mostra quando terminou
+ok    pedido à IA tem quantidade, duração e elenco escolhidos
+ok    limites: até 12 episódios, 4+4 personagens, 30 a 180 s
+
+TUDO OK

@@ -1,0 +1,208 @@
+Sessão e aparelhos
+  ok  senha errada recusada
+  ok  login cria sessão do aparelho
+  ok  sem sessão não lista projetos
+  ok  pareamento prova que conhece o código
+  ok  código de pareamento é de uso único
+  ok  aparelho desconectado perde acesso
+Projetos e conflito
+  ok  salvar aumenta a revisão
+  ok  revisão antiga dá conflito 409 com a revisão atual
+Configura chave e e-mail do agente
+  ok  configuração salva com sessão de aparelho (rotas antigas)
+Agente 3: produção
+  ok  projeto do Agente 3 criado e na fila
+  ok  roteiro gerado e esperando aprovação
+  ok  trabalho fica esperando (não renderiza sem aprovar)
+  ok  e-mail de roteiro pronto enviado
+  ok  roteiro revisado pelo usuário antes da aprovação
+  ok  aprovação de revisão anterior é recusada
+  ok  aprovação continua no mesmo trabalho
+     (produção levou 9s)
+  ok  vídeo produzido e pronto para revisão
+  ok  ffprobe: 1080x1920 H.264
+  ok  ffprobe: áudio AAC
+  ok  hash do arquivo confere com o registrado
+  ok  nada foi publicado ao terminar o render
+  ok  render mantém o roteiro revisado e o mesmo job, sem reiniciar a produção
+  ok  apontamentos do revisor permanecem auditáveis com o hash do aceite explícito
+  ok  e-mail de vídeo pronto enviado
+  ok  e-mail tem código e não tem senha nem sessão
+  ok  prévia anexada
+Links e Range
+  ok  link assinado responde com Range (206)
+  ok  link adulterado recusado
+Aprovação
+  ok  aprovar hash diferente é recusado
+  ok  remetente estranho ignorado
+  ok  resposta fora da conversa ignorada
+  ok  código errado recusado
+  ok  texto citado não conta como comando
+  ok  aprovado por e-mail com código válido
+  ok  post criado no Agente 2 (Kwai manual)
+  ok  o mesmo e-mail não é aplicado duas vezes
+  ok  código já usado não aprova de novo
+  ok  aprovar de novo pelo site não duplica o post
+  ok  situação: na fila de postagem
+Agente 2: portões antes de postar
+  ok  post do Agente 3 sabe de qual versão aprovada veio
+  ok  versão aprovada, direitos, qualidade e arquivo conferidos
+  ok  conta não conectada bloqueia a rede
+  ok  versão não aprovada é barrada
+  ok  crédito exigido fora da legenda é barrado
+  ok  corte sem dono registrado é barrado
+  ok  post enviado à mão só recebe aviso
+  ok  site consegue ver a conferência antes de postar
+Radar: ficha de oportunidade
+  ok  ficha diz quando, com quais filtros e que o interesse é desconhecido sem dados
+  ok  ficha mostra fontes e riscos (saúde = alto)
+Storyboard editado no site
+  ok  rascunho criado sem produzir
+  ok  storyboard salvo numa revisão nova
+  ok  storyboard de revisão antiga dá conflito 409
+  ok  ordem, texto e cena travada guardados
+  ok  storyboard vazio recusado
+Fotos por cena remodeladas no estilo
+  ok  vídeo com fotos produzido e pronto para revisão
+  ok  cada cena guardou a foto e o crédito
+  ok  cenas não repetem a mesma foto
+  ok  a busca usou a chave do Pexels
+  ok  e-mail lista os créditos das fotos
+Modo misto: IA desenha a cena sem foto
+  ok  vídeo documentário sem fotos achadas ficou pronto
+  ok  cada cena sem foto ganhou imagem da IA
+Planos por cena (documentário)
+  ok  vídeo com planos ficou pronto
+  ok  plano inválido vira aberto e números ficam na faixa
+  ok  cada plano com busca ganhou a sua foto
+  ok  planos e cenas não repetem foto
+  ok  diretor de qualidade deixou o relatório no projeto
+  ok  cada alerta tem cena, instante e descrição
+  ok  roteiro aprovado pelo revisor segue sem inventar alerta de gancho
+  ok  leitura crítica guardada para não pagar de novo
+  ok  olhar da IA: uma chamada, no máximo 6 quadros ([5])
+  ok  avaliador visual sem apontamentos não inventa defeitos
+  ok  vídeo sem pendências visuais pode seguir para revisão
+  ok  cena com 2 planos tem os segmentos reais, novos ou reaproveitados do cache
+Estilos 3D
+  ok  3D aparece como beta quando há numpy
+  ok  fundo 3D em loop gerado e guardado
+  ok  demonstração 3D entra na fila
+Backup das mídias
+  ok  mostra o que existe e avisa que o destino é o mesmo celular
+  ok  destino fora do Termux/armazenamento é recusado
+  ok  backup incremental: a segunda vez não copia de novo
+  ok  restauração de teste confere todos os sha256
+  ok  arquivo estragado no backup aparece como problema
+Fila, capacidade, backup
+  ok  fila lista os concluídos
+  ok  capacidade do aparelho
+  ok  backup e restauração de teste conferem
+  ok  pedido manual do agente de cortes entra na fila
+Séries animadas (personagens articulados)
+  ok  episódio sem personagem é recusado
+  ok  personagens criados com id legível e cor inválida trocada
+  ok  folha de modelo do personagem gerada
+  ok  fato aprovado não muda em silêncio (vira mudança e o antigo fica guardado)
+  ok  episódio criado como projeto do Agente 3
+agente: Buscando canais: Falta a chave do YouTube. Preencha na aba Agente, em Chaves.
+fila: agente1.pesado Falta a chave do YouTube. Preencha na aba Agente, em Chaves.
+  ok  episódio animado produzido e pronto para revisão
+  ok  roteiro do episódio vê só fatos aprovados e o elenco da série
+  ok  só personagens da série e só ações do catálogo
+  ok  cada fala com a voz do seu personagem
+  ok  mudar o personagem depois não altera o episódio já criado
+  ok  mudança de aparência vira versão nova do personagem
+  ok  mudanças do episódio entram na bíblia como proposta
+  ok  série mostra episódios com a situação do vídeo
+Continuidade com a bíblia e voz gravada no Estúdio
+  ok  fala consistente não recebe contradição inventada pelo simulador
+  ok  avisa que o personagem mudou depois do episódio criado
+  ok  conferência usa só os fatos aprovados
+  ok  storyboard com voz gravada salvo ()
+  ok  cena usa a voz gravada no lugar da IA (None)
+  ok  não pagou voz da IA para a cena com voz gravada
+  ok  boca do personagem segue a voz gravada
+Diretor: mapa de palco, eixo, animatic e prévia A/B
+  ok  mapa de palco com atores e eixo
+  ok  eixo de 180°: troca de lado sem motivo avisa; andando para o outro lado não avisa
+  ok  animatic feito (None)
+     (animatic de 3.58s levou 2.7s)
+  ok  animatic pequeno (360x640, 8 quadros/s) com a duração do vídeo
+  ok  mapa mostra o animatic atual
+  ok  prévia A/B com quadros desenhados de verdade (None)
+  ok  cena que não existe é recusada
+Porta do storyboard visual: quadros reais, aprovação por versão da cena
+  ok  sem quadros ainda: nada aprovado
+  ok  não aprova cena sem ver o quadro
+  ok  quadros gerados (None)
+  ok  cada cena ganhou miniaturas de prévia real
+  ok  a miniatura é uma imagem JPEG de verdade
+  ok  aprova só a cena 1
+  ok  aprova todas
+  ok  corrige uma cena ({'ativa': False, 'cenas': [{'id': 'c1', 'n': 1, 'titulo': 'Beto, você ouviu isso)
+  ok  câmera fora da lista é recusada
+  ok  só a cena corrigida perdeu a aprovação
+  ok  o hash só mudou na cena alterada
+  ok  só a cena corrigida foi redesenhada ({'desenhadas': 1, 'reaproveitadas': 0})
+  ok  quadro novo da cena corrigida, a outra segue aprovada
+  ok  pedir de novo sem mudança não redesenha nada
+  ok  aprova a cena corrigida; o aviso lembra que o vídeo final continua com você
+Clima e luz por cena
+  ok  clima e luz só da lista
+  ok  cena com chuva à noite ganha partículas e camada de cor
+  ok  cena comum fica sem efeito extra
+  ok  render com clima funciona
+Diretor completo: ângulo, luz por plano, movimento livre e refazer uma cena
+  ok  plano antigo continua igual (mesma chave de cache)
+  ok  ângulo, luz e quadros-chave validados e ordenados
+  ok  valores fora da lista são descartados
+  ok  documentario: ângulos e luz do plano entram no desenho
+  ok  documentario: render com ângulos e movimento livre funciona
+  ok  animado2d: ângulos e luz do plano entram no desenho
+  ok  animado2d: render com ângulos e movimento livre funciona
+  ok  pedido de refazer só a cena 2 aceito
+  ok  não deixa pedir de novo enquanto está na fila
+  ok  vídeo refeito voltou para a revisão com versão nova (ready_for_review, {'status': 'validating', 'job': '497ee0570ca4', 'pedido': 1795562314.0058267})
+  ok  só a cena pedida foi desenhada de novo
+  ok  narração gravada de novo só nessa cena
+  ok  cena que não existe é recusada
+Galeria: prévias reais do desenho animado e dos efeitos
+  ok  demonstração do efeito entra na fila
+  ok  demonstração com chuva à noite renderizada (None)
+  ok  catálogo mostra os efeitos e a prévia pronta
+  ok  segunda vez já vem pronta (guardada)
+  ok  variante desconhecida é ignorada
+Personagens em 3D (beta)
+  ok  3D com personagens aparece como beta
+  ok  série guarda o visual 3D
+     (episódio 3D levou 10s)
+  ok  episódio 3D produzido (None)
+  ok  todas as cenas saíram no 3D (sem trocar de estilo escondido)
+  ok  ângulo do plano muda a câmera 3D (e a chave do cache)
+Backup seletivo e métricas (T6)
+  ok  backup seletivo: só um projeto + rigs; avisa que no mesmo celular não protege contra perda
+  ok  backup das mídias do projeto feito ({'manifesto': 'manifesto-20261124-201905.json', 'novos': 102, 'ja_existiam': 1, 'faltando': [], 'destino': '/tmp/ec-teste-khk_75t6/dados/backups/midias'})
+  ok  projeto restaurado em pasta de teste (103 arquivos)
+  ok  hash de cada arquivo restaurado conferido de novo, fora do servidor
+  ok  projeto que não existe: restauração diz que não deu
+  ok  métricas: tempo por plano medido de verdade nos jobs
+  ok  métricas: cache dos planos, memória e espaço por pasta
+  ok  métricas: estado honesto (fora do celular) e tentativas/fila
+  ok  métricas sem segredo
+Diagnóstico do aparelho (T1)
+  ok  ficha do aparelho lida sem instalar nada
+  ok  aqui não é Android: a ficha diz isso e ainda não há laudo
+  ok  só pacotes aprovados aparecem
+  ok  comando pronto só com o que falta
+  ok  pedir o teste duas vezes não cria dois trabalhos pesados
+  ok  teste do aparelho rodou (None)
+  ok  render de 5 s e prévia leve: conferidos e tocam do começo ao fim
+  ok  codecs registrados (h264 + aac)
+  ok  prévia leve em 360x640 a 8 quadros/s
+  ok  prévia leve custa menos que o render final
+  ok  fora do celular o laudo NÃO diz que foi medido no celular
+  ok  laudo sem caminhos internos e com registro
+  ok  memória livre do aparelho é lida de verdade (/proc/meminfo)
+
+176 ok, 0 falhas   (pasta /tmp/ec-teste-khk_75t6)

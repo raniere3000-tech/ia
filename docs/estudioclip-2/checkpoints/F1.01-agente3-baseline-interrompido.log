@@ -1,0 +1,17 @@
+Sessão e aparelhos
+  ok  senha errada recusada
+  ok  login cria sessão do aparelho
+  ok  sem sessão não lista projetos
+  ok  pareamento prova que conhece o código
+  ok  código de pareamento é de uso único
+  ok  aparelho desconectado perde acesso
+Projetos e conflito
+  ok  salvar aumenta a revisão
+  ok  revisão antiga dá conflito 409 com a revisão atual
+Configura chave e e-mail do agente
+  ok  configuração salva com sessão de aparelho (rotas antigas)
+Agente 3: produção
+  ok  projeto do Agente 3 criado e na fila
+  ok  roteiro gerado e esperando aprovação
+  ok  trabalho fica esperando (não renderiza sem aprovar)
+  ok  e-mail de roteiro pronto enviado

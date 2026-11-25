@@ -1,0 +1,12 @@
+1. Diretor aprovou, Agente 1 ainda não salvou o corte
+  ok  não cancela enquanto o corte não foi salvo (estado: em_andamento)
+2. Corte descartado de verdade: cancela
+  ok  corte descartado cancela a esteira
+3. Cancelado por engano volta a andar quando o corte existe
+  ok  situação do celular: cancelado com "O vídeo foi apagado ou descartado."
+  ok  reaberto: segue para a capa (em_andamento)
+  ok  o que já estava feito (diretor) continua valendo
+  ok  não reabre duas vezes
+  ok  descartado de verdade não é reaberto
+
+7 ok, 0 falhas

@@ -1,0 +1,15 @@
+ok    desligado: não manda nada
+ok    teste sem número avisa o que falta
+ok    número fica só com os dígitos
+ok    a chave fica só no servidor
+ok    falha chega no WhatsApp com o motivo e o link
+ok    aviso desmarcado não vai para o WhatsApp
+ok    vídeo reprovado pelo diretor não chega no WhatsApp
+ok    vídeo aprovado pelo diretor chega com o link para a sua aprovação final
+ok    a mensagem não leva código de aprovação nem chave
+ok    chave errada: explica o que fazer
+agente: WhatsApp não enviado: A chave do CallMeBot não confere com este número. Peça uma nova mandando a mensagem de ativação de novo.
+ok    erro no envio fica no histórico e não trava o resto
+ok    cada agente tem a sua escolha: Agente 2 desligado não cala o Agente 3
+
+TUDO OK

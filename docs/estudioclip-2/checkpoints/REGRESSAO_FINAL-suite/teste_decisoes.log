@@ -1,0 +1,36 @@
+1. Nada esperando
+  ok   servidor vazio: faixa some (0 itens, nenhuma fonte com erro)
+2. Cada tipo de decisão aparece
+  ok   todas as fontes leram sem erro: 
+  ok   vídeo do Agente 3 leva direto para ele em Aprovações
+  ok   roteiro esperando aprovação aparece
+  ok   correção já pedida não aparece (é a vez do agente)
+  ok   plano do Coordenador para confirmar abre a ordem certa
+  ok   rascunho com mais de 3 dias não vira alarme
+  ok   liberação pendente leva para Coordenador > Liberar
+  ok   etapa de liberação não aparece duas vezes (já tem o item da liberação)
+  ok   etapa parada por outro motivo aparece com o motivo
+  ok   revisão manual da esteira aparece
+  ok   capa para escolher abre a galeria do pedido
+  ok   capa parada há mais de 14 dias não vira alarme
+  ok   post pedindo liberação mostra só a rede travada
+  ok   post com erro é urgente
+  ok   Kwai na hora de postar aparece como "quando puder"
+  ok   Kwai de amanhã e post normal não aparecem
+  ok   canais sugeridos viram 1 item "quando puder"
+  ok   conta de urgentes certa (9)
+  ok   urgentes vêm primeiro
+  ok   o que espera há mais tempo vem primeiro
+  ok   o número do Início é o mesmo da faixa
+3. Uma fonte quebrada não derruba as outras
+  ok   esteira com erro: o resto continua aparecendo
+4. Remover avisos persiste no servidor sem aprovar nem cancelar tarefas
+  ok   remover tira o item e reduz o contador imediatamente
+  ok   remover aviso preserva a tarefa, sem aprovar, postar ou rejeitar
+  ok   contador do Início acompanha a remoção do aviso
+  ok   outra conexão mantém o aviso removido
+  ok   nova revisão do mesmo projeto volta à lista
+  ok   remoção desatualizada não esconde uma decisão nova
+  ok   pedido vazio não remove outros itens
+
+30 ok, 0 falha(s)

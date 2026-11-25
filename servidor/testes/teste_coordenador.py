@@ -92,7 +92,8 @@ def video_render(pid, cor='testsrc2', dur=6):
     db.executar('INSERT INTO renders (id, projeto, versao, arquivo, sha256, duracao, codec, largura, altura, validado, alertas, criado) VALUES (?,?,?,?,?,?,?,?,?,1,?,?)',
                 rid, pid, n, str(arq), sha, float(dur), 'h264', 720, 1280, '[]', time.time())
     pj.mudar_dados(pid, lambda d, _p: (d.update(render={'id': rid, 'versao': n, 'sha': sha, 'validado': True},
-                                                diretor={'sha': sha, 'veredito': 'aprovado', 'motivos': []}), {'status': 'ready_for_review'})[1])
+                                                diretor={'sha': sha, 'veredito': 'aprovado', 'motivos': []},
+                                                qualidade={'status': 'apto_para_revisao_humana', 'problemas': []}), {'status': 'ready_for_review'})[1])
     return sha
 
 

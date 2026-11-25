@@ -39,11 +39,12 @@ class Cancelado(Exception):
 
 class Esperar(Exception):
     """A etapa precisa esperar algo (aprovação, API ocupada): volta para a fila sem contar tentativa."""
-    def __init__(self, segundos: float, motivo: str, status: str = 'na_fila'):
+    def __init__(self, segundos: float, motivo: str, status: str = 'na_fila', *, chave_aprovacao: str = ''):
         super().__init__(motivo)
         self.segundos = segundos
         self.motivo = motivo
         self.status = status
+        self.chave_aprovacao = chave_aprovacao
 
 
 class Contexto:
@@ -87,17 +88,18 @@ def enfileirar(tipo: str, *, agente: str, dados: dict | None = None, run_at: flo
                recurso: str | None = None, projeto: str = '', titulo: str = '', chave: str = '', max_tentativas: int = 3) -> dict:
     if tipo not in HANDLERS:
         raise ValueError('tipo de trabalho desconhecido: ' + tipo)
-    if chave:
-        ja = db.um('SELECT * FROM jobs WHERE chave=?', chave)
-        if ja:                 # pedido repetido (duplo clique, reinício): não cria outro
-            return ja
     agora = time.time()
     quando = float(run_at) if run_at else agora
     jid = uuid.uuid4().hex[:12]
-    db.executar('INSERT INTO jobs (id, agente, tipo, projeto, titulo, status, run_at, prioridade, recurso, max_tentativas, criado, dados, chave, etapa) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', jid, agente, tipo, projeto, titulo[:160], 'agendado' if quando > agora + 1 else 'na_fila',
-                quando, int(prioridade), recurso or HANDLERS[tipo][1], max_tentativas, agora, json.dumps(dados or {}, ensure_ascii=False), chave or None,
-                'Esperando o horário' if quando > agora + 1 else 'Na fila')
+    with db.tx() as c:
+        if chave:
+            ja = c.execute('SELECT * FROM jobs WHERE chave=?', (chave,)).fetchone()
+            if ja:
+                return dict(ja, repetido=True)
+        c.execute('INSERT INTO jobs (id, agente, tipo, projeto, titulo, status, run_at, prioridade, recurso, max_tentativas, criado, dados, chave, etapa) '
+                  'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', (jid, agente, tipo, projeto, titulo[:160], 'agendado' if quando > agora + 1 else 'na_fila',
+                  quando, int(prioridade), recurso or HANDLERS[tipo][1], max_tentativas, agora, json.dumps(dados or {}, ensure_ascii=False), chave or None,
+                  'Esperando o horário' if quando > agora + 1 else 'Na fila'))
     db.evento(agente, 'job_criado', 'job:' + jid, {'tipo': tipo, 'run_at': quando})
     ACORDAR.set()
     return db.um('SELECT * FROM jobs WHERE id=?', jid)
@@ -124,14 +126,17 @@ def _proximo(recurso: str) -> dict | None:
     return dict(r, status='rodando')
 
 
-def _cancelar_entidades(job: dict):
+def _cancelar_entidades(job: dict, conexao=None):
     """Uma produção cancelada não continua aparecendo como aprovação pendente."""
+    def executar(sql, *args):
+        return conexao.execute(sql, args) if conexao is not None else db.executar(sql, *args)
     agora = time.time()
+    executar('DELETE FROM kv WHERE chave=?', 'liberar:' + job['id'])
     if job.get('projeto'):
-        db.executar("UPDATE projetos SET status='cancelled', atualizado=? WHERE id=? "
+        executar("UPDATE projetos SET status='cancelled', atualizado=? WHERE id=? "
                     "AND status NOT IN ('queued_to_publish','posted','rejected')", agora, job['projeto'])
-        db.executar('UPDATE desafios SET usado=? WHERE projeto=? AND usado IS NULL', agora, job['projeto'])
-    db.executar("UPDATE thumbnail_jobs SET estado='cancelado', erro='Cancelado por você.', atualizado=? "
+        executar('UPDATE desafios SET usado=? WHERE projeto=? AND usado IS NULL', agora, job['projeto'])
+    executar("UPDATE thumbnail_jobs SET estado='cancelado', erro='Cancelado por você.', atualizado=? "
                 "WHERE fila_job=? AND estado NOT IN ('pronto','cancelado')", agora, job['id'])
 
 
@@ -167,6 +172,7 @@ def _executar(job: dict):
             raise Cancelado()
         r = funcao(ctx) or {}
         dur = time.time() - inicio
+        db.executar('DELETE FROM kv WHERE chave=?', 'liberar:' + ctx.id)    # a etapa passou sem pedir aprovação: o aviso guardado não vale para a próxima
         if r.get('proxima'):           # etapa seguinte do mesmo trabalho
             _atualizar_execucao(ctx, dur, "UPDATE jobs SET status='na_fila', recurso=?, etapa=?, dados=?, decorrido=decorrido+?, lease=0, tentativas=0 WHERE id=?",
                         r.get('recurso', 'leve'), r.get('etapa', 'Na fila'), json.dumps(ctx.dados, ensure_ascii=False), dur)
@@ -180,8 +186,32 @@ def _executar(job: dict):
                 db.evento('fila', 'job_concluido', 'job:' + job['id'])
     except Esperar as e:
         dur = time.time() - inicio
-        _atualizar_execucao(ctx, dur, 'UPDATE jobs SET status=?, proxima=?, etapa=?, dados=?, decorrido=decorrido+?, lease=0 WHERE id=?',
-                            e.status, time.time() + e.segundos, e.motivo[:200], json.dumps(ctx.dados, ensure_ascii=False), dur)
+        status, motivo = e.status, e.motivo
+        ctx.dados['_chave_aprovacao'] = e.chave_aprovacao
+        # Ler/consumir o sinal e gravar a espera na mesma transação: liberar()
+        # não pode entrar entre a leitura do sinal e a gravação da espera.
+        with db.tx() as c:
+            sinal = c.execute('SELECT valor FROM kv WHERE chave=?', ('liberar:' + ctx.id,)).fetchone()
+            sinal = json.loads(sinal['valor']) if sinal else None
+            liberado = isinstance(sinal, dict) and sinal == {'chave': e.chave_aprovacao, 'etapa': ctx.dados.get('etapa')}
+            if e.chave_aprovacao and job.get('projeto'):
+                import projetos as pj
+                atual = c.execute('SELECT dados FROM projetos WHERE id=?', (job['projeto'],)).fetchone()
+                dados = json.loads(atual['dados']) if atual else {}
+                # A aprovação persistida também cobre reinício entre aprovar e liberar.
+                liberado = pj.roteiro_aprovado(dados) and pj.hash_roteiro(dados) == e.chave_aprovacao
+            if status == 'aguardando_aprovacao' and liberado:
+                status, motivo = 'na_fila', 'Na fila (aprovado)'
+            mudou = c.execute("UPDATE jobs SET status=?, proxima=?, etapa=?, dados=?, decorrido=decorrido+?, lease=0 "
+                              "WHERE id=? AND status='rodando' AND cancelar=0 AND pausado=0",
+                              (status, time.time() + (0 if status != e.status else e.segundos), motivo[:200],
+                               json.dumps(ctx.dados, ensure_ascii=False), dur, ctx.id)).rowcount
+            if mudou and status == 'aguardando_aprovacao' and e.chave_aprovacao and job.get('projeto'):
+                c.execute("UPDATE projetos SET status='waiting_brief_approval', atualizado=? WHERE id=?",
+                          (time.time(), job['projeto']))
+            c.execute('DELETE FROM kv WHERE chave=?', ('liberar:' + ctx.id,))
+        if not mudou:
+            _encerrar_interrompido(ctx, dur)
     except Cancelado:
         _encerrar_interrompido(ctx, time.time() - inicio)
     except Exception as e:  # noqa: BLE001
@@ -242,12 +272,16 @@ def _trabalhador(recurso: str):
 
 
 def recuperar():
-    """Depois de um reinício: o que estava 'rodando' volta para a fila (as etapas já feitas ficam salvas)."""
+    """Reinicia trabalhos interrompidos, preservando pausa/cancelamento e entidades."""
     agora = time.time()
-    n = db.executar("UPDATE jobs SET status='na_fila', etapa='Retomando depois de reinício', lease=0 WHERE status='rodando' AND cancelar=0 AND (lease<? OR ?=1)",
-                    agora, 1 if not _rodando else 0)
-    db.executar("UPDATE jobs SET status='cancelado', etapa='Cancelado por você', terminado=?, lease=0 "
-                "WHERE status='rodando' AND cancelar=1 AND (lease<? OR ?=1)", agora, agora, 1 if not _rodando else 0)
+    with db.tx() as c:
+        params = (agora, 1 if not _rodando else 0)
+        cancelados = c.execute("SELECT * FROM jobs WHERE status='rodando' AND cancelar=1 AND (lease<? OR ?=1)", params).fetchall()
+        n = c.execute("UPDATE jobs SET status='na_fila', etapa='Retomando depois de reinício', lease=0 WHERE status='rodando' AND cancelar=0 AND (lease<? OR ?=1)", params).rowcount
+        c.execute("UPDATE jobs SET status='cancelado', etapa='Cancelado por você', terminado=?, lease=0 "
+                  "WHERE status='rodando' AND cancelar=1 AND (lease<? OR ?=1)", (agora, *params))
+        for j in cancelados:
+            _cancelar_entidades(dict(j), c)
     if n:
         db.evento('fila', 'jobs_recuperados', '', {'quantos': n})
     return n
@@ -291,33 +325,55 @@ def retomar(jid: str) -> dict:
 
 
 def cancelar(jid: str) -> dict:
-    db.executar("""UPDATE jobs SET cancelar=1,
-                status=CASE WHEN status='rodando' THEN status ELSE 'cancelado' END,
-                etapa=CASE WHEN status='rodando' THEN 'Cancelando…' ELSE 'Cancelado por você' END,
-                terminado=CASE WHEN status='rodando' THEN terminado ELSE ? END,
-                pausado=0
-                WHERE id=? AND status NOT IN ('concluido','falhou','cancelado')""", time.time(), jid)
-    j = obter(jid)
-    if not j:
-        raise ValueError('Trabalho não encontrado.')
-    if j['cancelar']:
-        _cancelar_entidades(j)
-    return j
+    with db.tx() as c:
+        mudou = c.execute("""UPDATE jobs SET cancelar=1,
+                    status=CASE WHEN status='rodando' THEN status ELSE 'cancelado' END,
+                    etapa=CASE WHEN status='rodando' THEN 'Cancelando…' ELSE 'Cancelado por você' END,
+                    terminado=CASE WHEN status='rodando' THEN terminado ELSE ? END, pausado=0
+                    WHERE id=? AND cancelar=0 AND status NOT IN ('concluido','falhou','cancelado')""", (time.time(), jid)).rowcount
+        j = c.execute('SELECT * FROM jobs WHERE id=?', (jid,)).fetchone()
+        if not j:
+            raise ValueError('Trabalho não encontrado.')
+        if mudou:
+            _cancelar_entidades(dict(j), c)
+    if mudou:
+        db.evento('fila', 'job_cancelado', 'job:' + jid)
+    return obter(jid)
 
 
 def ignorar(jid: str) -> dict:
-    db.executar("""UPDATE jobs SET status='cancelado', cancelar=1, pausado=0, etapa='Ignorado por você', terminado=?
-                WHERE id=? AND status IN ('na_fila','agendado','aguardando_tentativa','aguardando_aprovacao')""",
-                time.time(), jid)
-    job = obter(jid)
-    if job and job['status'] == 'cancelado':
-        _cancelar_entidades(job)
-    return job
+    with db.tx() as c:
+        mudou = c.execute("""UPDATE jobs SET status='cancelado', cancelar=1, pausado=0, etapa='Ignorado por você', terminado=?
+                    WHERE id=? AND status IN ('na_fila','agendado','aguardando_tentativa','aguardando_aprovacao')""",
+                    (time.time(), jid)).rowcount
+        j = c.execute('SELECT * FROM jobs WHERE id=?', (jid,)).fetchone()
+        if mudou:
+            _cancelar_entidades(dict(j), c)
+    if mudou:
+        db.evento('fila', 'job_ignorado', 'job:' + jid)
+    return obter(jid)
 
 
-def liberar(jid: str) -> dict:
-    """Trabalho que esperava uma aprovação volta para a fila (continua da mesma etapa)."""
-    db.executar("UPDATE jobs SET status='na_fila', proxima=0, etapa='Na fila (aprovado)' WHERE id=? AND status='aguardando_aprovacao'", jid)
+def liberar(jid: str, *, chave_aprovacao: str = '') -> dict:
+    """Libera a espera atual; o sinal antecipado pertence à etapa e ao conteúdo."""
+    with db.tx() as c:
+        j = c.execute('SELECT * FROM jobs WHERE id=?', (jid,)).fetchone()
+        if j and not j['cancelar'] and not j['pausado']:
+            dados = json.loads(j['dados'] or '{}')
+            if j['status'] == 'aguardando_aprovacao':
+                roteiro_atual = False
+                if chave_aprovacao and dados.get('etapa') == 'roteiro' and j['projeto']:
+                    import projetos as pj
+                    atual = c.execute('SELECT dados FROM projetos WHERE id=?', (j['projeto'],)).fetchone()
+                    projeto = json.loads(atual['dados']) if atual else {}
+                    roteiro_atual = pj.roteiro_aprovado(projeto) and pj.hash_roteiro(projeto) == chave_aprovacao
+                if not chave_aprovacao or roteiro_atual:
+                    c.execute("UPDATE jobs SET status='na_fila', proxima=0, etapa='Na fila (aprovado)' WHERE id=?", (jid,))
+                c.execute('DELETE FROM kv WHERE chave=?', ('liberar:' + jid,))
+            elif j['status'] == 'rodando':
+                sinal = {'chave': chave_aprovacao, 'etapa': dados.get('etapa')}
+                c.execute('INSERT INTO kv (chave, valor) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor',
+                          ('liberar:' + jid, json.dumps(sinal)))
     ACORDAR.set()
     return obter(jid)
 
@@ -372,6 +428,31 @@ def restante(job: dict) -> tuple[float, bool]:
 ESTIMADORES: dict = {}
 
 
+def estado_publico(job: dict, agora: float | None = None) -> dict:
+    """Adaptador de leitura: preserva status/flags legados e não grava no banco."""
+    agora = time.time() if agora is None else agora
+    status = job.get('status')
+    mapa = {'agendado': 'QUEUED', 'na_fila': 'QUEUED', 'aguardando_aprovacao': 'WAITING_USER',
+            'aguardando_tentativa': 'RETRYABLE_ERROR', 'cancelado': 'CANCELLED',
+            'falhou': 'FAILED', 'concluido': 'COMPLETED'}
+    atrasado = status == 'rodando' and (not job.get('heartbeat') or
+        agora - float(job['heartbeat']) > ALUGUEL or float(job.get('lease') or 0) < agora)
+    motivo = ''
+    if status in FINAIS:
+        estado = mapa[status]
+    elif job.get('cancelar'):
+        estado = 'CANCEL_REQUESTED'
+    elif job.get('pausado'):
+        estado = 'PAUSED'
+    elif status == 'rodando':
+        estado = 'RETRYABLE_ERROR' if atrasado else 'RUNNING'
+        if atrasado:
+            motivo = 'Sem sinal recente do servidor. A tarefa precisa ser recuperada antes de continuar.'
+    else:
+        estado = mapa.get(status, 'CREATED')
+    return dict(job, estado_comum=estado, heartbeat_atrasado=atrasado, estado_motivo=motivo)
+
+
 def lista(filtro: str = '') -> dict:
     agora = time.time()
     js = db.todos('SELECT * FROM jobs ORDER BY CASE status WHEN \'rodando\' THEN 0 WHEN \'na_fila\' THEN 1 WHEN \'aguardando_tentativa\' THEN 2 '
@@ -379,11 +460,16 @@ def lista(filtro: str = '') -> dict:
     # previsão de início: soma do que está na frente na mesma classe de recurso
     frente = {'pesado': 0.0, 'leve': 0.0}
     for j in js:
+        j.update(estado_publico(j, agora))
         j['dados'] = json.loads(j.get('dados') or '{}')
         j['resultado'] = json.loads(j['resultado']) if j.get('resultado') else None
         if j['status'] in FINAIS:
             j['inicio_previsto'] = None
             j['restante'] = 0
+            continue
+        if j['estado_comum'] in ('PAUSED', 'WAITING_USER', 'CANCEL_REQUESTED') or j['heartbeat_atrasado']:
+            j.update(inicio_previsto=None, fim_previsto=None, restante=None, posicao=None,
+                     decorrido_total=j.get('decorrido') or 0)
             continue
         rest, medido = restante(j)
         j['restante'] = round(rest)
@@ -410,10 +496,14 @@ def lista(filtro: str = '') -> dict:
 
 
 def _grupo(j: dict) -> str:
+    if j.get('heartbeat_atrasado') and j.get('estado_comum') == 'RETRYABLE_ERROR':
+        return 'erros'
     if j['status'] == 'falhou':
         return 'erros'
     if j['pausado']:
         return 'pausados'
+    if j['status'] == 'aguardando_aprovacao':
+        return 'prontos'
     if j['status'] == 'agendado':
         return 'agendados'
     if j['status'] in ('rodando', 'na_fila', 'aguardando_tentativa'):

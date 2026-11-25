@@ -1,0 +1,19 @@
+ok    pendentes: só o que o diretor aprovou, com os códigos
+ok    ajuda lista os comandos
+ok    status conta o que espera você
+ok    aprovar pede SIM antes de mandar para a postagem
+ok    SIM: aprovação final registrada como sua, pelo WhatsApp
+ok    SIM repetido não aprova de novo
+ok    vídeo reprovado pelo diretor não pode ser aprovado pelo WhatsApp
+ok    agendar corte pede SIM
+ok    NÃO cancela
+ok    SIM: corte aprovado por você e agendado
+ok    corte que não existe: avisa
+ok    descartar corte
+ok    corrigir pelas regras, sem gastar IA
+ok    comandos simples não chamam a IA
+ok    frase solta: a IA entende e vira correção
+ok    cortar link manda para o Agente 1
+ok    ação fora da lista é recusada
+
+TUDO OK

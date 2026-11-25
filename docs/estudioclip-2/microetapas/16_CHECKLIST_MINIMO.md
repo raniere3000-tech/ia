@@ -1,0 +1,22 @@
+# Checklist compacto e obrigatório de não regressão
+
+- [ ] Branch correta, SHA inicial e alterações concorrentes inspecionadas.
+- [ ] Fase 0 não foi repetida sem necessidade; baseline comparado.
+- [ ] Patch F1 parcialmente feito preservado, revisado, sem reaplicação cega.
+- [ ] Cada microetapa tem um único objetivo, teste focal e checkpoint.
+- [ ] Flag nova desativada por padrão, exceto correção de defeito inequívoca.
+- [ ] Banco de produção não foi tocado; alterações de esquema somente aditivas.
+- [ ] Projetos, vídeos, capas, templates, fontes e agendamentos preexistentes preservados.
+- [ ] Diretor continua bloqueando vídeo sem certificado/versão adequada.
+- [ ] A1 não fica preso em laço nem pula fonte por falha recuperável quando flag habilitada.
+- [ ] A3 interrompe repetição infinita sem perder aprovação do usuário.
+- [ ] Cancelar/ignorar e aprovar não criam tarefa fantasma nem corrida.
+- [ ] Duplo toque não duplica job, render, capa ou publicação.
+- [ ] Efeitos do A5 são comprovados no render, não apenas no plano.
+- [ ] Status YouTube/TikTok/Instagram independentes.
+- [ ] Métricas reais e ausentes claramente diferenciadas; sem indicadores simulados apresentados como reais.
+- [ ] Aprendizado não altera automaticamente frequência, publicação ou aprovação.
+- [ ] Testes focal e de integração pertinentes registrados com comando e resultado.
+- [ ] No fechamento da fase: testes Python e frontend comparados com baseline.
+- [ ] PR criado sem merge; notas de rollback e falhas não verificadas incluídas.
+- [ ] `ESTADO_ATUAL.md` aponta o próximo comando exato para retomada.

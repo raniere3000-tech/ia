@@ -1,0 +1,14 @@
+1. Sino de alertas
+  ok   o aviso do e-mail/WhatsApp também aparece no sino (mais novo primeiro)
+  ok   falha aparece como erro e leva para Publicações
+  ok   pede só os novos (desde)
+  ok   marcar como lidas zera o contador
+  ok   alerta novo depois de ler conta de novo
+  ok   guarda só os últimos 300
+2. Porcentagem e tempo que falta
+  ok   25% em 1 min: faltam ~3 min (180 s), pelo ritmo de agora
+  ok   a Central recebe a % e o tempo que falta
+  ok   o que está na fila: leva ~10 min (medido) e começa depois do atual
+  ok   cada etapa do Agente 1 vira progresso do trabalho na fila
+
+10 ok, 0 falha(s)

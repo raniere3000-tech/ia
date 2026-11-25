@@ -1,0 +1,7 @@
+# Prompt de execução curta e retomada para Codex/Claude
+
+> Você vai continuar o EstúdioClip 2.0 sem refazer Fase 0 nem reiniciar Fase 1. Repositório `raniere3000-tech/ia`; branch inicial a verificar `claude/project-thread-hqyqog-fase1`. Leia `00_LEIA_PRIMEIRO.md`, `01_ESTADO_REAL_E_NAO_REFAZER.md`, `02_PROTOCOLO_RETOMADA.md`, `ESTADO_ATUAL.md`, a passagem `fase-1-passagem-codex.md` e o diff `fase1-em-andamento.diff`. Consulte auditoria da Fase 0 e compare com HEAD real.
+>
+> Trabalhe em APENAS UMA microetapa por sessão. Comece por `03_F1_01_CORRIDA_APROVACAO.md` se o checkpoint ainda indicar essa tarefa; não repita etapas testadas e com commit. Primeiro `git status --short`, branch, HEAD e teste focal. Corrija o defeito específico, adicione teste de regressão, rode somente os testes necessários, faça commit pequeno, salve SHA e atualize `ESTADO_ATUAL.md` + checkpoint. Se a cota acabar, registre estado parcial e próximo comando exato antes de parar; não inicie outra tarefa. Se não puder escrever no GitHub, entregue diff e checkpoint local sem alegar que publicou. Não faça merge nem deploy sem minha aprovação.
+>
+> Preserve os sete agentes e os recursos existentes. Não introduza infraestrutura paralela de edição, aprendizado ou postagem. Novas funcionalidades somente sob flags desligadas por padrão. Não rode testes contra conta ou dados reais, e não apague trabalho prévio. Ao encerrar a Fase 1, rode toda a regressão e abra PR separado para revisão.

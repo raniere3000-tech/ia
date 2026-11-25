@@ -273,7 +273,9 @@ subprocess.run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-f', 'lavfi', '-i', 
 sha = pl.sha_arquivo(arq)
 db.executar('INSERT INTO renders (id, projeto, versao, arquivo, sha256, duracao, codec, largura, altura, validado, alertas, criado) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
             'r1', ep['projeto'], 1, str(arq), sha, 3, 'h264', 720, 1280, 1, '[]', time.time())
-pj.mudar_dados(ep['projeto'], lambda d, _p: (d.update(render={'sha': sha, 'validado': True}), {'status': 'ready_for_review'})[1])
+pj.mudar_dados(ep['projeto'], lambda d, _p: (d.update(render={'sha': sha, 'validado': True},
+    diretor={'sha': sha, 'veredito': 'aprovado', 'motivos': []},
+    qualidade={'status': 'apto_para_revisao_humana', 'problemas': []}), {'status': 'ready_for_review'})[1])
 check(lc.aprovar_automaticos() == 0, 'sem certificado do diretor: a publicação automática não aprova')
 pl.emitir_certificado(ep['projeto'], sha, {'score': 82, 'blocking_findings': []})
 check(lc.aprovar_automaticos() == 1 and pj.obter(ep['projeto'])['status'] == 'approved', 'com certificado: aprovado pela automação (registrado como automação)')

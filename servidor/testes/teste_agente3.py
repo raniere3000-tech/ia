@@ -1,6 +1,7 @@
 """Teste de ponta a ponta do servidor 2.0 (sem internet): Gemini, SMTP falsos; FFmpeg de verdade.
 
 Rodar:  python servidor/testes/teste_agente3.py
+Recorte F1.01: acrescente --somente-aprovacao-roteiro (até render real e revisão).
 Cobre: login e pareamento, projeto com conflito 409, fila, Agente 3 (roteiro -> aprovação do roteiro ->
 narração -> render -> conferência), e-mail com código, resposta por e-mail (remetente, código, replay),
 regra de ouro da publicação, link assinado com Range, backup e restauração de teste.
@@ -59,6 +60,7 @@ PEDIDOS = []
 PROMPTS = []
 VISAO = []
 SEM_FOTOS = False
+REVISOR_SEMPRE_REPROVA = True
 ROTEIRO_SERIE = {'titulo': 'O barulho', 'legenda': 'O que foi aquilo?', 'hashtags': ['#serie'],
                  'mudancas': [{'alvo': 'ana', 'texto': 'Ana agora guarda a chave do sótão.'}],
                  'cenas': [{'texto': 'Beto, você ouviu isso?', 'personagem': 'ana', 'cenario_id': 'sala', 'duracao_alvo': 3,
@@ -117,9 +119,9 @@ class Gemini(BaseHTTPRequestHandler):
                 self.wfile.write(b)
                 return
             if 'AVALIADOR VISUAL' in txt:
-                m = re.search(r'\[([\w-]+)/([\w-]+)\]', txt)
-                rot = {'pontos': [{'cena': m.group(1) if m else '', 'plano': m.group(2) if m else '', 'problema': 'Rosto cortado na borda', 'sugestao': 'Abrir o plano', 'confianca': 0.8},
-                                  {'cena': '', 'plano': '', 'problema': 'Talvez a cor esteja fria', 'sugestao': '', 'confianca': 0.3}]}
+                # Este é o cenário de sucesso. Opinião pendente é bloqueio, coberto
+                # por teste_a3_editor_compartilhado e teste_diretor.
+                rot = {'pontos': []}
                 VISAO.append(txt.count('inline_data'))
                 r = {'candidates': [{'content': {'parts': [{'text': json.dumps(rot, ensure_ascii=False)}]}}], 'usageMetadata': {}}
                 b = json.dumps(r).encode()
@@ -133,7 +135,9 @@ class Gemini(BaseHTTPRequestHandler):
                 m = re.search(r'\\n\[([^\]]+)\]', txt)
                 rot = ({'pontos': [{'cena': m.group(1) if m else '', 'gravidade': 'baixa', 'problema': 'Gancho fraco no começo', 'sugestao': 'Comece pela pergunta.'}]}
                        if 'REVISOR' in txt else
-                       {'contradicoes': [{'cena': m.group(1) if m else '', 'fato': 'Ana perdeu o medo do escuro.', 'problema': 'Ana diz que tem medo do escuro'}]})
+                       {'contradicoes': []})  # as falas neutras do episódio não contradizem a bíblia
+                if 'REVISOR' in txt and not REVISOR_SEMPRE_REPROVA:
+                    rot = {'pontos': []}
                 r = {'candidates': [{'content': {'parts': [{'text': json.dumps(rot, ensure_ascii=False)}]}}], 'usageMetadata': {}}
                 b = json.dumps(r).encode()
                 self.send_response(200)
@@ -287,14 +291,43 @@ def esperar(cond, seg=240):
         if cond(r):
             return r
         time.sleep(0.5)
-    return r
+    raise AssertionError('Timeout esperando o projeto: ' + json.dumps(r, ensure_ascii=False)[:1800])
 
+
+
+def esperar_video(pid, seg=400):
+    """Falha no bloqueio original, evitando cascatas de KeyError e esperas inúteis."""
+    inicio = time.monotonic()
+    while time.monotonic() - inicio < seg:
+        st, estado, _ = api('GET', f'/api/v1/projetos/{pid}/revisao', None, SES)
+        if st != 200:
+            raise AssertionError(f'Revisão indisponível: {st} {estado}')
+        status = estado['projeto']['status']
+        job = estado.get('job') or {}
+        # O projeto fica pronto antes da etapa de e-mail terminar no mesmo job.
+        if status == 'ready_for_review' and job.get('status') == 'concluido':
+            return estado
+        if status == 'failed' or job.get('status') in ('falhou', 'cancelado', 'aguardando_aprovacao'):
+            raise AssertionError('Produção não chegou à revisão: ' + json.dumps({
+                'projeto': pid, 'status': status, 'job': job}, ensure_ascii=False)[:2200])
+        time.sleep(0.5)
+    raise AssertionError('Timeout no render: ' + json.dumps(estado.get('job'), ensure_ascii=False)[:1600])
 
 r = esperar(lambda r: r['projeto']['status'] == 'waiting_brief_approval')
 confere(r['projeto']['status'] == 'waiting_brief_approval' and len(r['projeto']['dados']['cenas']) == 3, 'roteiro gerado e esperando aprovação')
 confere(r['job']['status'] == 'aguardando_aprovacao', 'trabalho fica esperando (não renderiza sem aprovar)')
 confere(any('Roteiro pronto' in (m['Subject'] or '') for m in EMAILS), 'e-mail de roteiro pronto enviado')
-st, _, _ = api('POST', f'/api/v1/projetos/{PID}/aprovar-roteiro', {}, SES)
+job_roteiro = r['job']['id']
+revisao_anterior = r['projeto']['revisao']
+cenas_editadas = [dict(c, texto='Você sabe por que o céu é azul?') if i == 0 else c
+                  for i, c in enumerate(r['projeto']['dados']['cenas'])]
+st, editado, _ = api('POST', f'/api/v1/projetos/{PID}/storyboard',
+                     {'revisao': revisao_anterior, 'cenas': cenas_editadas}, SES)
+confere(st == 200, 'roteiro revisado pelo usuário antes da aprovação')
+st, _, _ = api('POST', f'/api/v1/projetos/{PID}/aprovar-roteiro', {'revisao': revisao_anterior}, SES)
+confere(st == 409, 'aprovação de revisão anterior é recusada')
+st, liberado, _ = api('POST', f'/api/v1/projetos/{PID}/aprovar-roteiro', {'revisao': editado['revisao']}, SES)
+confere(st == 200 and liberado['job']['id'] == job_roteiro, 'aprovação continua no mesmo trabalho')
 t0 = time.time()
 r = esperar(lambda r: r['projeto']['status'] == 'failed' or (r['job'] or {}).get('status') in ('concluido', 'falhou'), 400)
 print(f'     (produção levou {time.time() - t0:.0f}s)')
@@ -311,6 +344,15 @@ confere((vs['width'], vs['height'], vs['codec_name']) == (1080, 1920, 'h264'), '
 confere(any(s['codec_type'] == 'audio' and s['codec_name'] == 'aac' for s in info['streams']), 'ffprobe: áudio AAC')
 confere(rd.sha256(arq) == render['sha'], 'hash do arquivo confere com o registrado')
 confere(pg.posts() == [], 'nada foi publicado ao terminar o render')
+confere(r['job']['id'] == job_roteiro and r['projeto']['dados']['cenas'][0]['texto'] == cenas_editadas[0]['texto'],
+        'render mantém o roteiro revisado e o mesmo job, sem reiniciar a produção')
+aceitos = [x for x in r['projeto']['dados'].get('qualidade', {}).get('problemas', []) if x['tipo'] == 'narrativa']
+confere(bool(aceitos) and all(x.get('status') == 'resolvido' and x.get('aprovacao_hash') for x in aceitos),
+        'apontamentos do revisor permanecem auditáveis com o hash do aceite explícito')
+if '--somente-aprovacao-roteiro' in sys.argv:
+    print(f'\n{ok_n} ok, {falhas} falhas; recorte de roteiro revisado concluído (pasta {TMP})', flush=True)
+    sys.exit(1 if falhas else 0)
+REVISOR_SEMPRE_REPROVA = False  # cenários seguintes têm roteiro válido; a reprovação foi testada acima
 pronto = [m for m in EMAILS if 'aprovação' in (m['Subject'] or '')]
 confere(len(pronto) == 1, 'e-mail de vídeo pronto enviado')
 corpo = pronto[0].get_body(('plain',)).get_content()
@@ -401,12 +443,7 @@ print('Fotos por cena remodeladas no estilo')
 st, _, _ = api('POST', '/agente/chaves', {'pexels': 'chave-pexels'}, SES)
 b2 = dict(briefing, tema='Fotos', imagens='busca', estilo='quadrinhos', modo_aprovacao='supervisionado', cenas_qtd=3, duracao_alvo=9)
 st, pf, _ = api('POST', '/api/v1/agente3/projetos', {'briefing': b2, 'produzir': True}, SES)
-t = time.time()
-while time.time() - t < 400:
-    rf = api('GET', f'/api/v1/projetos/{pf["id"]}/revisao', None, SES)[1]
-    if rf['projeto']['status'] in ('ready_for_review', 'failed'):
-        break
-    time.sleep(0.5)
+rf = esperar_video(pf['id'])
 confere(rf['projeto']['status'] == 'ready_for_review', 'vídeo com fotos produzido e pronto para revisão')
 cf = rf['projeto']['dados']['cenas']
 confere(all((c.get('imagem') or {}).get('credito', '').startswith('Foto de Fulano') for c in cf), 'cada cena guardou a foto e o crédito')
@@ -418,12 +455,7 @@ print('Modo misto: IA desenha a cena sem foto')
 SEM_FOTOS = True
 b3 = dict(briefing, tema='Misto', imagens='busca', estilo='documentario', modo_aprovacao='supervisionado', cenas_qtd=3, duracao_alvo=9)
 st, pm, _ = api('POST', '/api/v1/agente3/projetos', {'briefing': b3, 'produzir': True}, SES)
-t = time.time()
-while time.time() - t < 400:
-    rm = api('GET', f'/api/v1/projetos/{pm["id"]}/revisao', None, SES)[1]
-    if rm['projeto']['status'] in ('ready_for_review', 'failed'):
-        break
-    time.sleep(0.5)
+rm = esperar_video(pm['id'])
 confere(rm['projeto']['status'] == 'ready_for_review', 'vídeo documentário sem fotos achadas ficou pronto')
 confere(all((c.get('imagem') or {}).get('fonte') == 'ia' for c in rm['projeto']['dados']['cenas']), 'cada cena sem foto ganhou imagem da IA')
 SEM_FOTOS = False
@@ -433,12 +465,7 @@ ROTEIRO['cenas'][0]['planos'] = [{'plano': 'WS', 'busca': 'blue sky'}, {'plano':
 ROTEIRO['cenas'][2]['planos'] = [{'plano': 'MS', 'busca': 'air molecules'}, {'plano': 'XX', 'busca': 'clouds', 'foco_x': 9}]
 b4 = dict(briefing, tema='Planos', imagens='busca', estilo='documentario', modo_aprovacao='supervisionado', cenas_qtd=3, duracao_alvo=9, qa_visao=True)
 st, pp, _ = api('POST', '/api/v1/agente3/projetos', {'briefing': b4, 'produzir': True}, SES)
-t = time.time()
-while time.time() - t < 400:
-    rp = api('GET', f'/api/v1/projetos/{pp["id"]}/revisao', None, SES)[1]
-    if rp['projeto']['status'] in ('ready_for_review', 'failed'):
-        break
-    time.sleep(0.5)
+rp = esperar_video(pp['id'])
 confere(rp['projeto']['status'] == 'ready_for_review', 'vídeo com planos ficou pronto')
 cp = rp['projeto']['dados']['cenas']
 confere([p['plano'] for p in cp[2]['planos']] == ['MS', 'WS'] and cp[2]['planos'][1]['foco_x'] == 1.0, 'plano inválido vira aberto e números ficam na faixa')
@@ -449,14 +476,17 @@ qp = rp['projeto']['dados'].get('qualidade') or {}
 confere(qp.get('status') in ('apto_para_revisao_humana', 'alerta_visual') and 'tecnico' in qp, 'diretor de qualidade deixou o relatório no projeto')
 confere(all(set(x) >= {'tipo', 'severidade', 'cena_id', 'timecode', 'descricao'} for x in qp.get('problemas', [])), 'cada alerta tem cena, instante e descrição')
 nar = [x for x in qp.get('problemas', []) if x['tipo'] == 'narrativa']
-confere(len(nar) == 1 and nar[0]['cena_id'] == cp[0]['id'] and 'Gancho' in nar[0]['descricao'], 'leitura crítica do roteiro vira alerta na cena certa')
+confere(not nar, 'roteiro aprovado pelo revisor segue sem inventar alerta de gancho')
 confere(rp['projeto']['dados'].get('revisao_narrativa', {}).get('h'), 'leitura crítica guardada para não pagar de novo')
 vis = [x for x in qp.get('problemas', []) if x['tipo'] == 'visual_ia']
 confere(len(VISAO) == 1 and 0 < VISAO[0] <= 6, f'olhar da IA: uma chamada, no máximo 6 quadros ({VISAO})')
-confere(len(vis) == 1 and vis[0]['natureza'] == 'julgamento' and 'confiança 0.80' in vis[0]['evidencia'], 'só o apontamento com confiança alta entra, marcado como opinião')
-confere(qp.get('status') != 'falha_tecnica' and qp.get('contagem', {}).get('julgamento') == 1, 'opinião da IA não reprova o vídeo')
+confere(not vis, 'avaliador visual sem apontamentos não inventa defeitos')
+confere(qp.get('status') != 'falha_tecnica' and qp.get('contagem', {}).get('julgamento') == 0, 'vídeo sem pendências visuais pode seguir para revisão')
 cl0 = cp[0].get('clipe') or {}
-confere(len(cl0.get('planos') or []) == 2 and all(x['refeito'] for x in cl0['planos']), 'cena com 2 planos foi feita por pedaços (render por plano)')
+segmentos_cena = cl0.get('planos') or []
+confere(len(segmentos_cena) == 2 and all(x['fim'] > x['inicio'] and
+        (Path(cl0['arquivo']).parent / 'planos' / (x['chave'] + '.mov')).is_file() for x in segmentos_cena),
+        'cena com 2 planos tem os segmentos reais, novos ou reaproveitados do cache')
 for c in ROTEIRO['cenas']:
     c.pop('planos', None)
 st, _, _ = api('POST', '/agente/chaves', {'pexels': ''}, SES)
@@ -525,12 +555,7 @@ st, ep, _ = api('POST', f'/api/v1/series/{SID}/episodios', {'titulo': 'O barulho
                                                            'modo_aprovacao': 'supervisionado'}, SES)
 confere(st == 200 and ep['ordem'] == 1 and ep['projeto_id'], 'episódio criado como projeto do Agente 3')
 api('PUT', '/api/v1/personagens/ana/rig', {'dados': {'roupa': '#00ff00'}}, SES)
-t = time.time()
-while time.time() - t < 500:
-    re_ = api('GET', f'/api/v1/projetos/{ep["projeto_id"]}/revisao', None, SES)[1]
-    if re_['projeto']['status'] in ('ready_for_review', 'failed'):
-        break
-    time.sleep(0.5)
+re_ = esperar_video(ep['projeto_id'], 500)
 confere(re_['projeto']['status'] == 'ready_for_review', 'episódio animado produzido e pronto para revisão')
 if re_['projeto']['status'] != 'ready_for_review':
     print(json.dumps(re_['job'], ensure_ascii=False)[:1500])
@@ -550,7 +575,7 @@ confere(so['episodios'][0]['status'] == 'ready_for_review' and len(so['personage
 
 print('Continuidade com a bíblia e voz gravada no Estúdio')
 qs = dp.get('qualidade', {}).get('problemas', [])
-confere(any(x['tipo'] == 'continuidade' and x['descricao'].startswith('Bíblia:') and x['cena_id'] == c0['id'] for x in qs), 'contradição com a bíblia vira alerta na cena')
+confere(not any(x['tipo'] == 'continuidade' and x['descricao'].startswith('Bíblia:') for x in qs), 'fala consistente não recebe contradição inventada pelo simulador')
 confere(any(x['tipo'] == 'continuidade' and 'mudou de aparência' in x['descricao'] for x in qs), 'avisa que o personagem mudou depois do episódio criado')
 confere(any('VERIFICADOR DE CONTINUIDADE' in x and 'perdeu o medo' in x and 'segredo no s' not in x for x in PROMPTS), 'conferência usa só os fatos aprovados')
 

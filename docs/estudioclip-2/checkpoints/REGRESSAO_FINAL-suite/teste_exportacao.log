@@ -1,0 +1,32 @@
+Manifesto
+  ok  recusa sem quadros
+  ok  recusa duração zero
+  ok  recusa áudio no lugar de imagem
+  ok  recusa caminho estranho
+  ok  recusa imagem no lugar do áudio
+  ok  manifesto válido: total e tipos certos
+  ok  legenda sem chaves (não vira comando de estilo)
+Exportação com quadro que falha
+  ok  pedido entra na fila
+  ok  falha diz qual quadro
+  ok  diagnóstico tem quadro, segundo, mídia e comando
+  ok  estado devolve o diagnóstico
+Nova tentativa refaz só o quadro que falhou
+  ok  exportação termina (None)
+  ok  só 1 quadro refeito, 2 reaproveitados
+  ok  vídeo 1080x1920
+  ok  duração certa (6.0s)
+  ok  tem som
+  ok  aviso de imagem parada explica que foi de propósito
+Corte seco, sem áudio e sem legenda
+  ok  corte seco funciona (None)
+Editor: corte e transição misturados, efeitos, textos e junção em partes
+  ok  cor estranha vira branco; 1º quadro sempre entra seco
+  ok  exporta com todos os efeitos e junção em partes (None)
+     quadros em /tmp/export-teste-dp0y2v7r
+  ok  textos com posição, cor, fundo e quebra de linha
+Pedir de novo o mesmo vídeo
+  ok  vídeo já pronto: devolve o mesmo, sem refazer
+  ok  vídeo que falhou: o mesmo trabalho volta para a fila
+
+23 ok, 0 falha(s)

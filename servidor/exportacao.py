@@ -193,9 +193,11 @@ def comando_pedaco(q: dict, W: int, H: int, cauda: float, saida: Path) -> list:
     else:
         base = '[0:v]' + _filtro_midia(q, W, H, dur)
     pos = _pos_filtros(q, W, H, dur)
-    vf = base + (',' + pos if pos else '') + f',trim=duration={dur:.3f},setpts=PTS-STARTPTS,format=yuv420p'
+    vf = base + (',' + pos if pos else '') + f',trim=duration={dur:.3f},format=yuv420p'
     if cauda:
         vf += f',tpad=stop_mode=clone:stop_duration={cauda:.3f}'
+    # Normalizar PTS antes do tpad perde a cauda no EOF em FFmpeg 7.
+    vf += ',setpts=PTS-STARTPTS'
     return ['ffmpeg', '-nostdin', '-y', '-v', 'error', *entrada, '-an', '-filter_complex', vf + '[v]', '-map', '[v]', *fim]
 
 
@@ -274,7 +276,7 @@ def job_exportar(ctx):
     for i, q in enumerate(qs):
         cauda = tr[i + 1] if i + 1 < len(qs) else 0.0
         visual = {k: q[k] for k in ('dur', 'anim', 'de', 'brilho', 'contraste', 'saturacao', 'efeito')}
-        h = hashlib.sha256(json.dumps([q['midia'] and q['midia']['sha256'], visual, W, H, cauda, 2], sort_keys=True).encode()).hexdigest()[:20]
+        h = hashlib.sha256(json.dumps([q['midia'] and q['midia']['sha256'], visual, W, H, cauda, 3], sort_keys=True).encode()).hexdigest()[:20]
         arq = pasta / f'q{i:03d}-{h}.mp4'
         if not (arq.exists() and arq.stat().st_size > 1000):
             ctx.progresso(5 + 65 * i / len(qs), f'Fazendo o quadro {i + 1} de {len(qs)}')
@@ -348,9 +350,14 @@ def job_exportar(ctx):
         ctx.dados['diagnostico'] = _diag('juncao', None, cmd, str(e))
         ctx.salvar()
         raise RuntimeError(f'A junção final falhou: {e}. Os quadros prontos ficaram guardados.')
-    tmp.replace(saida)
     ctx.progresso(93, 'Conferindo o vídeo (tela preta, congelado, duração)')
-    conf = rd.conferir(saida, pasta, {'largura': W, 'altura': H, 'duracao': v['total']}, ctx.cancelado)
+    parados = [[q['ini'], q['ini'] + q['dur']] for q in qs
+               if not q['midia'] or q['midia']['tipo'] == 'imagem' and q['anim'] == 'parado']
+    try:
+        conf = rd.conferir(tmp, pasta, {'largura': W, 'altura': H, 'duracao': v['total'],
+                                      'parados_previstos': parados, 'silencio_previsto': not v['audio']}, ctx.cancelado)
+    except InterruptedError:
+        raise fila.Cancelado()
     # imagem parada é normal em quadros "parado": só avisa se o congelamento não bate com nenhum deles
     parados = [q for q in qs if q['anim'] == 'parado' and q['midia'] and q['midia']['tipo'] == 'imagem']
     if parados:
@@ -362,10 +369,13 @@ def job_exportar(ctx):
         ctx.dados['diagnostico'] = {'etapa': 'conferencia', 'erro': '; '.join(conf['erros'])}
         ctx.salvar()
         raise RuntimeError('O vídeo não passou na conferência: ' + '; '.join(conf['erros']))
+    if ctx.cancelado():
+        raise fila.Cancelado()
+    tmp.replace(saida)  # só publica o arquivo novo após toda a conferência
     a = pj.registrar_asset(saida, f'{v["nome"]}.mp4', 'video/mp4', '', 'exportacao')['asset']
     shutil.rmtree(pasta / 'quadros', ignore_errors=True)
     r = {'asset': a['id'], 'duracao': conf['duracao'], 'avisos': conf['avisos'], 'refeitos': refeitos, 'reaproveitados': len(pedacos) - refeitos,
-         'tamanho_mb': round(saida.stat().st_size / 1048576, 1)}
+         'tamanho_mb': round(saida.stat().st_size / 1048576, 1), 'integridade': conf.get('integridade')}
     return {'resultado': r, 'etapa': 'Pronto para baixar'}
 
 

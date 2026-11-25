@@ -208,6 +208,9 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
         raise ErroAprovacao(409, 'O vídeo mudou depois que você abriu. Assista a versão nova antes de aprovar.')
     chave = chave or f'aprovar:{pid}:{render_sha}'
     ja = db.um('SELECT * FROM aprovacoes WHERE chave=?', chave)
+    if ja and (ja['projeto'] != pid or ja['render_sha'] != render_sha):
+        chave = f'{chave}:{pid}:{render_sha}'
+        ja = db.um('SELECT * FROM aprovacoes WHERE chave=?', chave)
     if ja:
         return {'ok': True, 'repetido': True, 'aprovacao': ja, 'posts': db.todos('SELECT * FROM publicacoes WHERE aprovacao=?', ja['id'])}
     if p['status'] != 'ready_for_review':
@@ -352,13 +355,17 @@ def aprovar_roteiro(pid: str, por: str, revisao: int | None = None) -> dict:
     if not p['dados'].get('cenas'):
         raise ErroAprovacao(400, 'Ainda não há roteiro para aprovar.')
 
+    chave = pj.hash_roteiro(p['dados'])
+
     def f(d, _p):
-        d['aprovacao_roteiro'] = {'aprovado': True, 't': time.time(), 'por': por, 'revisao': p['revisao']}
+        if pj.hash_roteiro(d) != chave:
+            raise ErroAprovacao(409, 'O roteiro mudou enquanto você aprovava. Confira de novo.')
+        d['aprovacao_roteiro'] = {'aprovado': True, 't': time.time(), 'por': por, 'revisao': p['revisao'], 'hash': chave}
         return {}
     pj.mudar_dados(pid, f)
-    esperando = db.todos("SELECT id FROM jobs WHERE projeto=? AND status='aguardando_aprovacao'", pid)
+    esperando = db.todos("SELECT id FROM jobs WHERE projeto=? AND status IN ('aguardando_aprovacao','rodando') AND tipo='agente3.produzir'", pid)
     for j in esperando:
-        fila.liberar(j['id'])
+        fila.liberar(j['id'], chave_aprovacao=chave)
     db.evento(por, 'roteiro_aprovado', 'projeto:' + pid)
     if esperando:
         return {'ok': True, 'job': fila.obter(esperando[0]['id'])}

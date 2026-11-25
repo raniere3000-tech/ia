@@ -132,5 +132,17 @@ confere(not any('MATERIAL DE APOIO' in t for t in PEDIDOS), 'perfis desligados: 
 fb = {x['perfil'] for x in rot.historico(etapa='fallback', limite=500)}
 confere({'radar.temas', 'agente1.analisar', 'agente2.publicar', 'agente3.roteiro', 'qc.validar'} <= fb, 'fallback explícito registrado em cada consumidor')
 confere(not rot.historico(projeto_id=r2['pid'], etapa='utilizada'), 'sem skill, nada é registrado como "utilizada"')
+# F1.03: prévia incompleta não cai com KeyError e não habilita envio.
+for redes in (None, {}, {'youtube': {'status': 'agendado'}}, {'kwai': {}}, {'kwai': None}):
+    post = {'id': 'incompleto', 'video': 'teste-um', 'origem': 'manual', 'redes': redes}
+    cf = {x['item']: x for x in pg.conferencia(post, 'kwai')}
+    confere(cf['destino']['bloqueia'] and not pg._destino_pronto(post, 'kwai'),
+            f'redes ausentes/parciais bloqueiam destino: {redes}')
+post = {'id': 'completo', 'video': 'teste-um', 'origem': 'manual',
+        'redes': {'kwai': {'status': 'agendado'}}, 'agenda': {'ate': pg.agora() - 10}}
+cf = {x['item']: x for x in pg.conferencia(post, 'kwai')}
+confere(cf['destino']['ok'] and cf['horario']['bloqueia'], 'dados completos preservam bloqueio por horário vencido')
+post['redes']['kwai']['tentativas'] = 1
+confere(not any(x['item'] == 'horario' for x in pg.conferencia(post, 'kwai')), 'tentativa existente mantém regra de retomada após horário')
 print('falhas:', falhas)
 sys.exit(1 if falhas else 0)

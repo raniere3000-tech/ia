@@ -18,6 +18,7 @@ function CartaoJob({j,agora,acao}:{j:Job;agora:number;acao:AgirNaFila}){
   const [quando,setQuando]=useState('');
   const [enviando,setEnviando]=useState(false);
   const ativo=ativoJob(j);
+  const rodando=j.estado_comum?j.estado_comum==='RUNNING':j.status==='rodando';
   const cancelando=j.status==='rodando'&&!!j.cancelar;
   const agir=async(a:AcaoFila,corpo?:unknown)=>{
     setEnviando(true);
@@ -28,10 +29,10 @@ function CartaoJob({j,agora,acao}:{j:Job;agora:number;acao:AgirNaFila}){
     <div className="job-topo">
      <span className="tag">{NOME_AGENTE[j.agente]||j.agente}</span>
      <b className="grow">{j.titulo||j.tipo}</b>
-     <span className={'tag '+(j.status==='falhou'?'bad':j.status==='concluido'?'ok':j.status==='aguardando_aprovacao'?'warn':'')}>{cancelando?'Cancelando…':j.pausado&&ativo?'Pausado':j.etapa==='Ignorado por você'?'Ignorado':SIT[j.status]||j.status}</span>
+     <span className={'tag '+(j.status==='falhou'?'bad':j.status==='concluido'?'ok':j.status==='aguardando_aprovacao'?'warn':'')}>{cancelando?'Cancelando…':j.pausado&&ativo?'Pausado':j.etapa==='Ignorado por você'?'Ignorado':j.heartbeat_atrasado?'Precisa de retomada':SIT[j.status]||j.status}</span>
     </div>
-    <p className="job-etapa">{j.etapa}{j.status==='rodando'&&<> • {Math.round(j.progresso||0)}%</>}</p>
-    {j.status==='rodando'&&<div className="progress"><span style={{width:`${Math.min(100,j.progresso||0)}%`}}/></div>}
+    <p className="job-etapa">{j.etapa}{rodando&&<> • {Math.round(j.progresso||0)}%</>}</p>
+    {rodando&&<div className="progress"><span style={{width:`${Math.min(100,j.progresso||0)}%`}}/></div>}
     <div className="job-tempos">
      {decorrido>0&&<span title="Tempo de trabalho até agora"><Clock size={13}/> decorrido {duracaoTexto(decorrido)}</span>}
      {ativo&&j.restante!=null&&j.status!=='aguardando_aprovacao'&&<span title={j.estimativa_medida?'Medido neste celular':'Ainda sem medida neste celular'}>falta ~{duracaoTexto(j.restante)}{!j.estimativa_medida&&' (estimativa inicial)'}</span>}
@@ -40,6 +41,7 @@ function CartaoJob({j,agora,acao}:{j:Job;agora:number;acao:AgirNaFila}){
      {ativo&&j.fim_previsto&&j.status!=='aguardando_aprovacao'&&<span>pronto ~{horaTexto(j.fim_previsto)}</span>}
      {j.tentativas>0&&<span>tentativa {j.tentativas} de {j.max_tentativas}</span>}
     </div>
+    {j.estado_motivo&&<p className="hint warn">{j.estado_motivo}</p>}
     {j.erro&&j.status!=='concluido'&&<p className="hint bad">{j.erro}</p>}
     <div className="row-gap left">
      {j.projeto&&<button className="subtle sm" onClick={()=>go('revisar',j.projeto,'fila')}><Eye size={14}/> Ver projeto</button>}

@@ -1,0 +1,22 @@
+FALHA pendentes: só o que o diretor aprovou, com os códigos  -> *Cortes do Radar, já aprovados pelo diretor:*
+• corte 1: Corte A (60 s, nota 80)
+• corte 2: Corte B (62 s, nota 70)
+Assista em https://raniere3000-tech.github.io/ia/#agente/fila
+ok    ajuda lista os comandos
+ok    status conta o que espera você
+FALHA aprovar pede SIM antes de mandar para a postagem  -> Não deu: O VID-6A5FF4 não está esperando a sua aprovação (ainda em produção, já decidido ou sem aprovação do diretor).
+FALHA SIM: aprovação final registrada como sua, pelo WhatsApp  -> Não há nada esperando confirmação (o pedido vale 10 minutos). Mande o comando de novo.
+ok    SIM repetido não aprova de novo
+ok    vídeo reprovado pelo diretor não pode ser aprovado pelo WhatsApp
+ok    agendar corte pede SIM
+ok    NÃO cancela
+ok    SIM: corte aprovado por você e agendado
+ok    corte que não existe: avisa
+ok    descartar corte
+FALHA corrigir pelas regras, sem gastar IA  -> Não deu: O VID-6A5FF4 não está esperando a sua aprovação (ainda em produção, já decidido ou sem aprovação do diretor).
+ok    comandos simples não chamam a IA
+FALHA frase solta: a IA entende e vira correção  -> Não deu: O VID-6A5FF4 não está esperando a sua aprovação (ainda em produção, já decidido ou sem aprovação do diretor).
+ok    cortar link manda para o Agente 1
+ok    ação fora da lista é recusada
+
+5 FALHA(S)

@@ -1,0 +1,67 @@
+Sessão e aparelhos
+  ok  senha errada recusada
+  ok  login cria sessão do aparelho
+  ok  sem sessão não lista projetos
+  ok  pareamento prova que conhece o código
+  ok  código de pareamento é de uso único
+  ok  aparelho desconectado perde acesso
+Projetos e conflito
+  ok  salvar aumenta a revisão
+  ok  revisão antiga dá conflito 409 com a revisão atual
+Configura chave e e-mail do agente
+  ok  configuração salva com sessão de aparelho (rotas antigas)
+Agente 3: produção
+  ok  projeto do Agente 3 criado e na fila
+  ok  roteiro gerado e esperando aprovação
+  ok  trabalho fica esperando (não renderiza sem aprovar)
+  ok  e-mail de roteiro pronto enviado
+     (produção levou 9s)
+  ok  vídeo produzido e pronto para revisão
+  ok  ffprobe: 1080x1920 H.264
+  ok  ffprobe: áudio AAC
+  ok  hash do arquivo confere com o registrado
+  ok  nada foi publicado ao terminar o render
+  ok  e-mail de vídeo pronto enviado
+  ok  e-mail tem código e não tem senha nem sessão
+  ok  prévia anexada
+Links e Range
+  ok  link assinado responde com Range (206)
+  ok  link adulterado recusado
+Aprovação
+  ok  aprovar hash diferente é recusado
+  ok  remetente estranho ignorado
+  ok  resposta fora da conversa ignorada
+  ok  código errado recusado
+  ok  texto citado não conta como comando
+  ok  aprovado por e-mail com código válido
+  ok  post criado no Agente 2 (Kwai manual)
+  ok  o mesmo e-mail não é aplicado duas vezes
+  ok  código já usado não aprova de novo
+  ok  aprovar de novo pelo site não duplica o post
+  ok  situação: na fila de postagem
+Agente 2: portões antes de postar
+  ok  post do Agente 3 sabe de qual versão aprovada veio
+  ok  versão aprovada, direitos, qualidade e arquivo conferidos
+  ok  conta não conectada bloqueia a rede
+  ok  versão não aprovada é barrada
+  ok  crédito exigido fora da legenda é barrado
+  ok  corte sem dono registrado é barrado
+  ok  post enviado à mão só recebe aviso
+  ok  site consegue ver a conferência antes de postar
+Radar: ficha de oportunidade
+  ok  ficha diz quando, com quais filtros e que o interesse é desconhecido sem dados
+  ok  ficha mostra fontes e riscos (saúde = alto)
+Storyboard editado no site
+  ok  rascunho criado sem produzir
+  ok  storyboard salvo numa revisão nova
+  ok  storyboard de revisão antiga dá conflito 409
+  ok  ordem, texto e cena travada guardados
+  ok  storyboard vazio recusado
+Fotos por cena remodeladas no estilo
+  FALHOU vídeo com fotos produzido e pronto para revisão
+  FALHOU cada cena guardou a foto e o crédito
+Traceback (most recent call last):
+  File "/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/testes/teste_agente3.py", line 417, in <module>
+    confere(len({c['imagem']['id'] for c in cf}) == len(cf), 'cenas não repetem a mesma foto')
+                 ~^^^^^^^^^^
+KeyError: 'imagem'

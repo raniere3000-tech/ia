@@ -1,0 +1,64 @@
+0. Preparo
+  ok  sem sessão: recusado (401)
+  ok  sem chave do Gemini: IA indisponível
+1. Lote de 12 vídeos com rede, conta e datas faltando
+  ok  vira proposta em rascunho (200 rascunho)
+  ok  entendeu quantidade, estilo, voz, capas e 1 por dia: {"quantidade": 12, "estilo": "documentario", "voz": "masculina", "thumbnails_por_video": 3}
+  ok  pede rede, dia e hora: ['hora_local', 'inicio', 'redes']
+  ok  não executa sem os dados (409)
+  ok  YouTube sem conta conectada: bloqueia com motivo (['Conecte a conta antes: Youtube (Postagem > Contas). Ou tire essa rede do pedido.'])
+  ok  um horário por dia às 18:00
+  ok  versão velha da proposta: 409 (409)
+  ok  proposta cancelada
+13. Pedido com "ignore as instruções" é só dado
+  ok  IA devolveu ação fora do catálogo: nenhuma ordem (resposta)
+  ok  o texto vai delimitado como dado para a IA
+  ok  pedido estranho vira proposta e nada roda sem confirmação
+10. IA indisponível
+  ok  sem regra e sem IA: diz que não entendeu, sem inventar
+  ok  status funciona sem IA
+  ok  quanto falta funciona sem IA
+  ok  conversa fica guardada no histórico
+7/8/9/12. Memória com escopo, versões e desfazer
+  ok  pedido "lembre" vira PROPOSTA de memória
+  ok  proposta ainda não vale
+  ok  confirmada com versão nova
+  ok  memória da série criada e confirmada por você
+  ok  memória da série vale só nesta série
+  ok  memória não guarda permissão nem orçamento (dados={})
+  ok  sugestão nunca nasce confirmada, mesmo pedindo
+  ok  pedido explícito vence a preferência guardada
+  ok  a preferência global continua igual
+  ok  sem dizer a voz: usa a memória e mostra qual
+  ok  memória desativada não entra em ordens novas
+  ok  voltar para a versão 2 cria versão nova (trilha completa)
+  ok  edição com versão velha ou texto curto: recusada (400)
+2. Ordem confirmada: sem duplicar com reenvio e reinício
+  ok  proposta completa (aguardando_confirmacao [] [])
+  ok  mesmo pedido (mesma chave): mesma ordem
+  ok  confirmar duas vezes não cria tarefas a mais (9)
+  ok  Agente 3 recebeu 2 vídeos (2)
+  ok  o Agente 3 não posta sozinho: quem agenda é o coordenador depois da liberação
+  ok  o pedido vai junto como instrução só desta ordem
+  ok  passar de novo (reinício) não cria vídeo novo
+  ok  Agente 6 fez as capas: ['concluida', 'concluida'] [None, None]
+  ok  modo supervisionado: pacote espera você
+  ok  nada agendado antes da liberação
+  ok  quanto falta mostra que depende de você
+4/6. Liberação do pacote presa ao hash
+  ok  dois pacotes esperando, cada um com as capas para escolher
+  ok  relatório: falta capa e diz que no Kwai a capa é manual (14)
+  ok  sem capa escolhida não libera (409)
+  ok  escolheu a capa aqui mesmo (200 )
+  ok  hash velho do pacote (antes da capa): 409 (409)
+  FALHOU pacote atualizado com o hash da capa
+  ok  capa reprovada (200)
+  ok  reprovar a capa não refaz o vídeo
+  ok  capas refeitas num pedido novo (correção 1)
+  FALHOU pacote liberado (409 {'detail': 'Ainda não dá para liberar: O diretor não aprovou: Falta concluir a conferência do diretor de qualidade.'})
+  FALHOU Agente 2 agendou só depois da liberação (pendente None)
+Traceback (most recent call last):
+  File "/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/testes/teste_coordenador.py", line 289, in <module>
+    post = next(p for p in pg.posts() if p['id'] == ag0['resultado']['posts'][0])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+StopIteration

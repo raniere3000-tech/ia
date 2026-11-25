@@ -170,7 +170,7 @@ def resumo(periodo: str = '7d') -> dict:
                     'tempo_ativo_s': round(r['seg']) if r.get('n') and r.get('seg') else None}
         c = _seguro(conta, {'concluidas': None, 'falhas': None, 'tempo_ativo_s': None})
         a = atual.get(ag_id) or {}
-        item = {'id': ag_id, 'estado': a.get('estado'), 'atual': a.get('atual') or [], 'na_fila': a.get('na_fila'),
+        item = {'id': ag_id, 'estado': a.get('estado'), 'atual': a.get('atual') or [], 'na_fila': a.get('na_fila'), 'jobs_recuperaveis': a.get('jobs_recuperaveis') or [],
                 'concluidas_periodo': c['concluidas'], 'falhas_periodo': c['falhas'], 'tempo_ativo_s': c['tempo_ativo_s'],
                 'tempos_medios': a.get('tempos_medios') or {}}
         item.update(_estado_real(ag_id, a, ini))

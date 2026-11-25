@@ -1,0 +1,31 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> estudio-de-cortes-web@0.1.0 test
+> node --experimental-strip-types --test testes/*.test.ts
+
+✔ publicado no YouTube continua pendente no TikTok, inclusive sem destino cadastrado (1.853685ms)
+✔ filtro e horário da rede ignoram data antiga de outra publicação (0.232411ms)
+✔ duplicatas entre posts não viram pendência falsa nem contam duas vezes por rede (0.208706ms)
+✔ rede ausente não entra em disponíveis quando arquivo sumiu ou está preparando (0.247835ms)
+✔ erros, pausados e cancelados mantêm filtros distintos (0.347666ms)
+✔ YouTube concluído, TikTok com erro e Instagram manual preservam situações próprias (0.3305ms)
+✔ consultar filtros não modifica status, link, referência ou data de publicação (0.568089ms)
+✔ exatamente cinco áreas, na ordem aprovada (1.484066ms)
+✔ Modelo B: Agentes abre o painel dos sete agentes, não o chat (0.451693ms)
+✔ Coordenador fica dentro de Agentes e aceita os extras antigos (0.540938ms)
+✔ todos os endereços antigos abrem a tela certa na área nova (1.295179ms)
+✔ ida e volta: endereço novo → leitura → mesmo endereço (1.484276ms)
+✔ cada tela antiga tem um lugar e nenhuma sexta área aparece (0.240754ms)
+✔ telas em duas áreas ficam na área onde a pessoa está (0.153522ms)
+✔ nomes de área antigos do código (automacao, fila, posts, criar) continuam funcionando (0.17895ms)
+✔ atalho "Ajustes do Agente 2" em Publicações abre a configuração em Agentes (0.287516ms)
+✔ endereços estranhos não quebram (0.394416ms)
+✔ nada de senha ou sessão no endereço (0.380576ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 176.008197

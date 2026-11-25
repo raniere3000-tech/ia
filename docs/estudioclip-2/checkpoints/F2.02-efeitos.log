@@ -1,0 +1,48 @@
+/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/editor_ia.py:508: ResourceWarning: unclosed file <_io.TextIOWrapper name=7 encoding='UTF-8'>
+  rd.rodar(cmd,cancelado=_cancelamento_editor(),dur=total)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/editor_ia.py:508: ResourceWarning: unclosed file <_io.TextIOWrapper name=9 encoding='UTF-8'>
+  rd.rodar(cmd,cancelado=_cancelamento_editor(),dur=total)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+../workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/agente.py:1287: ResourceWarning: unclosed file <_io.TextIOWrapper name=7 encoding='UTF-8'>
+  rd.rodar(cmd, cancelado=getattr(CONTROLE_TRABALHO, 'cancelado', None), dur=dur)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/agente.py:1287: ResourceWarning: unclosed file <_io.TextIOWrapper name=9 encoding='UTF-8'>
+  rd.rodar(cmd, cancelado=getattr(CONTROLE_TRABALHO, 'cancelado', None), dur=dur)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/editor_ia.py:508: ResourceWarning: unclosed file <_io.TextIOWrapper name=7 encoding='UTF-8'>
+  rd.rodar(cmd,cancelado=_cancelamento_editor(),dur=total)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/editor_ia.py:508: ResourceWarning: unclosed file <_io.TextIOWrapper name=9 encoding='UTF-8'>
+  rd.rodar(cmd,cancelado=_cancelamento_editor(),dur=total)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+../workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/editor_ia.py:508: ResourceWarning: unclosed file <_io.TextIOWrapper name=7 encoding='UTF-8'>
+  rd.rodar(cmd,cancelado=_cancelamento_editor(),dur=total)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/editor_ia.py:508: ResourceWarning: unclosed file <_io.TextIOWrapper name=9 encoding='UTF-8'>
+  rd.rodar(cmd,cancelado=_cancelamento_editor(),dur=total)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/editor_ia.py:508: ResourceWarning: unclosed file <_io.TextIOWrapper name=7 encoding='UTF-8'>
+  rd.rodar(cmd,cancelado=_cancelamento_editor(),dur=total)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/editor_ia.py:508: ResourceWarning: unclosed file <_io.TextIOWrapper name=9 encoding='UTF-8'>
+  rd.rodar(cmd,cancelado=_cancelamento_editor(),dur=total)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/editor_ia.py:508: ResourceWarning: unclosed file <_io.TextIOWrapper name=7 encoding='UTF-8'>
+  rd.rodar(cmd,cancelado=_cancelamento_editor(),dur=total)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/editor_ia.py:508: ResourceWarning: unclosed file <_io.TextIOWrapper name=9 encoding='UTF-8'>
+  rd.rodar(cmd,cancelado=_cancelamento_editor(),dur=total)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/editor_ia.py:508: ResourceWarning: unclosed file <_io.TextIOWrapper name=7 encoding='UTF-8'>
+  rd.rodar(cmd,cancelado=_cancelamento_editor(),dur=total)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/editor_ia.py:508: ResourceWarning: unclosed file <_io.TextIOWrapper name=9 encoding='UTF-8'>
+  rd.rodar(cmd,cancelado=_cancelamento_editor(),dur=total)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.
+----------------------------------------------------------------------
+Ran 6 tests in 5.733s
+
+OK
+Zoom: diferença média RGB antes=0.00, durante=73.39, depois=3.85

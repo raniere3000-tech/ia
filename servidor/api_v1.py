@@ -368,6 +368,8 @@ def _criativo(metodo: str, caminho: str, q: dict, corpo, quem: str, sid: str) ->
     p = lambda k, padrao='': q.get(k, [padrao])[0]  # noqa: E731
     if rota == ('GET', '/api/v1/criativo/capacidades'):
         return cri.capacidades()
+    if rota == ('GET', '/api/v1/criativo/formatos'):
+        return cri.formatos_ia()
     if rota == ('GET', '/api/v1/criativo/biblioteca'):
         return cri.biblioteca(p('tipo'), p('q')[:80], _int(p('pagina', '1'), 1))
     if rota == ('POST', '/api/v1/criativo/biblioteca'):
@@ -558,7 +560,7 @@ def _thumbs(metodo: str, caminho: str, q: dict, corpo, quem: str):
     if m and metodo == 'GET':
         arq, nome = th.midia(m.group(1))
         raise Resposta(arq, 'image/jpeg', nome, 'baixar' in q)
-    m = re.fullmatch(base + r'/jobs/(\w+)(?:/(cancelar|refazer|variantes|selecionar|validar|pacote))?', caminho)
+    m = re.fullmatch(base + r'/jobs/(\w+)(?:/(cancelar|refazer|variantes|selecionar|rejeitar|validar|pacote))?', caminho)
     if m:
         tid, acao = m.group(1), m.group(2)
         if metodo == 'GET' and not acao:
@@ -571,6 +573,8 @@ def _thumbs(metodo: str, caminho: str, q: dict, corpo, quem: str):
             return th.cancelar(tid, quem)
         if metodo == 'POST' and acao == 'refazer':
             return th.refazer(tid, corpo(), quem)
+        if metodo == 'POST' and acao == 'rejeitar':
+            return th.rejeitar(tid, corpo(), quem)
         if metodo == 'POST' and acao == 'selecionar':
             return th.selecionar(tid, corpo(), quem)
         if metodo == 'POST' and acao == 'validar':        # o diretor confere de novo a escolha (vídeo e capa ainda iguais?)
@@ -671,6 +675,9 @@ def _coord(metodo: str, caminho: str, q: dict, corpo, quem: str):
             return co.desativar_memoria(mid, quem, corpo().get('versao'))
         if metodo == 'POST' and acao == 'reverter':
             return co.reverter_memoria(mid, _int(corpo().get('versao'), 0), quem)
+    m = re.fullmatch(base + r'/memorias/([\w-]+)/testar', caminho)
+    if m and metodo == 'POST':
+        return co.testar_hipotese(m.group(1), quem, corpo().get('versao'))
     if rota == ('POST', base + '/feedback'):
         return co.feedback(corpo(), quem)
     if rota == ('GET', base + '/aprendizado/sugestoes'):
@@ -892,11 +899,11 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         j = fila.obter(m.group(1))
         if not j:
             raise pj.ErroProjeto(404, 'Trabalho não encontrado.')
-        j = dict(j)
+        j = fila.estado_publico(j)
         j['dados'] = json.loads(j.get('dados') or '{}')
         j['resultado'] = json.loads(j['resultado']) if j.get('resultado') else None
         if j['status'] not in fila.FINAIS:
-            j['restante'] = round(fila.restante(j)[0])
+            j['restante'] = None if j['heartbeat_atrasado'] or j['estado_comum'] in ('PAUSED','WAITING_USER','CANCEL_REQUESTED') else round(fila.restante(j)[0])
         return j
     m = re.fullmatch(r'/api/v1/fila/(\w+)/(pausar|retomar|cancelar|ignorar|tentar|reagendar)', caminho)
     if m and metodo == 'POST':

@@ -1,0 +1,9 @@
+...../opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/traceback.py:241: ResourceWarning: unclosed file <_io.TextIOWrapper name=7 encoding='UTF-8'>
+  tb.tb_frame.clear()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+..........
+----------------------------------------------------------------------
+Ran 15 tests in 0.197s
+
+OK
+fila: teste.cancelar Erro depois de cancelar

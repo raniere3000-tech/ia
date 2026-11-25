@@ -1,0 +1,16 @@
+ok    restrição de canal/direitos pode ser liberada por você
+ok    problema técnico não pode ser liberado
+ok    agendar normal continua barrado pela restrição e indica o caminho
+ok    liberar não passa por cima do problema técnico
+agente: Você liberou "T" mesmo com restrições: O canal de origem não está mais na sua lista de aprovados.
+agente: "T" agendado para 24/11 às 18:00 em Youtube.
+ok    corte liberado e agendado, com as restrições registradas
+ok    a liberação vai para o post e para o relatório
+ok    reprovado pelo diretor não é liberado
+ok    WhatsApp: corte com problema técnico não é liberado
+ok    WhatsApp: mostra as restrições e pede SIM antes
+agente: Você liberou "T" mesmo com restrições: O canal de origem não está mais na sua lista de aprovados. Mais da metade deste trecho já saiu em "T".
+agente: "T" agendado para 30/11 às 06:00 em Youtube.
+ok    WhatsApp: SIM libera e agenda
+
+TUDO OK

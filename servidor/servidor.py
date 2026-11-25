@@ -624,7 +624,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(200, pub.obter(mk.group(1)))
         if caminho == '/perfis':
             self.token_ok()
-            return self.json(200, {'perfis': pf.listar()})
+            return self.json(200, {'perfis': pf.listar(), 'dna_corte_habilitado': pf.dna_ativo()})
         mp = re.fullmatch(r'/perfis/(\w+)(?:/(resolvido|validar))?', caminho)
         if mp:
             self.token_ok()
@@ -638,6 +638,12 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == '/agente/modos':
             self.token_ok()
             return self.json(200, {'modos': mr.resumo()})
+        if caminho == '/agente/aprendizado/indicadores':
+            self.token_ok()
+            if not apz.inteligencia_ativa():
+                raise apz.ErroAprendizado('Inteligência de métricas desativada neste servidor.', 404)
+            filtros = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+            return self.json(200, apz.indicadores(filtros))
         if caminho == '/agente/aprendizado':
             self.token_ok()
             return self.json(200, apz.painel())
@@ -785,7 +791,7 @@ def _rotas_agenda(self, caminho: str):
         return apz.importar(str(d.get('nome', '')), str(d.get('formato', '')), d.get('conteudo'))
     if caminho == '/agente/aprendizado/capturar':
         ag.aprender(ajustar=False)
-        return {**apz.capturar(), 'painel': apz.painel()}
+        return {**apz.capturar(publicacoes=pg.posts()), 'painel': apz.painel()}
     if caminho == '/agente/aprendizado/apagar':
         return apz.apagar(d)
     if caminho == '/agente/aprendizado/aplicar':

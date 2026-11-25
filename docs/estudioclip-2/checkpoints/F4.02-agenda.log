@@ -1,0 +1,58 @@
+1. Modo fixo e horários por dia
+  ok   três horários = meta de 3 por dia; domingo sem horário = 0
+  ok   tirar um horário muda a meta sozinho
+  ok   horário repetido é recusado
+  ok   horário inválido é recusado
+  ok   horários a menos do intervalo mínimo são recusados
+  ok   segunda com 3, domingo com 0
+  ok   feriado suspende só a data marcada
+  ok   rede desconhecida é recusada
+2. Automático e misto
+  ok   4 posts espalhados na janela com 2 h de intervalo: ['10:30', '13:30', '16:30', '19:30']
+  ok   quantidade que não cabe na janela é recusada no formulário
+  ok   misto: 1 fixo + 2 flexíveis sem repetir: [('12:00', 'fixo'), ('13:30', 'flexivel'), ('17:30', 'flexivel')]
+3. Fuso e horário de verão
+  ok   09:00 em São Paulo = 12:00 UTC
+  ok   virada do dia: 23:30 local cai no dia seguinte em UTC
+  ok   horário que não existe (início do horário de verão) anda para frente
+  ok   horário repetido (fim do horário de verão) usa a primeira vez
+  ok   fuso desconhecido é recusado
+4. Critério de aceite: YouTube 09/12/18 e Instagram 10/14, prévia de 7 dias
+  ok   segunda programação para a mesma conta e rede é recusada
+  ok   YouTube: 21 horários em 7 dias
+  ok   Instagram: 2 horários em 3 dias = 6
+  ok   prévia avisa esteira desligada e falta de vídeo aprovado
+  ok   slots dos próximos dias criados
+  ok   reconciliar de novo (ou reiniciar) não duplica horários
+  ok   edição com versão velha (outro aparelho) é recusada
+  ok   edição com a versão certa sobe a versão
+  ok   horário vazio que saiu da programação é cancelado
+5. Sem certificado, nada é agendado
+  ok   esteira desligada: nenhum horário recebe vídeo
+  ok   esteira ligada mas sem certificado: nenhum post criado
+  ok   nota 69 não ganha certificado (logo nunca é agendada)
+  ok   nota 70 com bloqueio técnico não ganha certificado
+  ok   nota 70 sem bloqueio: 1 horário por rede recebe o vídeo (cada rede é uma publicação)
+  ok   um post por rede, marcado como da agenda
+  ok   rodar de novo não duplica nem repete o vídeo para tapar buraco
+  ok   os outros horários ficam vazios
+6. Arquivo mudou depois do certificado
+  ok   certificado que não bate com o SHA do arquivo atual: não agenda
+  ok   arquivo alterado depois de agendado: a conferência na hora de postar barra
+7. Horário perdido (servidor desligado)
+  ok   next_slot: a conferência não deixa postar atrasado
+  ok   horário vira "perdido" e o post atrasado é cancelado
+  ok   o vídeo volta para a fila (ou segue no outro horário)
+8. Cancelar um horário pela tela
+  ok   cancelar libera o horário e apaga o post
+  ok   cancelado por você não volta sozinho
+  ok   métricas por rede
+9. Corte manual do site passa pelo editor e pelo diretor
+agente: Corte manual recebido: "Manual" (guardado como pronto).
+  ok   corte manual fica "conferindo" enquanto o diretor olha
+  ok   trabalho pesado do diretor entrou na fila
+agente: Diretor: "Manual" aprovado com nota 94.
+  ok   aprovado pelo diretor (nota 94)
+  ok   certificado preso ao arquivo do corte manual
+
+45 ok, 0 falhas

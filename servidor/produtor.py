@@ -462,7 +462,8 @@ QA_VISAO_CONFIANCA = 0.6
 def visao_ia(pid: str, video: Path, sha: str, cenas: list, b: dict, cancelado=None) -> list:
     """Olhar estético da IA (provedor configurado, só se ligado no pedido): até 6 quadros pequenos do meio dos planos.
     Cada apontamento vem com a confiança da IA; abaixo de 0,6 é descartado. Tudo é JULGAMENTO (natureza 'julgamento'):
-    aparece na revisão e nunca reprova nem corrige nada sozinho. Orçamento: QA_VISAO_DIA vídeos por dia; mesmo vídeo não paga duas vezes."""
+    aparece no laudo e passa pelas mesmas regras de pendências do Diretor.
+    Orçamento: QA_VISAO_DIA vídeos por dia; mesmo vídeo não paga duas vezes."""
     if not b.get('qa_visao') or not (ag.segredos().get('gemini') or ag.segredos().get('gemini_pago')):
         return []
     feito = pj.obter(pid)['dados'].get('qa_visao') or {}
@@ -542,7 +543,8 @@ def visao_ia(pid: str, video: Path, sha: str, cenas: list, b: dict, cancelado=No
 
 def continuidade_serie(pid: str, cenas: list, b: dict) -> list:
     """Episódio de série: confere com a bíblia e com o elenco aprovado. Partes fixas (aparência, cenário, voz) são conferidas
-    sem IA; os fatos da bíblia são lidos pela IA (só texto, com cache). Vira alerta no relatório, nunca bloqueia."""
+    sem IA; os fatos da bíblia são lidos pela IA (só texto, com cache). Pendências reais bloqueiam;
+    biblioteca mais recente com snapshot histórico comprovado fica como aviso resolvido."""
     serie = pj.obter(pid)['dados'].get('serie') or {}
     if not serie:
         return []
@@ -557,9 +559,20 @@ def continuidade_serie(pid: str, cenas: list, b: dict) -> list:
     usados = {e['personagem_id'] for c in cenas for e in c.get('elenco') or []} | {c.get('personagem') for c in cenas if c.get('personagem')}
     for x in sorted(usados & set(pers)):
         v0, v1 = (serie.get('versoes') or {}).get(x), atuais.get(x)
+        original = db.um('SELECT dados FROM personagens_versoes WHERE personagem_id=? AND versao=?', x, v0) if v0 else None
+        preservado = bool(original and json.loads(original['dados']) == pers[x])
+        if original and not preservado:
+            out.append(qd._problema('continuidade', 'media', f'O snapshot de {nome(x)} diverge da versão {v0} fixada no projeto.',
+                                    'Restaure a versão escolhida ou selecione explicitamente outra versão.'))
         if v0 and v1 and v1 != v0:
-            out.append(qd._problema('continuidade', 'baixa', f'{nome(x)} mudou de aparência (versão {v0} para {v1}) depois que este episódio foi criado. '
-                                    f'Este episódio continua com a versão {v0}, igual aos anteriores.', 'Se quiser a aparência nova, crie o episódio de novo.'))
+            aviso = qd._problema('continuidade', 'baixa', f'{nome(x)} mudou de aparência (versão {v0} para {v1}) depois que este episódio foi criado. '
+                                 + (f'Este episódio continua com a versão {v0}, igual aos anteriores.' if preservado else 'Não foi possível confirmar a versão preservada.'),
+                                 'Se quiser a aparência nova, selecione a versão explicitamente.')
+            if preservado:
+                # Biblioteca mais recente não é defeito de um episódio comprovadamente fixado.
+                aviso.update(status='resolvido', resolucao='snapshot_preservado',
+                             evidencia=f'{x}@{v0}; hash {_h(pers[x])}')
+            out.append(aviso)
     for c in cenas:
         cid = c.get('id', '')
         for e in c.get('elenco') or []:
@@ -568,6 +581,9 @@ def continuidade_serie(pid: str, cenas: list, b: dict) -> list:
         if c.get('cenario_id') and cens and c['cenario_id'] not in cens:
             out.append(qd._problema('continuidade', 'media', f'O cenário "{c["cenario_id"]}" não existe na série.', 'Escolha um cenário da série.', cid))
         fala = c.get('personagem') or ''
+        if fala and fala not in pers:
+            out.append(qd._problema('continuidade', 'media', f'"{fala}" fala, mas não é personagem do projeto.',
+                                    'Escolha um personagem do elenco.', cid))
         voz_certa = (pers.get(fala) or {}).get('voz')
         if voz_certa and c.get('voz') and c['voz'] != voz_certa and not c.get('audio_manual'):
             out.append(qd._problema('continuidade', 'media', f'{nome(fala)} está com a voz {c["voz"]}, mas a voz dele na série é {voz_certa}.',
@@ -915,8 +931,37 @@ def parecer_etapa(pid, etapa, motivos):
     pj.mudar_dados(pid, gravar)
 
 
+# Rodadas seguidas de "diretor reprovou -> corrige" numa mesma etapa. Passou disso, para e pede você (sem laço infinito).
+MAX_REPROVACOES_ETAPA = int(os.getenv('MAX_REPROVACOES_ETAPA', '3'))
+
+
+def _reprovacoes(pid, etapa) -> int:
+    return int(((pj.obter(pid)['dados'].get('pareceres_etapas') or {}).get(etapa) or {}).get('reprovacoes') or 0)
+
+
 def corrigir_etapa(ctx, pid, etapa, destino, motivos):
     parecer_etapa(pid, etapa, motivos)
+    if _reprovacoes(pid, etapa) > MAX_REPROVACOES_ETAPA:
+        msg = (f'O diretor pediu correção de {etapa} {MAX_REPROVACOES_ETAPA + 1} vezes seguidas e o problema continuou: '
+               + motivos[0][:200])
+        db.evento('agente3', 'etapa_parada_limite', 'projeto:' + pid, {'etapa': etapa, 'motivos': motivos[:5]})
+        if etapa in ('pauta', 'roteiro'):
+            # você decide: aprovar o roteiro como está (o diretor deixa de bloquear) ou pedir uma correção sua
+            def esperar_aprovacao(d, _p):
+                if not pj.roteiro_aprovado(d):
+                    d['aprovacao_roteiro'] = {'aprovado': False, 'motivo_parada': msg[:400]}
+                return {}
+            pj.mudar_dados(pid, esperar_aprovacao)
+            ctx.dados['correcao'] = ''
+            ctx.dados['etapa'] = 'roteiro'
+            try:
+                import emails
+                emails.avisar_roteiro(pid)
+            except Exception as e:  # noqa: BLE001
+                print('produtor: aviso de roteiro', e)
+            raise fila.Esperar(0, 'Precisa da sua revisão: ' + msg[:250], 'aguardando_aprovacao',
+                               chave_aprovacao=pj.hash_roteiro(pj.obter(pid)['dados']))
+        raise ErroProdutor('Precisa da sua revisão: ' + msg, True)
     if destino == 'revisar':
         ctx.dados['correcao'] = 'Diretor de qualidade: ' + ' '.join(motivos)[:1800]
     return {'proxima': True, 'recurso': 'pesado' if destino == 'render' else 'leve',
@@ -930,6 +975,10 @@ def conferir_roteiro(ctx, pid, p, b):
     motivos = [f['evidence'] + ' ' + f['instruction'] for f in rel['findings']] if not rel['passed'] else []
     for achado in revisao_narrativa(pid, cenas, b):
         motivos.append(achado['descricao'] + ' ' + achado.get('proposta', ''))
+    if motivos and pj.roteiro_aprovado(pj.obter(pid)['dados']) and _reprovacoes(pid, 'roteiro') > MAX_REPROVACOES_ETAPA:
+        # você já aprovou este roteiro depois que o diretor parou de insistir: os apontamentos ficam registrados, sem novo laço
+        parecer_etapa(pid, 'roteiro', [])
+        return None
     if motivos:
         return corrigir_etapa(ctx, pid, 'roteiro', 'revisar', motivos)
     parecer_etapa(pid, 'roteiro', [])
@@ -1019,14 +1068,14 @@ def etapa_roteiro(ctx, pid, p, b):
     revisao = conferir_roteiro(ctx, pid, p, b)
     if revisao:
         return revisao
-    if b['modo_aprovacao'] == 'assistido' and not p['dados'].get('aprovacao_roteiro', {}).get('aprovado'):
-        _status(pid, 'waiting_brief_approval')
+    if b['modo_aprovacao'] == 'assistido' and not pj.roteiro_aprovado(pj.obter(pid)['dados']):
         try:
             import emails
             emails.avisar_roteiro(pid)
         except Exception as e:  # noqa: BLE001
             print('produtor: aviso de roteiro', e)
-        raise fila.Esperar(0, 'Esperando você aprovar o roteiro e o storyboard', 'aguardando_aprovacao')
+        raise fila.Esperar(0, 'Esperando você aprovar o roteiro e o storyboard', 'aguardando_aprovacao',
+                           chave_aprovacao=pj.hash_roteiro(pj.obter(pid)['dados']))
     return {'proxima': True, 'recurso': 'leve', 'etapa': 'Narração'}
 
 
@@ -1375,7 +1424,14 @@ def etapa_render(ctx, pid, p, b):
     pasta = _pasta(pid, 'scenes')
     total = sum(_dur_cena(c) for c in cenas) or 1
     feito = 0.0
-    problemas = qd.antes(cenas, b['estilo']) + revisao_narrativa(pid, cenas, b) + continuidade_serie(pid, cenas, b)
+    narrativa = revisao_narrativa(pid, cenas, b)
+    aprovado = pj.obter(pid)['dados']
+    if pj.roteiro_aprovado(aprovado) and _reprovacoes(pid, 'roteiro') > MAX_REPROVACOES_ETAPA:
+        # Os mesmos apontamentos já foram aceitos pelo dono ao aprovar este roteiro.
+        # Permanecem auditáveis, sem iniciar outra correção do mesmo texto no render.
+        narrativa = [dict(x, status='resolvido', resolucao='roteiro_aceito_pelo_usuario',
+                          aprovacao_hash=aprovado['aprovacao_roteiro']['hash']) for x in narrativa]
+    problemas = qd.antes(cenas, b['estilo']) + narrativa + continuidade_serie(pid, cenas, b)
     inicio = 0.0
     for i, c in enumerate(cenas):
         dur = _dur_cena(c)
@@ -1435,6 +1491,59 @@ def _srt(cenas: list) -> str:
     return '\n'.join(out)
 
 
+def edicao_compartilhada_ativa() -> bool:
+    return os.getenv('A3_EDICAO_COMPARTILHADA', '0') == '1'
+
+
+def _editar_montagem(ctx, pid, b, fonte: Path, destino: Path) -> dict:
+    """Entrega a montagem pronta ao mesmo EditPlan/executor do A5, sem remontar cenas."""
+    import contratos as ct
+    import editor_ia as ed
+    import pipeline as pl
+    p = pj.obter(pid)
+    meta = rd.sonda(fonte)
+    video = next(s for s in meta['streams'] if s.get('codec_type') == 'video')
+    # O AAC pode ter padding no contêiner; a timeline segue o relógio da imagem.
+    dur = float(video.get('duration') or meta.get('format', {}).get('duration') or 0)
+    padrao = ed.plano_importado(dur, b['formato'])
+    padrao['effects'].append({'tipo': 'fade', 'entrada_ms': 120, 'saida_ms': 120})
+    padrao['edit_reason'] = 'Finalização compartilhada das cenas do Agente 3.'
+    plano = ct.validar_plano(p['dados'].get('plano_edicao') or padrao, dur)
+    clipes = plano['clips']
+    # SRT e vozes já seguem o storyboard. Mudanças de timeline pertencem às cenas.
+    if (len(clipes) != 1 or clipes[0]['source'] != 'principal' or clipes[0]['in_ms'] != 0
+            or abs(clipes[0]['out_ms'] / 1000 - dur) > .05 or plano['target_aspect_ratio'] != b['formato']):
+        raise ct.ErroContrato('Na finalização do A3, preserve a duração e o formato; altere os tempos no storyboard.')
+    run = pl.criar('agente3', pid, p['titulo'][:120], chave=f'agente3:{pid}:{ctx.id}', estado='creative_qa_pending')
+    pl.guardar_plano(run['id'], plano, plano['edit_reason'])
+    pl.mover(run['id'], 'rendering', agente='agent5', etapa='A5 finalizando a montagem original')
+    try:
+        ed.executar_importado(plano, fonte, destino, comprovar=True, cancelado=_cancelado(ctx))
+        recibo = json.loads(destino.with_suffix('.efeitos.json').read_text())
+        if (not isinstance(recibo, dict) or recibo.get('status') != 'concluido' or recibo.get('arquivo_sha') != rd.sha256(destino)
+                or recibo.get('plano_hash') != ct.hash_plano(plano)):
+            raise rd.ErroRender('Falta comprovar os efeitos do A5 nesta montagem.')
+    except BaseException as erro:
+        arq = destino.with_suffix('.efeitos.json')
+        try:
+            falha = json.loads(arq.read_text())
+        except (OSError, ValueError):
+            falha = {'schema': 1}
+        if not isinstance(falha, dict):
+            falha = {'schema': 1}
+        falha.update(status='falhou', falhas=1, aplicados=0, erro=str(erro)[:500])
+        ed._registrar_efeitos(destino, falha)
+        pj.mudar_dados(pid, lambda d, _p: d.update(edicao_compartilhada=falha))
+        _marcar_a3(pid, 'a5_edicao', 'falhou', executor='editor_ia.executar_importado')
+        raise
+    recibo.update(fonte_sha=rd.sha256(fonte), executor='editor_ia.executar_importado')
+    ed._registrar_efeitos(destino, recibo)
+    pl.guardar_plano(run['id'], plano, arquivo_sha=recibo['arquivo_sha'])
+    pl.mover(run['id'], 'rendering', dados={'execucao_efeitos': recibo})
+    pj.mudar_dados(pid, lambda d, _p: d.update(edicao_compartilhada=recibo))
+    return recibo
+
+
 def etapa_final(ctx, pid, p, b):
     _status(pid, 'assembling')
     cenas = p['dados']['cenas']
@@ -1464,6 +1573,12 @@ def etapa_final(ctx, pid, p, b):
     ctx.progresso(89, 'Mixando o som')
     final_tmp = trab / 'final.tmp.mp4'
     rd.mixar_trilha(junto, trilha, final_tmp, _cancelado(ctx))
+    recibo_edicao = None
+    if edicao_compartilhada_ativa():
+        ctx.progresso(90, 'Editor aplicando e comprovando os efeitos da montagem')
+        candidato = trab / 'editado.mp4'
+        recibo_edicao = _editar_montagem(ctx, pid, b, final_tmp, candidato)
+        final_tmp = candidato
     dur_esperada = sum((c.get('clipe') or {}).get('dur') or 0 for c in cenas)
     W, H = ec.FORMATOS[b['formato']]
     _status(pid, 'validating')
@@ -1477,6 +1592,8 @@ def etapa_final(ctx, pid, p, b):
     sha = rd.sha256(final_tmp)
     final = pasta / f'{sha[:16]}.mp4'
     final_tmp.replace(final)                       # só agora o arquivo vira "final"
+    if recibo_edicao:
+        shutil.copyfile(final_tmp.with_suffix('.efeitos.json'), final.with_suffix('.efeitos.json'))
     prev = pasta / f'{sha[:16]}.preview.mp4'
     try:
         rd.preview_leve(final, prev, _cancelado(ctx))
@@ -1490,7 +1607,10 @@ def etapa_final(ctx, pid, p, b):
     srt = pasta / f'{sha[:16]}.srt'
     srt.write_text(_srt(cenas), encoding='utf-8')
     ids = {}
-    for nome, arq, mime in (('video', final, 'video/mp4'), ('preview', prev, 'video/mp4'), ('thumb', thumb, 'image/jpeg'), ('srt', srt, 'application/octet-stream')):
+    arquivos = [('video', final, 'video/mp4'), ('preview', prev, 'video/mp4'), ('thumb', thumb, 'image/jpeg'), ('srt', srt, 'application/octet-stream')]
+    if recibo_edicao:
+        arquivos.append(('efeitos', final.with_suffix('.efeitos.json'), 'application/json'))
+    for nome, arq, mime in arquivos:
         if arq.exists():
             ids[nome] = pj.registrar_asset(arq, f'{nome}-{sha[:8]}{arq.suffix}', mime, pid, 'agente3')['asset']['id']
     versao = (db.um('SELECT COALESCE(MAX(versao),0) AS v FROM renders WHERE projeto=?', pid) or {'v': 0})['v'] + 1
@@ -1512,9 +1632,10 @@ def etapa_final(ctx, pid, p, b):
     render = {'id': rid, 'sha': sha, 'versao': versao, 'duracao': conf['duracao'], 'validado': True, 'avisos': conf['avisos'], 'assets': ids,
               'tamanho': final.stat().st_size, 'criado': time.time(), 'codec': f'{conf["codec"]}/{conf["audio"]}', 'largura': W, 'altura': H}
     # A5 nos vídeos próprios = a montagem final do Agente 3 (concat, mix, conferência técnica). Registrado com quem fez de verdade.
-    _marcar_a3(pid, 'a5_edicao', 'concluida', saida_sha=sha, executor='produtor.etapa_final (montagem do Agente 3)',
+    _marcar_a3(pid, 'a5_edicao', 'concluida', saida_sha=sha,
+               executor='editor_ia.executar_importado' if recibo_edicao else 'produtor.etapa_final (montagem do Agente 3)',
                recibo={'render': rid, 'sha': sha, 'versao': versao, 'duracao': conf['duracao'], 'codec': render['codec'], 'tamanho': render['tamanho'],
-                       'conferencia': 'ok', 'avisos': conf['avisos'][:5]})
+                       'conferencia': 'ok', 'avisos': conf['avisos'][:5], **({'efeitos': recibo_edicao} if recibo_edicao else {})})
 
     resultado = decisao_do_diretor(ctx, pid, b, render, sha, versao, conf)
     if resultado.get('etapa') == 'Avisando por e-mail':
@@ -1525,7 +1646,7 @@ def etapa_final(ctx, pid, p, b):
 def _esteira_ligada() -> bool:
     try:
         import pipeline as pl
-        return pl.ligado()
+        return pl.ligado() or edicao_compartilhada_ativa()
     except Exception:  # noqa: BLE001
         return False
 

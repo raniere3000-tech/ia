@@ -1,0 +1,43 @@
+ok    simular não grava: {'posts': 11, 'atualizados': 10, 'ja_prontos': 1, 'campos_gerados': 9, 'simulado': True}
+ok    migração: 10 atualizados, 1 já pronto: {'posts': 11, 'atualizados': 10, 'ja_prontos': 1, 'campos_gerados': 9, 'simulado': False}
+ok    nenhum registro apagado
+ok    título, legenda, redes e relatório antigos intactos
+ok    vídeos não foram renderizados nem trocados; nenhuma capa nova
+ok    cópia de segurança dos posts feita antes de gravar
+ok    recupera título, hashtags e links já existentes: ['#gta', '#games'] ['https://youtu.be/orig1', 'https://youtu.be/y1']
+ok    gera só o que faltava (descrição e hashtags) a partir do título
+ok    o que já estava editado é preservado
+ok    post sem nenhum texto não ganha texto inventado
+ok    rodar de novo não muda nada (idempotente)
+ok    a migração não enviou nada ao TikTok
+ok    status de cada registro antigo: []
+ok    os 8 status existem (confirmação vem pela ação do usuário)
+ok    a lista de posts traz status e informações de TODOS os vídeos
+ok    edita título, hashtags (sem repetir) e links (só válidos): {'titulo': 'Novo título', 'descricao': 'Nova descrição', 'hashtags': ['#gta', '#jogos'], 'links': [{'rotulo': '', 'url': 'https://exemplo.com/a'}, {'rotulo': 'Fonte', 'url': 'https://exemplo.com/b'}]}
+ok    texto para copiar traz tudo
+ok    editar o TikTok não muda título e legenda do YouTube/Instagram
+ok    editar funciona até em post cancelado, sem mudar o status
+ok    edição vazia recusada
+ok    copiar e abrir TikTok: aguardando confirmação, sem novo upload
+ok    confirmar publicação guarda o link
+ok    vídeo que nunca foi ao TikTok também pode ser publicado à mão
+ok    publicado à mão entra na rede TikTok sem mexer no YouTube
+ok    agendado confirmado à mão vira publicado (não envia de novo)
+ok    o agendador não envia ao TikTok um vídeo já publicado/encaminhado
+ok    link http continua publicado
+ok    vídeo novo já nasce com as informações do TikTok preparadas
+ok    ainda não avisou (o vídeo nem foi enviado)
+ok    enviado 1x aos rascunhos: aguardando publicação manual
+ok    avisa que as informações estão prontas para publicar
+ok    o aviso não se repete
+ok    não reenvia o vídeo já encaminhado
+ok    publicar novamente: entra na fila do TikTok
+ok    não enfileira duas vezes
+ok    reenviou o mesmo arquivo 1x, guardou o envio anterior e não mexeu no YouTube
+ok    também vale para vídeos antigos já publicados
+ok    sem o arquivo no servidor, recusa
+ok    antes da aprovação: pediu direto, mas fica assistido
+ok    depois de ligar: direto só para quem pediu direto
+ok    rotas do TikTok assistido registradas no servidor
+
+41 ok, 0 falha(s)
