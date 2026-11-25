@@ -11,7 +11,7 @@ import { Bot, Scissors, Send, Square, Play, Search, Link2, Loader2, CheckCircle2
 import { useApp } from '../state';
 import { REDES } from '../lib/agenda';
 import { useServidor } from '../components/Servidor2';
-import { lerFila, pendentes, listarProjetos, catalogo, horaTexto } from '../lib/api';
+import { lerJob, lerFila, pendentes, listarProjetos, catalogo, horaTexto } from '../lib/api';
 import { verAgente, salvarAgente, salvarChaves, acaoCanal, rodarAgente, pararAgente, testarEmail, testarWhatsapp, acaoCorte, videoDoCorte, salvarPesos, aprenderAgora, DIAS, MOTIVOS, type VisaoAgente, type ConfigAgente, type Uso, type Canal, type CorteAgente } from '../lib/agente';
 
 type Parte = 'cortes'|'busca'|'postagem'|'programacao'|'agente3'|'esteira'|'desempenho'|'avisos'|'fila';
@@ -183,7 +183,45 @@ function Agente3Aba(){
   </>;
 }
 
+const ESTADOS_CORTE:Record<string,string>={
+  agendado:'Agendado',na_fila:'Na fila',rodando:'Em execução',concluido:'Concluído',falhou:'Falhou',
+  cancelado:'Cancelado',aguardando_tentativa:'Aguardando nova tentativa',aguardando_aprovacao:'Aguardando aprovação',
+};
+
+function ProgressoCorte({id}:{id:string}){
+  const {go}=useApp();
+  const {dados:job,erro,recarregar}=useServidor(c=>lerJob(c,id),2,[id]);
+  const etapas=(job?.dados?.etapas_corte||[]) as {texto:string;t:number}[];
+  const pct=Math.round(Math.min(100,Math.max(0,job?.progresso||0)));
+  return <div className="agente">
+    <button className="link-btn" onClick={()=>go('agente','cortes','agentes')}>Voltar ao Agente 1</button>
+    <section className="panel">
+      <div className="section-head"><h2><Scissors size={20}/> Acompanhar corte · Agente 1</h2>
+        {job&&<span className="tag">{job.pausado?'Pausado':ESTADOS_CORTE[job.status]||job.status}</span>}
+      </div>
+      {erro&&<p className="hint bad">{erro} <button className="subtle sm" onClick={recarregar}>Atualizar</button></p>}
+      {!job&&!erro&&<p className="hint"><Loader2 size={15} className="spin"/> Carregando o pedido de corte…</p>}
+      {job&&<>
+        <h3>{job.titulo}</h3>
+        <p aria-live="polite"><strong>{job.etapa}</strong> · {pct}%</p>
+        <progress aria-label="Progresso do corte" value={pct} max={100} style={{width:'100%'}}/>
+        {job.erro&&<p role="alert" className="hint bad">{job.erro}</p>}
+        {job.resultado?.mensagem&&job.resultado.mensagem!==job.etapa&&<p>{job.resultado.mensagem}</p>}
+        {etapas.length>0&&<><h3>Etapas executadas</h3><ol className="cenas-lista">{etapas.map((e,i)=>
+          <li key={i}><small className="muted">{horaTexto(e.t)}</small> {e.texto}</li>)}</ol></>}
+        {job.status==='concluido'&&<button className="primary" onClick={()=>go('agente','fila','agentes')}>Ver cortes feitos</button>}
+      </>}
+    </section>
+  </div>;
+}
+
 export default function Agente(){
+  const {rotaExtra}=useApp();
+  const trabalho=/^corte-job-([a-zA-Z0-9_]+)$/.exec(rotaExtra||'');
+  return trabalho?<ProgressoCorte key={trabalho[1]} id={trabalho[1]}/>:<ConfiguracaoAgente/>;
+}
+
+function ConfiguracaoAgente(){
   const {settings,toast,go,rotaExtra}=useApp();
   const PARTES:Parte[]=['cortes','postagem','programacao','agente3','esteira','desempenho','avisos','fila'];
   const [v,setV]=useState<VisaoAgente|null>(null); const [erro,setErro]=useState(''); const [parte,setParte]=useState<Parte>(()=>PARTES.includes(rotaExtra as Parte)?rotaExtra as Parte:'cortes');
@@ -227,6 +265,17 @@ export default function Agente(){
         if(vivo.current) setSalvamentos(n=>n-1);
       }
     });
+  };
+  const [iniciando,setIniciando]=useState(false);
+  const iniciarCorte=async(oque:'cortar'|'link'|'tema',entrada?:string)=>{
+    if(iniciando) return;
+    setIniciando(true);
+    try{
+      const r=await rodarAgente(settings,oque,entrada);
+      if(r.job) go('agente','corte-job-'+r.job,'agentes');
+      else toast('Pedido enviado. Veja o estado em Cortes.','ok');
+    }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); }
+    finally{ setIniciando(false); }
   };
   /** Liga/desliga a busca automática e confere se o servidor guardou mesmo (servidor antigo ignora a opção sem avisar). */
   const trocarBusca=async()=>{
@@ -273,7 +322,7 @@ export default function Agente(){
         <small>Nesta semana: <b>{v.semana}</b> de {co.por_semana} cortes · {aprovados.length} canal(is) aprovado(s){sugeridos.length?` · ${sugeridos.length} esperando você`:''}</small>
         <div className="row-gap left">
           <button className={co.ligado?'subtle sm':'primary sm'} onClick={()=>salvar({cortes:{ligado:!co.ligado}})}>{co.ligado?<><Square size={13}/> Desligar</>:<><Play size={13}/> Ligar</>}</button>
-          <button className="subtle sm" disabled={ocupado} onClick={()=>run(()=>rodarAgente(settings,'cortar'),'Começando a cortar. Acompanhe aqui.')}><Scissors size={13}/> Cortar agora</button>
+          <button className="subtle sm" disabled={ocupado||iniciando} onClick={()=>void iniciarCorte('cortar')}><Scissors size={13}/> Cortar agora</button>
           <button className="subtle sm" disabled={ocupado} onClick={()=>run(()=>rodarAgente(settings,'buscar'),'Procurando canais em alta.')}><Search size={13}/> Procurar canais</button>
         </div>
       </div>
@@ -348,7 +397,7 @@ export default function Agente(){
           {salvamentos>0&&<small role="status">Salvando configuração…</small>}
           <label className="check mt"><input type="checkbox" checked={!!co.temas_outros} onChange={e=>salvar({cortes:{temas_outros:e.target.checked}})}/> Procurar também em outros canais do YouTube (não só nos aprovados)</label>
           <p className="hint">Vídeo de canal que você não aprovou fica sem origem registrada: ele passa pelo diretor de qualidade, mas só posta depois da sua liberação especial.</p>
-          <div className="ag-add"><input value={tema} onChange={e=>setTema(e.target.value)} placeholder="Cortar agora um vídeo sobre... (só desta vez)"/><button className="subtle sm" disabled={ocupado||tema.trim().length<3} onClick={()=>run(async()=>{ await rodarAgente(settings,'tema',tema.trim()); setTema(''); setParte('fila'); },'Procurando um vídeo sobre esse tema. O resultado aparece na fila.')}><Search size={14}/> Procurar e cortar</button></div>
+          <div className="ag-add"><input value={tema} onChange={e=>setTema(e.target.value)} placeholder="Cortar agora um vídeo sobre... (só desta vez)"/><button className="subtle sm" disabled={ocupado||iniciando||tema.trim().length<3} onClick={()=>void iniciarCorte('tema',tema.trim())}><Search size={14}/> Procurar e cortar</button></div>
         </div>
         <Lista titulo="Nichos" escolhidos={co.nichos} sugestoes={v.opcoes.nichos} mudar={l=>salvar({cortes:{nichos:l}})} placeholder="Outro nicho"/>
         <div className="ag-grade">
@@ -397,7 +446,7 @@ export default function Agente(){
         <span className="field-label mt">O que pode variar de um corte para outro (até 3)</span>
         <div className="chips">{Object.entries(v.opcoes.variacoes).map(([k,t])=><button key={k} type="button" className={'chip '+(co.variar.includes(k)?'on':'')} aria-pressed={co.variar.includes(k)} onClick={()=>variar(k)}>{t}</button>)}</div>
         <p className="hint">Além do template, o agente sorteia esses elementos em cada corte para os vídeos não saírem todos iguais.</p>
-        <div className="ag-add mt"><input value={link} onChange={e=>setLink(e.target.value)} placeholder="Testar o template: cole o link de um vídeo do YouTube"/><button className="subtle sm" disabled={ocupado||!link.trim()} onClick={()=>run(async()=>{ await rodarAgente(settings,'link',link.trim()); setLink(''); setParte('fila'); },'Cortando este vídeo. O resultado aparece na fila.')}><Link2 size={14}/> Cortar este link</button></div>
+        <div className="ag-add mt"><input value={link} onChange={e=>setLink(e.target.value)} placeholder="Testar o template: cole o link de um vídeo do YouTube"/><button className="subtle sm" disabled={ocupado||iniciando||!link.trim()} onClick={()=>void iniciarCorte('link',link.trim())}><Link2 size={14}/> Cortar este link</button></div>
       </section>
     </>}
 

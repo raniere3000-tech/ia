@@ -20,6 +20,7 @@ import secrets
 import shutil
 import time
 import uuid
+from pathlib import Path
 
 import banco as db
 import fila
@@ -115,7 +116,7 @@ def pendentes() -> list:
                       "AND status IN ('ready_for_review','waiting_brief_approval','changes_requested') ORDER BY atualizado DESC LIMIT 100"):
         full = pj.obter(p['id'])
         r = full['dados'].get('render') or {}
-        if p['status'] == 'ready_for_review' and not diretor_ok(full, r.get('sha'))['aprovado']:
+        if p['status'] == 'ready_for_review' and not _render_atual(full):
             continue
         out.append({'projeto': p['id'], 'ref': ref(p['id']), 'titulo': p['titulo'], 'status': p['status'], 'atualizado': p['atualizado'],
                     'tipo': 'video' if p['status'] == 'ready_for_review' else 'roteiro',
@@ -196,7 +197,46 @@ def diretor_ok(p: dict, sha: str) -> dict:
     return parecer
 
 
-def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: str, chave: str = '') -> dict:
+def bloqueios_manuais(p: dict, sha: str) -> list:
+    """Pareceres editoriais podem ser aceitos pelo usuário. Bloqueios técnicos continuam valendo."""
+    import pipeline as pl
+    import produtor
+    dados = p['dados']
+    if (dados.get('qualidade') or {}).get('status') == 'falha_tecnica':
+        return ['O arquivo falhou na conferência técnica.']
+    if produtor._sem_licenca(dados.get('cenas') or []):
+        return ['Há imagens sem licença registrada.']
+    linha = db.um("SELECT id FROM quality_reports WHERE ref=? AND sha256=? AND modalidade='final_release' ORDER BY criado DESC LIMIT 1",
+                 p['id'], sha)
+    if not linha:
+        return []
+    return [x['evidence'] for x in pl.relatorio(linha['id'])['blocking_findings'] if x.get('category') != 'qualidade']
+
+
+def _certificar_manual(p, r, por, motivo):
+    import pipeline as pl
+    import esteira as es
+    sha = r['sha']
+    if pl.sha_arquivo(Path(r['arquivo'])) != sha:
+        raise ErroAprovacao(409, 'O arquivo mudou. Abra a versão atual antes de aprovar.')
+    bloqueios = bloqueios_manuais(p, sha)
+    if bloqueios:
+        raise ErroAprovacao(409, 'Corrija antes de aprovar: ' + ' '.join(bloqueios)[:400])
+    cert = pl.certificado(sha)
+    if not cert or not cert['manual'] or cert['ref'] != p['id']:
+        cert = pl.emitir_certificado(p['id'], sha, {'score': 0, 'blocking_findings': []},
+                                    revisao=r['versao'], manual=True, por=por, motivo=motivo)
+    if es.completa():
+        vid = es.garantir('render', p['id'], p['titulo'])
+        pre = es._etapa(vid, 'a4_previo')
+        if pre['estado'] not in es.OK:
+            es.marcar(vid, 'a4_previo', 'pulada_justificada', motivo='Etapa aceita na revisão manual pelo usuário.')
+        es.marcar(vid, 'a4_final', 'concluida', saida_sha=sha, executor='revisão manual',
+                  recibo={'certificado': cert['id'], 'sha': sha, 'manual': True, 'por': por, 'motivo': motivo})
+    return cert
+
+
+def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: str, chave: str = '', *, manual: bool = False) -> dict:
     """Aprovação válida da versão final -> posts no Agente 2. Repetir a mesma chamada não duplica nada."""
     p = pj.obter(pid)
     if p['tipo'] != 'agente3':
@@ -216,17 +256,13 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
     if p['status'] != 'ready_for_review':
         raise ErroAprovacao(409, f'Este vídeo não está esperando aprovação (situação: {p["status"]}).')
     dr = diretor_ok(p, render_sha)
-    if not dr['aprovado']:
+    if not dr['aprovado'] and not manual:
         raise ErroAprovacao(409, 'O diretor de qualidade não aprovou esta versão: ' + ' '.join(dr['motivos'])[:400] + ' Refaça as cenas apontadas.')
     try:
         import esteira as es
         completa = es.completa()
     except Exception:  # noqa: BLE001
         completa = False
-    if completa:          # esteira dos 7 agentes: a sua aprovação vale como liberação final do Agente 7 se o pacote estiver completo
-        lib = es.liberar_por_pessoa('render', pid, por or origem)
-        if not lib['ok']:
-            raise ErroAprovacao(409, 'Ainda não dá para aprovar: ' + ' '.join(lib['falta'])[:400])
     dest = dict(p['dados']['briefing'].get('destinos') or {})
     if isinstance(destinos, dict):
         dest.update({k: v for k, v in destinos.items() if k in ('redes', 'quando', 'data', 'titulo', 'legenda', 'link_original')})
@@ -247,11 +283,20 @@ def aprovar(pid: str, render_sha: str, destinos: dict | None, origem: str, por: 
         prog = [x for x in ok if ag2.rede_programada(x)]
     ok = [x for x in ok if x not in prog]
     quando = _quando(dest) if ok else 0
+    motivo_manual = ''
+    if manual:
+        motivo_manual = ('Aceite manual da versão. Parecer: ' + (' '.join(dr['motivos']) or 'favorável'))[:300]
+        _certificar_manual(p, r, por or origem, motivo_manual)
+        origem = 'site_manual'
+    if completa and (not manual or redes):
+        lib = es.liberar_por_pessoa('render', pid, por or origem)
+        if not lib['ok']:
+            raise ErroAprovacao(409, 'Ainda não dá para agendar: ' + ' '.join(lib['falta'])[:400] + ' Você pode aprovar sem redes para salvar o vídeo.')
     aid = uuid.uuid4().hex[:16]
     agora = time.time()
     try:
         db.executar('INSERT INTO aprovacoes (id, projeto, render_sha, decisao, origem, por, texto, destinos, publicar_em, criado, chave) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-                    aid, pid, render_sha, 'aprovado', origem[:20], por[:80], '', json.dumps(dest, ensure_ascii=False), quando, agora, chave)
+                    aid, pid, render_sha, 'aprovado', origem[:20], por[:80], motivo_manual, json.dumps(dest, ensure_ascii=False), quando, agora, chave)
     except Exception:  # noqa: BLE001  (corrida: outra chamada igual chegou primeiro)
         ja = db.um('SELECT * FROM aprovacoes WHERE chave=?', chave)
         return {'ok': True, 'repetido': True, 'aprovacao': ja, 'posts': db.todos('SELECT * FROM publicacoes WHERE aprovacao=?', ja['id'] if ja else '')}

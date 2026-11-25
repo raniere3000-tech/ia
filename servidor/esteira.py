@@ -471,7 +471,7 @@ def revisar_pacote(v: dict, arq: Path, sha: str, extra: dict) -> dict:
     def item(nome, ok, detalhe):
         itens.append({'item': nome, 'ok': bool(ok), 'detalhe': detalhe})
     cert = pl.certificado(sha)
-    item('diretor', cert is not None, f'Diretor aprovou este arquivo (nota {cert["nota"]}).' if cert else 'Falta o certificado do diretor para este arquivo.')
+    item('diretor', cert is not None, ('Arquivo aceito em revisão manual.' if cert['manual'] else f'Diretor aprovou este arquivo (nota {cert["nota"]}).') if cert else 'Falta o certificado do diretor para este arquivo.')
     pre = _etapa(v['id'], 'a4_previo')
     item('avaliacao_inicial', pre and pre['estado'] in OK, 'Avaliação inicial do diretor feita.' if pre and pre['estado'] == 'concluida' else
          (pre['motivo'] or 'Não se aplica.') if pre and pre['estado'] == 'pulada_justificada' else 'Falta a avaliação inicial do diretor.')
