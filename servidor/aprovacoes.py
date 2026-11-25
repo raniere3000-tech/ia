@@ -116,7 +116,7 @@ def pendentes() -> list:
                       "AND status IN ('ready_for_review','waiting_brief_approval','changes_requested') ORDER BY atualizado DESC LIMIT 100"):
         full = pj.obter(p['id'])
         r = full['dados'].get('render') or {}
-        if p['status'] == 'ready_for_review' and not _render_atual(full):
+        if p['status'] == 'ready_for_review' and not (_render_atual(full) or diretor_ok(full, r.get('sha'))['aprovado']):
             continue
         out.append({'projeto': p['id'], 'ref': ref(p['id']), 'titulo': p['titulo'], 'status': p['status'], 'atualizado': p['atualizado'],
                     'tipo': 'video' if p['status'] == 'ready_for_review' else 'roteiro',
