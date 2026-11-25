@@ -42,3 +42,13 @@ verificam herança dos 11 recursos, rollback explícito e leitura pelos módulos
 Com os 11 recursos no ambiente, edição compartilhada passou em 9 testes,
 integridade do render em 7 e compatibilidade/métricas em 7 (os testes preservam
 seus casos explícitos de flag desligada). Sem APIs/contas reais.
+
+## Atualizar o celular com um comando
+
+```bash
+bash ~/ia/servidor/atualizar-termux.sh
+```
+
+Faz: wake lock, para servidor/túnel/vigia, atualiza o cloudflared, `git checkout main`,
+`git pull --ff-only` e `bash iniciar-termux.sh link`. Se o pull falhar por mudanças
+locais, o script para e avisa em vez de iniciar uma versão velha.
