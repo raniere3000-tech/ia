@@ -38,7 +38,7 @@ def confere(c, nome):
 man = json.loads((Path(__file__).parents[1] / 'skills' / 'manifesto.json').read_text(encoding='utf-8'))
 por = {s['id']: s for s in man['skills']}
 ids = [s['id'] for s in man['skills']]
-confere(len(ids) == len(set(ids)) == 133, 'manifesto: 133 skills, sem id repetido')
+confere(len(ids) == len(set(ids)) and len(ids) >= 133, 'manifesto: catálogo base preservado, sem id repetido')
 confere(all(i in por for i in NOVAS), 'as 15 skills estão no manifesto')
 confere(all(not sg.item_manifesto_valido(por[i]) and por[i]['licenca'] == 'MIT' and por[i].get('licenca_fonte') and por[i]['tamanho'] > 0 for i in NOVAS),
         'as 15 têm commit fixado, hash, tamanho e licença MIT com a fonte da licença')

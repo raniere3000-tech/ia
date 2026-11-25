@@ -2492,6 +2492,26 @@
    "prioridade": "P1",
    "gatilho": "testar uma variável por vez",
    "nota": "o texto cita um serviço externo de agendamento; as linhas que o citam são descartadas e só regras gerais entram"
+  },
+  {
+   "id": "short-form-retention",
+   "repo": "adittaya/video-editing-skills",
+   "caminho": "skills/short-form-retention/SKILL.md",
+   "commit": "bb6f2f48cd9bac787fb5b201909eca90226dba4b",
+   "sha256": "135bbe4fb18459544bad93b7eb27f7334f70e8abd8337d3c090273f8b0ce6aa2",
+   "tamanho": 2086,
+   "licenca": "MIT",
+   "licenca_fonte": "https://github.com/adittaya/video-editing-skills/blob/bb6f2f48cd9bac787fb5b201909eca90226dba4b/LICENSE",
+   "uso": "Inspeção de amostra renderizada e escolhas editoriais em cortes verticais",
+   "agentes": [
+    "editor"
+   ],
+   "categoria": "Montagem",
+   "tipo": "producao",
+   "modalidade": "guia",
+   "prioridade": "P1",
+   "gatilho": "planejar corte vertical",
+   "nota": "Somente o arquivo de entrada, com regras textuais extraídas pelo catálogo. Referências e scripts externos ficam fora."
   }
  ]
 }

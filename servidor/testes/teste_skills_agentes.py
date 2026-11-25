@@ -56,7 +56,18 @@ def confere(c, nome):
 
 db.migrar()
 rel = cat.instalar()
-confere(len(rel['instaladas']) == 133 and not rel['falhas'], '133 definições instaladas (arquivos simulados, hash conferido)')
+confere(set(rel['instaladas']) == set(ARQS) and not rel['falhas'], 'todas as definições instaladas (arquivos simulados, hash conferido)')
+
+sel = rot.escolher({'agente': 'editor', 'tarefa': 'planejar corte vertical', 'estilo': '9:16'})
+confere(any(x['id'] == 'short-form-retention' and x['perfil'] == 'editor.planejar_cortes' for x in sel['usar']),
+        'Editor Pro seleciona o guia auditado em cortes verticais')
+sel = rot.escolher({'agente': 'editor', 'tarefa': 'planejar corte vertical', 'estilo': '16:9'})
+confere(all(x['id'] != 'short-form-retention' for x in sel['usar']), 'guia vertical fica fora do planejamento horizontal')
+cat.ativar('short-form-retention', False)
+sel = rot.selecionar('editor.planejar_cortes')
+confere('short-form-retention' not in sel['usar'] and any(x['id'] == 'short-form-retention' for x in sel['fora']),
+        'guia desativado fica fora da seleção')
+cat.ativar('short-form-retention', True)
 
 PEDIDOS = []
 

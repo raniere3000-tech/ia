@@ -39,6 +39,8 @@ PERFIS = {
     'agente3.avaliacao': ('agente3', 'avaliação', 'Agente 3: leitura crítica do roteiro', ['generated-media-qa', 'agentic-eval', 'qc-skill'], 'leitura crítica do roteiro no relatório de qualidade'),
     'qc.validar': ('qualidade', 'validar', 'Diretor de Qualidade: conferir o vídeo', ['generated-media-qa', 'media-qc-delivery', 'agentic-eval'],
                    'avaliação visual pela IA (quando ligada) → defeitos com evidência'),
+    'editor.planejar_cortes': ('editor', 'planejar corte vertical', 'Agente 5: planejar cortes verticais',
+                               ['short-form-retention', 'editing-montage', 'captions-media-accessibility'], ''),
     'site.editor': ('editor', 'editor manual', 'Site: editor manual', ['video-editing', 'ffmpeg-media-finishing', 'captions-media-accessibility'], ''),
     'site.cenas': ('editor', 'editor de cenas', 'Site: editor de cenas', ['storyboard-shot-design', 'reference-media-analysis'], ''),
     'site.vozes': ('editor', 'vozes', 'Site: vozes', ['dialogue-editing-adr', 'layer-talking-characters'], ''),
@@ -77,6 +79,9 @@ _CFG_PADRAO = {'gatilhos': [], 'estilos': [], 'custo_max': 3000, 'fallback': 'Se
 CONFIG = {
     'radar.temas': {'gatilhos': ['radar', 'tema', 'pauta', 'ideia', 'tendencia', 'pesquisa'], 'fallback': 'Pautas sem material de apoio; a ficha de oportunidade é feita igual.'},
     'agente1.analisar': {'gatilhos': ['corte', 'cortes', 'trecho', 'analisar'], 'fallback': 'Escolhe trechos só com as regras de duração e viralidade do Agente 1.'},
+    'editor.planejar_cortes': {'gatilhos': ['corte vertical', 'planejar corte vertical'],
+                              'estilos': ['9:16'],
+                              'fallback': 'Segue com os modelos e as regras de edição do servidor.'},
     'agente1.montar': {'gatilhos': ['montar', 'clipe', 'legenda']},
     'agente2.publicar': {'gatilhos': ['postar', 'publicar', 'postagem', 'conferencia'], 'custo_max': 1500,
                          'fallback': 'A conferência antes de postar roda igual (arquivo, versão, conta, formato, direitos, qualidade).'},
