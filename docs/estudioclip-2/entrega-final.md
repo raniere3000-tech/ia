@@ -4,9 +4,16 @@ Implementações F1.01–F5.04 em branches empilhadas e PRs de rascunho, sem mer
 alteração de produção. Checkpoints por microetapa em docs/estudioclip-2/checkpoints.
 A Fase 0 e o patch parcial original foram preservados.
 
-## Ativação controlada
+## Ativação autorizada — atualização posterior
 
-| Flag | Padrão | Recurso |
+Após a entrega, o usuário autorizou ativar todos os recursos. O iniciador
+`servidor/iniciar-termux.sh` agora usa 1 para as 11 flags, respeitando valores
+explícitos de rollback. A tabela abaixo registra os padrões dos módulos isolados;
+o iniciador os sobrepõe. Aplicação no aparelho e limites em ativacao-recursos.md.
+
+## Padrões dos módulos isolados
+
+| Flag | Módulo isolado | Recurso |
 | --- | --- | --- |
 | A1_MESMA_FONTE | 0 | Retentar a mesma fonte em falhas recuperáveis |
 | A1_GANCHO_INTEGRO | 0 | Frase completa na seleção do corte |
