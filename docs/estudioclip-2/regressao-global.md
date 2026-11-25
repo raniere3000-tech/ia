@@ -84,3 +84,12 @@ Próxima tarefa F5.R01: ajustes de compatibilidade encontrados na revisão (flag
 | teste_trecho_link.py | PASS | 0 | 0.27 |
 | teste_versao_refeita.py | PASS | 0 | 0.51 |
 | teste_whatsapp.py | PASS | 0 | 16.22 |
+
+## Complemento posterior — F5.R01
+
+A revisão indicada acima foi executada e testada: sete testes novos, onze grupos
+Python afetados e frontend 18/build PASS. Detalhes em fase-5-compatibilidade.md e
+checkpoints/F5.R01-*.log. O inventário agora tem 71 arquivos (70 automáticos e o
+email interativo). Não somar repetições de testes como novos arquivos.
+A rodada global de 69 arquivos continua vinculada ao SHA inicial registrado;
+os testes complementares cobrem as mudanças posteriores.

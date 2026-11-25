@@ -160,7 +160,7 @@ def capturar(publicacoes: list | None = None) -> dict:
         for rede, m in c['metricas'].items():
             if rede in REDES and isinstance(m, dict) and resultado(metricas_validas(m)) is not None:
                 destino = ((posts.get(c.get('post')) or {}).get('redes') or {}).get(rede) or {}
-                novos += _gravar_retrato('rede', rede, c.get('id', ''), variaveis_do_corte(c), m, fim, c.get('metricas_em') or fim, publicacao=destino.get('publicacao'))
+                novos += _gravar_retrato('rede', rede, c.get('id', ''), variaveis_do_corte(c), m, fim, c.get('metricas_em'), publicacao=destino.get('publicacao'))
                 if c.get('post'):
                     representados.add((c['post'], rede))
     if os.getenv('METRICAS_PUBLICACOES', '0') == '1':
@@ -444,14 +444,19 @@ def ler_experimento(eid: str) -> dict:
     ret = [x for x in _retratos() if all(x['v'].get(k) == v for k, v in ex['fixos'].items())]
     if ex.get('contexto'):
         ret = []
+        renders_vistos = set()
         for x in indicadores(ex['contexto'])['itens']:
             ctx = x['publicacao'] or {}
             metrica = ex['contexto']['metrica']
             # Só publicações novas após a criação do teste. A amostra da hipótese não é reutilizada.
             if (ctx.get('publicado_em') or 0) < ex['criado'] or metrica not in x['metricas']:
                 continue
+            render = ctx.get('render_sha')
+            if not render or render in renders_vistos:
+                continue
             v = {k: valor_contexto(ctx, k) for k in [ex['variavel'], *ex['fixos']]}
-            if all(v.get(k) == val for k, val in ex['fixos'].items()):
+            if v.get(ex['variavel']) in (ex['a'], ex['b']) and all(v.get(k) == val for k, val in ex['fixos'].items()):
+                renders_vistos.add(render)
                 ret.append({'v': v, 'r': x['metricas'][metrica]})
     br = {lado: [x['r'] for x in ret if x['v'].get(ex['variavel']) == ex[lado]] for lado in ('a', 'b')}
     ex['lados'] = {lado: ({'valor': ex[lado], **_estat(v)} if v else {'valor': ex[lado], 'n': 0}) for lado, v in br.items()}
@@ -513,6 +518,10 @@ def apagar(d: dict) -> dict:
 
 
 # ---------------------------------------------------------------- painel
+def inteligencia_ativa() -> bool:
+    return os.getenv('INTELIGENCIA_METRICAS', '0') == '1'
+
+
 def painel() -> dict:
     import agente as ag
     ret = _retratos()
@@ -537,7 +546,7 @@ def painel() -> dict:
     except Exception:  # noqa: BLE001
         pass
     return {'retratos': len(ret), 'minimo': MIN_AMOSTRAS, 'fontes': list(fontes.values()), 'variaveis': vars_, 'experimentos': exps,
-            'coleta': ag.inventario_metricas(),
+            'coleta': ag.inventario_metricas(), 'inteligencia_habilitada': inteligencia_ativa(),
             'importacoes': db.todos('SELECT id, nome, formato, linhas, recusadas, t FROM aprendizado_importacoes ORDER BY t DESC LIMIT 20'),
             'historico_pesos': db.todos('SELECT versao, t, variavel, motivo, ativo FROM aprendizado_pesos ORDER BY versao DESC LIMIT 20'),
             'aviso_causa': AVISO_CAUSA, 'aviso_frequencia': FREQUENCIA, 'boas_praticas': apoio,

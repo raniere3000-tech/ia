@@ -638,6 +638,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(200, {'modos': mr.resumo()})
         if caminho == '/agente/aprendizado/indicadores':
             self.token_ok()
+            if not apz.inteligencia_ativa():
+                raise apz.ErroAprendizado('Inteligência de métricas desativada neste servidor.', 404)
             filtros = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
             return self.json(200, apz.indicadores(filtros))
         if caminho == '/agente/aprendizado':

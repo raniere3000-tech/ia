@@ -742,6 +742,7 @@ def postar_youtube(p: dict, arq: Path) -> str:
     _ok(st, j, 'YouTube recusou o vídeo')
     vid = j.get('id')
     REF['youtube'] = vid or ''
+    p['_canal_publicado'] = (j.get('snippet') or {}).get('channelId')
     _capa_youtube(p, arq, vid, tok)
     priv = (j.get('status') or {}).get('privacyStatus')
     link = f'https://youtube.com/shorts/{vid}'
@@ -758,17 +759,43 @@ def contexto_publicacao(p: dict, arq: Path) -> dict:
     corte = next((c for c in ag.estado()['cortes'] if c.get('post') == p['id'] or
                   c.get('video') == p['video']), {})
     capa = _capa(arq) or {}
+    import banco as db
+    import projetos as pj
+    registro = db.um('SELECT * FROM renders WHERE projeto=? AND sha256=? ORDER BY versao DESC LIMIT 1', p.get('projeto') or '', sha) or {}
+    roteiro_sha = None
+    for v in db.todos('SELECT dados FROM versoes WHERE projeto=? ORDER BY revisao', p.get('projeto') or ''):
+        try:
+            dados = json.loads(v['dados'])
+        except (TypeError, ValueError):
+            continue
+        if isinstance(dados, dict) and isinstance(dados.get('render'), dict) and dados['render'].get('sha') == sha and pj.roteiro_aprovado(dados):
+            roteiro_sha = dados['aprovacao_roteiro']['hash']
+            break
+    cert = pl.certificado(sha) or {}
     efeitos = None
     try:
-        recibo = json.loads(arq.with_suffix('.efeitos.json').read_text())
-        if recibo.get('arquivo_sha') == sha:
-            efeitos = recibo
+        # O arquivo da fila é uma cópia; o recibo IA pode permanecer junto ao render original.
+        candidatos = [arq.with_suffix('.efeitos.json')]
+        if registro.get('arquivo'):
+            candidatos.append(Path(registro['arquivo']).with_suffix('.efeitos.json'))
+        for caminho in candidatos:
+            try:
+                recibo = json.loads(caminho.read_text())
+            except (OSError, ValueError):
+                continue
+            if isinstance(recibo, dict) and recibo.get('arquivo_sha') == sha and recibo.get('status') == 'concluido':
+                efeitos = recibo
+                break
     except (OSError, ValueError):
         pass
     return {'schema': 1, 'post': p['id'], 'video': p['video'], 'render_sha': sha,
             'projeto': p.get('projeto') or None, 'origem': p.get('origem') or 'manual',
             'vertente': 'criacao_ia' if p.get('origem') == 'agente3' else ('cortes' if corte else 'manual'),
-            'corte': corte.get('id'), 'canal': corte.get('canal') or None,
+            'corte': corte.get('id'), 'canal': corte.get('perfil') or None,
+            'canal_origem': corte.get('canal') or None, 'perfil_versao': corte.get('perfil_versao'),
+            'render_versao': registro.get('versao'), 'roteiro_sha': roteiro_sha,
+            'criterio_qa': cert.get('versao_politica'),
+            'certificado': {k: cert.get(k) for k in ('id', 'sha256', 'nota', 'versao_politica', 'modalidade', 'manual')} if cert else None,
             'titulo': p.get('titulo'), 'legenda': p.get('legenda'),
             'gancho': corte.get('gancho'), 'modelo': p.get('modelo') or corte.get('modelo'),
             'efeitos': efeitos,
@@ -831,6 +858,7 @@ def postar_facebook(p: dict, arq: Path) -> str:
         'upload_phase': 'finish', 'video_id': vid, 'video_state': 'PUBLISHED', 'description': _texto(p, 2200), 'access_token': pg['token']})
     _ok(st, j, 'Facebook não publicou o Reels')
     REF['facebook'] = str(vid)
+    p['_canal_publicado'] = pg['id']
     return f'https://www.facebook.com/reel/{vid}'
 
 
@@ -859,6 +887,7 @@ def postar_instagram(p: dict, arq: Path) -> str:
     _ok(st, j, 'Instagram não publicou')
     mid = j['id']
     REF['instagram'] = str(mid)
+    p['_canal_publicado'] = pg['ig_id']
     st, _, j = http('GET', f"{base}/{mid}?fields=permalink&access_token=" + urllib.parse.quote(pg['token']))
     return j.get('permalink') or f"https://www.instagram.com/{pg.get('ig_usuario', '')}"
 
@@ -1359,7 +1388,12 @@ def _publicar_um(pid: str, rede: str):
         REF.pop(rede, None)
         arq = video_path(p['video'])
         contexto = contexto_publicacao(p, arq) if os.getenv('PUBLICACAO_CONTEXTO', '0') == '1' else None
+        p.pop('_canal_publicado', None)
         link = PUBLICAR[rede](p, arq)
+        canal_rede = p.pop('_canal_publicado', None)
+        if contexto is not None:
+            contexto['canal_rede'] = str(canal_rede) if canal_rede else None
+            contexto['canal'] = contexto.get('canal') or (rede + ':' + str(canal_rede) if canal_rede else None)
         ref = REF.pop(rede, '')
         def ok(q):
             feito = agora()

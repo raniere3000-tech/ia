@@ -2017,7 +2017,9 @@ def sugestoes() -> dict:
                             'evidencia': {'ultimos_3_s': [round(x) for x in ds[:3]], 'media_antes_s': round(ant), 'amostras': len(ds)}, 'confianca': None,
                             'proposta': {'texto': f'"{tipo}" está mais lento no celular; evite pedir muitos de uma vez.', 'escopo': 'global', 'chave': 'lento.' + tipo, 'tipo': 'fato'}})
     # Hipóteses de métricas entram no fluxo existente de proposta/versão/aprovação.
-    for f in feedback_metricas():
+    import aprendizado as ap
+    feedbacks = feedback_metricas() if ap.inteligencia_ativa() else []
+    for f in feedbacks:
         if f['estado'] != 'hipotese_observacional':
             continue
         assinatura = hashlib.sha256(_j(f).encode()).hexdigest()[:20]
@@ -2032,7 +2034,7 @@ def sugestoes() -> dict:
     dis = set(_dispensadas())
     ja = {m['chave'] for m in memorias() if m['status'] in ('proposta', 'confirmada')}
     out = [s for s in out if s['id'] not in dis and s['proposta']['chave'] not in ja]
-    return {'sugestoes': out, 'feedback_metricas': feedback_metricas(), 'nota': 'Sugestões com base no que foi medido neste servidor. Nada muda sem você confirmar.'}
+    return {'sugestoes': out, 'feedback_metricas': feedbacks, 'nota': 'Sugestões com base no que foi medido neste servidor. Nada muda sem você confirmar.'}
 
 
 def propor_sugestao(sid: str, quem: str = 'site') -> dict:
@@ -2501,10 +2503,15 @@ def feedback_metricas(filtros: dict | None = None) -> list:
                              ('agente6', 'capa'), ('agente2', 'horario'), ('agente4', 'criterios')]:
             vals = {}
             evidencias = []
+            renders_vistos = set()
             for x in itens:
                 c = x['publicacao'] or {}
+                render = c.get('render_sha')
+                if not render or render in renders_vistos:
+                    continue
                 valor = ap.valor_contexto(c, alvo)
                 if valor is not None and metrica in x['metricas']:
+                    renders_vistos.add(render)
                     vals.setdefault(str(valor), []).append(x['metricas'][metrica])
                     evidencias.append(x['snapshot'])
             comparaveis = [dict(valor=k, **ap._estat(v)) for k, v in vals.items() if len(v) >= ap.MIN_AMOSTRAS]
@@ -2515,7 +2522,7 @@ def feedback_metricas(filtros: dict | None = None) -> list:
                      f'Dados insuficientes para recomendar alteração de {alvo}. Coletar pelo menos {ap.MIN_AMOSTRAS} vídeos por valor, com canal e versão conhecidos.')
             out.append({'agente': agente, 'alvo': alvo, 'vertente': vertente, 'rede': rede, 'canal': canal,
                         'metrica': metrica, 'estado': 'hipotese_observacional' if suficiente else 'dados_insuficientes',
-                        'recomendacao': texto, 'amostras': len(evidencias), 'sem_contexto_ou_metrica': len(itens)-len(evidencias),
+                        'recomendacao': texto, 'amostras': len(evidencias), 'fora_da_amostra': len(itens)-len(evidencias),
                         'comparacoes': comparaveis, 'snapshots': sorted(evidencias), 'aviso': ap.AVISO_CAUSA})
     return out
 
@@ -2523,6 +2530,8 @@ def feedback_metricas(filtros: dict | None = None) -> list:
 def testar_hipotese(mid: str, quem: str = 'site', versao=None) -> dict:
     """Confirmação/CAS e criação do experimento na mesma transação."""
     import aprendizado as ap
+    if not ap.inteligencia_ativa():
+        raise ErroCoord(409, 'Inteligência de métricas desativada neste servidor.')
     with db.tx() as c:
         m = memoria(mid)
         if versao is None or int(versao) != m['versao']:

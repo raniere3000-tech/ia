@@ -3,7 +3,7 @@ import os,sys,tempfile,time,unittest
 from pathlib import Path
 from unittest.mock import patch
 TMP=Path(tempfile.mkdtemp(prefix='ec-memoria-metricas-'))
-os.environ.update(DADOS=str(TMP),BANCO_ARQ=str(TMP/'studio.sqlite'))
+os.environ.update(INTELIGENCIA_METRICAS='1',DADOS=str(TMP),BANCO_ARQ=str(TMP/'studio.sqlite'))
 sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
 import banco as db
 import aprendizado as ap

@@ -46,7 +46,7 @@ export default function Aprendizado(){
     {d.fontes.length>0&&<ul className="skill-regras">{d.fontes.map(f=><li key={f.fonte+f.rede}>{f.fonte==='rede'?'Lido da rede':'Importado por você'} • {NOME_REDE[f.rede]||f.rede} • {f.retratos} medida(s) • {dia(f.de)} a {dia(f.ate)}</li>)}</ul>}
     {d.importacoes.length>0&&<details><summary>Arquivos importados ({d.importacoes.length})</summary><ul className="skill-regras">{d.importacoes.map(i=><li key={i.id}>{i.nome} • {i.linhas} linha(s){i.recusadas?` • ${i.recusadas} recusada(s)`:''} • {dia(i.t)} <button className="subtle sm" onClick={()=>{ if(confirm('Apagar este arquivo importado e o efeito dele?')) rodar('apagar',()=>apagarAprendizado(cfg,{alvo:'importacao',id:i.id}),'Importação apagada.'); }}>Apagar</button></li>)}</ul></details>}
 
-    <Indicadores/>
+    {d.inteligencia_habilitada&&<Indicadores/>}
     <h4>O que dá para dizer hoje</h4>
     <ul className="ag-aprend">{d.variaveis.map(v=><li key={v.variavel}>
       <b>{v.nome}</b> <span className={'tag '+(v.estado==='tendência'?'ok':v.estado==='dados insuficientes'?'warn':'info')}>{v.estado==='tendência'?'tendência':v.estado==='dados insuficientes'?'dados insuficientes':'sem diferença clara'}</span>

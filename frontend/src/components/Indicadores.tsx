@@ -11,7 +11,7 @@ export default function Indicadores(){
       <label>Vertente<select value={f.vertente} onChange={e=>mudar('vertente',e.target.value)}><option value="">Todas</option><option value="cortes">Cortes</option><option value="criacao_ia">Criação IA</option><option value="manual">Manual</option><option value="indisponivel">Origem indisponível</option></select></label>
       <label>Plataforma<select value={f.rede} onChange={e=>mudar('rede',e.target.value)}><option value="">Todas</option>{['youtube','tiktok','instagram','facebook','kwai'].map(r=><option key={r}>{r}</option>)}</select></label>
       <label>Métrica do ranking<select value={f.metrica} onChange={e=>mudar('metrica',e.target.value)}>{['views','curtidas','comentarios','compartilhamentos'].map(m=><option key={m}>{m}</option>)}</select></label>
-      <label>Canal<select value={f.canal} onChange={e=>mudar('canal',e.target.value)}><option value="">Todos</option>{p.dados?.canais.map(c=><option key={c}>{c}</option>)}</select></label>
+      <label>Perfil de canal<select value={f.canal} onChange={e=>mudar('canal',e.target.value)}><option value="">Todos</option>{p.dados?.canais.map(c=><option key={c}>{c}</option>)}</select></label>
       <label>Medições desde<input type="date" value={f.de} onChange={e=>mudar('de',e.target.value)}/></label>
       <label>Até<input type="date" value={f.ate} onChange={e=>mudar('ate',e.target.value)}/></label>
     </div>
@@ -23,9 +23,9 @@ export default function Indicadores(){
         <p className="hint">{g.sem_metrica} sem esta métrica. Ranking descritivo; não prova causa.</p>
         {!g.videos.length?<p>Indisponível</p>:<ol>{g.videos.map(v=><li key={v.snapshot}>
           <b>{v.publicacao?.titulo||v.item}</b> • {valorMetrica(v.metricas[g.metrica])}
-          <details><summary>Fonte e versão publicada</summary>
+          <details style={{overflowWrap:"anywhere"}}><summary>Fonte e versão publicada</summary>
             <p>Fonte: {v.fonte} • {v.publicacao?.origem||'Indisponível'} • {v.publicacao?.projeto||v.publicacao?.corte||v.item}</p>
-            <p>Render: {v.publicacao?.render_sha||'Indisponível'}</p>
+            <p>Render: {v.publicacao?.render_sha||'Indisponível'} • versão {v.publicacao?.render_versao??'Indisponível'}</p><p>Roteiro: {v.publicacao?.roteiro_sha||'Indisponível'}</p><p>Perfil de canal: {v.publicacao?.canal||'Indisponível'} • Canal de origem: {v.publicacao?.canal_origem||'Indisponível'}</p>
             <p>Gancho: {v.publicacao?.gancho??'Indisponível'} • Template: {v.publicacao?.modelo||'Indisponível'}</p>
             <p>Efeitos aplicados: {v.publicacao?.efeitos?v.publicacao.efeitos.efeitos.filter(e=>e.status==='aplicado').map(e=>e.tipo).join(', ')||'Nenhum':'Indisponível'}</p>
             <p>Capa selecionada: {v.publicacao?.capa_selecionada?.sha||'Indisponível'} (seleção não comprova aceite pela rede)</p>

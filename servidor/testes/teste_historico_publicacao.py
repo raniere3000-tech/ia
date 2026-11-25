@@ -17,7 +17,7 @@ class Historico(unittest.TestCase):
         db.executar('DELETE FROM aprendizado_snapshots')
         self.arq=pg.VIDEOS/'v.mp4';self.arq.write_bytes(b'versao-1'*1000)
         self.p=pg.criar_post({'video':'v','redes':['youtube','instagram'],'titulo':'Título inicial','legenda':'Texto inicial','quando':pg.agora()-1})
-        ag._mudar(lambda e:e['cortes'].append({'id':'c1','post':self.p['id'],'video':'v','gancho':'Frase completa','canal':'canal1'}))
+        ag._mudar(lambda e:e['cortes'].append({'id':'c1','post':self.p['id'],'video':'v','gancho':'Frase completa','canal':'canal1','perfil':'perfil1'}))
     def enviar(self,rede):
         def publicado(p,arq):
             pg.REF[rede]='id-'+rede
@@ -30,7 +30,7 @@ class Historico(unittest.TestCase):
         self.assertEqual(c['ref'],'id-youtube');self.assertEqual(c['render_sha'],pl.sha_arquivo(self.arq))
         self.assertEqual(c['gancho'],'Frase completa');self.assertEqual(c['capa_selecionada']['sha'],'capa1')
         self.assertEqual(c['publicado_em'],a['feito']);self.assertEqual(c['vertente'],'cortes')
-        self.assertEqual(c['canal'],'canal1');self.assertIsNone(c['efeitos'])
+        self.assertEqual(c['canal'],'perfil1');self.assertEqual(c['canal_origem'],'canal1');self.assertIsNone(c['efeitos'])
     def test_editar_depois_nao_reescreve_publicacao_ou_snapshot(self):
         a=self.enviar('youtube');original=json.dumps(a['publicacao'],sort_keys=True)
         pg._mudar(self.p['id'],lambda q:q.update(medido=True,metricas={'youtube':{'views':0}},metricas_em=pg.agora()))
@@ -48,7 +48,7 @@ class Historico(unittest.TestCase):
     def test_recibo_so_se_vinculado_ao_hash_real_e_legado_sem_contexto(self):
         r=self.arq.with_suffix('.efeitos.json');r.write_text(json.dumps({'arquivo_sha':'errado','efeitos':['zoom']}))
         self.assertIsNone(pg.contexto_publicacao(self.p,self.arq)['efeitos'])
-        r.write_text(json.dumps({'arquivo_sha':pl.sha_arquivo(self.arq),'efeitos':[{'tipo':'zoom','status':'aplicado'}]}))
+        r.write_text(json.dumps({'arquivo_sha':pl.sha_arquivo(self.arq),'status':'concluido','efeitos':[{'tipo':'zoom','status':'aplicado'}]}))
         self.assertEqual(pg.contexto_publicacao(self.p,self.arq)['efeitos']['efeitos'][0]['status'],'aplicado')
         with patch.dict(os.environ,{'PUBLICACAO_CONTEXTO':'0'}):a=self.enviar('youtube')
         self.assertNotIn('publicacao',a)
