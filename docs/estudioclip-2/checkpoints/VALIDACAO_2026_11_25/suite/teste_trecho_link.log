@@ -1,0 +1,12 @@
+ok    faixa lida do pedido
+ok    sem faixa: baixa o vídeo inteiro como antes
+ok    pedaço maior que o limite é recusado com explicação
+ok    vídeo de 5 h com trecho marcado: baixa e diz onde o pedaço começa
+ok    pede ao yt-dlp só o pedaço marcado
+ok    o limite de 180 min não barra o vídeo longo quando é só um pedaço
+ok    sem trechos: baixa inteiro
+ok    sem trechos: vídeo de 5 h continua barrado pelo limite
+ok    FFmpeg instalado pelo pkg (no PATH) é reconhecido
+ok    sem FFmpeg: explica o que instalar
+
+TUDO OK

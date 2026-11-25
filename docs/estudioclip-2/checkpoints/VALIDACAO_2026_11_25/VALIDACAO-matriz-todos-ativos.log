@@ -1,0 +1,14 @@
+test_analise_visual_real_filtra_confianca_e_mantem_bloqueio (__main__.TodosAtivos.test_analise_visual_real_filtra_confianca_e_mantem_bloqueio) ... ok
+test_cancelamento_preserva_arquivo_anterior (__main__.TodosAtivos.test_cancelamento_preserva_arquivo_anterior) ... ok
+test_curiosidade_aplica_zoom_pontual_no_mesmo_motor (__main__.TodosAtivos.test_curiosidade_aplica_zoom_pontual_no_mesmo_motor) ... ok
+test_falha_real_do_efeito_preserva_saida_e_render_anterior (__main__.TodosAtivos.test_falha_real_do_efeito_preserva_saida_e_render_anterior) ... ok
+test_flag_desligada_preserva_fluxo_anterior (__main__.TodosAtivos.test_flag_desligada_preserva_fluxo_anterior) ... ok
+test_historia_renderiza_fade_e_a4_certifica_sha_real (__main__.TodosAtivos.test_historia_renderiza_fade_e_a4_certifica_sha_real) ... ok
+test_opiniao_pendente_nao_burla_diretor_nem_emite_certificado (__main__.TodosAtivos.test_opiniao_pendente_nao_burla_diretor_nem_emite_certificado) ... ok
+test_recibo_com_sha_falso_nao_libera_montagem (__main__.TodosAtivos.test_recibo_com_sha_falso_nao_libera_montagem) ... ok
+test_timeline_nao_muda_sem_refazer_storyboard (__main__.TodosAtivos.test_timeline_nao_muda_sem_refazer_storyboard) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 17.051s
+
+OK

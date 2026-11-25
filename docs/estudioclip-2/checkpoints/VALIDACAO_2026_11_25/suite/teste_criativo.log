@@ -1,0 +1,72 @@
+Sem chaves: nada é inventado
+ok    capacidades dizem o que falta
+ok    sem chave do YouTube: indisponível, sem ranking
+ok    TikTok sem acesso oficial: indisponível nesta rede
+ok    surpreenda-me só com tendência verificada: pergunta antes de inventar
+ok    sem IA: erro honesto com a alternativa de sorteio
+ok    sorteio pelo código: 3 ideias rotuladas, sem fonte e sem alegar popularidade
+
+Tendências do YouTube (respostas oficiais simuladas)
+ok    pesquisa real marcada com fonte e data de coleta
+ok    mostra tamanho da amostra e limites
+ok    no máximo 2 vídeos do mesmo canal
+ok    ordenado por views medidas (['v5', 'v4', 'v3', 'v1'])
+ok    views ausentes ficam null (nunca zero) e vão para o fim
+ok    ficha com características gerais e restrições de direitos
+ok    segunda pesquisa igual vem do cache (não gasta cota)
+ok    cota esgotada: indisponível, nada inventado
+ok    evidências do Radar do site: mesma ficha, null preservado
+
+Modelagem com IA (resposta do Gemini simulada)
+ok    surpreenda-me com pesquisa: propostas com fontes reais
+ok    títulos alheios não entram no pedido (só características); a direção da pessoa entra
+ok    estilo inventado é trocado, com aviso
+ok    personagem convertido para o formato do boneco 2D
+ok    objeto fora do catálogo fica só como ficha, com aviso
+ok    sem imagem até pedir; proveniência registrada
+
+Editar, prévia real e aplicar
+ok    edição com revisão velha: conflito 409
+ok    edição guardada no servidor (favorita)
+ok    favoritas listadas
+ok    prévia do personagem desenhada de verdade pelo motor 2D
+ok    prévia do cenário desenhada de verdade
+ok    vídeo criado como rascunho (nada produzido)
+ok    nenhum trabalho entrou na fila
+ok    personagens da proposta entram no vídeo único sem virar episódio
+ok    aplicar de novo com a mesma chave não duplica
+ok    personagem mudou na biblioteca; o vídeo continua com a versão fixada
+ok    atualização para a versão nova só quando pedida
+ok    roteiro do vídeo único é escrito com o personagem da biblioteca
+ok    série criada com elenco, cenário e regras como proposta
+ok    episódio criado sem produzir
+ok    episódio de série não troca elenco pela biblioteca
+
+Projetos: duplicar proposta e transformar vídeo em série
+ok    proposta duplicada vira rascunho novo, sem as aplicações da original
+ok    a proposta original não muda
+ok    série nova com CÓPIA do elenco do vídeo (o original da biblioteca fica igual)
+ok    vídeo original continua vídeo único e nada é produzido
+ok    pedir de novo devolve a mesma série
+ok    episódio de série não vira outra série
+ok    personagem salvo na biblioteca (tabela de Séries)
+
+Biblioteca compartilhada
+ok    biblioteca junta personagens, cenários e modelos (['character', 'environment', 'scene_package'])
+ok    mesmo conteúdo não vira modelo duplicado (hash)
+ok    mudar um modelo cria versão nova e guarda a antiga
+ok    conflito de versão no modelo: 409
+ok    duplicar guarda de onde veio
+ok    busca na biblioteca
+ok    prévia de personagem da biblioteca pelo motor real
+ok    estilo visual novo fica como ficha (sem motor, não finge funcionar)
+
+Automático: lote e rotina com personagens fixados
+ok    lote usa a versão 1 fixada (o personagem já está na versão 2)
+ok    rotina cria o vídeo com a versão fixada
+ok    versão que não existe: erro claro (não troca por outra)
+
+Freio de gasto
+ok    mais de 30 pedidos por hora: espera
+
+TUDO OK

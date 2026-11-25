@@ -1,0 +1,51 @@
+  ok  esteira dos 5 agentes ligada (diretor obrigatório)
+1. Linha a partir de uma descrição
+  ok  IA propôs a configuração (6 vídeos, 3 horários): 200
+  ok  proposta não grava nada
+  ok  tela mostra o que mudou e as dúvidas da IA
+  ok  linha salva (200 )
+  ok  horários viraram programação diária nas 2 redes
+  ok  programação fixa 08:00, 12:00 e 19:00 nos 7 dias ([{'0': ['08:00', '12:00', '19:00'], '1': ['08:00', '12:00', '19:00'], '2': ['08:00', '12:00', '19:00'], '3': ['08:00', '12:00', '19:00'], '4': ['08:00', '12:00', '19:00'], '5': ['08:00', '12:00', '19:00'], '6': ['08:00', '12:00', '19:00']}])
+2. Pautas e lote de 6
+  ok  6 pautas propostas (200)
+  ok  planejar de novo: as 6 são barradas como repetidas
+  ok  lote começou com 6 episódios (200)
+  ok  pedir o lote de novo é recusado e não duplica (429: {'detail': 'Esta linha já começou 6 vídeo(s) nas últimas 24 h (limite que você definiu).'})
+3. Produção, diretor e correções (aguarde: 6 renders de verdade)
+     (levou 58s) estados: ['approved', 'approved', 'approved', 'approved', 'approved', 'approved']
+  ok  os 6 vídeos terminaram aprovados (certificado + publicação automática)
+  ok  3e6e0d126bb94d1e: MP4 real de 7.7s, SHA confere com o arquivo
+  ok  3e6e0d126bb94d1e: certificado do diretor para este arquivo
+  ok  3e6e0d126bb94d1e: aprovação registrada para o mesmo SHA
+  ok  51569f2d66f14e7e: MP4 real de 7.7s, SHA confere com o arquivo
+  ok  51569f2d66f14e7e: certificado do diretor para este arquivo
+  ok  51569f2d66f14e7e: aprovação registrada para o mesmo SHA
+  ok  222f4ebad57f4a79: MP4 real de 7.7s, SHA confere com o arquivo
+  ok  222f4ebad57f4a79: certificado do diretor para este arquivo
+  ok  222f4ebad57f4a79: aprovação registrada para o mesmo SHA
+  ok  e4875204e74b4ab2: MP4 real de 7.7s, SHA confere com o arquivo
+  ok  e4875204e74b4ab2: certificado do diretor para este arquivo
+  ok  e4875204e74b4ab2: aprovação registrada para o mesmo SHA
+  ok  15b5999137194923: MP4 real de 7.7s, SHA confere com o arquivo
+  ok  15b5999137194923: certificado do diretor para este arquivo
+  ok  15b5999137194923: aprovação registrada para o mesmo SHA
+  ok  7ba06701996843f6: MP4 real de 7.7s, SHA confere com o arquivo
+  ok  7ba06701996843f6: certificado do diretor para este arquivo
+  ok  7ba06701996843f6: aprovação registrada para o mesmo SHA
+  ok  6 arquivos diferentes (nenhum vídeo repetido)
+  ok  tela da linha mostra a nota de cada episódio: [96, 96, 98, 96, 98, 98]
+4. Calendário
+  ok  6 vídeos x 2 redes = 12 horários ocupados (12)
+  ok  tiktok: cada vídeo uma vez só
+  ok  tiktok: só nos horários configurados
+  ok  tiktok: cada horário guarda o SHA certificado do vídeo
+  ok  youtube: cada vídeo uma vez só
+  ok  youtube: só nos horários configurados
+  ok  youtube: cada horário guarda o SHA certificado do vídeo
+  ok  a API do calendário mostra o nome do vídeo em cada horário
+  ok  12 posts, todos com certificado
+  ok  nada foi publicado (só agendado para o horário)
+  ok  nenhuma publicação duplicada (mesmo vídeo, mesma rede)
+  ok  ciclos seguintes não repetem
+
+44 ok, 0 falha(s)

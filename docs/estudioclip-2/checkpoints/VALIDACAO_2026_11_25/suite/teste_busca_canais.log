@@ -1,0 +1,20 @@
+1. Padrão e limites
+  ok  padrão: ligada, a cada 24 h, até 25 sugestões
+  ok  valores fora da faixa são ajustados (máx. 168 h, mín. 1 canal)
+  ok  valor inválido não quebra a configuração (168 h)
+2. Erro na busca não vira repetição sem parar
+  ok  nunca buscou: a busca automática está vencida
+  ok  a busca tentou e deu erro (cota)
+  ok  mesmo com erro, a próxima tentativa só depois do intervalo (sem repetir a cada volta)
+  ok  tela mostra o erro e a próxima busca em 6 h: "O YouTube recusou a busca: cota esgotada"
+3. Sucesso respeita o máximo de sugestões
+agente: 5 canal(is) novo(s) sugerido(s) para você aprovar.
+  ok  sugeriu 5 canais (máximo 5)
+  ok  erro anterior limpo e quantidade achada registrada
+4. Desligada: nem o relógio nem a Central mandam procurar
+  ok  desligada: busca nunca vence e a tela diz "desativada"
+  ok  Central com estoque vazio e busca desligada: corta dos canais aprovados, não procura (cortar)
+  ok  ligada de novo: a Central usa o intervalo do Agente 1 (2 h)
+  ok  buscou agora há pouco: não procura de novo
+
+13 ok, 0 falhas
