@@ -24,7 +24,7 @@ const CARGA:Partial<Record<Tab,()=>Mod>> = {
   manual:()=>import('./pages/Manual'), estilos:()=>import('./pages/Estilos'), templates:()=>import('./pages/Templates'), config:()=>import('./pages/Config'),
   ia:()=>import('./pages/CriarIA'), automatico:()=>import('./pages/Automatico'), projetos:()=>import('./pages/Projetos'), galeria:()=>import('./pages/Galeria'),
   fila:()=>import('./pages/Fila'), revisar:()=>import('./pages/Revisar'), series:()=>import('./pages/Series'), central:()=>import('./pages/Central'), live:()=>import('./pages/Live'), thumbnails:()=>import('./pages/Thumbnails'), coordenador:()=>import('./pages/Coordenador'),
-  agentes:()=>import('./pages/AgentesHome'), edicao:()=>import('./pages/EdicaoHome'), estudioIA:()=>import('./pages/EstudioIAHome'),
+  agentes:()=>import('./pages/AgentesHome'), edicao:()=>import('./pages/EdicaoHome'), estudioIA:()=>import('./pages/EstudioIAHome'), inteligencia:()=>import('./pages/InteligenciaHome'),
 };
 const seguro=(f:()=>Mod)=>()=>f().then(m=>{ try{ sessionStorage.removeItem('studio_recarregou'); }catch{ /* sem armazenamento */ } return m; },()=>{
   let ja=true; try{ ja=!!sessionStorage.getItem('studio_recarregou'); sessionStorage.setItem('studio_recarregou','1'); }catch{ /* sem armazenamento */ }
@@ -41,11 +41,11 @@ const SETTINGS_PADRAO:Settings = {ytKey:'',claudeKey:'',whisperModel:'onnx-commu
 /** Ícone de cada tela no submenu (os nomes e o lugar de cada tela vêm de navigation/rotas.ts, registro único). */
 const ICONE:Record<Tab,typeof Home>={inicio:Home,video:Sparkles,ia:Bot,manual:Film,automatico:CalendarRange,series:Users,projetos:FolderOpen,vozes:Mic,galeria:Palette,templates:LayoutTemplate,estilos:Captions,
   radar:Search,cortes:Clapperboard,coordenador:MessagesSquare,central:Workflow,live:Radio,thumbnails:ImageIcon,agente:Bot,fila:ListChecks,revisar:ShieldCheck,agendar:CalendarClock,config:Gear,
-  agentes:LayoutDashboard,edicao:Film,estudioIA:Sparkles};
+  agentes:LayoutDashboard,edicao:Film,estudioIA:Sparkles,inteligencia:BarChart3};
 const ICONE_SECAO:Record<string,typeof Home>={memoria:Brain,skills:Wrench,resultados:BarChart3,linhas:CalendarDays,agente2:Bot};
 const iconeDe=(s:Secao)=>ICONE_SECAO[s.secao]||ICONE[s.aba];
 /** As cinco áreas (barra de baixo no celular, menu lateral no computador). A engrenagem fica fora delas. */
-const ICONE_AREA:Record<Area,typeof Home>={inicio:Home,agentes:Bot,edicao:Clapperboard,'estudio-ia':Sparkles,publicacoes:CalendarDays};
+const ICONE_AREA:Record<Area,typeof Home>={inicio:Home,agentes:Bot,edicao:Clapperboard,'estudio-ia':Sparkles,publicacoes:CalendarDays,inteligencia:BarChart3};
 const rotaAgora=()=>lerRota(location.hash);
 const SECOES_DA=(a:Area)=>menuDa(a).map(s=>s.aba as Tab).concat(a==='inicio'?['inicio']:[]);
 const TITLES:Record<Tab,[string,string]> = {
@@ -73,6 +73,7 @@ const TITLES:Record<Tab,[string,string]> = {
   revisar:['Aprovações','Vídeos e roteiros esperando a sua decisão. Abra um para assistir e aprovar, pedir correção ou rejeitar.'],
   agentes:['Central de Agentes','Os sete agentes: o que cada um faz agora, quanto trabalhou e onde configurar.'],
   edicao:['Estúdio de Edição','Crie e monte vídeos à mão: projetos, editor, radar, cortes, templates, legendas e efeitos.'],
+  inteligencia:['Inteligência','O que rendeu de verdade: indicadores por rede, por vertente e por perfil de canal, mais o aprendizado dos agentes.'],
   estudioIA:['Estúdio IA','Crie a partir de uma ideia: Criar com IA, séries e personagens, produção em lote e biblioteca criativa.'],
 };
 

@@ -519,7 +519,7 @@ def apagar(d: dict) -> dict:
 
 # ---------------------------------------------------------------- painel
 def inteligencia_ativa() -> bool:
-    return os.getenv('INTELIGENCIA_METRICAS', '0') == '1'
+    return os.getenv('INTELIGENCIA_METRICAS', '1') != '0'
 
 
 def painel() -> dict:

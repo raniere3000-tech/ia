@@ -3,9 +3,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AREAS, SECOES, INICIOS, lerRota, enderecoDe, legadoParaCanonico, menuDa, secaoAtiva, areaPreferida, ABAS, type Aba } from '../src/navigation/rotas.ts';
 
-test('exatamente cinco áreas, na ordem aprovada', ()=>{
-  assert.deepEqual(AREAS.map(a=>a.nome), ['Início','Agentes','Estúdio de Edição','Estúdio IA','Publicações']);
-  assert.deepEqual(AREAS.map(a=>a.curto), ['Início','Agentes','Edição','IA','Posts']);
+test('exatamente seis áreas, na ordem aprovada', ()=>{
+  assert.deepEqual(AREAS.map(a=>a.nome), ['Início','Agentes','Estúdio de Edição','Estúdio IA','Publicações','Inteligência']);
+  assert.deepEqual(AREAS.map(a=>a.curto), ['Início','Agentes','Edição','IA','Posts','Inteligência']);
 });
 
 test('Modelo B: Agentes abre o painel dos sete agentes, não o chat', ()=>{
