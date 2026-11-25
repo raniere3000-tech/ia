@@ -89,4 +89,44 @@ class EfeitosReais(unittest.TestCase):
         q0=frame(saida,.03);q1=frame(saida,.6)
         self.assertLess(sum(q0)/len(q0),sum(q1)/len(q1)*.6)
 
+    def test_montagem_com_velocidade_por_trecho_e_audio_sincronizado(self):
+        saida = TMP / 'velocidade.mp4'
+        plano = dict(self.plano([]), schema_version=ct.SCHEMA_TIMELINE, clips=[
+            {'in_ms': 0, 'out_ms': 1000},
+            {'in_ms': 1500, 'out_ms': 2100, 'speed': 0.5},
+            {'in_ms': 2400, 'out_ms': 3000, 'speed': 2},
+        ], protected_hook={'in_ms': 0, 'out_ms': 900})
+        plano = ct.validar_plano(plano)
+        with patch.dict(ct.ASPECTOS, {'16:9': (160, 90)}):
+            ed.executar_importado(plano, BASE, saida)
+        streams = {s['codec_type']: float(s['duration']) for s in rd.sonda(saida)['streams']}
+        self.assertAlmostEqual(streams['video'], 2.5, delta=0.12)
+        self.assertAlmostEqual(streams['audio'], streams['video'], delta=0.10)
+        self.assertGreater(dif(frame(BASE, 1.25), frame(saida, 1.25)), 10)
+        palavra = ed.palavras_saida(plano, [(1.6, 1.7, 'palavra')])[0]
+        self.assertAlmostEqual(palavra[0], 1.2)
+        self.assertAlmostEqual(palavra[1], 1.4)
+        recibo = json.loads(saida.with_suffix('.efeitos.json').read_text())
+        self.assertEqual(recibo['arquivo_sha'], rd.sha256(saida))
+        self.assertEqual(recibo['montagem']['trechos'], plano['clips'])
+        subprocess.run(['ffmpeg', '-v', 'error', '-xerror', '-i', str(saida), '-f', 'null', '-'], check=True)
+
+    def test_montagem_sem_audio_preserva_gancho_de_abertura(self):
+        fonte = TMP / 'silencioso.mp4'
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', str(BASE), '-an', '-c:v', 'copy', str(fonte)], check=True)
+        tpl = dict(ag.PADRAO['cortes']['template'], resolucao=360, gancho=True, legenda='nenhuma', formato='16:9')
+        corte = {'ini': 0, 'fim': 3, 'gancho': 'GANCHO INTEIRO'}
+        with patch.dict(os.environ, {'A5_EDITOR_PRO': '1'}):
+            plano = ed.plano_do_corte(corte, tpl, 3)
+        self.assertEqual(plano['protected_hook'], {'in_ms': 0, 'out_ms': 3000})
+        _, mudancas = ed.corrigir(plano, [{'acao': 'ajustar_inicio', 'delta_ms': 400}])
+        self.assertEqual(mudancas, [])
+        plano['effects'].append({'tipo': 'fade', 'saida_ms': 200})
+        saida = TMP / 'silencioso-editado.mp4'
+        ed.executar_corte(plano, fonte, corte, [], tpl, saida, TMP)
+        self.assertFalse(ed.tem_audio(saida))
+        self.assertAlmostEqual(rd.duracao(saida), 3, delta=0.12)
+        self.assertEqual(json.loads(saida.with_suffix('.efeitos.json').read_text())['montagem']['gancho_protegido'],
+                         plano['protected_hook'])
+
 if __name__=='__main__':unittest.main()

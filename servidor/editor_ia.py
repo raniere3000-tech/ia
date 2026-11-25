@@ -51,6 +51,13 @@ def plano_do_corte(c: dict, tpl: dict, dur_fonte: float | None = None, motivo: s
     bruto = {'clips': [{'source': 'principal', 'in_ms': int(round(c['ini'] * 1000)), 'out_ms': int(round(c['fim'] * 1000))}],
              'effects': efeitos, 'template_id': str(tpl.get('modelo') or c.get('modelo') or ''), 'output_profile': 'final',
              'target_aspect_ratio': tpl.get('formato') if tpl.get('formato') in ct.ASPECTOS else '9:16', 'edit_reason': motivo}
+    if ct.editor_pro_ativo():
+        bruto['schema_version'] = ct.SCHEMA_TIMELINE
+        efeitos[0].pop('fim_ms')  # o zoom global acompanha a duração após cortes
+        if tpl.get('gancho') and c.get('gancho'):
+            trecho = bruto['clips'][0]
+            primeiro = trecho['in_ms']
+            bruto['protected_hook'] = {'in_ms': primeiro, 'out_ms': min(trecho['out_ms'], primeiro + 3500)}
     return ct.validar_plano(bruto, dur_fonte)
 
 
@@ -78,13 +85,17 @@ def tpl_do_plano(tpl: dict, plano: dict) -> dict:
 
 
 # ---------------------------------------------------------------- correções tipadas
+def _duracao_clipe_ms(clipe: dict) -> float:
+    return (clipe['out_ms'] - clipe['in_ms']) / clipe.get('speed', 1)
+
+
 def _saida_para_fonte(clipes: list, ms: int) -> tuple[int, int] | None:
     """Instante no vídeo final -> (índice do trecho, instante na fonte)."""
     acc = 0
     for i, c in enumerate(clipes):
-        d = c['out_ms'] - c['in_ms']
+        d = _duracao_clipe_ms(c)
         if ms < acc + d:
-            return i, c['in_ms'] + (ms - acc)
+            return i, round(c['in_ms'] + (ms - acc) * c.get('speed', 1))
         acc += d
     return None
 
@@ -193,16 +204,32 @@ def corrigir(plano: dict, acoes: list, dur_fonte: float | None = None) -> tuple[
 
 
 # ---------------------------------------------------------------- execução (FFmpeg com números validados)
-def _passo_final(base: Path, plano: dict, destino: Path, base_ini_ms: int):
-    """Tira as pausas (vários trechos) e aplica fade, sempre com quadros regulares (30 fps)."""
-    cl = plano['clips']
-    fade = _efeito(plano, 'fade')
-    partes = [((c['in_ms'] - base_ini_ms) / 1000, (c['out_ms'] - base_ini_ms) / 1000) for c in cl]
-    total = sum(b - a for a, b in partes)
+def _grafo_montagem(plano: dict, audio: bool, offset_ms: int = 0) -> list[str]:
     fc = []
-    for i, (a, b) in enumerate(partes):
-        fc.append(f'[0:v]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS[v{i}];[0:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS[a{i}]')
-    fc.append(''.join(f'[v{i}][a{i}]' for i in range(len(partes))) + f'concat=n={len(partes)}:v=1:a=1[vc][ac]')
+    clipes = plano['clips']
+    for i, c in enumerate(clipes):
+        a, b = ((c[k] - offset_ms) / 1000 for k in ('in_ms', 'out_ms'))
+        speed = c.get('speed')
+        tempo_video = f'settb=AVTB,setpts=(PTS-STARTPTS)/{speed:.4f}' if speed else 'setpts=PTS-STARTPTS'
+        fc.append(f'[0:v]trim=start={a:.3f}:end={b:.3f},{tempo_video}[v{i}]')
+        if audio:
+            tempo_audio = ''
+            if speed:
+                dur = _duracao_clipe_ms(c) / 1000
+                tempo_audio = f',atempo={speed:.4f},apad,atrim=duration={dur:.6f}'
+            fc.append(f'[0:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS{tempo_audio}[a{i}]')
+    entradas = ''.join(f'[v{i}]' + (f'[a{i}]' if audio else '') for i in range(len(clipes)))
+    fc.append(entradas + f'concat=n={len(clipes)}:v=1:a={int(audio)}[vc]' + ('[ac]' if audio else ''))
+    return fc
+
+
+def _passo_final(base: Path, plano: dict, destino: Path, base_ini_ms: int):
+    """Monta os trechos e aplica fade com quadros regulares."""
+    import renderizador as rd
+    audio = tem_audio(base)
+    fade = _efeito(plano, 'fade')
+    total = duracao_saida(plano)
+    fc = _grafo_montagem(plano, audio, base_ini_ms)
     vf, af = ['fps=30'], []
     if fade:
         e, s = fade.get('entrada_ms', 0) / 1000, fade.get('saida_ms', 0) / 1000
@@ -213,14 +240,19 @@ def _passo_final(base: Path, plano: dict, destino: Path, base_ini_ms: int):
             vf.append(f'fade=t=out:st={max(0.0, total - s):.3f}:d={s:.3f}')
             af.append(f'afade=t=out:st={max(0.0, total - s):.3f}:d={s:.3f}')
     fc.append('[vc]' + ','.join(vf) + '[v]')
-    fc.append('[ac]' + (','.join(af) if af else 'anull') + '[a]')
-    cmd = ['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', str(base), '-filter_complex', ';'.join(fc), '-map', '[v]', '-map', '[a]',
+    if audio:
+        fc.append('[ac]' + (','.join(af) if af else 'anull') + '[a]')
+    cmd = ['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', str(base), '-filter_complex', ';'.join(fc), '-map', '[v]',
+           *(['-map', '[a]'] if audio else []),
            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p', '-r', '30', '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
            '-movflags', '+faststart', str(destino)]
-    r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
-    if r.returncode != 0 or not destino.exists() or destino.stat().st_size < 2000:
+    try:
+        rd.rodar(cmd, cancelado=_cancelamento_editor(), dur=total, etapa='montagem')
+        if not destino.exists() or destino.stat().st_size < 2000:
+            raise rd.ErroRender('O editor não conseguiu montar o vídeo final: arquivo incompleto.')
+    except BaseException:
         destino.unlink(missing_ok=True)
-        raise RuntimeError('O editor não conseguiu montar o vídeo final: ' + (r.stderr.strip()[-300:] or 'erro desconhecido'))
+        raise
 
 
 def tem_audio(arq: Path) -> bool:
@@ -232,7 +264,7 @@ def tem_audio(arq: Path) -> bool:
 def executar_corte(plano: dict, video: Path, c: dict, palavras: list, tpl: dict, destino: Path, pasta: Path) -> Path:
     """Render do plano de um corte do Agente 1: o montador do modelo (agente.editar) faz a base; o passo final tira pausas e suaviza."""
     import agente as ag
-    if ct.efeitos_reais_ativos():
+    if ct.efeitos_reais_ativos() or plano.get('schema_version') == ct.SCHEMA_TIMELINE:
         return _executar_corte_efeitos(plano,video,c,palavras,tpl,destino,pasta)
     cl = plano['clips']
     ini, fim = cl[0]['in_ms'], cl[-1]['out_ms']
@@ -254,7 +286,7 @@ def executar_corte(plano: dict, video: Path, c: dict, palavras: list, tpl: dict,
 
 
 def duracao_saida(plano: dict) -> float:
-    return sum(c['out_ms'] - c['in_ms'] for c in plano['clips']) / 1000
+    return sum(_duracao_clipe_ms(c) for c in plano['clips']) / 1000
 
 
 def palavras_saida(plano: dict, palavras: list) -> list:
@@ -262,10 +294,11 @@ def palavras_saida(plano: dict, palavras: list) -> list:
     out, acc = [], 0.0
     for c in plano['clips']:
         a, b = c['in_ms'] / 1000, c['out_ms'] / 1000
+        speed = c.get('speed', 1)
         for p in palavras:
             if a <= p[0] < b:
-                out.append((p[0] - a + acc, min(p[1], b) - a + acc, p[2]))
-        acc += b - a
+                out.append(((p[0] - a) / speed + acc, (min(p[1], b) - a) / speed + acc, p[2]))
+        acc += (b - a) / speed
     return out
 
 
@@ -307,7 +340,7 @@ def rodar(rid: str, ref: str, plano: dict, render, contexto, *, dur_fonte: float
         pl.mover(rid, 'rendering', agente='agent5', etapa=f'Editor exportando a versão {versao} do plano')
         arq = Path(render(plano))
         sha = pl.sha_arquivo(arq)
-        if ct.efeitos_reais_ativos():
+        if ct.efeitos_reais_ativos() or plano.get('schema_version') == ct.SCHEMA_TIMELINE:
             recibo = json.loads(arq.with_suffix('.efeitos.json').read_text())
             if recibo.get('status') != 'concluido' or recibo.get('arquivo_sha') != sha or recibo.get('plano_hash') != ct.hash_plano(plano):
                 raise RuntimeError('Falta comprovar os efeitos aplicados neste render.')
@@ -401,16 +434,9 @@ def _executar_importado_base(plano: dict, fonte: Path, destino: Path, inicial_ha
                   f'[fb]scale={L}:{A}:force_original_aspect_ratio=decrease,setsar=1[ff];[fu][ff]overlay=(W-w)/2:(H-h)/2')
     else:
         quadro = f'scale={L}:{A}:force_original_aspect_ratio=decrease,pad={L}:{A}:(ow-iw)/2:(oh-ih)/2,setsar=1'
-    partes = [(c['in_ms'] / 1000, c['out_ms'] / 1000) for c in plano['clips']]
-    total = sum(b - a for a, b in partes)
+    total = duracao_saida(plano)
     audio = tem_audio(fonte)
-    fc = []
-    for i, (a, b) in enumerate(partes):
-        fc.append(f'[0:v]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS[v{i}]')
-        if audio:
-            fc.append(f'[0:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS[a{i}]')
-    n = len(partes)
-    fc.append(''.join(f'[v{i}]' + (f'[a{i}]' if audio else '') for i in range(n)) + f'concat=n={n}:v=1:a={1 if audio else 0}[vc]' + ('[ac]' if audio else ''))
+    fc = _grafo_montagem(plano, audio)
     vf = [quadro, 'fps=30']
     af = []
     fade = _efeito(plano, 'fade')
@@ -535,6 +561,9 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
         recibo.update(status='concluido',arquivo_sha=rd.sha256(tmp),duracao=dur,
                       aplicados=sum(x['status']=='aplicado' for x in recibo['efeitos']),
                       sem_alteracao=sum(x['status']=='sem_alteracao' for x in recibo['efeitos']))
+        if plano['schema_version'] == ct.SCHEMA_TIMELINE:
+            recibo['montagem'] = {'versao': plano['timeline_version'], 'trechos': plano['clips'],
+                                  'gancho_protegido': plano.get('protected_hook')}
         _registrar_efeitos(destino,recibo)
         tmp.replace(destino)
         return destino
@@ -557,7 +586,7 @@ def _executar_corte_efeitos(plano: dict, video: Path, c: dict, palavras: list, t
     ag.editar(video,dict(c,ini=ini,fim=fim),palavras,sem_texto,base,pasta)
     try:
         temporal=base
-        if len(cl)>1 or _efeito(plano,'fade'):
+        if len(cl)>1 or 'speed' in cl[0] or _efeito(plano,'fade'):
             _passo_final(base,plano,montado,int(ini*1000));temporal=montado
         vs=next(x for x in rd.sonda(temporal)['streams'] if x['codec_type']=='video')
         ass=pasta/(destino.stem+'-efeitos.ass')
@@ -570,7 +599,7 @@ def _executar_corte_efeitos(plano: dict, video: Path, c: dict, palavras: list, t
 
 
 def executar_importado(plano: dict, fonte: Path, destino: Path, inicial_hash: str = '', *, comprovar=False, cancelado=None) -> Path:
-    if not comprovar and not ct.efeitos_reais_ativos():
+    if not comprovar and not ct.efeitos_reais_ativos() and plano.get('schema_version') != ct.SCHEMA_TIMELINE:
         return _executar_importado_base(plano,fonte,destino,inicial_hash,cancelado=cancelado)
     p=copy.deepcopy(ct.validar_plano(plano));base=destino.with_name(destino.stem+'-base-efeitos.mp4')
     p['effects']=[e for e in p['effects'] if e['tipo'] not in ('zoom','broll','caption')]

@@ -113,6 +113,10 @@ def efeitos_reais_ativos() -> bool:
     return os.getenv('A5_EFEITOS_REAIS','0').lower() in ('1','true','sim')
 
 
+def editor_pro_ativo() -> bool:
+    return efeitos_reais_ativos() and os.getenv('A5_EDITOR_PRO', '0').lower() in ('1', 'true', 'sim')
+
+
 def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
     """EditPlan: confere tudo e devolve uma cópia limpa. Caminhos de arquivo nunca vêm do cliente: só ids de fontes conhecidas."""
     if not isinstance(p, dict):
@@ -146,7 +150,12 @@ def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
         src = str(c.get('source', 'principal'))
         if src not in [str(x) for x in (p.get('source_assets') or ['principal'])]:
             raise ErroContrato(f'Trecho {i + 1}: fonte desconhecida.')
-        limpos.append({'source': src, 'in_ms': int(a), 'out_ms': int(b)})
+        clip = {'source': src, 'in_ms': int(a), 'out_ms': int(b)}
+        if schema == SCHEMA_TIMELINE and 'speed' in c:
+            speed = round(_num(c['speed'], (0.5, 2.0), 'velocidade do trecho'), 4)
+            if speed != 1:
+                clip['speed'] = speed
+        limpos.append(clip)
     efeitos = []
     for i, e in enumerate(p.get('effects') or []):
         tipo = (e or {}).get('tipo') if isinstance(e, dict) else None
@@ -199,6 +208,12 @@ def _timeline_v2(bruto: dict, plano: dict) -> dict:
                 or not clipes[0]['in_ms'] <= ini < fim <= clipes[0]['out_ms']):
             raise ErroContrato('O gancho protegido precisa estar inteiro no primeiro trecho.')
         plano['protected_hook'] = {'in_ms': ini, 'out_ms': fim}
+    travas = list(plano['manual_locks'])
+    if gancho:
+        travas.append((gancho['in_ms'], gancho['out_ms']))
+    for c in clipes:
+        if 'speed' in c and any(c['in_ms'] < fim and c['out_ms'] > ini for ini, fim in travas):
+            raise ErroContrato('Trecho travado ou gancho protegido não pode mudar de velocidade.')
     return plano
 
 

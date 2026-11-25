@@ -1511,7 +1511,7 @@ def _editar_montagem(ctx, pid, b, fonte: Path, destino: Path) -> dict:
     plano = ct.validar_plano(p['dados'].get('plano_edicao') or padrao, dur)
     clipes = plano['clips']
     # SRT e vozes já seguem o storyboard. Mudanças de timeline pertencem às cenas.
-    if (len(clipes) != 1 or clipes[0]['source'] != 'principal' or clipes[0]['in_ms'] != 0
+    if (len(clipes) != 1 or clipes[0]['source'] != 'principal' or clipes[0]['in_ms'] != 0 or 'speed' in clipes[0]
             or abs(clipes[0]['out_ms'] / 1000 - dur) > .05 or plano['target_aspect_ratio'] != b['formato']):
         raise ct.ErroContrato('Na finalização do A3, preserve a duração e o formato; altere os tempos no storyboard.')
     run = pl.criar('agente3', pid, p['titulo'][:120], chave=f'agente3:{pid}:{ctx.id}', estado='creative_qa_pending')

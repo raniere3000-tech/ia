@@ -1786,6 +1786,7 @@ def _qa_da_esteira(res: dict, run: str) -> tuple[dict, dict]:
 
 def corte_pela_esteira(arq: Path, c: dict, palavras: list, tpl: dict, vid: str, cid: str, pasta: Path, dur: float, v: dict, co: dict) -> tuple:
     import banco as db
+    import contratos as ct
     import editor_ia as ed
     import pipeline as pl
     ja = db.um("SELECT run FROM esteira_videos WHERE id=?", f'corte:{cid}')
@@ -1795,6 +1796,8 @@ def corte_pela_esteira(arq: Path, c: dict, palavras: list, tpl: dict, vid: str, 
     else:
         run = pl.criar('corte', cid, (c.get('titulo') or v.get('titulo') or 'corte')[:120], chave=f'corte:{v.get("id", "")}:{c["ini"]:.2f}:{vid}',
                        estado='cuts_selected', dados={'video': vid, 'origem': v.get('id', '')})
+    if ct.editor_pro_ativo() and not any(c['ini'] <= p[0] < c['fim'] for p in palavras):
+        tpl = dict(tpl, legenda='nenhuma')
     plano = ed.plano_do_corte(c, tpl, dur)
     destino = pg.VIDEOS / (vid + '.mp4')
     res = ed.rodar(run['id'], cid, plano, lambda p: ed.executar_corte(p, arq, c, palavras, tpl, destino, pasta),
@@ -1910,6 +1913,11 @@ def job_mover_legenda(ctx):
     for k in plano['clips']:                             # o plano passa a contar a partir do trecho guardado
         k['in_ms'] = max(0, round(k['in_ms'] - off * 1000))
         k['out_ms'] = max(k['in_ms'] + 1, round(k['out_ms'] - off * 1000))
+    if (gancho := plano.get('protected_hook')) is not None:
+        gancho.update({k: round(v - off * 1000) for k, v in gancho.items()})
+    if plano.get('manual_locks'):
+        travas = [(max(0, round(a - off * 1000)), round(b - off * 1000)) for a, b in plano['manual_locks']]
+        plano['manual_locks'] = [[a, b] for a, b in travas if b > a]
     dur = duracao(bruto) or float(info['dur'])
     plano, feitas = ed.corrigir(plano, [{'acao': 'mover_legenda', 'altura': tt.ALTURAS[d['posicao']]}], dur)
     if not feitas:

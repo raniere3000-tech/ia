@@ -4,18 +4,18 @@ Auditoria estática do HEAD base. Executor indica código localizado. A prova lo
 
 | ID | Especialidade | Competência | Status na base | Evidência, fixture ou lacuna |
 |---|---|---|---|---|
-| C01.01 | Montagem | Jump cuts | Executor | editor_ia._passo_final / corrigir: concatenação após remover pausa; fixture dedicada de jump cut pendente. |
+| C01.01 | Montagem | Jump cuts | Validada no Linux | teste_efeitos_reais confirma mudança visual com cortes entre trechos; montagem com FFmpeg e recibo por SHA. |
 | C01.02 | Montagem | J/L cuts | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C01.03 | Montagem | match cuts | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C01.04 | Montagem | montagem paralela | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C01.05 | Montagem | cortes por emoção | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C01.06 | Montagem | continuidade narrativa | Em outro agente | produtor.roteiro e diretor_qualidade.avaliar_criativo: coerência do roteiro; decisão de montagem A5 pendente. |
-| C02.01 | Ritmo | Speed ramp | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C02.02 | Ritmo | câmera lenta | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
+| C02.01 | Ritmo | Speed ramp | Parcial | Mudança de velocidade por trecho comprovada com A/V; curva contínua pendente. |
+| C02.02 | Ritmo | câmera lenta | Validada no Linux | teste_efeitos_reais renderiza trecho a 0,5× e verifica tempo A/V, timestamps e SHA. Fallback: trecho em 1×. |
 | C02.03 | Ritmo | freeze frame | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C02.04 | Ritmo | pattern interrupt | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C02.05 | Ritmo | cortes no beat | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C02.06 | Ritmo | preservar gancho | Parcial | editor_ia._travado protege manual_locks; plano_do_corte não cria trava de gancho automaticamente. |
+| C02.06 | Ritmo | preservar gancho | Validada no Linux | teste_editor_timeline protege correções, teste_efeitos_reais renderiza abertura inteira e registra o intervalo. Flag A5_EDITOR_PRO. |
 | C03.01 | Enquadramento | Rastreamento facial | Parcial | agente.ajustar_camera localiza webcam estática; não há rastreamento temporal A5 identificado. |
 | C03.02 | Enquadramento | rastreamento de objeto | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C03.03 | Enquadramento | zoom inteligente | Executor | editor_ia._finalizar_efeitos; teste_efeitos_reais compara RGB para zoom por intervalo; seleção adaptativa pendente. |
