@@ -159,6 +159,13 @@ def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
     efeitos = []
     for i, e in enumerate(p.get('effects') or []):
         tipo = (e or {}).get('tipo') if isinstance(e, dict) else None
+        if schema == SCHEMA_TIMELINE and tipo == 'reframe' and e.get('modo') == 'roi':
+            roi = _params({'modo': ('roi',), 'x': (0, 1), 'y': (0, 1), 'w': (0.01, 1), 'h': (0.01, 1)}, e, 'reenquadrar')
+            if (set(roi) != {'modo', 'x', 'y', 'w', 'h'}
+                    or roi['x'] + roi['w'] > 1 or roi['y'] + roi['h'] > 1):
+                raise ErroContrato('A região de interesse precisa estar dentro da imagem.')
+            efeitos.append({'tipo': tipo, **roi})
+            continue
         if tipo == 'broll' and efeitos_reais_ativos():
             asset = str(e.get('asset') or '')
             if not re.fullmatch(r'[a-f0-9]{12,64}',asset) or e.get('direitos') not in ('meu','autorizado','regra'):
@@ -214,6 +221,10 @@ def _timeline_v2(bruto: dict, plano: dict) -> dict:
     for c in clipes:
         if 'speed' in c and any(c['in_ms'] < fim and c['out_ms'] > ini for ini, fim in travas):
             raise ErroContrato('Trecho travado ou gancho protegido não pode mudar de velocidade.')
+    efeitos = plano['effects']
+    if any(e['tipo'] == 'reframe' and e['modo'] == 'roi' for e in efeitos):
+        if sum(e['tipo'] == 'reframe' for e in efeitos) != 1 or any(e['tipo'] == 'zoom' and e.get('nivel', 1) > 1 for e in efeitos):
+            raise ErroContrato('O reenquadramento por região de interesse exige uma única região e zoom neutro.')
     return plano
 
 

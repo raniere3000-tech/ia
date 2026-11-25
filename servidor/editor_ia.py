@@ -187,7 +187,8 @@ def corrigir(plano: dict, acoes: list, dur_fonte: float | None = None) -> tuple[
             rf = _efeito(p, 'reframe')
             modo = a.get('modo', 'desfocado')
             if rf and rf['modo'] != modo:
-                rf['modo'] = modo
+                rf.clear()
+                rf.update(tipo='reframe', modo=modo)
                 feitas.append(f'Enquadramento trocado para {modo}.')
             elif not rf:
                 p['effects'].append({'tipo': 'reframe', 'modo': modo})
@@ -418,7 +419,31 @@ def plano_importado(dur: float, aspecto: str = '9:16', template_id: str = '') ->
                              'edit_reason': 'Vídeo recebido pronto: conferir antes de mexer.'}, dur)
 
 
-def _executar_importado_base(plano: dict, fonte: Path, destino: Path, inicial_hash: str = '', *, cancelado=None) -> Path:
+def _quadro_roi(plano: dict, fonte: Path, dimensoes: tuple[int, int]) -> dict | None:
+    import renderizador as rd
+    e = _efeito(plano, 'reframe')
+    if not e or e['modo'] != 'roi':
+        return None
+    v = next(s for s in rd.sonda(fonte)['streams'] if s.get('codec_type') == 'video')
+    L, A = dimensoes
+    w, h = v['width'], v['height']
+    escala = max(L / w, A / h)
+    if (v.get('sample_aspect_ratio') not in (None, 'N/A', '0:1', '1:1')
+            or any(s.get('rotation', 0) % 180 for s in v.get('side_data_list', []))
+            or e['w'] * w * escala > L or e['h'] * h * escala > A):
+        return {'modo': 'encaixar', 'motivo': 'A região pode sair do recorte; quadro inteiro preservado.'}
+
+    def pos(origem, tamanho, fonte, alvo):
+        sobra = fonte * escala - alvo
+        if sobra < 1:
+            return 0.5
+        centro = (origem + tamanho / 2) * fonte * escala
+        return max(0.0, min(1.0, (centro - alvo / 2) / sobra))
+
+    return {'modo': 'roi', 'x': pos(e['x'], e['w'], w, L), 'y': pos(e['y'], e['h'], h, A)}
+
+
+def _executar_importado_base(plano: dict, fonte: Path, destino: Path, inicial_hash: str = '', *, cancelado=None, roi=None) -> Path:
     """Plano igual ao inicial: o arquivo segue como veio (mesmo SHA). Senão: trechos, enquadramento, fade e volume, sempre 30 fps."""
     import shutil
     if inicial_hash and ct.hash_plano(plano) == inicial_hash:
@@ -427,13 +452,15 @@ def _executar_importado_base(plano: dict, fonte: Path, destino: Path, inicial_ha
         return destino
     L, A = ct.ASPECTOS[plano['target_aspect_ratio']]
     rf = (_efeito(plano, 'reframe') or {}).get('modo', 'manter')
-    if rf == 'centro':
-        quadro = f'scale={L}:{A}:force_original_aspect_ratio=increase,crop={L}:{A},setsar=1'
+    if rf == 'centro' or (roi and roi['modo'] == 'roi'):
+        x, y = (roi['x'], roi['y']) if roi else (0.5, 0.5)
+        quadro = f'scale={L}:{A}:force_original_aspect_ratio=increase,crop={L}:{A}:(iw-ow)*{x:.6f}:(ih-oh)*{y:.6f},setsar=1'
     elif rf == 'desfocado':
         quadro = (f'split=2[fa][fb];[fa]scale={L // 4}:{A // 4}:force_original_aspect_ratio=increase,crop={L // 4}:{A // 4},boxblur=6:2,scale={L}:{A},setsar=1[fu];'
                   f'[fb]scale={L}:{A}:force_original_aspect_ratio=decrease,setsar=1[ff];[fu][ff]overlay=(W-w)/2:(H-h)/2')
     else:
-        quadro = f'scale={L}:{A}:force_original_aspect_ratio=decrease,pad={L}:{A}:(ow-iw)/2:(oh-ih)/2,setsar=1'
+        divisivel = ':force_divisible_by=2' if roi else ''
+        quadro = f'scale={L}:{A}:force_original_aspect_ratio=decrease{divisivel},pad={L}:{A}:(ow-iw)/2:(oh-ih)/2,setsar=1'
     total = duracao_saida(plano)
     audio = tem_audio(fonte)
     fc = _grafo_montagem(plano, audio)
@@ -485,7 +512,7 @@ def _registrar_efeitos(destino: Path, recibo: dict):
     tmp.replace(p)
 
 
-def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | None = None, base_aplicados=(), cancelado=None) -> Path:
+def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | None = None, base_aplicados=(), cancelado=None, roi=None) -> Path:
     import projetos as pj
     import renderizador as rd
     plano=ct.validar_plano(plano)
@@ -532,6 +559,11 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
                 status='sem_alteracao';motivo='Nível de zoom igual a 1.'
             elif tipo=='reframe' and e.get('modo')=='manter':
                 status='sem_alteracao';motivo='Enquadramento mantido.'
+            elif tipo == 'reframe' and e['modo'] == 'roi':
+                if roi is None:
+                    raise ct.ErroContrato('Falta confirmar o reenquadramento da região de interesse.')
+                if roi['modo'] != 'roi':
+                    status, motivo = 'fallback', roi['motivo']
             elif tipo not in base_aplicados:
                 raise ct.ErroContrato('O render base não comprovou aplicação de '+tipo)
             recibo['efeitos'].append({'tipo':tipo,'status':status,'parametros':e,'motivo':motivo})
@@ -581,6 +613,15 @@ def _executar_corte_efeitos(plano: dict, video: Path, c: dict, palavras: list, t
     pasta.mkdir(parents=True,exist_ok=True)
     cl=plano['clips'];ini,fim=cl[0]['in_ms']/1000,cl[-1]['out_ms']/1000
     t=tpl_do_plano(tpl,plano);t['zoom']=1.0
+    roi = _quadro_roi(plano, video, ag._dims(t))
+    if roi:
+        if t.get('enquadramento') in ('gameplay-streamer', 'comparacao'):
+            roi = {'modo': 'manter', 'motivo': 'O modelo protege a composição de câmera e gameplay.'}
+        elif roi['modo'] == 'roi':
+            t.update(enquadramento='cortar', pos_x=roi['x'], pos_y=roi['y'])
+        else:
+            t['enquadramento'] = 'encaixar'
+        t['efeito'] = 'nenhum'
     base=pasta/(destino.stem+'-base-efeitos.mp4');montado=pasta/(destino.stem+'-montado-efeitos.mp4')
     sem_texto=dict(t,legenda='nenhuma',gancho=False,credito='',tarja_topo='',tarja_base='')
     ag.editar(video,dict(c,ini=ini,fim=fim),palavras,sem_texto,base,pasta)
@@ -593,7 +634,7 @@ def _executar_corte_efeitos(plano: dict, video: Path, c: dict, palavras: list, t
         cap=_efeito(plano,'caption')
         if not cap or not cap.get('ligado',1):t['legenda']='nenhuma'
         ass.write_text(ag.montar_ass(palavras_saida(plano,palavras),0,duracao_saida(plano),t,c.get('gancho',''),int(vs['width']),int(vs['height'])))
-        return _finalizar_efeitos(plano,temporal,destino,ass=ass,base_aplicados=('reframe','fade','loudnorm'))
+        return _finalizar_efeitos(plano,temporal,destino,ass=ass,base_aplicados=('reframe','fade','loudnorm'),roi=roi)
     finally:
         base.unlink(missing_ok=True);montado.unlink(missing_ok=True)
 
@@ -602,9 +643,10 @@ def executar_importado(plano: dict, fonte: Path, destino: Path, inicial_hash: st
     if not comprovar and not ct.efeitos_reais_ativos() and plano.get('schema_version') != ct.SCHEMA_TIMELINE:
         return _executar_importado_base(plano,fonte,destino,inicial_hash,cancelado=cancelado)
     p=copy.deepcopy(ct.validar_plano(plano));base=destino.with_name(destino.stem+'-base-efeitos.mp4')
+    roi = _quadro_roi(p, fonte, ct.ASPECTOS[p['target_aspect_ratio']])
     p['effects']=[e for e in p['effects'] if e['tipo'] not in ('zoom','broll','caption')]
     try:
-        _executar_importado_base(p,fonte,base,cancelado=cancelado)
-        return _finalizar_efeitos(plano,base,destino,base_aplicados=('reframe','fade','loudnorm'),cancelado=cancelado)
+        _executar_importado_base(p,fonte,base,cancelado=cancelado,roi=roi)
+        return _finalizar_efeitos(plano,base,destino,base_aplicados=('reframe','fade','loudnorm'),cancelado=cancelado,roi=roi)
     finally:
         base.unlink(missing_ok=True)

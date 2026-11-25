@@ -4,6 +4,7 @@
 - Base: `a8891df9c03d4f1429469189527b24ce36f7280d`.
 - Última microetapa aprovada: EP2.01.
 - EP2.02: parcial. Montagem temporal, áudio opcional e gancho comprovados no Linux. Montagem avançada permanece aberta.
-- Próxima frente independente: EP2.03, reenquadramento com região de interesse.
+- EP2.03: parcial. Reenquadramento com região estática e fallback comprovados no Linux. Tracking e multicâmera permanecem abertos.
+- Próxima frente independente: EP2.04, cor e finalização.
 - Android físico: PENDENTE_TERMUX.
 - Os checkpoints anteriores do EstúdioClip 2.0 estão no `ESTADO_ATUAL.md` da raiz.

@@ -19,7 +19,7 @@ Auditoria estática do HEAD base. Executor indica código localizado. A prova lo
 | C03.01 | Enquadramento | Rastreamento facial | Parcial | agente.ajustar_camera localiza webcam estática; não há rastreamento temporal A5 identificado. |
 | C03.02 | Enquadramento | rastreamento de objeto | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C03.03 | Enquadramento | zoom inteligente | Executor | editor_ia._finalizar_efeitos; teste_efeitos_reais compara RGB para zoom por intervalo; seleção adaptativa pendente. |
-| C03.04 | Enquadramento | reenquadramento | Executor | editor_ia.tpl_do_plano / _executar_importado_base, centro/desfoque/manter; prova ROI pendente. |
+| C03.04 | Enquadramento | reenquadramento | Executor | editor_ia._quadro_roi / teste_efeitos_reais: região estática na borda, confirmação por pixels e fallback de encaixe. |
 | C03.05 | Enquadramento | estabilização | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C03.06 | Enquadramento | multicâmera | Parcial | agente.filtro_video compõe HUD/webcam do mesmo sinal; edição multicâmera real pendente. |
 | C04.01 | Cor | Correção de cor | Parcial | visual_presets.grafo no legado A1; correção medida A5 pendente. |

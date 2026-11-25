@@ -129,4 +129,25 @@ class EfeitosReais(unittest.TestCase):
         self.assertEqual(json.loads(saida.with_suffix('.efeitos.json').read_text())['montagem']['gancho_protegido'],
                          plano['protected_hook'])
 
+    def test_regiao_na_borda_e_fallback_quando_nao_cabe_no_recorte(self):
+        fonte = TMP / 'roi-fonte.mp4'
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=240x100:r=30:d=2',
+                        '-vf', 'drawbox=x=205:y=0:w=35:h=100:color=white:t=fill', '-c:v', 'libx264', str(fonte)], check=True)
+        plano = dict(self.plano([]), schema_version=ct.SCHEMA_TIMELINE, clips=[{'in_ms': 0, 'out_ms': 2000}],
+                     target_aspect_ratio='1:1')
+        roi = {'tipo': 'reframe', 'modo': 'roi', 'x': 0.86, 'y': 0.1, 'w': 0.13, 'h': 0.8}
+        destino = TMP / 'roi.mp4'
+        encaixado = TMP / 'roi-encaixado.mp4'
+        with patch.dict(ct.ASPECTOS, {'1:1': (100, 100)}):
+            ed.executar_importado(dict(plano, effects=[roi]), fonte, destino)
+            ed.executar_importado(dict(plano, effects=[dict(roi, x=0.1, w=0.89)]), fonte, encaixado)
+        frame_roi = frame(destino, 0.8)
+        frame_fallback = frame(encaixado, 0.8)
+        self.assertTrue(all(p > 235 for p in frame_roi[(50 * 100 + 91) * 3: (50 * 100 + 91) * 3 + 3]))
+        self.assertLess(max(frame_fallback[:300]), 10)  # faixa completa de encaixe
+        self.assertTrue(all(p > 235 for p in frame_fallback[(50 * 100 + 96) * 3: (50 * 100 + 96) * 3 + 3]))
+        recibo = json.loads(encaixado.with_suffix('.efeitos.json').read_text())
+        self.assertEqual(recibo['efeitos'][0]['status'], 'fallback')
+        self.assertEqual(recibo['aplicados'], 0)
+
 if __name__=='__main__':unittest.main()

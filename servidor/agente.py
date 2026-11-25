@@ -1168,6 +1168,9 @@ def filtro_video(tpl: dict, L: int, A: int, dur: float, ass: Path, logo: Path | 
     elif quadro == 'cortar':
         fc = (f"[0:v]scale={par(L * z)}:{par(A * z)}:force_original_aspect_ratio=increase,"
               f"crop={L}:{A}:(iw-{L})*{tpl.get('pos_x', 0.5):.3f}:(ih-{A})*{tpl.get('pos_y', 0.5):.3f},setsar=1[v0]")
+    elif quadro == 'encaixar':
+        fc = (f'[0:v]scale={L}:{A}:force_original_aspect_ratio=decrease:force_divisible_by=2,'
+              f'pad={L}:{A}:(ow-iw)/2:(oh-ih)/2,setsar=1[v0]')
     else:
         fc = (f'[0:v]split=2[a][b];[a]scale={L // 4}:{A // 4}:force_original_aspect_ratio=increase,crop={L // 4}:{A // 4},boxblur=6:2,scale={L}:{A},setsar=1[bg];'
               f'[b]scale={par(L * z)}:-2,crop=\'min(iw,{L})\':\'min(ih,{A})\',setsar=1[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v0]')
