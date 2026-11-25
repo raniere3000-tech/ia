@@ -28,6 +28,10 @@ EDITOR = {
     'tratamento-audio': ('Tratamento de áudio', ('afftdn', 'equalizer', 'acompressor'), 'Preservar o áudio original.'),
     'mixagem': ('Mixagem e ducking', ('atrim', 'asetpts', 'aresample', 'aformat', 'volume', 'adelay', 'amix',
                                     'alimiter', 'asplit', 'sidechaincompress'), 'Manter a trilha de origem.'),
+    'composicao': ('Camadas com chroma ou máscara', ('scale', 'format', 'setsar', 'setpts', 'overlay',
+                                                    'chromakey', 'alphamerge'), 'Manter a imagem principal.'),
+    'mascara': ('Máscara retangular', ('drawbox',), 'Preservar o plano anterior e revisar a máscara.'),
+    'desfoque-movimento': ('Desfoque de movimento temporal', ('tmix',), 'Manter os quadros originais.'),
     'integridade': ('Verificação de integridade', ('blackdetect', 'freezedetect', 'silencedetect'), 'Marcar o teste técnico como indisponível.'),
 }
 

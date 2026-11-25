@@ -219,4 +219,44 @@ class EfeitosReais(unittest.TestCase):
         with self.assertRaises(ct.ErroContrato):
             ct.validar_plano(dict(p, effects=[dict(camada, direitos='desconhecido')]))
 
+    def test_composicao_chroma_e_mascara_comprovadas_por_pixels(self):
+        cena = TMP / 'chroma.png'
+        mascara = TMP / 'mascara.png'
+        for destino, fundo, frente in [(cena, 'lime', 'red'), (mascara, 'black', 'white')]:
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'color={fundo}:s=160x90',
+                            '-vf', f'drawbox=w=80:h=90:color={frente}:t=fill', '-frames:v', '1', str(destino)], check=True)
+        ids = [pj.registrar_asset(p, p.name, 'image/png')['asset']['id'] for p in (cena, mascara)]
+        plano = dict(self.plano([]), schema_version=ct.SCHEMA_TIMELINE)
+        camada = {'tipo': 'camada', 'asset': ids[0], 'direitos': 'meu', 'x': 0, 'y': 0, 'w': 1, 'h': 1,
+                  'ini_ms': 800, 'fim_ms': 2000}
+        controle, chroma, alpha = (TMP / f'{nome}-composicao.mp4' for nome in ('controle', 'chroma', 'alpha'))
+        ed._finalizar_efeitos(plano, BASE, controle)
+        ed._finalizar_efeitos(dict(plano, effects=[dict(camada, chroma='verde')]), BASE, chroma)
+        ed._finalizar_efeitos(dict(plano, effects=[dict(camada, mascara_asset=ids[1])]), BASE, alpha)
+        def pixel(raw, x, y=30):
+            i = (y * 160 + x) * 3
+            return raw[i:i+3]
+        normal, c, a = (frame(p, 1.2) for p in (controle, chroma, alpha))
+        for q in (c, a):
+            r, g, b = pixel(q, 25)
+            self.assertGreater(r, 220)
+            self.assertLess(max(g, b), 25)
+            self.assertLess(dif(pixel(q, 130), pixel(normal, 130)), 12)
+        self.assertLess(dif(frame(controle, 0.3), frame(chroma, 0.3)), 10)
+        dados = json.loads(alpha.with_suffix('.efeitos.json').read_text())
+        self.assertEqual(dados['efeitos'][0]['mascara_sha'], rd.sha256(mascara))
+        self.assertEqual(dados['arquivo_sha'], rd.sha256(alpha))
+
+    def test_mascara_retangular_e_desfoque_temporal(self):
+        plano = dict(self.plano([]), schema_version=ct.SCHEMA_TIMELINE)
+        escuro={'tipo': 'mascara', 'x': 0, 'y': 0, 'w': 0.4, 'h': 0.4, 'ini_ms': 700, 'fim_ms': 1900}
+        blur={'tipo': 'desfoque_movimento', 'quadros': 5, 'ini_ms': 700, 'fim_ms': 1900}
+        mascara, temporal, controle = (TMP / f'{nome}-mascara.mp4' for nome in ('geo', 'temporal', 'controle'))
+        ed._finalizar_efeitos(dict(plano, effects=[escuro]), BASE, mascara)
+        ed._finalizar_efeitos(dict(plano, effects=[blur]), BASE, temporal)
+        ed._finalizar_efeitos(plano, BASE, controle)
+        self.assertLess(max(frame(mascara, 1.3)[:120]), 12)
+        self.assertGreater(max(frame(mascara, 0.3)[:120]), 60)
+        self.assertGreater(dif(frame(temporal, 1.3), frame(controle, 1.3)), 3)
+
 if __name__=='__main__':unittest.main()

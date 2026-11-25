@@ -59,6 +59,13 @@ AUDIO = {'reducao_ruido_db': (0, 24), 'eq_hz': (55, 12000), 'eq_db': (-12, 12),
 SONS = {'categoria': ('foley', 'whoosh', 'impacto', 'riser', 'ambiencia', 'trilha'),
         'ganho_db': (-38, 0), 'ini_ms': (0, 3_600_000), 'fim_ms': (1, 3_600_000),
         'ducking': ('ligado', 'desligado')}
+REGIAO = {'x': (0, 1), 'y': (0, 1), 'w': (0.01, 1), 'h': (0.01, 1)}
+INTERVALO = {'ini_ms': (0, 3_600_000), 'fim_ms': (1, 3_600_000)}
+COMPOSICAO = {
+    'camada': {**REGIAO, **INTERVALO, 'chroma': ('verde', 'azul'), 'similaridade': (0.02, 0.35)},
+    'mascara': {**REGIAO, **INTERVALO, 'opacidade': (0.25, 1)},
+    'desfoque_movimento': {**INTERVALO, 'quadros': (2, 5)},
+}
 PERFIS_SAIDA = ('final', 'previa')
 # correções que o diretor pode pedir ao editor (cada uma vira mudança tipada no plano)
 ACOES = {
@@ -167,7 +174,7 @@ def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
     for i, e in enumerate(p.get('effects') or []):
         tipo = (e or {}).get('tipo') if isinstance(e, dict) else None
         if schema == SCHEMA_TIMELINE and tipo == 'reframe' and e.get('modo') == 'roi':
-            roi = _params({'modo': ('roi',), 'x': (0, 1), 'y': (0, 1), 'w': (0.01, 1), 'h': (0.01, 1)}, e, 'reenquadrar')
+            roi = _params({'modo': ('roi',), **REGIAO}, e, 'reenquadrar')
             if (set(roi) != {'modo', 'x', 'y', 'w', 'h'}
                     or roi['x'] + roi['w'] > 1 or roi['y'] + roi['h'] > 1):
                 raise ErroContrato('A região de interesse precisa estar dentro da imagem.')
@@ -192,6 +199,9 @@ def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
             if params.get('ducking') == 'ligado' and params['categoria'] not in ('trilha', 'ambiencia'):
                 raise ErroContrato('Ducking é aplicável a trilha e ambiência.')
             efeitos.append({'tipo': tipo, 'asset': asset, 'direitos': e['direitos'], **params})
+            continue
+        if schema == SCHEMA_TIMELINE and tipo in COMPOSICAO:
+            efeitos.append(_validar_composicao(tipo, e))
             continue
         if tipo == 'broll' and efeitos_reais_ativos():
             asset = str(e.get('asset') or '')
@@ -227,6 +237,32 @@ def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
     return out
 
 
+def _validar_composicao(tipo: str, efeito: dict) -> dict:
+    assets = {k: efeito[k] for k in ('asset', 'direitos', 'mascara_asset') if k in efeito} if tipo == 'camada' else {}
+    params = _params(COMPOSICAO[tipo], {k: v for k, v in efeito.items() if k not in assets}, tipo)
+    if not INTERVALO.keys() <= params.keys() or params['fim_ms'] <= params['ini_ms']:
+        raise ErroContrato('Composição exige intervalo positivo.')
+    if tipo != 'desfoque_movimento':
+        if (not REGIAO.keys() <= params.keys() or params['x'] + params['w'] > 1 or params['y'] + params['h'] > 1):
+            raise ErroContrato('A composição exige um retângulo dentro da imagem.')
+    if tipo == 'camada':
+        for k in ('asset', 'mascara_asset'):
+            value = assets.get(k)
+            if k == 'mascara_asset' and value is None:
+                continue
+            if not isinstance(value, str) or not re.fullmatch(r'[a-f0-9]{12,64}', value):
+                raise ErroContrato('A camada e a máscara exigem identificadores de assets registrados.')
+        if assets.get('direitos') not in ('meu', 'autorizado', 'regra'):
+            raise ErroContrato('A camada e a máscara exigem autorização de uso.')
+        if assets.get('mascara_asset') and params.get('chroma'):
+            raise ErroContrato('Use uma máscara externa ou chroma key na mesma camada.')
+    if tipo == 'desfoque_movimento' and 'quadros' in params:
+        if not params['quadros'].is_integer():
+            raise ErroContrato('Quantidade de quadros de desfoque precisa ser inteira.')
+        params['quadros'] = int(params['quadros'])
+    return {'tipo': tipo, **assets, **params}
+
+
 def _timeline_v2(bruto: dict, plano: dict) -> dict:
     clipes = plano['clips']
     if any(a['out_ms'] > b['in_ms'] for a, b in zip(clipes, clipes[1:])):
@@ -251,6 +287,8 @@ def _timeline_v2(bruto: dict, plano: dict) -> dict:
     efeitos = plano['effects']
     if sum(e['tipo'] == 'som' for e in efeitos) > 8 or sum(e['tipo'] == 'audio' for e in efeitos) > 1:
         raise ErroContrato('Use uma cadeia de tratamento e até oito camadas sonoras.')
+    if sum(e['tipo'] == 'camada' for e in efeitos) > 6:
+        raise ErroContrato('Use até seis camadas de vídeo.')
     if any(e['tipo'] == 'reframe' and e['modo'] == 'roi' for e in efeitos):
         if sum(e['tipo'] == 'reframe' for e in efeitos) != 1 or any(e['tipo'] == 'zoom' and e.get('nivel', 1) > 1 for e in efeitos):
             raise ErroContrato('O reenquadramento por região de interesse exige uma única região e zoom neutro.')

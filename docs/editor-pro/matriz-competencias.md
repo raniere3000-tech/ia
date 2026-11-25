@@ -40,12 +40,12 @@ Auditoria estática do HEAD base. Executor indica código localizado. A prova lo
 | C06.04 | Design sonoro | risers | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C06.05 | Design sonoro | ambiência | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C06.06 | Design sonoro | sincronização de efeitos | Validada no Linux | teste_efeitos_reais demonstra áudio presente após o início programado; recibo com SHA do asset. |
-| C07.01 | VFX | Chroma key | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C07.02 | VFX | máscaras | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C07.03 | VFX | rotoscopia | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C07.04 | VFX | motion blur | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C07.05 | VFX | camadas | Parcial | editor_ia._finalizar_efeitos sobrepõe zoom/B-roll; composição geral pendente. |
-| C07.06 | VFX | remoção de fundo | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
+| C07.01 | VFX | Chroma key | Validada no Linux | editor_composicao e teste_efeitos_reais: chroma verde removido da camada somente no intervalo selecionado. |
+| C07.02 | VFX | máscaras | Validada no Linux | Máscara retangular e máscara externa comprovadas por pixels, com SHA da máscara. |
+| C07.03 | VFX | rotoscopia | Parcial | Executor aplica máscara fornecida pelo plano. Rastreamento e criação de máscara por objeto ainda faltam. |
+| C07.04 | VFX | motion blur | Validada no Linux | Suavização por mistura temporal tmix; teste mostra diferença de pixels. |
+| C07.05 | VFX | camadas | Validada no Linux | Overlay temporal por asset e posições tipadas. Teste por pixels confirma frente e fundo. |
+| C07.06 | VFX | remoção de fundo | Parcial | Remoção por chroma ou máscara fornecida. Segmentação automática permanece aberta. |
 | C08.01 | Motion | Keyframes | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C08.02 | Motion | easing | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C08.03 | Motion | parallax | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |

@@ -649,6 +649,16 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
                     entrada += 1
                     if e.get('ducking') == 'ligado' and not tem_voz:
                         motivo = 'Trilha aplicada sem ducking porque não existe áudio de origem.'
+            elif tipo in ct.COMPOSICAO:
+                import editor_composicao as composicao
+                faltam = sorted(composicao.requisitos(e) - filtros_disponiveis())
+                if faltam:
+                    status, motivo = 'fallback', 'Filtros de composição indisponíveis: ' + ', '.join(faltam)
+                else:
+                    entrada, evidencia = composicao.aplicar(e, cmd, filtros, atual, k, entrada, w, h, total)
+                    atual = f'[e{k}]'
+                    if evidencia.get('imagem_estatica'):
+                        parados.append(evidencia['imagem_estatica'])
             elif tipo=='broll':
                 midia=pj.asset(e['asset']);mime=midia['mime']
                 if not mime.startswith(('image/','video/')):
