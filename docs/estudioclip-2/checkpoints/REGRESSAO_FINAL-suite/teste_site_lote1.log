@@ -1,0 +1,40 @@
+
+S2 — planos dentro da cena
+ok    cena reaberta com 3 planos
+ok    tempos (pesos) preservados: [0.8, 1.2, 1.0]
+ok    ações preservadas
+ok    trava só no plano 2
+ok    duração da cena = 10 s
+ok    segundos por plano somam 10: [2.67, 4.0, 3.33]
+ok    refazer plano travado: recusado (409)
+ok    projeto antigo abre sem planos[]
+ok    projeto antigo salva de novo sem erro
+
+S3 — série, temporada, episódios, personagem, voz, pose e boca
+ok    dois episódios na temporada 1
+ok    cada episódio é um projeto (sem duplicar)
+ok    personagem ligado à voz Kore
+ok    rig: peças e limites (modo não suportado) informados
+ok    pose entra na fila do celular (trabalho pesado)
+ok    motor desenhou a pose (PNG real)
+ok    segunda vez sai do cache
+ok    pose aprovada guardada na série (recuperável)
+ok    boca calculada da fala: 24 quadros, modo texto + volume (aproximação)
+ok    ordem dos episódios 1 e 2
+
+S4 — quadro real por versão e correção sem aprovar sozinho
+ok    quadro de verdade das versões 1 e 2 no mesmo instante
+ok    as duas versões dão quadros diferentes (antes x depois)
+ok    versão de outro projeto/inexistente: erro legível
+ok    correção registra o defeito e a versão de antes
+ok    tentativa contada no apontamento
+ok    não aprova sozinho (status queued)
+
+S6 / S5 — trabalho da fila por id e atualizar demonstração
+ok    GET de um trabalho da fila (o site retoma o progresso depois de recarregar)
+ok    trabalho inexistente: 404 legível
+ok    atualizar demonstração entra na fila
+ok    a demonstração antiga continua valendo até a nova passar
+ok    sem "atualizar", devolve a pronta (nada muda pelo card)
+
+TUDO OK  (pasta /tmp/site-lote1-tn3i8f3x)

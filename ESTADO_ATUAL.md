@@ -1,17 +1,17 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T20:50:11-03:00.
+Atualizado: 2026-11-24T21:03:54-03:00.
 
 ```yaml
-fase: "F5"
-microetapa: "F5.04"
+fase: "REGRESSAO_FINAL"
+microetapa: "REGRESSAO_FINAL"
 status: "COMMITTED"
 branch: "codex/estudioclip-2-fase5"
-sha_inicial: "dded313b6a3ac1e6c0888dd0ceb49f5a8da8abed"
-sha_final_implementacao: "898763e02e883119615b8546075080e9f7e9ca42"
-proxima_microetapa: "REGRESSAO_FINAL"
+sha_inicial: "f987561958838f6194ca245e3383a122f4e3a011"
+sha_final_implementacao: "f987561958838f6194ca245e3383a122f4e3a011"
+proxima_microetapa: "F5.R01"
 mudancas_nao_commitadas: []
-testes: ["memória 5 PASS", "aprendizado 47 PASS", "coordenador 80 PASS", "painel 34 PASS", "indicadores 4 PASS", "ranking 3 PASS", "feedback 3 PASS", "frontend 18 PASS", "TypeScript/Vite PASS"]
+testes: ["69 arquivos Python PASS", "0 FAIL", "1 email interativo não executado", "Frontend F5.04: 18 PASS e build PASS"]
 flags_adicionadas: []
 migracoes: []
 merge: "NAO_REALIZADO"
@@ -37,11 +37,11 @@ commitadas; flags novas desligadas. Falhas antigas de estilos e exportação
 corrigidas. F3.01: 23 verificações de roteiro e 10 de concorrência. F3.02: seis
 testes de consistência, incluindo render real de duas cenas/duas versões.
 
-F5.04: hipóteses em memória versionada e testes existentes com aprovação explícita, CAS transacional, amostra nova e rollback. Isolamento canal/rede/vertente, sem alteração automática do DNA ou agentes. Microetapas F1–F5 implementadas; aceite global ainda pendente.
+Rodada global no SHA f987561958838f6194ca245e3383a122f4e3a011: 70 arquivos catalogados, 69 PASS, zero FAIL, 1 diagnóstico interativo não executado. Quatro falhas históricas passaram. Relatório regressao-global.md e logs completos preservados.
 
-Evidências: docs/estudioclip-2/checkpoints/F5.04-*.
+Evidências: docs/estudioclip-2/checkpoints/REGRESSAO_FINAL-*.
 
-## Retomada exata — REGRESSAO_FINAL
+## Retomada exata — F5.R01
 
 ```bash
 git status --short
@@ -51,12 +51,12 @@ git fetch origin codex/estudioclip-2-fase5:refs/remotes/origin/codex/estudioclip
 git rev-list --left-right --count HEAD...origin/codex/estudioclip-2-fase5
 ```
 
-Executar regressão global em todos os testes automáticos disponíveis; email interativo excluído, dependência yt_dlp a verificar. Registrar falhas/limites, corrigir regressões e abrir PR F5 em rascunho, sem merge/deploy.
+F5.R01: aplicar ../ajustes_finais.py e copiar ../teste_compatibilidade_metricas.py; testar flags off, dados legados, perfil/canal, render arquivado e amostra por render único; testar grupos afetados e frontend. Commit/checkpoint e atualizar PR26.
 
 ## Pendências e limites
 
-Regressão global final em seguida. Termux, email interativo e contas reais não validados.
+F5.R01 em seguida. Rodada global passou antes desses ajustes; não afirmar que foi posterior. Termux, email real e contas reais não validados.
 
 Não afirmar aceite integral de produção. Não abrir segunda implementação de
 editor, métrica ou memória quando o módulo existente cobrir. Rollback se
-solicitado: git revert 898763e02e883119615b8546075080e9f7e9ca42.
+solicitado: git revert f987561958838f6194ca245e3383a122f4e3a011.

@@ -1,0 +1,422 @@
+[
+  {
+    "teste": "teste_3d.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 2.48
+  },
+  {
+    "teste": "teste_a3_editor_compartilhado.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 12.76
+  },
+  {
+    "teste": "teste_aceite_linha6.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 63.65
+  },
+  {
+    "teste": "teste_agenda_agente2.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 3.16
+  },
+  {
+    "teste": "teste_agente3.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 127.42
+  },
+  {
+    "teste": "teste_alertas.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.27
+  },
+  {
+    "teste": "teste_aprendizado.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.11
+  },
+  {
+    "teste": "teste_aprovacao_roteiro_corrida.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.22
+  },
+  {
+    "teste": "teste_busca_canais.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.06
+  },
+  {
+    "teste": "teste_cancelamento.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.27
+  },
+  {
+    "teste": "teste_central_automacao.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 6.05
+  },
+  {
+    "teste": "teste_comandos.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.17
+  },
+  {
+    "teste": "teste_comparacao.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 7.65
+  },
+  {
+    "teste": "teste_consistencia_projeto.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 5.64
+  },
+  {
+    "teste": "teste_coordenador.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 9.4
+  },
+  {
+    "teste": "teste_criativo.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 1.17
+  },
+  {
+    "teste": "teste_custo_corte.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 16.75
+  },
+  {
+    "teste": "teste_decisoes.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.17
+  },
+  {
+    "teste": "teste_descricao.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.27
+  },
+  {
+    "teste": "teste_diretor.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.22
+  },
+  {
+    "teste": "teste_dna_corte.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 1.37
+  },
+  {
+    "teste": "teste_efeitos_reais.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 5.31
+  },
+  {
+    "teste": "teste_email.py",
+    "status": "INTERATIVO_CONTA_REAL",
+    "exit": null,
+    "segundos": 0
+  },
+  {
+    "teste": "teste_estados_fila.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.22
+  },
+  {
+    "teste": "teste_esteira_7.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 29.73
+  },
+  {
+    "teste": "teste_esteira_corte_salvo.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.06
+  },
+  {
+    "teste": "teste_estilos_agente1.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.11
+  },
+  {
+    "teste": "teste_estilos_editar.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 87.03
+  },
+  {
+    "teste": "teste_estilos_visuais.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 8.6
+  },
+  {
+    "teste": "teste_exportacao.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 19.12
+  },
+  {
+    "teste": "teste_feedback_metricas.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.11
+  },
+  {
+    "teste": "teste_ffmpeg_tempo.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 16.32
+  },
+  {
+    "teste": "teste_formatos_ia.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.22
+  },
+  {
+    "teste": "teste_gameplay.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 42.22
+  },
+  {
+    "teste": "teste_gancho_capa.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 1.32
+  },
+  {
+    "teste": "teste_gancho_integro.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.11
+  },
+  {
+    "teste": "teste_historico_publicacao.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.11
+  },
+  {
+    "teste": "teste_idempotencia_fila_capa.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.11
+  },
+  {
+    "teste": "teste_indicadores.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.11
+  },
+  {
+    "teste": "teste_integridade_render.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 7.79
+  },
+  {
+    "teste": "teste_kwai_diario.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.06
+  },
+  {
+    "teste": "teste_liberacao.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.92
+  },
+  {
+    "teste": "teste_liberar_corte.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.17
+  },
+  {
+    "teste": "teste_link_original.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.06
+  },
+  {
+    "teste": "teste_live.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 34.81
+  },
+  {
+    "teste": "teste_memoria_metricas.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.11
+  },
+  {
+    "teste": "teste_metricas_publicacoes.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.11
+  },
+  {
+    "teste": "teste_motor.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 41.18
+  },
+  {
+    "teste": "teste_pacote.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 4.49
+  },
+  {
+    "teste": "teste_painel.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.67
+  },
+  {
+    "teste": "teste_perfis.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 20.97
+  },
+  {
+    "teste": "teste_pipeline_5_agentes.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 11.35
+  },
+  {
+    "teste": "teste_portao_diretor.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.17
+  },
+  {
+    "teste": "teste_publicacao_lotes.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 1.17
+  },
+  {
+    "teste": "teste_ranking_metricas.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.11
+  },
+  {
+    "teste": "teste_redes_independentes.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.41
+  },
+  {
+    "teste": "teste_rejeitar_thumbnail.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.22
+  },
+  {
+    "teste": "teste_reposicao.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 1.33
+  },
+  {
+    "teste": "teste_retry_fonte_a1.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.16
+  },
+  {
+    "teste": "teste_serie_completa.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.22
+  },
+  {
+    "teste": "teste_site_lote1.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 3.43
+  },
+  {
+    "teste": "teste_skills.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.17
+  },
+  {
+    "teste": "teste_skills_agentes.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 1.97
+  },
+  {
+    "teste": "teste_skills_novas.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 84.25
+  },
+  {
+    "teste": "teste_temas.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.11
+  },
+  {
+    "teste": "teste_thumbnails.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 20.24
+  },
+  {
+    "teste": "teste_tiktok_assistido.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.11
+  },
+  {
+    "teste": "teste_trecho_link.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.27
+  },
+  {
+    "teste": "teste_versao_refeita.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 0.51
+  },
+  {
+    "teste": "teste_whatsapp.py",
+    "status": "PASS",
+    "exit": 0,
+    "segundos": 16.22
+  }
+]

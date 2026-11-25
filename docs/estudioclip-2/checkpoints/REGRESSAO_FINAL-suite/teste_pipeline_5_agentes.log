@@ -1,0 +1,63 @@
+1. Regra fixa da nota
+  ok   nota 69 reprova
+  ok   nota 70 aprova
+  ok   nota 100 com bloqueio reprova
+  ok   pesos somam 100
+2. Cinco correções; a 1ª avaliação não conta
+  ok   avaliação inicial + 4 correções reprovadas ainda pedem correção
+  ok   a 5ª correção reprovada vai para revisão manual
+  ok   etapa encerrada não aceita nova avaliação
+  ok   contador da etapa criativa é separado
+3. Correção que não muda nada
+  ok   mesmo plano e mesmo arquivo -> revisão manual, sem gastar as 5
+  ok   mesma chave de idempotência devolve a mesma execução
+4. Certificado preso ao arquivo
+  ok   esteira desligada: postagem segue como antes
+  ok   esteira ligada e sem certificado: postagem barrada
+  ok   nota 65 não recebe certificado
+  ok   com certificado: postagem liberada
+  ok   arquivo exportado de novo (SHA diferente): postagem barrada
+  ok   certificado adulterado no banco não vale
+  ok   certificado original volta a valer
+  ok   certificado novo da mesma ref revoga o do arquivo antigo
+5. Revisão manual não passa por cima de direitos
+  ok   direitos bloqueiam mesmo na revisão manual
+  ok   bloqueio técnico também segura a revisão manual
+  ok   nota baixa sem bloqueio pode ser liberada por você (fica registrado)
+6. Plano de edição com lista fechada
+  ok   trecho vira plano em milissegundos
+  ok   efeito fora da lista é recusado
+  ok   zoom fora da faixa é recusado
+  ok   texto no lugar de número é recusado
+  ok   trecho além do fim da fonte é recusado
+  ok   correção fora da lista é recusada
+  ok   começo adiantado 2 s
+  ok   pausa tirada deixando 0,25 s de cada lado
+  ok   legenda pequena sobe para média
+  ok   cada mudança é registrada e a versão sobe
+  ok   trecho travado por você não é mexido
+  ok   correção repetida não muda o plano
+  ok   palavras levadas para o tempo do vídeo final (a da pausa sai)
+7. Ciclo editor <-> diretor com vídeos de verdade
+  ok   vídeo bom aprovado com certificado (nota 100)
+  ok   estado final_approved
+  ok   Agente 2 aceita o arquivo aprovado
+  ok   tela preta que o editor não consegue tirar acaba em revisão manual
+  ok   motivo: tela preta no meio
+  ok   editor tentou suavizar uma vez e parou quando não havia mais o que mudar
+  ok   estado manual_review_required
+  ok   Agente 2 recusa o vídeo reprovado
+  ok   revisão manual não libera vídeo com bloqueio técnico
+  ok   você pode cancelar
+  ok   retomada depois de queda não refaz etapa já aprovada
+8. Falha técnica não conta como correção
+  ok   erro de render sobe para a fila e não gasta avaliação
+9. Corte real do Agente 1 com pausas tiradas e fade (executar_corte)
+  ok   vídeo final com 5.52s (plano pede 5.50s)
+  ok   saída sem erro de decodificação nem travada
+10. Corte do Agente 1 inteiro pela esteira (corte_pela_esteira)
+  ok   corte avaliado pelo diretor (nota 100, aprovado)
+  ok   veredito do corte bate com o estado da esteira
+  ok   certificado preso ao arquivo do corte
+
+51 ok, 0 falhas
