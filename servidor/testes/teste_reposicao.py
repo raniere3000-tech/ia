@@ -192,7 +192,10 @@ check(abs(pk3['quando'] - s1['quando_utc']) < 1, 'o post novo sai no horário or
 print('6. Caminho antigo (sem programação diária)')
 db.executar('UPDATE posting_schedules SET ligado=0')
 check(not a2.tem_programacao(), 'programação desligada')
-ag.salvar_config({'postagem': {'redes': ['youtube'], 'faixas': [{'dia': d, 'hora': h1} for d in range(7)]}})
+# A agenda diária usa São Paulo; o caminho antigo usa o fuso local do processo.
+# Referenciar a reserva REAL, não reutilizar sua hora formatada em outro fuso.
+hora_ocupada_local = datetime.fromtimestamp(s1['quando_utc']).strftime('%H:%M')
+ag.salvar_config({'postagem': {'redes': ['youtube'], 'faixas': [{'dia': d, 'hora': hora_ocupada_local} for d in range(7)]}})
 ag._mudar(lambda e: [c.update(status='postado') for c in e['cortes']])
 db.executar("UPDATE coordenador_ordens SET status='concluida'")
 db.kv_gravar('agente7.ultima_reposicao', 0)

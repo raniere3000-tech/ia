@@ -1,62 +1,67 @@
-# CHECKPOINT — EstúdioClip 2.0
+# CHECKPOINT — validação EstúdioClip 2.0
 
-Atualizado: 2026-11-24T21:43:50-03:00.
+Atualizado: 2026-11-25T00:49:35-03:00.
 
 ```yaml
-fase: "ATIVACAO"
-microetapa: "ATIVACAO.01"
+fase: "VALIDACAO"
+microetapa: "VALIDACAO.01"
 status: "COMMITTED"
-branch: "codex/estudioclip-2-fase5"
-sha_inicial: "a120387c6d3d0cf05628847762f37e9de3c79ce4"
-sha_final_implementacao: "80dc7212d8e2bb415b904470cb40e01ae0e6ca92"
-proxima_microetapa: "APLICAR_NO_TERMUX"
-mudancas_nao_commitadas: []
-testes: ["bash -n PASS", "iniciador 3 PASS", "edição compartilhada 9 PASS", "integridade render 7 PASS", "compatibilidade métricas 7 PASS"]
-flags_adicionadas: ["11 flags=1 no iniciar-termux.sh; valores explícitos de rollback preservados"]
+branch: "codex/validacao-recursos-20261125"
+base_main: "eb0662072e770f9e0e06d22167b4bcd7dc1cf2cb"
+sha_implementacao_testes: "bdcac77c089d9bc19478d51534b47d001b0db090"
+sha_local_suite: "3ef0d81"
+proxima_tarefa: "VALIDAR_TERMUX_REAL"
+testes: ["72 arquivos Python PASS; zero FAIL; um email interativo excluído", "frontend 18 PASS; TypeScript/Vite PASS", "iniciador 3 PASS; atualizador 3 PASS", "matriz todos ativos 9 PASS; HTTP 6 PASS", "reposicao UTC/SP/NZ 35 PASS cada"]
 migracoes: []
-merge: "NAO_REALIZADO"
-producao: "NAO_PUBLICADA"
+merge_nesta_sessao: "NAO_REALIZADO"
+integracao_preexistente: "PR27 e PR28 já integrados em main"
+publicacao_nesta_sessao: "NAO_REALIZADA"
+mudancas_nao_commitadas: []
 ```
 
-O SHA acima identifica implementação/testes; checkpoint/logs em commit documental
-posterior. Confirmar HEAD para o SHA final e comparar a árvore local/remota.
-Histórico local original preservado em branches seguranca/.
+O SHA de implementação identifica a correção do cenário de teste. Este checkpoint,
+relatório e logs entram em commit documental posterior; confirmar HEAD para o SHA
+final. Árvores local/remota devem coincidir após a sincronização.
 
-## Autorização persistente
+## Autorização e estado real
 
-O usuário autorizou todas as fases e commits/envio automáticos em 24/11/2026.
-Executar microetapas sequenciais, cada uma testada, commitada e com checkpoint.
-O usuário reforçou continuar sem parar nos checkpoints: salvar e prosseguir
-automaticamente; checkpoint não encerra a execução. Respeitar limites de uso.
-Não refazer Fase 0 nem partes concluídas. Não fazer merge ou deploy.
+O usuário autorizou desenvolvimento, commits/envio automáticos, ativação dos
+recursos e validação. Não refazer Fase 0 ou partes concluídas. Não fazer merge ou
+deploy sem autorização correspondente. Nesta sessão foi realizada validação e
+correção de um teste, sem modificar runtime, credenciais ou dados de produção.
 
-## Estado real e última microetapa
+As Fases 1–5 e o iniciador com 11 recursos ligados já chegaram à main pelos PRs
+#27/#28, integrados antes desta validação. O PR26 antigo está fechado. A main foi
+reconferida em eb0662072e770f9e0e06d22167b4bcd7dc1cf2cb. A única diferença de código nesta branch é o fixture do
+teste de reposição: converte o instante real para o fuso local do processo.
 
-F1: PR #21. F2: PR #22. Ambos em rascunho, sem merge. F2.01–F2.04 testadas e
-commitadas; flags novas desligadas. Falhas antigas de estilos e exportação
-corrigidas. F3.01: 23 verificações de roteiro e 10 de concorrência. F3.02: seis
-testes de consistência, incluindo render real de duas cenas/duas versões.
+## Resultado
 
-Usuário autorizou ativar todos os recursos. Iniciador Termux agora exporta os 11 recursos com 1 em partidas normais, link, watchdog e Boot; valor explícito 0 permite rollback. Padrões dos módulos isolados continuam preservados. Testes isolados e grupos com os 11 recursos no ambiente passaram. Configuração commitada; não afirmar ativação no aparelho antes de atualizar e reiniciar. Main concorrente b8d1329/PR23 foi inspecionada e não foi alterada.
+Suíte completa: 73 arquivos catalogados, 72 PASS, zero FAIL, um diagnóstico de
+email real excluído. Frontend 18 testes e build PASS. Matriz com todos os recursos
+ativos: 9 testes PASS; API HTTP: 6 PASS; atualizador e iniciador: 3 PASS cada.
+Reposição passou em UTC, São Paulo e Auckland, 35 verificações em cada caso.
 
-Evidências: docs/estudioclip-2/checkpoints/ATIVACAO.01-*.
+Relatório: docs/estudioclip-2/validacao-2026-11-25.md.
+Logs: docs/estudioclip-2/checkpoints/VALIDACAO_2026_11_25/.
 
-## Retomada exata — APLICAR_NO_TERMUX
+Navegação pública básica verificada no site. Este navegador não estava pareado
+com o Termux; esse aviso não atesta o estado do celular. Automação visual local
+não foi executada por falta do binário/download HTTP403.
+
+## Retomada — VALIDAR_TERMUX_REAL
 
 ```bash
 git status --short
 git branch --show-current
 git rev-parse HEAD
-git fetch origin codex/estudioclip-2-fase5:refs/remotes/origin/codex/estudioclip-2-fase5
-git rev-list --left-right --count HEAD...origin/codex/estudioclip-2-fase5
 ```
 
-Atualizar o checkout do aparelho para a branch codex/estudioclip-2-fase5 e, da pasta servidor, executar bash iniciar-termux.sh link. Validar servidor/consumo/render no Termux. O frontend publicado em main ainda não recebeu as fases: revisão/integração/publicação seguem separadas, sem merge automático. Ver docs/estudioclip-2/ativacao-recursos.md.
+No aparelho, conferir versão carregada, recursos do processo e executar os fluxos
+com dados/integrações de teste. Medir recursos com três agentes antes de afirmar
+aceite do celular. Email e contas/API reais continuam não validados. O servidor
+não foi atualizado, reiniciado ou acessado no aparelho nesta sessão.
 
-## Pendências e limites
-
-Configuração dos 11 recursos ativada no iniciador da branch; aplicação no aparelho e reinício ainda não executados nesta sessão. Não houve merge, deploy de frontend, teste no Termux ou uso de APIs reais. Ativação não aprova TikTok nem fornece métricas ausentes. Nenhuma fase anterior refeita.
-
-Não afirmar aceite integral de produção. Não abrir segunda implementação de
-editor, métrica ou memória quando o módulo existente cobrir. Rollback se
-solicitado: git revert 80dc7212d8e2bb415b904470cb40e01ae0e6ca92.
+A revisão de teste está em branch própria; sem merge automático. Rollback da
+correção, se solicitado: git revert bdcac77c089d9bc19478d51534b47d001b0db090. A correção não altera agendamento
+de produção nem desliga os recursos ativados pelo usuário.

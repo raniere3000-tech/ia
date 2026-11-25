@@ -1,0 +1,12 @@
+ok    sem origem registrada: espera liberação (não é erro e nada é enviado)
+ok    conferência mostra o item como liberável
+ok    o relógio não posta sozinho sem a liberação
+ok    liberação registrada só para o item liberável
+ok    liberação fica no relatório do post
+ok    liberado: posta
+ok    conferência diz que foi liberado por você (não finge que a origem foi registrada)
+ok    vídeo trocado: a liberação antiga não vale
+ok    conta desconectada continua sendo erro (liberação não passa por cima)
+ok    post sem nada a liberar recusa
+
+TUDO OK

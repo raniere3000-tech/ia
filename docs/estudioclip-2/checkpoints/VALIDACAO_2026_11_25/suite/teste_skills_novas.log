@@ -1,0 +1,29 @@
+ok    manifesto: 133 skills, sem id repetido
+ok    as 15 skills estão no manifesto
+ok    as 15 têm commit fixado, hash, tamanho e licença MIT com a fonte da licença
+ok    só SKILL.md (nenhum script entra)
+ok    as skills que trazem programa ficam marcadas "não roda aqui"
+ok    os 8 perfis novos têm as skills combinadas
+ok    texto real baixado no commit fixado bate com o hash e o tamanho do manifesto
+ok    15 definições instaladas com o texto real
+ok    só yt-viral fica sem regras em lista (o texto dele é prosa): ['yt-viral']
+ok    nenhuma regra cita o serviço externo, link, comando ou programa
+ok    a descrição de cada skill foi lida (texto em várias linhas)
+ok    estado honesto: regras disponíveis (programas não rodam)
+ok    roteador: "melhores momentos de gameplay" → agente1.gameplay usa video-highlight-skill
+ok    roteador: "por que viralizou no nicho" → radar.viralidade usa viral-reverse-engineering
+ok    roteador: "gancho de abertura" → agente3.ganchos usa yt-script
+ok    roteador: "estilo dos cortes" → site.estilos_cortes usa design-and-templates
+ok    roteador: "perfil do canal" → perfil.canal usa brand-profile
+ok    roteador: "pacote com capa e titulo" → agente2.pacote usa video-packaging
+ok    roteador: "aprendizado das metricas" → agentes.aprendizado usa analytics-and-reporting
+ok    aprendizado: 3 skills dentro do orçamento
+ok    yt-viral sem regras aparece como "texto instalado" e fica de fora, dito com motivo
+ok    Radar: "por que viralizou" entrou no pedido e o uso foi registrado com versão e ficha
+ok    Gameplay: o pedido dos ganchos leva as regras da skill de melhores momentos
+ok    Agente 3: o roteiro leva as regras de ganchos (yt-script)
+ok    Agente 3: uso de agente3.ganchos registrado só depois do roteiro existir
+ok    Agente 2: pacote ganha lista de boas práticas e o uso é registrado
+ok    Diretor: storyboard visual ganha lista para você conferir e o uso é registrado
+ok    perfil de ganchos desligado: o roteiro sai igual, sem as regras
+falhas: 0

@@ -1,0 +1,79 @@
+1. Antes de gravar
+  ok   sem a esteira ligada não grava
+  ok   sem link não grava
+  ok   sem dizer de quem é a live não grava
+  ok   sem rede para postar não grava
+  ok   link que não está ao vivo é recusado
+  ok   configuração com limites
+2. Gravando em blocos
+live: Gravação começou: "Live de teste" em blocos de 3 min.
+  ok   começou a gravar, com a origem registrada
+  ok   uma live por vez
+live:  ok   quando a live acaba, a gravação termina sozinha
+  ok   gravou 3 blocos (3 min + 3 min + o resto)
+ A live terminou.
+  ok   cada bloco tem o tamanho escolhido (3 min)
+  ok   cada bloco entrou na fila do Agente 1 (um por vez)
+  ok   aviso no fim da gravação
+3. Cada bloco: melhores momentos -> editor e diretor -> posta na hora
+agente: "Momento 1" agendado para 25/11 às 00:44 em Youtube, Tiktok.
+live: Bloco 1: 2 corte(s), 1 aprovado(s), 1 enviado(s) para postar.
+  ok   o Agente 1 corta o bloco já gravado, com a nota da live (60) e aceitando momento sem fala
+  ok   bloco 1: 2 cortes, 1 aprovado, 1 indo para as redes
+  ok   aprovado: post NA HORA, nas redes escolhidas para a live
+  ok   reprovado pelo diretor não é postado
+  ok   o arquivo do bloco é apagado depois (economiza espaço no celular)
+  ok   sem aviso de "agendado" (o aviso vem quando o post sair)
+agente: "Momento 2" agendado para 25/11 às 00:44 em Youtube, Tiktok.
+live: Bloco 2: 2 corte(s), 1 aprovado(s), 1 enviado(s) para postar.
+  ok   bloco 2: mais um post (2 de 2)
+live: "Momento 3" aprovado, mas a live já chegou a 2 posts: foi para o estoque.
+live: Bloco 3: 2 corte(s), 1 aprovado(s), 0 enviado(s) para postar.
+  ok   bloco 3 (40 s): curto demais, sem corte
+4. Limite de posts e a programação diária
+live: "Momento 4" aprovado, mas a live já chegou a 2 posts: foi para o estoque.
+live: Bloco 4: 2 corte(s), 1 aprovado(s), 0 enviado(s) para postar.
+  ok   passou de 2 posts: o aprovado vai para o estoque normal
+  ok   e a programação diária pode usar depois
+  ok   enquanto a live vai postar, a programação não pega o corte
+5. Tela e parar
+  ok   a tela mostra blocos e cortes da live
+live: Você parou a gravação. Os blocos já gravados ainda viram cortes.
+  ok   parar: termina o bloco atual
+live: Parada por teste.
+  ok   e encerra a gravação
+  ok   parar de novo não faz nada
+6. A Live vem primeiro
+  ok   sem bloco na fila: o Agente 1 segue normal
+  ok   bloco na fila: a Live tem trabalho esperando
+  ok   com bloco da Live esperando, o Agente 1 automático não começa outra rodada
+agente: Parei a rodada de estoque: a Live tem bloco esperando para virar corte (a Live vem primeiro).
+  ok   rodada de estoque em andamento para antes do próximo vídeo
+  ok   bloco da Live entra na fila com prioridade alta
+  ok   a tela diz o que está ocupando o celular
+7. Live que para de mandar vídeo
+live: Gravação começou: "Muda" em blocos de 20 min.
+live: O bloco 1 não gravou (tentativa 1 de 3). A live parou de mandar vídeo por 4 s.
+live: O bloco 1 não gravou (tentativa 2 de 3). A live parou de mandar vídeo por 4 s.
+live: O bloco 1 não gravou (tentativa 3 de 3). A live parou de mandar vídeo por 4 s.
+live: A gravação falhou 3 vezes seguidas. (A live parou de mandar vídeo por 4 s.)
+  ok   sem vídeo chegando: tenta 3 vezes e avisa, em vez de ficar "gravando" para sempre
+  ok   o motivo aparece no histórico da live
+8. Gameplay sem fala e bloco com o relógio da transmissão
+  ok   sem fala: achou 3 momento(s) pelos picos de som e troca de cena
+  ok   cada momento vira um corte de 60 a 65 s
+  ok   o momento com explosão e troca de cena (95 s) está entre os escolhidos
+  ok   título, gancho e hashtags da IA olhando o quadro; sem legenda (não há fala)
+  ok   os cortes não se repetem
+  ok   bloco com o relógio da transmissão vira MP4 com a duração certa (70 s)
+  ok   padrão novo: até 3 cortes por bloco, nota 60
+  ok   configuração antiga (1 corte, nota 70) é atualizada
+9. Memória do celular
+  ok   bloco já feito de live encerrada é apagado (libera memória)
+  ok   bloco ainda na fila NÃO é apagado
+live: Gravação começou: "Live de teste" em blocos de 5 min.
+live: Pouco espaço no celular (100 MB livres): pausei a gravação até os blocos na fila virarem corte e liberarem espaço. Apague vídeos antigos para liberar mais.
+  ok   pouco espaço: a gravação espera e avisa, sem encher o celular
+live: Você parou a gravação. Os blocos já gravados ainda viram cortes.
+
+47 ok, 0 falha(s)
