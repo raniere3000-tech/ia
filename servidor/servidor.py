@@ -13,12 +13,13 @@ import os
 import re
 import shutil
 import tempfile
+import unicodedata
 import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import cofre
 import postagem as pg
@@ -513,7 +514,7 @@ class Handler(BaseHTTPRequestHandler):
             raise Erro(404, 'Rota não encontrada.')
         sessao = None
         q = parse_qs(urlparse(self.path).query)
-        if metodo == 'GET' and caminho.startswith(('/api/v1/assets/', '/api/v1/thumbnails/midia/', '/api/v1/kwai/')) and q.get('sig'):
+        if metodo == 'GET' and caminho.startswith(('/api/v1/assets/', '/api/v1/thumbnails/midia/', '/api/v1/kwai/', '/api/v1/downloads/')) and q.get('sig'):
             if not api_v1._arquivo_assinado(caminho, q):
                 raise Erro(403, 'Link vencido. Abra de novo pelo site.')
         elif (metodo, caminho) not in api_v1.ABERTAS:
@@ -552,8 +553,9 @@ class Handler(BaseHTTPRequestHandler):
         if parcial:
             self.send_header('Content-Range', f'bytes {ini}-{fim}/{tamanho}')
         if baixar:
-            limpo = re.sub(r'[^\w\-. ]+', '', nome)[:80].strip() or 'arquivo'
-            self.send_header('Content-Disposition', f'attachment; filename="{limpo}"')
+            # nome com acento/qualquer alfabeto: versão simples (ASCII) para navegadores antigos + filename* em UTF-8 (RFC 5987)
+            simples = re.sub(r'[^\w\-. ]+', '', unicodedata.normalize('NFKD', nome).encode('ascii', 'ignore').decode())[:80].strip() or 'arquivo'
+            self.send_header('Content-Disposition', f"attachment; filename=\"{simples}\"; filename*=UTF-8''{quote(nome[:150], safe='')}")
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Cache-Control', 'private, max-age=3600')
         self.end_headers()

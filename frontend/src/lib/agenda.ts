@@ -22,8 +22,8 @@ export const REDES:{id:Rede;nome:string;prov:Prov|null}[] = [
 /** Endereço fixo para onde as redes devolvem o login (cadastre igual no app de cada rede). */
 export const enderecoRetorno = ()=>location.origin+location.pathname;
 
-type Cfg = {servidor:string;servidorToken:string};
-async function chamar<T=any>(cfg:Cfg,metodo:string,caminho:string,corpo?:unknown,raw?:Blob):Promise<T>{
+export type Cfg = {servidor:string;servidorToken:string};
+export async function chamar<T=any>(cfg:Cfg,metodo:string,caminho:string,corpo?:unknown,raw?:Blob):Promise<T>{
   if(!cfg.servidor) throw new Error('Ligue o servidor primeiro (Chaves e ajustes > Cortes direto pelo link).');
   const h:Record<string,string>={}; Object.assign(h,cabAuth(cfg.servidorToken));
   if(corpo!==undefined) h['Content-Type']='application/json';

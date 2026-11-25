@@ -34,6 +34,7 @@ import projetos as pj
 import renderizador as rd
 import rotas_esteira
 import thumbnails as th
+import download_lote as dl
 import series as srs
 from skills import catalogo as skcat
 from skills import roteador as skrot
@@ -502,6 +503,32 @@ def _series(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
     m = re.fullmatch(r'/api/v1/cenarios/([a-z0-9-]+)', caminho)
     if m and metodo in ('PATCH', 'PUT'):
         return srs.atualizar_cenario(m.group(1), corpo())
+    raise pj.ErroProjeto(404, 'Rota não encontrada.')
+
+
+def _downloads(metodo: str, caminho: str, corpo, quem: str):
+    base = '/api/v1/downloads'
+    try:
+        if (metodo, caminho) == ('POST', base):
+            d = corpo()
+            return dl.criar(d.get('posts'), str(d.get('formato') or 'pacote'), quem)
+        m = re.fullmatch(base + r'/([0-9a-f]{12})(?:/(cancelar|tentar-novamente|arquivo|item/(\d{1,3})))?', caminho)
+        if m:
+            jid, acao = m.group(1), m.group(2)
+            if metodo == 'GET' and not acao:
+                return dl.obter(jid)
+            if metodo == 'POST' and acao == 'cancelar':
+                return dl.cancelar(jid, quem)
+            if metodo == 'POST' and acao == 'tentar-novamente':
+                return dl.tentar_de_novo(jid, quem)
+            if metodo == 'GET' and acao == 'arquivo':
+                arq, nome = dl.arquivo_zip(jid)
+                raise Resposta(arq, 'application/zip', nome, True)
+            if metodo == 'GET' and m.group(3):
+                arq, nome = dl.arquivo_item(jid, int(m.group(3)))
+                raise Resposta(arq, 'video/mp4' if arq.suffix.lower() == '.mp4' else 'application/octet-stream', nome, True)
+    except dl.ErroDownload as e:
+        raise pj.ErroProjeto(e.status, e.msg)
     raise pj.ErroProjeto(404, 'Rota não encontrada.')
 
 
@@ -1068,6 +1095,8 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     if caminho.startswith('/api/v1/criativo/'):
         return _criativo(metodo, caminho, q, corpo, quem, sid)
     # ---- Agente 6: capas (thumbnails)
+    if caminho.startswith('/api/v1/downloads'):          # download em lote de Publicações (somente leitura)
+        return _downloads(metodo, caminho, corpo, quem)
     if caminho.startswith('/api/v1/thumbnails'):
         try:
             return _thumbs(metodo, caminho, q, corpo, quem)
