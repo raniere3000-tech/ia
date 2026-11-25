@@ -54,6 +54,11 @@ EFEITOS = {          # tipo: {parâmetro: (mínimo, máximo)} ou tupla de escolh
 }
 COR = {'exposicao_ev': (-1.5, 1.5), 'temperatura_k': (3200, 9500),
        'saturacao': (0.5, 1.5), 'contraste': (0.65, 1.4)}
+AUDIO = {'reducao_ruido_db': (0, 24), 'eq_hz': (55, 12000), 'eq_db': (-12, 12),
+         'compressao': (1, 6), 'limiar_db': (-36, -8)}
+SONS = {'categoria': ('foley', 'whoosh', 'impacto', 'riser', 'ambiencia', 'trilha'),
+        'ganho_db': (-38, 0), 'ini_ms': (0, 3_600_000), 'fim_ms': (1, 3_600_000),
+        'ducking': ('ligado', 'desligado')}
 PERFIS_SAIDA = ('final', 'previa')
 # correções que o diretor pode pedir ao editor (cada uma vira mudança tipada no plano)
 ACOES = {
@@ -171,6 +176,23 @@ def validar_plano(p: dict, dur_fonte: float | None = None) -> dict:
         if schema == SCHEMA_TIMELINE and tipo == 'cor':
             efeitos.append({'tipo': tipo, **_params(COR, e, 'cor')})
             continue
+        if schema == SCHEMA_TIMELINE and tipo == 'audio':
+            params = _params(AUDIO, e, 'áudio')
+            if ('eq_hz' in params) != ('eq_db' in params):
+                raise ErroContrato('O equalizador exige frequência e ganho.')
+            efeitos.append({'tipo': tipo, **params})
+            continue
+        if schema == SCHEMA_TIMELINE and tipo == 'som':
+            asset = e.get('asset', '')
+            if not isinstance(asset, str) or not re.fullmatch(r'[a-f0-9]{12,64}', asset) or e.get('direitos') not in ('meu', 'autorizado', 'regra'):
+                raise ErroContrato('O som exige um asset de áudio registrado e autorização de uso.')
+            params = _params(SONS, {k: v for k, v in e.items() if k not in ('asset', 'direitos')}, 'som')
+            if not {'categoria', 'ini_ms', 'fim_ms'}.issubset(params) or params['fim_ms'] <= params['ini_ms']:
+                raise ErroContrato('O som exige categoria e intervalo positivo.')
+            if params.get('ducking') == 'ligado' and params['categoria'] not in ('trilha', 'ambiencia'):
+                raise ErroContrato('Ducking é aplicável a trilha e ambiência.')
+            efeitos.append({'tipo': tipo, 'asset': asset, 'direitos': e['direitos'], **params})
+            continue
         if tipo == 'broll' and efeitos_reais_ativos():
             asset = str(e.get('asset') or '')
             if not re.fullmatch(r'[a-f0-9]{12,64}',asset) or e.get('direitos') not in ('meu','autorizado','regra'):
@@ -227,6 +249,8 @@ def _timeline_v2(bruto: dict, plano: dict) -> dict:
         if 'speed' in c and any(c['in_ms'] < fim and c['out_ms'] > ini for ini, fim in travas):
             raise ErroContrato('Trecho travado ou gancho protegido não pode mudar de velocidade.')
     efeitos = plano['effects']
+    if sum(e['tipo'] == 'som' for e in efeitos) > 8 or sum(e['tipo'] == 'audio' for e in efeitos) > 1:
+        raise ErroContrato('Use uma cadeia de tratamento e até oito camadas sonoras.')
     if any(e['tipo'] == 'reframe' and e['modo'] == 'roi' for e in efeitos):
         if sum(e['tipo'] == 'reframe' for e in efeitos) != 1 or any(e['tipo'] == 'zoom' and e.get('nivel', 1) > 1 for e in efeitos):
             raise ErroContrato('O reenquadramento por região de interesse exige uma única região e zoom neutro.')

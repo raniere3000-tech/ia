@@ -28,10 +28,10 @@ Auditoria estática do HEAD base. Executor indica código localizado. A prova lo
 | C04.04 | Cor | balanço de branco | Parcial | Ajuste de temperatura implementado e renderizado em combinação. Medição de branco neutro e fixture isolada pendentes. |
 | C04.05 | Cor | exposição | Validada no Linux | Teste de cor mede aumento de luminância após ajuste de exposição. |
 | C04.06 | Cor | correspondência de cenas | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C05.01 | Áudio | Redução de ruído | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C05.02 | Áudio | EQ | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C05.03 | Áudio | compressão | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C05.04 | Áudio | ducking | Em outro agente | renderizador.mixar_trilha e produtor; verificar distinção entre volume fixo e ducking por voz antes do aceite. |
+| C05.01 | Áudio | Redução de ruído | Parcial | editor_ia._filtros_audio usa afftdn; teste de cadeia aprovado, falta fixture isolada de redução de ruído. |
+| C05.02 | Áudio | EQ | Parcial | Equalizador tipado executado na cadeia e resposta aos 440 Hz medida; falta fixture isolada. |
+| C05.03 | Áudio | compressão | Parcial | Compressor tipado executado na cadeia; falta curva isolada com medição de envelope. |
+| C05.04 | Áudio | ducking | Validada no Linux | teste_efeitos_reais mede atenuação de trilha durante voz e recuperação na pausa. |
 | C05.05 | Áudio | normalização | Executor | editor_ia._executar_importado_base / _finalizar_efeitos; fixture de LUFS pendente. |
 | C05.06 | Áudio | separação voz/música | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C06.01 | Design sonoro | Foley | Em outro agente | produtor e perfil agente3.dialogo; render A5 pendente. |
@@ -39,7 +39,7 @@ Auditoria estática do HEAD base. Executor indica código localizado. A prova lo
 | C06.03 | Design sonoro | impactos | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C06.04 | Design sonoro | risers | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C06.05 | Design sonoro | ambiência | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
-| C06.06 | Design sonoro | sincronização de efeitos | Em outro agente | produtor e perfil agente3.dialogo; validação temporal A5 pendente. |
+| C06.06 | Design sonoro | sincronização de efeitos | Validada no Linux | teste_efeitos_reais demonstra áudio presente após o início programado; recibo com SHA do asset. |
 | C07.01 | VFX | Chroma key | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C07.02 | VFX | máscaras | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |
 | C07.03 | VFX | rotoscopia | Pendente | Executor específico A5 não localizado. Fixture, custo e evidência de saída pendentes. |

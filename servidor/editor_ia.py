@@ -526,9 +526,64 @@ def _filtros_cor(e: dict) -> list[tuple[str, str]]:
     return filtros
 
 
+def _filtros_audio(e: dict) -> list[tuple[str, str]]:
+    filtros = []
+    reducao = e.get('reducao_ruido_db', 0)
+    ganho = e.get('eq_db', 0)
+    razao = e.get('compressao', 1)
+    if reducao:
+        filtros.append(('afftdn', f'afftdn=nr={reducao:.2f}'))
+    if ganho:
+        filtros.append(('equalizer', f"equalizer=f={e['eq_hz']:.2f}:t=o:w=1:g={ganho:.2f}"))
+    if razao > 1:
+        limiar = 10 ** (e.get('limiar_db', -18) / 20)
+        filtros.append(('acompressor', f'acompressor=threshold={limiar:.6f}:ratio={razao:.2f}:attack=10:release=120'))
+    return filtros
+
+
+_FORMATOS_SOM = {'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/mpeg': 'mp3', 'audio/flac': 'flac',
+                 'audio/ogg': 'ogg', 'audio/mp4': 'mov', 'audio/aac': 'aac'}
+
+
+def _camada_som(pj, e, cmd, filtros, entrada, indice, total):
+    import renderizador as rd
+    midia = pj.asset(e['asset'])
+    formato = _FORMATOS_SOM.get(midia['mime'])
+    if not formato:
+        raise ct.ErroContrato('Formato de áudio para mixagem não permitido.')
+    a, b = int(e['ini_ms']), int(e['fim_ms'])
+    if not 0 <= a < b <= round(total * 1000):
+        raise ct.ErroContrato('Intervalo da camada sonora passa da duração renderizada.')
+    if rd.sha256(Path(midia['caminho'])) != midia['sha256']:
+        raise ct.ErroContrato('O conteúdo do asset de áudio mudou depois do registro.')
+    cmd.extend(['-protocol_whitelist', 'file', '-f', formato, '-i', midia['caminho']])
+    saida = f'[som{indice}]'
+    ganho = e.get('ganho_db', -18)
+    filtros.append(f'[{entrada}:a:0]atrim=duration={(b-a)/1000:.3f},asetpts=PTS-STARTPTS,'
+                   f'aresample=48000,aformat=channel_layouts=stereo,volume={ganho:.2f}dB,adelay={a}:all=1{saida}')
+    return saida, midia['sha256']
+
+
+def _mixar_camadas(filtros: list, voz: str, camadas: list) -> str:
+    mix = []
+    for i, (som, ducking) in enumerate(camadas):
+        if voz and ducking:
+            filtros.append(f'{voz}asplit=2[voz{i}][controle{i}]')
+            voz = f'[voz{i}]'
+            filtros.append(f'{som}[controle{i}]sidechaincompress=threshold=0.06:ratio=8:attack=20:release=280[duck{i}]')
+            som = f'[duck{i}]'
+        mix.append(som)
+    if voz:
+        mix.insert(0, voz)
+    filtros.append(''.join(mix) + f'amix=inputs={len(mix)}:duration=longest:normalize=0,'
+                   'alimiter=limit=0.95:level=0:latency=1[mix]')
+    return '[mix]'
+
+
 def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | None = None, base_aplicados=(), cancelado=None, roi=None) -> Path:
     import projetos as pj
     import renderizador as rd
+    from visual_presets import filtros_disponiveis
     plano=ct.validar_plano(plano)
     total=duracao_saida(plano)
     efeitos=plano['effects']
@@ -539,10 +594,13 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
     try:
         meta=rd.sonda(base)
         v=next(x for x in meta['streams'] if x['codec_type']=='video');w,h=int(v['width']),int(v['height'])
+        tem_voz = any(s['codec_type'] == 'audio' for s in meta['streams'])
+        voz, camadas = '[0:a:0]' if tem_voz else '', []
         cmd=['ffmpeg','-nostdin','-y','-v','error','-i',str(base)]
         filtros=[];atual='[0:v]';entrada=1;parados=[]
         for k,e in enumerate(efeitos):
             tipo=e['tipo'];status='aplicado';motivo=''
+            evidencia = {}
             a=float(e.get('ini_ms',0))/1000;b=float(e.get('fim_ms',total*1000))/1000
             if tipo=='zoom' and not e.get('fim_ms'):
                 b=total  # planos antigos omitem o fim do zoom global
@@ -554,7 +612,6 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
                             f"[z{k}a][z{k}c]overlay=0:0:enable='between(t,{a:.3f},{b:.3f})'[e{k}]"]
                 atual=f'[e{k}]'
             elif tipo == 'cor':
-                from visual_presets import filtros_disponiveis
                 tratamentos = _filtros_cor(e)
                 faltam = [nome for nome, _ in tratamentos if nome not in filtros_disponiveis()]
                 if not tratamentos:
@@ -566,6 +623,32 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
                 else:
                     filtros.append(atual + ','.join(expr for _, expr in tratamentos) + f'[e{k}]')
                     atual = f'[e{k}]'
+            elif tipo == 'audio':
+                tratamentos = _filtros_audio(e)
+                faltam = [nome for nome, _ in tratamentos if nome not in filtros_disponiveis()]
+                if not tratamentos:
+                    status, motivo = 'sem_alteracao', 'Tratamento sonoro neutro.'
+                elif not voz or faltam:
+                    status = 'fallback'
+                    motivo = 'Áudio de origem ausente.' if not voz else 'Filtros de áudio indisponíveis: ' + ', '.join(faltam)
+                else:
+                    filtros.append(voz + ','.join(expr for _, expr in tratamentos) + '[voz_tratada]')
+                    voz = '[voz_tratada]'
+            elif tipo == 'som':
+                ducking = e.get('ducking') == 'ligado' and tem_voz
+                exigidos = {'atrim', 'asetpts', 'aresample', 'aformat', 'volume', 'adelay', 'amix', 'alimiter'}
+                if ducking:
+                    exigidos.update(('asplit', 'sidechaincompress'))
+                faltam = sorted(exigidos - filtros_disponiveis())
+                if faltam:
+                    status, motivo = 'fallback', 'Filtros de mixagem indisponíveis: ' + ', '.join(faltam)
+                else:
+                    saida, asset_sha = _camada_som(pj, e, cmd, filtros, entrada, k, total)
+                    camadas.append((saida, ducking))
+                    evidencia = {'asset_sha': asset_sha, 'ducking': ducking}
+                    entrada += 1
+                    if e.get('ducking') == 'ligado' and not tem_voz:
+                        motivo = 'Trilha aplicada sem ducking porque não existe áudio de origem.'
             elif tipo=='broll':
                 midia=pj.asset(e['asset']);mime=midia['mime']
                 if not mime.startswith(('image/','video/')):
@@ -593,7 +676,7 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
                     status, motivo = 'fallback', roi['motivo']
             elif tipo not in base_aplicados:
                 raise ct.ErroContrato('O render base não comprovou aplicação de '+tipo)
-            recibo['efeitos'].append({'tipo':tipo,'status':status,'parametros':e,'motivo':motivo})
+            recibo['efeitos'].append({'tipo':tipo,'status':status,'parametros':e,'motivo':motivo,**evidencia})
         if ass:
             esc=lambda p:str(p).replace('\\','/').replace(':','\\:').replace("'","\\'")
             filtros.append(f"{atual}ass='{esc(ass)}'[leg]");atual='[leg]'
@@ -602,11 +685,22 @@ def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | No
         filtros.append(f'{atual}{fps}format=yuv420p[v]')
         bitrate = entrega.get('limite_kbps')
         vbv = ['-maxrate', f'{bitrate}k', '-bufsize', f'{2 * bitrate}k'] if bitrate else []
-        cmd += ['-filter_complex',';'.join(filtros),'-map','[v]','-map','0:a?','-t',str(total),
+        audio = _mixar_camadas(filtros, voz, camadas) if camadas else voz
+        mapa_audio = audio if audio and (camadas or audio != '[0:a:0]') else '0:a?'
+        ln = _efeito(plano, 'loudnorm')
+        norm = f"loudnorm=I={ln['alvo_lufs']:.1f}:TP=-1.5:LRA=11" if ln else ''
+        if ln and plano['schema_version'] == ct.SCHEMA_TIMELINE and not audio:
+            norm = ''
+            for item in recibo['efeitos']:
+                if item['tipo'] == 'loudnorm':
+                    item.update(status='fallback', motivo='Áudio ausente.')
+        if norm and mapa_audio != '0:a?':
+            filtros.append(audio + norm + '[audio_final]')
+            mapa_audio, norm = '[audio_final]', ''
+        cmd += ['-filter_complex',';'.join(filtros),'-map','[v]','-map',mapa_audio,'-t',str(total),
                 '-c:v','libx264','-preset','veryfast','-crf',str(entrega.get('crf', 21)),*vbv,'-pix_fmt','yuv420p','-c:a','aac']
-        ln=_efeito(plano,'loudnorm')
-        if ln:
-            cmd += ['-af',f"loudnorm=I={ln['alvo_lufs']:.1f}:TP=-1.5:LRA=11"]
+        if norm:
+            cmd += ['-af', norm]
         cmd += ['-movflags','+faststart',str(tmp)]
         rd.rodar(cmd,cancelado=cancelar,dur=total)
         dur=rd.duracao(tmp)
@@ -680,7 +774,7 @@ def executar_importado(plano: dict, fonte: Path, destino: Path, inicial_hash: st
         return _executar_importado_base(plano,fonte,destino,inicial_hash,cancelado=cancelado)
     p=copy.deepcopy(ct.validar_plano(plano));base=destino.with_name(destino.stem+'-base-efeitos.mp4')
     roi = _quadro_roi(p, fonte, ct.ASPECTOS[p['target_aspect_ratio']])
-    p['effects']=[e for e in p['effects'] if e['tipo'] not in ('zoom','broll','caption','cor')]
+    p['effects']=[e for e in p['effects'] if e['tipo'] not in ('zoom','broll','caption','cor','audio','som')]
     try:
         _executar_importado_base(p,fonte,base,cancelado=cancelado,roi=roi)
         return _finalizar_efeitos(plano,base,destino,base_aplicados=('reframe','fade','loudnorm'),cancelado=cancelado,roi=roi)

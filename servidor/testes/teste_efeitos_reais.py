@@ -1,5 +1,5 @@
 """F2.02: compara frames renderizados, plano e recibos, com mídia própria registrada."""
-import json,os,sys,subprocess,tempfile,unittest
+import array,json,math,os,sys,subprocess,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
 TMP=Path(tempfile.mkdtemp(prefix='ec-efeitos-reais-'))
@@ -22,6 +22,16 @@ def frame(p,t):
 
 def dif(a,b):
     return sum(abs(x-y) for x,y in zip(a,b))/max(1,min(len(a),len(b)))
+
+
+def intensidade(arq, inicio, frequencia):
+    pcm = subprocess.check_output(['ffmpeg', '-v', 'error', '-ss', str(inicio), '-i', str(arq),
+                                   '-map', '0:a:0', '-t', '0.2', '-ac', '1', '-ar', '48000', '-f', 'f32le', '-'])
+    amostras = array.array('f', pcm)
+    if sys.byteorder != 'little':
+        amostras.byteswap()
+    theta = math.tau * frequencia / 48000
+    return abs(sum(x * complex(math.cos(theta * i), math.sin(theta * i)) for i, x in enumerate(amostras))) / len(amostras)
 
 
 class EfeitosReais(unittest.TestCase):
@@ -179,5 +189,34 @@ class EfeitosReais(unittest.TestCase):
         self.assertEqual(recibo['efeitos'][0]['status'], 'fallback')
         self.assertIn('exposure', recibo['efeitos'][0]['motivo'])
         self.assertEqual(recibo['aplicados'], 0)
+
+    def test_tratamento_audio_e_camada_com_ducking_no_tempo_certo(self):
+        fala = TMP / 'fala.mp4'
+        musica = TMP / 'trilha.wav'
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', str(BASE), '-f', 'lavfi', '-i',
+                        r'aevalsrc=0.65*sin(2*PI*440*t)*lt(t\,1.45):d=3', '-map', '0:v:0', '-map', '1:a:0',
+                        '-c:v', 'copy', '-c:a', 'aac', str(fala)], check=True)
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=f=760:d=2.5', str(musica)], check=True)
+        aid = pj.registrar_asset(musica, 'trilha.wav', 'audio/wav')['asset']['id']
+        camada = {'tipo': 'som', 'asset': aid, 'direitos': 'meu', 'categoria': 'trilha',
+                  'ini_ms': 500, 'fim_ms': 2800, 'ganho_db': -6}
+        p = dict(self.plano([]), schema_version=ct.SCHEMA_TIMELINE)
+        bruto = TMP / 'mix-controle.mp4'
+        ducking = TMP / 'mix-duck.mp4'
+        tratado = TMP / 'audio-tratado.mp4'
+        ed._finalizar_efeitos(dict(p, effects=[camada]), fala, bruto)
+        ed._finalizar_efeitos(dict(p, effects=[dict(camada, ducking='ligado')]), fala, ducking)
+        ed._finalizar_efeitos(dict(p, effects=[{'tipo': 'audio', 'eq_hz': 440, 'eq_db': -6,
+                                              'compressao': 3, 'limiar_db': -24, 'reducao_ruido_db': 12}]), fala, tratado)
+        self.assertLess(intensidade(bruto, 0.1, 760), intensidade(bruto, 0.9, 760) * 0.10)
+        self.assertLess(intensidade(ducking, 0.9, 760), intensidade(bruto, 0.9, 760) * 0.70)
+        self.assertGreater(intensidade(ducking, 2.15, 760), intensidade(bruto, 2.15, 760) * 0.9)
+        self.assertLess(intensidade(tratado, 0.9, 440), intensidade(fala, 0.9, 440) * 0.6)
+        recibo = json.loads(ducking.with_suffix('.efeitos.json').read_text())
+        self.assertTrue(recibo['efeitos'][0]['ducking'])
+        self.assertEqual(recibo['efeitos'][0]['asset_sha'], rd.sha256(musica))
+        self.assertEqual(recibo['arquivo_sha'], rd.sha256(ducking))
+        with self.assertRaises(ct.ErroContrato):
+            ct.validar_plano(dict(p, effects=[dict(camada, direitos='desconhecido')]))
 
 if __name__=='__main__':unittest.main()

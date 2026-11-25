@@ -25,6 +25,9 @@ EDITOR = {
     'broll': ('Camadas de B-roll', ('scale', 'crop', 'overlay'), 'Manter a tomada principal.'),
     'cor': ('Tratamento de cor SDR', ('eq', 'exposure', 'colortemperature'), 'Preservar a cor do vídeo.'),
     'exportacao': ('Exportação configurada', ('fps', 'format'), 'Usar o perfil de exportação existente.'),
+    'tratamento-audio': ('Tratamento de áudio', ('afftdn', 'equalizer', 'acompressor'), 'Preservar o áudio original.'),
+    'mixagem': ('Mixagem e ducking', ('atrim', 'asetpts', 'aresample', 'aformat', 'volume', 'adelay', 'amix',
+                                    'alimiter', 'asplit', 'sidechaincompress'), 'Manter a trilha de origem.'),
     'integridade': ('Verificação de integridade', ('blackdetect', 'freezedetect', 'silencedetect'), 'Marcar o teste técnico como indisponível.'),
 }
 
