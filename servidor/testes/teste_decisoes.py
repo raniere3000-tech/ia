@@ -63,6 +63,8 @@ db.executar("INSERT INTO coordenador_aprovacoes (id, ordem_id, tarefa_id, origem
             "VALUES (?,?,?,?,?,?,?,?,?,?)", 'a1', 'o1', 't1', 'render', 'p9', 'x' * 64, 'h', '{"titulo": "Pacote do café"}', 'pendente', agora - 50)
 db.executar("INSERT INTO pipeline_runs (id, origem, ref, titulo, estado, criado, atualizado) VALUES (?,?,?,?,?,?,?)",
             'r1', 'corte', 'c1', 'Corte do jogo', 'manual_review_required', agora, agora - 400)
+import thumbnails as th  # noqa: E402
+th.salvar_config({'modo': 'supervisionado'})     # caminho manual: capas esperando a sua escolha (o automático escolhe sozinho)
 db.executar("INSERT INTO thumbnail_jobs (id, origem, referencia, video_sha, config, estado, criado, atualizado, titulo) VALUES (?,?,?,?,?,?,?,?,?)",
             'j1', 'corte', 'c1', 'y' * 64, '{}', 'aguardando_escolha', agora, agora - 100, 'Capa do corte')
 db.executar("INSERT INTO thumbnail_jobs (id, origem, referencia, video_sha, config, estado, criado, atualizado, titulo) VALUES (?,?,?,?,?,?,?,?,?)",

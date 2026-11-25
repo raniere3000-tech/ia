@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Download, Image as ImgIcon, Loader2, Palette, Plus, RefreshCw, Settings2, Sparkles, XCircle, BarChart3, ListChecks } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, Image as ImgIcon, Loader2, Palette, Plus, RefreshCw, Settings2, Sparkles, XCircle, BarChart3, ListChecks, ShieldCheck } from 'lucide-react';
 import { useApp } from '../state';
 import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
 import Progresso from '../components/Progresso';
+import ThumbAutonomia from './ThumbAutonomia';
 import { urlServidor } from '../lib/api';
 import { tempoTexto } from '../lib/alertas';
 import { ESTADOS, LAYOUT, METODOS, cancelarJob, criarPerfil, escolherCapa, lerCapacidades, lerCfgThumb, lerDesempenho, lerFontes, lerJob, lerJobs, lerPerfis,
   mudarPerfil, pedirCapas, refazerCapa, rejeitarCapa, salvarCfgThumb, type CfgThumb, type Fonte, type Metodo, type Pedido, type Perfil, type Variante } from '../lib/thumbnails';
 
-type Aba='fila'|'criar'|'galeria'|'modelos'|'desempenho'|'config';
-const ABAS:[Aba,string,typeof ImgIcon][]=[['fila','Fila',ListChecks],['criar','Criar',Plus],['galeria','Galeria',ImgIcon],['modelos','Modelos',Palette],['desempenho','Desempenho',BarChart3],['config','Configurações',Settings2]];
+type Aba='fila'|'autonomia'|'criar'|'galeria'|'modelos'|'desempenho'|'config';
+const ABAS:[Aba,string,typeof ImgIcon][]=[['fila','Fila',ListChecks],['autonomia','Autonomia e Integração',ShieldCheck],['criar','Criar',Plus],['galeria','Galeria',ImgIcon],['modelos','Modelos',Palette],['desempenho','Desempenho',BarChart3],['config','Configurações',Settings2]];
 const RODANDO=['na_fila','analisando','criando','validando','aguardando_video'];
 const quando=(t?:number|null)=>t?new Date(t*1000).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
 const seg=(s?:number|null)=>s==null?'sem medida ainda':tempoTexto(s);
@@ -27,6 +28,7 @@ export default function Thumbnails(){
   return <div className="thumbs">
     <div className="ag-abas" role="tablist">{ABAS.map(([k,t,I])=><button key={k} role="tab" aria-selected={aba===k} className={aba===k?'active':''} onClick={()=>trocar(k)}><I size={14}/> {t}</button>)}</div>
     {aba==='fila'&&<FilaThumbs abrir={abrir} criar={()=>trocar('criar')}/>}
+    {aba==='autonomia'&&<ThumbAutonomia abrir={abrir}/>}
     {aba==='criar'&&<Criar pronto={abrir}/>}
     {aba==='galeria'&&<Galeria id={jobSel} voltar={()=>trocar('fila')}/>}
     {aba==='modelos'&&<Modelos/>}
@@ -253,7 +255,7 @@ function Config(){
       <label className="check"><input type="checkbox" checked={c.ia_fallback_local} onChange={e=>m({ia_fallback_local:e.target.checked})}/> Se a IA falhar, fazer com quadros do vídeo sem perguntar</label>
       {cap.dados&&!cap.dados.ia.disponivel&&<p className="hint warn">{cap.dados.ia.motivo}</p>}
       <h4>Redes</h4>
-      <label className="check"><input type="checkbox" checked={c.exigir_capa_youtube} onChange={e=>m({exigir_capa_youtube:e.target.checked})}/> Só postar no YouTube com capa escolhida para o arquivo</label>
+      <p className="hint">Capa obrigatória por rede, estratégia de cada rede e recuperação ficam na aba <b>Autonomia e Integração</b>.</p>
       <ul className="thumb-redes">{cap.dados&&Object.entries(cap.dados.redes).map(([k,x])=><li key={k}><b>{k[0].toUpperCase()+k.slice(1)}</b> <span className={'tag '+(x.testado?'ok':x.tipo==='manual_only'?'':'warn')}>{x.estado}</span>
         <label className="sm"> formato <select value={c.formato_por_rede[k]||'auto'} onChange={e=>m({formato_por_rede:{...c.formato_por_rede,[k]:e.target.value}})}><option value="auto">automático</option>{['16:9','9:16','4:5','1:1'].map(f=><option key={f}>{f}</option>)}</select></label>
         <br/><small className="muted">{x.detalhe}</small></li>)}</ul>

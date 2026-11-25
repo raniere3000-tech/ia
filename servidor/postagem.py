@@ -818,24 +818,143 @@ def _nota_capa(p: dict, rede: str, msg: str):
         pass
 
 
+CAPA: dict = {}     # estado da capa no envio em andamento, por rede (vai para p['redes'][rede]['capa'] junto com o "postado")
+ESPERAS_CAPA = [5, 15, 60, 180, 720]     # minutos entre novas tentativas SÓ da capa (o vídeo não é reenviado)
+
+
+def _estado_capa(estado: str, cap: dict | None, estrategia: str, detalhe: str = '', **extra) -> dict:
+    """Estados: aplicada (a rede confirmou), indicada (a rede aceitou o tempo do quadro da capa), falhou (tenta de novo sozinho),
+    bloqueada (a rede recusou de vez: ex. conta sem verificação), manual (você aplica no app), sem_capa (sem capa escolhida)."""
+    return {'estado': estado, 'estrategia': estrategia, 'sha': (cap or {}).get('sha', ''), 'variante': (cap or {}).get('variante', ''),
+            'job': (cap or {}).get('job', ''), 'tempo_ms': (cap or {}).get('tempo_ms', 0), 'detalhe': detalhe[:300], 't': agora(), **extra}
+
+
+def _enviar_capa_youtube(vid: str, cap: dict, tok: str) -> tuple[int, dict]:
+    dados = cap['arquivo'].read_bytes()
+    return http('POST', URL['google_api'] + '/upload/youtube/v3/thumbnails/set?videoId=' + urllib.parse.quote(vid), dados=dados,
+                cab={'Authorization': 'Bearer ' + tok, 'Content-Type': 'image/jpeg', 'Content-Length': str(len(dados))}, tempo=120)[::2]
+
+
 def _capa_youtube(p: dict, arq: Path, vid: str, tok: str):
-    """Agente 6: manda a capa aprovada PARA ESTE ARQUIVO (thumbnails.set). Se o YouTube recusar, o vídeo continua postado e fica a nota."""
+    """Agente 6: manda a capa aprovada PARA ESTE ARQUIVO (thumbnails.set). Se o YouTube recusar, o vídeo continua postado,
+    a capa fica como "falhou" (com o ID do vídeo) e o servidor tenta de novo SÓ a capa depois — sem postar de novo."""
     cap = _capa(arq)
     if not cap or not vid:
+        CAPA['youtube'] = _estado_capa('sem_capa', None, 'imagem', 'Sem capa escolhida para este arquivo.', ref_rede=vid or '', tentativas=0)
         return
     try:
-        dados = cap['arquivo'].read_bytes()
-        st, _, j = http('POST', URL['google_api'] + '/upload/youtube/v3/thumbnails/set?videoId=' + urllib.parse.quote(vid), dados=dados,
-                        cab={'Authorization': 'Bearer ' + tok, 'Content-Type': 'image/jpeg', 'Content-Length': str(len(dados))}, tempo=120)
+        st, j = _enviar_capa_youtube(vid, cap, tok)
         if st < 300:
             import thumbnails as th
             th.marcar_rede_ok('youtube')
             _nota_capa(p, 'youtube', 'Capa do Agente 6 enviada.')
+            CAPA['youtube'] = _estado_capa('aplicada', cap, 'imagem', 'O YouTube confirmou a capa.', ref_rede=vid, tentativas=1)
         else:
-            _nota_capa(p, 'youtube', 'O YouTube não aceitou a capa (o vídeo foi postado): ' + _msg(j)[:200] +
-                       (' A conta precisa estar verificada para capa personalizada.' if st == 403 else ''))
-    except (OSError, ErroTemporario) as e:
+            msg = ('O YouTube não aceitou a capa (o vídeo foi postado): ' + _msg(j)[:200] +
+                   (' A conta precisa estar verificada para capa personalizada.' if st == 403 else ''))
+            _nota_capa(p, 'youtube', msg)
+            CAPA['youtube'] = _estado_capa('bloqueada' if st in (401, 403) else 'falhou', cap, 'imagem', msg, ref_rede=vid, tentativas=1,
+                                           proxima=agora() + ESPERAS_CAPA[0] * 60)
+    except (OSError, ErroTemporario, ErroRede) as e:
         _nota_capa(p, 'youtube', f'Capa não enviada (o vídeo foi postado): {e}'[:300])
+        CAPA['youtube'] = _estado_capa('falhou', cap, 'imagem', f'Capa não enviada: {e}', ref_rede=vid, tentativas=1,
+                                       proxima=agora() + ESPERAS_CAPA[0] * 60)
+
+
+def _id_youtube(r: dict) -> str:
+    cap = r.get('capa') or {}
+    if cap.get('ref_rede'):
+        return cap['ref_rede']
+    m = re.search(r'(?:shorts/|watch\?v=|youtu\.be/)([\w-]{6,20})', r.get('link') or '')
+    return m.group(1) if m else ''
+
+
+def reenviar_capa(pid: str, rede: str = 'youtube', quem: str = 'agente2', forcar: bool = False) -> dict:
+    """Manda de novo SÓ a capa de um vídeo JÁ postado (YouTube: thumbnails.set com o ID que já existe). Nunca reenvia o vídeo.
+    forcar=True é o botão "reenviar capa" (você pediu): ignora a espera e o limite automático."""
+    import thumbnails as th
+    if rede != 'youtube':
+        raise ErroRede('Só o YouTube aceita trocar a capa depois de postado pela integração. Nas outras redes, troque no app.')
+    p = next((x for x in posts() if x['id'] == pid), None)
+    if not p or rede not in p['redes']:
+        raise ErroRede('Post não encontrado.')
+    r = p['redes'][rede]
+    if r.get('status') != 'postado':
+        raise ErroRede('O vídeo ainda não foi postado nesta rede: a capa vai junto no envio.')
+    vid = _id_youtube(r)
+    if not vid:
+        raise ErroRede('Não achei o ID do vídeo no YouTube para trocar a capa.')
+    ant = r.get('capa') or {}
+    if ant.get('estado') == 'aplicada' and not forcar:
+        return ant
+    n = int(ant.get('tentativas') or 0)
+    if not forcar and n >= th.config()['max_envios_capa']:
+        return ant
+    try:
+        arq = video_path(p['video'])
+    except ErroRede as e:
+        raise ErroRede(f'O arquivo do vídeo não está mais no servidor: {e}')
+    cap = _capa(arq)
+    if not cap:
+        novo = _estado_capa('sem_capa', None, 'imagem', 'Sem capa escolhida e válida para este arquivo.', ref_rede=vid, tentativas=n)
+    else:
+        try:
+            st, j = _enviar_capa_youtube(vid, cap, _token_google())
+            if st < 300:
+                th.marcar_rede_ok('youtube')
+                novo = _estado_capa('aplicada', cap, 'imagem', 'O YouTube confirmou a capa (só a capa foi reenviada).', ref_rede=vid, tentativas=n + 1)
+            else:
+                fim = st in (401, 403) or n + 1 >= th.config()['max_envios_capa']
+                novo = _estado_capa('bloqueada' if st in (401, 403) else 'falhou', cap, 'imagem', 'O YouTube não aceitou a capa: ' + _msg(j)[:200],
+                                    ref_rede=vid, tentativas=n + 1, **({} if fim else {'proxima': agora() + ESPERAS_CAPA[min(n + 1, len(ESPERAS_CAPA) - 1)] * 60}))
+        except (OSError, ErroTemporario, ErroRede) as e:
+            novo = _estado_capa('falhou', cap, 'imagem', f'Capa não enviada: {e}', ref_rede=vid, tentativas=n + 1,
+                                proxima=agora() + ESPERAS_CAPA[min(n + 1, len(ESPERAS_CAPA) - 1)] * 60)
+    def gravar(q):
+        q['redes'][rede]['capa'] = novo
+        _anotar(q, rede, 'capa', f'{novo["estado"]}: {novo["detalhe"]}')
+    _mudar(pid, gravar)
+    th.registrar_aplicacao(pid, rede, novo, quem)
+    return novo
+
+
+def reenviar_capas_pendentes(limite: int = 5) -> list:
+    """Passada automática: capas do YouTube que falharam depois do vídeo postado (sem repetir o post)."""
+    import thumbnails as th
+    if not th.config()['reenviar_capa']:
+        return []
+    feitos = []
+    for p in posts():
+        r = p['redes'].get('youtube') or {}
+        c = r.get('capa') or {}
+        if r.get('status') == 'postado' and c.get('estado') == 'falhou' and c.get('proxima') and c['proxima'] <= agora():
+            try:
+                feitos.append((p['id'], reenviar_capa(p['id'], 'youtube', 'agente2-reenvio')['estado']))
+            except (ErroRede, ErroTemporario) as e:
+                print('postagem: reenvio da capa', p['id'], e)
+            if len(feitos) >= limite:
+                break
+    return feitos
+
+
+def _versao_com_capa(arq: Path, rede: str) -> tuple[Path, dict | None, dict | None]:
+    """TikTok/Instagram: a rede só aceita um MOMENTO do vídeo como capa. Com a estratégia "quadro", vai a versão de publicação
+    com a arte escolhida no quadro final (presa à mesma escolha). Sem isso, usa o quadro original de onde a capa saiu."""
+    try:
+        import thumbnails as th
+        estr = th.config()['estrategia_rede'].get(rede, 'quadro')
+        cap = th.capa_para_video(arq)
+        if not cap:
+            return arq, None, _estado_capa('sem_capa', None, estr, 'Sem capa escolhida para este arquivo.')
+        if estr == 'quadro':
+            e = th.video_com_capa(arq)
+            if e:
+                return e['arquivo'], dict(cap, tempo_ms=e['tempo_ms']), None
+            return arq, cap, None
+        return arq, cap if estr != 'nenhuma' else None, None
+    except Exception as e:  # noqa: BLE001 - capa nunca derruba o post
+        print('postagem: versão com capa', e)
+        return arq, None, None
 
 
 def _rupload(url: str, token: str, arq: Path):
@@ -867,10 +986,14 @@ def postar_instagram(p: dict, arq: Path) -> str:
     if not pg.get('ig_id'):
         raise ErroRede('A Página escolhida não tem Instagram profissional ligado. Ligue o Instagram à Página no app do Instagram ou no Facebook.')
     base = f"{URL['graph']}/{GRAPH_V}"
+    arq, cap, sem = _versao_com_capa(arq, 'instagram')
     st, _, j = http('POST', f"{base}/{pg['ig_id']}/media", form={
         'media_type': 'REELS', 'upload_type': 'resumable', 'caption': _texto(p, 2200), 'share_to_feed': 'true', 'access_token': pg['token'],
-        **({'thumb_offset': str(cap['tempo_ms'])} if (cap := _capa(arq)) and cap['tempo_ms'] else {})})
+        **({'thumb_offset': str(cap['tempo_ms'])} if cap and cap['tempo_ms'] else {})})
     _ok(st, j, 'Instagram recusou o Reels')
+    # o Instagram aceitou o pedido COM o tempo da capa: fica "indicada" (a rede não devolve a capa para conferir)
+    CAPA['instagram'] = sem or (_estado_capa('indicada', cap, 'quadro', f'O Instagram aceitou o quadro da capa em {cap["tempo_ms"]} ms.')
+                                if cap and cap['tempo_ms'] else _estado_capa('manual', cap, 'quadro', 'Escolha a capa no app do Instagram.'))
     cont = j['id']
     _rupload(j.get('uri') or f"{URL['rupload']}/ig-api-upload/{GRAPH_V}/{cont}", pg['token'], arq)
     for _ in range(120):   # até ~10 min processando
@@ -895,6 +1018,7 @@ def postar_instagram(p: dict, arq: Path) -> str:
 def postar_tiktok(p: dict, arq: Path) -> str:
     t = _token_tiktok()
     cab = {'Authorization': 'Bearer ' + t['access']}
+    arq, cap_pub, sem_capa = _versao_com_capa(arq, 'tiktok')
     tam = arq.stat().st_size
     if tam <= 64 * 1024 * 1024:
         pedaco, n = tam, 1
@@ -909,8 +1033,8 @@ def postar_tiktok(p: dict, arq: Path) -> str:
         opcoes = ((j.get('data') or {}).get('privacy_level_options') or ['SELF_ONLY']) if st < 300 else ['SELF_ONLY']
         priv = 'PUBLIC_TO_EVERYONE' if 'PUBLIC_TO_EVERYONE' in opcoes else opcoes[0]
         corpo = {'post_info': {'title': ta.texto_do_envio(p, 2200), 'privacy_level': priv}, 'source_info': fonte}
-        cap = _capa(arq)
-        if cap and cap['tempo_ms']:            # o TikTok só aceita o MOMENTO do vídeo como capa (não a arte)
+        cap = cap_pub
+        if cap and cap['tempo_ms']:            # o TikTok só aceita o MOMENTO do vídeo como capa: o quadro final com a arte
             corpo['post_info']['video_cover_timestamp_ms'] = cap['tempo_ms']
         rota = '/v2/post/publish/video/init/'
     else:
@@ -944,6 +1068,14 @@ def postar_tiktok(p: dict, arq: Path) -> str:
             if st >= 300:
                 raise ErroRede('TikTok recusou o envio do vídeo: ' + _msg(jj))
     _conferir_tiktok(dados.get('publish_id'), cab)
+    if sem_capa:
+        CAPA['tiktok'] = sem_capa
+    elif direto and cap_pub and cap_pub['tempo_ms']:
+        CAPA['tiktok'] = _estado_capa('indicada', cap_pub, 'quadro', f'O TikTok aceitou o quadro da capa em {cap_pub["tempo_ms"]} ms.')
+    else:       # rascunho (envio assistido): quem escolhe a capa é você, no app
+        seg = (cap_pub or {}).get('tempo_ms', 0) / 1000
+        CAPA['tiktok'] = _estado_capa('manual', cap_pub, 'quadro', 'No app do TikTok, toque em "Capa" e escolha o ÚLTIMO quadro do vídeo'
+                                      + (f' ({seg:.1f} s): é a arte do Agente 6.' if seg else '.'))
     if direto:
         return 'Enviado ao TikTok' + ('' if priv == 'PUBLIC_TO_EVERYONE' else ' como "Só eu" (app ainda não aprovado pelo TikTok)')
     if caiu_rascunho:
@@ -1120,14 +1252,15 @@ def conferencia(p: dict, rede: str) -> list[dict]:
             item('certificado', pp['ok'], pp['detalhe'])
     except Exception as e:  # noqa: BLE001  (sem conseguir conferir, não sai)
         item('certificado', False, f'Não consegui conferir a aprovação do diretor: {str(e)[:120]}')
-    if rede == 'youtube':    # Agente 6: só exige capa se você ligou "exigir capa no YouTube"
-        try:
-            import thumbnails as th
-            if th.config()['exigir_capa_youtube']:
-                item('capa', th.capa_para_video(arq) is not None, 'Capa aprovada para este arquivo.' if th.capa_para_video(arq) else
-                     'Falta a capa aprovada para este arquivo (Agente 6). Escolha uma capa em Thumbnails ou desligue "exigir capa".')
-        except Exception as e:  # noqa: BLE001
-            item('capa', False, f'Não consegui conferir a capa: {str(e)[:120]}')
+    try:     # Agente 6: capa escolhida e válida PARA ESTE ARQUIVO (capa de versão antiga do vídeo não vale), em toda rede que exige capa
+        import thumbnails as th
+        if th.exige_capa(rede):
+            cap = th.capa_para_video(arq)
+            item('capa', cap is not None, 'Capa aprovada para este arquivo.' if cap else
+                 'Falta a capa aprovada para este arquivo (Agente 6). O Agente 6 está fazendo ou escolhendo a capa; '
+                 'se demorar, veja Agentes > Agente 6 ou desligue "exigir capa" para esta rede.')
+    except Exception as e:  # noqa: BLE001
+        item('capa', False, f'Não consegui conferir a capa: {str(e)[:120]}')
     try:     # Agente 7: com "exigir liberação do coordenador" ligado, só sai o pacote que você liberou (vídeo + capa pelo hash)
         import coordenador as co
         if co.exigir_liberacao_efetiva():
@@ -1394,6 +1527,7 @@ def _publicar_um(pid: str, rede: str):
         return
     try:
         REF.pop(rede, None)
+        CAPA.pop(rede, None)
         arq = video_path(p['video'])
         contexto = contexto_publicacao(p, arq) if os.getenv('PUBLICACAO_CONTEXTO', '0') == '1' else None
         p.pop('_canal_publicado', None)
@@ -1403,13 +1537,21 @@ def _publicar_um(pid: str, rede: str):
             contexto['canal_rede'] = str(canal_rede) if canal_rede else None
             contexto['canal'] = contexto.get('canal') or (rede + ':' + str(canal_rede) if canal_rede else None)
         ref = REF.pop(rede, '')
+        capa = CAPA.pop(rede, None) or (_estado_capa('manual', None, 'manual', 'Esta rede não recebe capa pela integração: aplique no app.')
+                                        if rede == 'facebook' else None)
         def ok(q):
             feito = agora()
-            q['redes'][rede].update(status='postado', link=link, erro='', feito=feito, ref=ref)
+            q['redes'][rede].update(status='postado', link=link, erro='', feito=feito, ref=ref, **({'capa': capa} if capa else {}))
             if contexto is not None:
                 q['redes'][rede]['publicacao'] = dict(contexto, rede=rede, ref=ref or None, link=link, publicado_em=feito)
             _anotar(q, rede, 'postado', link)
         _mudar(pid, ok)
+        if capa:
+            try:
+                import thumbnails as th
+                th.registrar_aplicacao(pid, rede, capa, 'agente2')
+            except Exception as e:  # noqa: BLE001
+                print('postagem: registro da capa', e)
         if rede == 'tiktok':
             ta.notificar_pronto(pid)
     except ErroTemporario as e:
@@ -1482,6 +1624,10 @@ def ciclo(esperar: bool = True):
     """Publica tudo que já passou do horário. Cada rede vai por conta própria: se uma falhar ou demorar
     (ex.: TikTok), as outras (ex.: YouTube) são postadas do mesmo jeito. esperar=False: não espera os envios acabarem."""
     fios, por_rede = [], {}
+    try:
+        reenviar_capas_pendentes()
+    except Exception as e:  # noqa: BLE001  (reenvio de capa nunca segura as postagens)
+        print('postagem: reenvio de capas', e)
     for p in lista_posts():
         if not video_pronto(p['video']):
             continue

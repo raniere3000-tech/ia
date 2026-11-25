@@ -247,6 +247,15 @@ ESQUEMA = [
     CREATE TABLE IF NOT EXISTS texto_tela (video_sha TEXT PRIMARY KEY, ref TEXT, estado TEXT NOT NULL, resultado TEXT, tentativas INTEGER NOT NULL DEFAULT 0,
         criado REAL NOT NULL, atualizado REAL NOT NULL);
     """,
+    # 14: Agente 6 autônomo: versão de publicação com a capa embutida (presa à mesma escolha, sem novo ciclo) e estado da capa por post/rede
+    """
+    CREATE TABLE IF NOT EXISTS thumbnail_embutidos (video_sha TEXT PRIMARY KEY, original_sha TEXT NOT NULL, selecao TEXT NOT NULL, thumb_sha TEXT NOT NULL,
+        tempo_ms INTEGER NOT NULL, segundos REAL NOT NULL, arquivo TEXT NOT NULL, criado REAL NOT NULL);
+    CREATE INDEX IF NOT EXISTS thumbnail_embutidos_orig ON thumbnail_embutidos (original_sha, thumb_sha);
+    CREATE TABLE IF NOT EXISTS thumbnail_aplicacoes (post TEXT NOT NULL, rede TEXT NOT NULL, estrategia TEXT NOT NULL, estado TEXT NOT NULL,
+        video_sha TEXT, thumb_sha TEXT, ref_rede TEXT, tentativas INTEGER NOT NULL DEFAULT 0, erro TEXT, criado REAL NOT NULL, atualizado REAL NOT NULL,
+        PRIMARY KEY (post, rede));
+    """,
 ]
 
 
