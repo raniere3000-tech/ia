@@ -1,18 +1,18 @@
 # CHECKPOINT — EstúdioClip 2.0
 
-Atualizado: 2026-11-24T21:08:35-03:00.
+Atualizado: 2026-11-24T21:43:50-03:00.
 
 ```yaml
-fase: "F5"
-microetapa: "F5.R01"
+fase: "ATIVACAO"
+microetapa: "ATIVACAO.01"
 status: "COMMITTED"
 branch: "codex/estudioclip-2-fase5"
-sha_inicial: "895076ffadfe75dc29d001d81069c47f857f9f7f"
-sha_final_implementacao: "3e45a27d8cab5fab82fcdea3a8fdb30b04caa386"
-proxima_microetapa: "VALIDACAO_TERMUX_E_REVISAO"
+sha_inicial: "a120387c6d3d0cf05628847762f37e9de3c79ce4"
+sha_final_implementacao: "80dc7212d8e2bb415b904470cb40e01ae0e6ca92"
+proxima_microetapa: "APLICAR_NO_TERMUX"
 mudancas_nao_commitadas: []
-testes: ["Rodada global anterior: 69 arquivos PASS, 0 FAIL, email interativo excluído", "F5.R01: 7 testes de compatibilidade PASS", "11 grupos afetados PASS", "frontend 18 PASS", "TypeScript/Vite PASS"]
-flags_adicionadas: ["INTELIGENCIA_METRICAS=0"]
+testes: ["bash -n PASS", "iniciador 3 PASS", "edição compartilhada 9 PASS", "integridade render 7 PASS", "compatibilidade métricas 7 PASS"]
+flags_adicionadas: ["11 flags=1 no iniciar-termux.sh; valores explícitos de rollback preservados"]
 migracoes: []
 merge: "NAO_REALIZADO"
 producao: "NAO_PUBLICADA"
@@ -37,11 +37,11 @@ commitadas; flags novas desligadas. Falhas antigas de estilos e exportação
 corrigidas. F3.01: 23 verificações de roteiro e 10 de concorrência. F3.02: seis
 testes de consistência, incluindo render real de duas cenas/duas versões.
 
-Microetapas F1.01–F5.04 e revisão F5.R01 concluídas em branches empilhadas, com commits, testes e checkpoints. F1 PR21, F2 PR22, F3 PR24, F4 PR25, F5 PR26: todos em rascunho e sem merge. Regressão global passou no SHA f987561; ajustes posteriores passaram nos 11 grupos afetados, sete testes novos e frontend. Entrega/flags/limites em docs/estudioclip-2/entrega-final.md. Árvore local e remota devem coincidir após o commit documental final.
+Usuário autorizou ativar todos os recursos. Iniciador Termux agora exporta os 11 recursos com 1 em partidas normais, link, watchdog e Boot; valor explícito 0 permite rollback. Padrões dos módulos isolados continuam preservados. Testes isolados e grupos com os 11 recursos no ambiente passaram. Configuração commitada; não afirmar ativação no aparelho antes de atualizar e reiniciar. Main concorrente b8d1329/PR23 foi inspecionada e não foi alterada.
 
-Evidências: docs/estudioclip-2/checkpoints/F5.R01-*.
+Evidências: docs/estudioclip-2/checkpoints/ATIVACAO.01-*.
 
-## Retomada exata — VALIDACAO_TERMUX_E_REVISAO
+## Retomada exata — APLICAR_NO_TERMUX
 
 ```bash
 git status --short
@@ -51,12 +51,12 @@ git fetch origin codex/estudioclip-2-fase5:refs/remotes/origin/codex/estudioclip
 git rev-list --left-right --count HEAD...origin/codex/estudioclip-2-fase5
 ```
 
-Desenvolvimento do pacote concluído. Próximo passo: revisar PR26 e dependências 25/24/22/21; validar em instância de teste no Termux (banco separado e redes simuladas), incluindo consumo/render e três agentes simultâneos. Comandos de retomada read-only acima conferem branch, HEAD e diferenças remotas. Não refazer F0/F1 nem iniciar implementação duplicada. APIs reais/email e rollout dependem da validação correspondente; não fazer merge/deploy sem autorização do usuário.
+Atualizar o checkout do aparelho para a branch codex/estudioclip-2-fase5 e, da pasta servidor, executar bash iniciar-termux.sh link. Validar servidor/consumo/render no Termux. O frontend publicado em main ainda não recebeu as fases: revisão/integração/publicação seguem separadas, sem merge automático. Ver docs/estudioclip-2/ativacao-recursos.md.
 
 ## Pendências e limites
 
-Nenhuma microetapa de código restante no pacote. Não validado: desempenho/concorrência no Termux, email real, contas e permissões de APIs reais. TikTok/Kwai e retenção sem coletor de métricas nesta entrega. Recursos novos permanecem desligados por padrão; ver entrega-final.md. A rodada global de 69 arquivos precede F5.R01; os testes posteriores são complementares, não uma segunda rodada global.
+Configuração dos 11 recursos ativada no iniciador da branch; aplicação no aparelho e reinício ainda não executados nesta sessão. Não houve merge, deploy de frontend, teste no Termux ou uso de APIs reais. Ativação não aprova TikTok nem fornece métricas ausentes. Nenhuma fase anterior refeita.
 
 Não afirmar aceite integral de produção. Não abrir segunda implementação de
 editor, métrica ou memória quando o módulo existente cobrir. Rollback se
-solicitado: git revert 3e45a27d8cab5fab82fcdea3a8fdb30b04caa386.
+solicitado: git revert 80dc7212d8e2bb415b904470cb40e01ae0e6ca92.
