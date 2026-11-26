@@ -70,6 +70,10 @@ VARIACOES = {'cor_destaque': 'Cor da palavra em destaque', 'gancho_pos': 'Posiç
 PALETA = ['#FFE14D', '#5CE1E6', '#7CFF6B', '#FF8A3D', '#FF6BD6', '#FFFFFF']
 PALETA_TARJA = ['#111111', '#1B2A49', '#3A0F3F', '#0F3D2E', '#4A1D1D']
 
+# limites dos campos "Cortes por semana" e "Cortes por vídeo" (antes 21 e 6: o servidor reescrevia 90 e 10 sem avisar)
+LIM_POR_SEMANA = 200
+LIM_POR_VIDEO = 20
+
 PADRAO = {
     'cortes': {
         'ligado': False, 'nichos': ['Games'], 'temas': [], 'temas_outros': False, 'proibidos': ['conteúdo adulto', 'discurso de ódio', 'menores de idade'],
@@ -162,12 +166,12 @@ def _limpar_cfg(c: dict) -> dict:
     co['estilos'] = [x for x in dict.fromkeys(co.get('estilos') or []) if x in vp.PRESETS][:6]
     co['idioma'] = co['idioma'].lower() if re.fullmatch(r'[A-Za-z]{2}', co['idioma']) else 'pt'
     co['regiao'] = co['regiao'].upper() if re.fullmatch(r'[A-Za-z]{2}', co['regiao']) else ''
-    co['por_semana'] = max(1, min(21, co['por_semana']))
+    co['por_semana'] = max(1, min(LIM_POR_SEMANA, int(_n(co['por_semana'], 6))))
     co['exigir_aprovacao'] = co.get('exigir_aprovacao') is True
     co['busca_auto'] = co.get('busca_auto') is not False
     co['busca_horas'] = max(1, min(168, int(_n(co.get('busca_horas'), 24))))
     co['busca_max'] = max(1, min(50, int(_n(co.get('busca_max'), 25))))
-    co['por_video'] = max(1, min(6, co['por_video']))
+    co['por_video'] = max(1, min(LIM_POR_VIDEO, int(_n(co['por_video'], 2))))
     # banco de trechos: quantos trechos a IA aponta numa análise (o que não sai agora fica guardado e vira corte depois, sem IA); 0 = desligado
     co['por_analise'] = max(0, min(20, int(co.get('por_analise') or 0)))
     co['so_com_legenda'] = co.get('so_com_legenda') is True     # vídeo sem legenda do YouTube: pula em vez de pagar a IA para ouvir

@@ -195,7 +195,16 @@ export default function Agente(){
   const ocupado=!!v?.atual.ocupado;
   useEffect(()=>{ carregar(); const t=setInterval(carregar,ocupado?3000:12000); return ()=>clearInterval(t); },[carregar,ocupado]);
   const run=async(f:()=>Promise<unknown>,ok?:string)=>{ try{ const r=await f(); if(r&&typeof r==='object'&&'config' in r) setV(r as VisaoAgente); else carregar(); if(ok) toast(ok,'ok'); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } };
-  const salvar=(p:Parameters<typeof salvarAgente>[1])=>run(()=>salvarAgente(settings,p));
+  const salvar=(p:Parameters<typeof salvarAgente>[1])=>run(async()=>{
+    const r=await salvarAgente(settings,p) as unknown;
+    // o servidor pode ajustar o valor (limite, servidor antigo): avisa em vez de dizer "salva" e o número voltar calado
+    if(r&&typeof r==='object'&&'config' in r&&p.cortes){
+      const nc=(r as VisaoAgente).config.cortes as unknown as Record<string,unknown>;
+      const dif=Object.entries(p.cortes).filter(([k,x])=>typeof x==='number'&&k in nc&&nc[k]!==x);
+      if(dif.length) toast('O servidor ajustou: '+dif.map(([k,x])=>`${k} ${x} → ${String(nc[k])}`).join(', ')+'. Se o limite parece velho, atualize o servidor (git checkout main && git pull) e reinicie.','erro');
+    }
+    return r;
+  });
   /** Liga/desliga a busca automática e confere se o servidor guardou mesmo (servidor antigo ignora a opção sem avisar). */
   const trocarBusca=async()=>{
     if(!v) return;
@@ -327,8 +336,8 @@ export default function Agente(){
       <section className="panel">
         <h3>Quantidade e tamanho</h3>
         <div className="ag-grade">
-          <label>Cortes por semana<Campo tipo="number" min={1} max={21} valor={co.por_semana} salvar={x=>salvar({cortes:{por_semana:+x}})}/></label>
-          <label>Cortes por vídeo<Campo tipo="number" min={1} max={6} valor={co.por_video} salvar={x=>salvar({cortes:{por_video:+x}})}/></label>
+          <label>Cortes por semana<Campo tipo="number" min={1} max={200} valor={co.por_semana} salvar={x=>salvar({cortes:{por_semana:+x}})}/></label>
+          <label>Cortes por vídeo<Campo tipo="number" min={1} max={20} valor={co.por_video} salvar={x=>salvar({cortes:{por_video:+x}})}/></label>
           <label>Trechos por análise (banco de trechos, 0 = desligado){' '}<small className="muted">os que não saem agora viram corte depois, sem gastar IA</small><Campo tipo="number" min={0} max={20} valor={co.por_analise??12} salvar={x=>salvar({cortes:{por_analise:+x}})}/></label>
           <label>Cada corte dura no mínimo (em SEGUNDOS){' '}<small className="muted">= {tempo(co.dur_min)}</small><Campo tipo="number" min={10} max={175} valor={co.dur_min} salvar={x=>salvar({cortes:{dur_min:+x}})}/></label>
           <label>Cada corte dura no máximo (em SEGUNDOS){' '}<small className="muted">= {tempo(co.dur_max)}</small><Campo tipo="number" min={15} max={180} valor={co.dur_max} salvar={x=>salvar({cortes:{dur_max:+x}})}/></label>

@@ -437,7 +437,7 @@ def sugestoes(r: dict) -> list:
         out.append({'id': 'reserva_cheia', 'prioridade': 3, 'feito': False, 'fonte': 'banco de trechos', 'titulo': f'{res} trechos guardados esperando para virar corte',
                     'texto': f'Eles saem sem gastar IA para escolher. Com {cfg["por_semana"]} cortes por semana, alguns vão vencer '
                              f'({DIAS_RESERVA} dias). Se quiser postar mais, suba os cortes por semana.',
-                    'acao': {'rotulo': f'Subir para {min(21, cfg["por_semana"] + 4)} por semana', 'cortes': {'por_semana': min(21, cfg['por_semana'] + 4)}}})
+                    'acao': {'rotulo': f'Subir para {min(ag.LIM_POR_SEMANA, cfg["por_semana"] + 4)} por semana', 'cortes': {'por_semana': min(ag.LIM_POR_SEMANA, cfg['por_semana'] + 4)}}})
 
     m = r['mes']
     if m['teto'] > 0 and m['reais_pago'] >= 0.8 * m['teto']:
