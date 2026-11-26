@@ -13,7 +13,7 @@ const DECISAO:Record<string,string>={aprovado:'Aprovado',alterar:'Correção ped
 
 const ST_Q:Record<Qualidade['status'],[string,string,string]>={
   apto_para_revisao_humana:['Tudo certo','ok','Nenhum problema encontrado. Falta só você assistir e decidir.'],
-  alerta_visual:['Vale olhar','warn','O vídeo está pronto, mas o diretor de qualidade achou pontos para você conferir. Nada disso bloqueia a aprovação.'],
+  alerta_visual:['Apontamentos','warn','Confira abaixo as cenas e as correções indicadas pelo diretor.'],
   analise_indisponivel:['Não conferido','','Não deu para analisar os quadros desta vez.'],
   falha_tecnica:['Falha técnica','bad','O arquivo final tem um problema técnico.'],
 };
@@ -157,13 +157,17 @@ export default function Revisar(){
   if(!pid) return <ListaAprovacoes/>;
   const r=rev.dados;
   if(!r) return <section className="panel">{rev.erro?<p className="hint bad">{rev.erro}</p>:<p className="hint"><Loader2 size={14} className="spin"/> Abrindo...</p>}</section>;
-  const p=r.projeto; const d=p.dados as {briefing:Briefing;cenas:Cena[];render:Render|null;roteiro:{titulo:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[]}|null;producao?:{erro?:string};qualidade?:Qualidade;diretor?:{veredito:string;motivos:string[];tentativas:number};renders?:{id:string;versao:number}[];correcoes?:Correcao[]};
+  const p=r.projeto; const d=p.dados as {briefing:Briefing;cenas:Cena[];render:Render|null;roteiro:{titulo:string;legenda:string;hashtags:string[];fontes:{titulo:string;url:string}[]}|null;producao?:{erro?:string};qualidade?:Qualidade;pareceres_etapas?:Record<string,{aprovado:boolean;motivos:string[];reprovacoes:number}>;diretor?:{veredito:string;motivos:string[];tentativas:number};renders?:{id:string;versao:number}[];correcoes?:Correcao[]};
   const render=d.render; const b=d.briefing;
   const destinos=redes??(b?.destinos?.redes||[]);
   const fazer=async(nome:string,f:()=>Promise<unknown>,ok:string)=>{ setBusy(nome); try{ await f(); toast(ok,'ok'); setTexto(''); rev.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(''); } };
   const esperandoVideo=p.status==='ready_for_review';
   const esperandoRoteiro=p.status==='waiting_brief_approval'||(p.status==='storyboard_ready'&&!render);
-  const st=r.estados[p.status]||p.status;
+  const etapasPendentes=Object.values(d.pareceres_etapas||{}).some(etapa=>!etapa.aprovado);
+  const liberado=esperandoVideo && r.parecer?.aprovado===true && !etapasPendentes;
+  const manual=esperandoVideo && !liberado;
+  const bloqueios=r.bloqueios_manuais||[];
+  const st=manual?'Revisão manual disponível':r.estados[p.status]||p.status;
   return <div className="revisar">
    <button className="link-btn" onClick={()=>go('fila')}><ArrowLeft size={14}/> Fila e aprovações</button>
    <section className="panel">
@@ -172,7 +176,8 @@ export default function Revisar(){
     {!render&&!esperandoRoteiro&&!['failed','cancelled','rejected'].includes(p.status)&&<p className="hint">O celular está trabalhando. Pode fechar esta tela: quando o vídeo ficar pronto ele aparece aqui e em Fila e aprovações{' '}(e chega um e-mail, se estiver configurado).</p>}
     {p.status==='failed'&&<div className="row-gap left"><button className="primary sm" onClick={()=>go('fila')}>Abrir a fila para tentar de novo</button></div>}
     {d.producao?.erro&&p.status==='failed'&&<p className="hint bad"><AlertTriangle size={14}/> {d.producao.erro}</p>}
-    {d.diretor?.veredito==='aprovado'&&render&&<p className="hint ok"><ShieldCheck size={14}/> Aprovado pelo diretor de qualidade{d.diretor.tentativas>0?` depois de refazer ${d.diretor.tentativas} vez(es)`:''}. Agora falta a sua aprovação final.</p>}
+    {manual&&<p className="hint warn"><ShieldCheck size={14}/> Parecer do diretor pendente ou desfavorável. {r.parecer?.motivos.join(' ')} Você pode decidir sobre esta versão manualmente.</p>}
+    {liberado&&d.diretor&&render&&<p className="hint ok"><ShieldCheck size={14}/> Aprovado pelo diretor de qualidade{d.diretor.tentativas>0?` depois de refazer ${d.diretor.tentativas} vez(es)`:''}. Agora falta a sua aprovação final.</p>}
     {d.diretor?.veredito==='refazendo'&&<p className="hint warn"><ShieldCheck size={14}/> O diretor de qualidade mandou refazer (tentativa {d.diretor.tentativas}): {d.diretor.motivos.join(' · ')}</p>}
     {render&&<div className="rev-video">
      {r.links.video?<video src={urlServidor(cfg,r.links.preview||r.links.video)} controls playsInline preload="metadata" poster={r.links.thumb?urlServidor(cfg,r.links.thumb):undefined} className={render.altura>render.largura?'vertical':''}/>:<p className="hint">Prévia indisponível.</p>}
@@ -184,6 +189,13 @@ export default function Revisar(){
      </div>
     </div>}
    </section>
+
+   {d.pareceres_etapas&&<section className="panel"><h2>Revisões do Diretor de Qualidade</h2>
+    <ul>{Object.entries(d.pareceres_etapas).map(([etapa,parecer])=><li key={etapa}>
+     <b>{({pauta:'Pauta',roteiro:'Roteiro e storyboard',narracao:'Narração',visual:'Imagens',render:'Cenas renderizadas',creative_preedit:'Revisão criativa',final:'Vídeo final'} as Record<string,string>)[etapa]||etapa}</b>
+     {' • '}{parecer.aprovado?'Aprovado':'Com pendências'}{parecer.reprovacoes>0&&` • Reprovações: ${parecer.reprovacoes}`}
+     {parecer.motivos.length>0&&<p>{parecer.motivos.join(' · ')}</p>}
+    </li>)}</ul></section>}
 
    {render&&d.qualidade&&<QualidadePainel q={d.qualidade} cenas={d.cenas||[]} pid={pid} render={render} renders={d.renders||[]} correcoes={d.correcoes||[]} podeCorrigir={esperandoVideo} corrigido={()=>rev.recarregar()}/>}
 
@@ -199,12 +211,15 @@ export default function Revisar(){
      <label className="check"><input type="radio" checked={quando==='data'} onChange={()=>setQuando('data')}/> Data e hora</label>
      {quando==='data'&&<input type="datetime-local" value={data} onChange={e=>setData(e.target.value)}/>}
     </div>
+    {manual&&bloqueios.length>0&&<p className="hint bad">{bloqueios.join(' · ')}</p>}
     <DescricaoPub pid={pid} redes={destinos} v={desc} setV={setDesc}/>
     <div className="row-gap left mt">
-     <button className="primary" disabled={!!busy||(quando==='data'&&!data)||!desc.srv} onClick={()=>fazer('ok',()=>aprovar(cfg,pid,render.sha,{redes:destinos,quando,data:quando==='data'?new Date(data).getTime()/1000:undefined,
-       link_original:desc.link,legenda:desc.srv&&(desc.srv.editada||desc.txt!==desc.srv.legenda)?desc.txt:undefined}),destinos.length?'Aprovado e entregue ao Agente 2.':'Aprovado. Sem rede escolhida: o vídeo fica salvo.')}>
-      {busy==='ok'?<Loader2 size={15} className="spin"/>:<CheckCircle2 size={15}/>} Aprovar{destinos.length?' e agendar':''}</button>
-     <button className="subtle" disabled={!!busy} onClick={()=>fazer('mail',()=>reenviarEmail(cfg,pid),'E-mail com código novo enviado (o anterior deixou de valer).')}><Mail size={15}/> Reenviar e-mail</button>
+     <button className="primary" disabled={!!busy||(quando==='data'&&!data)||(!desc.srv&&destinos.length>0)||(manual&&bloqueios.length>0)} onClick={()=>{
+       if(manual&&!window.confirm(`Aprovar manualmente a versão ${render.versao}${destinos.length?' e encaminhar para publicação':''}?`)) return;
+       return fazer('ok',()=>aprovar(cfg,pid,render.sha,{redes:destinos,quando,data:quando==='data'?new Date(data).getTime()/1000:undefined,
+       link_original:desc.link,legenda:desc.srv&&(desc.srv.editada||desc.txt!==desc.srv.legenda)?desc.txt:undefined},manual),destinos.length?'Aprovado e entregue ao Agente 2.':'Aprovado. Sem rede escolhida: o vídeo fica salvo.'); }}>
+      {busy==='ok'?<Loader2 size={15} className="spin"/>:<CheckCircle2 size={15}/>} {manual?'Aprovar manualmente':'Aprovar'}{destinos.length?' e agendar':''}</button>
+     <button className="subtle" disabled={!!busy} hidden={manual} onClick={()=>fazer('mail',()=>reenviarEmail(cfg,pid),'E-mail com código novo enviado (o anterior deixou de valer).')}><Mail size={15}/> Reenviar e-mail</button>
     </div>
     <label className="mt">O que precisa mudar? (a IA muda só isso; cenas bloqueadas ficam iguais)<textarea rows={3} value={texto} onChange={e=>setTexto(e.target.value)} placeholder="Ex.: deixe a cena 2 mais curta e troque o destaque da cena 4 por 'Fato real'"/></label>
     <div className="row-gap left">
@@ -242,7 +257,7 @@ export default function Revisar(){
 
    {r.historico.length>0&&<section className="panel">
     <div className="section-head"><h2>Histórico de decisões</h2></div>
-    <ul className="historico">{r.historico.map(h=><li key={h.id}><b>{DECISAO[h.decisao]||h.decisao}</b> • {horaTexto(h.criado)} • {h.origem==='email'?'por e-mail':'pelo site'} ({h.por}){h.texto&&<> • “{h.texto}”</>}</li>)}</ul>
+    <ul className="historico">{r.historico.map(h=><li key={h.id}><b>{DECISAO[h.decisao]||h.decisao}</b> • {horaTexto(h.criado)} • {h.origem==='site_manual'?'por aprovação manual':h.origem==='email'?'por e-mail':'pelo site'} ({h.por}){h.texto&&<> • “{h.texto}”</>}</li>)}</ul>
    </section>}
    {r.job&&<p className="hint">Trabalho: {r.job.status} • decorrido {duracaoTexto(r.job.decorrido)}</p>}
   </div>;

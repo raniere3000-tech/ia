@@ -50,7 +50,8 @@ def video(titulo, diretor_ok=True):
     sha = (p['id'] * 8)[:64]
     q = {'status': 'apto_para_revisao_humana', 'problemas': []} if diretor_ok else \
         {'status': 'alerta_visual', 'problemas': [{'tipo': 'cabeca_cortada', 'severidade': 'alta', 'descricao': 'x', 'cena_id': 'c1', 'natureza': 'objetivo'}]}
-    pj.mudar_dados(p['id'], lambda d, _p: (d.update(render={'id': 'r', 'versao': 1, 'sha': sha, 'duracao': 50.0}, qualidade=q), {'status': 'ready_for_review'})[1])
+    pj.mudar_dados(p['id'], lambda d, _p: (d.update(render={'id': 'r', 'versao': 1, 'sha': sha, 'duracao': 50.0}, qualidade=q,
+        diretor={'sha': sha, 'veredito': 'aprovado' if diretor_ok else 'reprovado', 'motivos': []}), {'status': 'ready_for_review'})[1])
     return p['id'], sha
 
 

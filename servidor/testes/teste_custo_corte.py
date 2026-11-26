@@ -131,13 +131,13 @@ check(rs['analises']['total'] == 1 and rs['analises']['lista'][0]['guardados'] =
 check(abs(sum(e['parte'] for e in rs['a1']['etapas']) - 1) < 0.01 and rs['a1']['etapas'][0]['etapa'] == 'ouvir', 'ouvir aparece como a parte mais cara')
 check(rs['cortes']['feitos'] == 4 and rs['analises']['cortes_por_analise'] == 4, f'4 cortes de 1 análise ({rs["analises"]["cortes_por_analise"]})')
 ids = [s['id'] for s in rs['sugestoes']]
-check('so_com_legenda' in ids, f'sugere só vídeos com legenda ({ids})')
+check(any(s['id'] == 'priorizar_legendas' and s['feito'] for s in rs['sugestoes']), 'prioridade por legenda ligada por padrão')
 check('mais_por_analise' in ids, f'4 cortes por vídeo: sugere pedir mais trechos por análise ({ids})')
 check('chave_gratis' not in ids, 'sem chave grátis guardada, não sugere trocar')
 ag.salvar_segredos({'gemini': 'chave-gratis-falsa'})
 check('chave_gratis' in [s['id'] for s in cc.resumo(30)['sugestoes']], 'com chave grátis guardada, sugere usar nos cortes')
 check(cc.aplicar('chave_gratis')['ok'] and ag.config()['chaves_uso']['cortes'] == 'gratis', 'aplicar troca a chave dos cortes')
-ag.salvar_config({'cortes': {'por_analise': 0}})
+ag.salvar_config({'cortes': {'por_analise': 0, 'priorizar_legendas': False}})
 cc.aplicar('mais_por_analise')
 check(ag.config()['cortes']['por_analise'] == 16, f'aplicar pede 16 trechos por análise ({ag.config()["cortes"]["por_analise"]})')
 check(next(x for x in cc.resumo(30)['sugestoes'] if x['id'] == 'mais_por_analise')['feito'], 'depois de aplicar, a sugestão aparece como feita')
@@ -162,7 +162,7 @@ ids = [x['id'] for x in cc.resumo(30)['sugestoes'] if not x['feito']]
 check('sem_reserva_paga' in ids, f'histórico com troca para a paga: sugere não usar a paga ({ids})')
 r = cc.aplicar('todas')
 cfg = ag.config()
-check(r['ok'] and cfg['chaves_uso']['reserva'] is False and cfg['cortes']['so_com_legenda'] is True, f'"aplicar todas" faz todas as configurações ({r["acao"]})')
+check(r['ok'] and cfg['chaves_uso']['reserva'] is False and cfg['cortes']['priorizar_legendas'] is True, f'"aplicar todas" faz todas as configurações ({r["acao"]})')
 check(not [x for x in cc.resumo(30)['sugestoes'] if x.get('acao') and not x['feito']], 'depois de aplicar todas, nada pendente')
 try:
     cc.aplicar('todas')
@@ -171,22 +171,23 @@ except ValueError:
     check(True, '')
 check(any(e['categoria'] == 'custos' for e in co.eventos(categoria='custos')), 'o Coordenador registra o que aplicou no histórico')
 
-# só com legenda: vídeo sem legenda é pulado antes de gastar IA
+# Mesmo com prioridade por legenda, o agente corta o vídeo escolhido quando precisa transcrever o áudio.
 n0 = len(CHAMADAS)
 r = ag.trabalhar_cortes(link='https://www.youtube.com/watch?v=zzzzzzzzzzz')
-check('sem legenda' in r and len(CHAMADAS) == n0, f'vídeo sem legenda pulado sem chamar a IA ({r})')
-ag.salvar_config({'cortes': {'so_com_legenda': False}})
+check('ouvir' in CHAMADAS[n0:] and any(c['origem'] == 'zzzzzzzzzzz' and c['fala'] == 'IA' for c in ag.estado()['cortes']),
+      f'vídeo sem legenda transcrito e cortado ({r})')
 
 txt = cc.texto_aviso(rs)
 check('Custo médio da IA por corte' in txt and 'estimado' in txt, 'texto do aviso diz o custo médio e que é estimado')
 
 # chave grátis: conta a chamada, mas R$ 0 de verdade
+gratuitas_antes = cc.resumo(30)['a1']['chave_gratis']
 cc.definir_ref('x1')
 cc.registrar('cortes', 'gemini-flash-latest', 'gratis', {'contents': []}, {'promptTokenCount': 1000, 'candidatesTokenCount': 10}, False)
 cc.definir_ref('')
 u = db.um("SELECT * FROM ia_uso WHERE ref='x1'")
 check(u and u['cobrado'] == 0 and u['reais'] > 0, 'chave grátis: valor de tabela guardado, marcado como não cobrado')
-check(cc.resumo(30)['a1']['chave_gratis'] == 1, 'resumo conta as chamadas na chave grátis')
+check(cc.resumo(30)['a1']['chave_gratis'] == gratuitas_antes + 1, 'resumo conta as chamadas na chave grátis')
 
 # 4) Coordenador: chat e aviso semanal
 ag._endereco = lambda: ''

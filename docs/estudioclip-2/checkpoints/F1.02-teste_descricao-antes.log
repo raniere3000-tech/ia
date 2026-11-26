@@ -1,0 +1,40 @@
+Formato
+ok    sem link: título, hashtags, três pontos e "Link original do vídeo []" (exato)
+---
+Por que o céu é azul
+
+#Ciência #CéuAzul #curiosidades
+
+.
+.
+.
+Link original do vídeo []
+---
+ok    link válido entra só dentro dos colchetes
+ok    link inválido não entra: 'www.site.com'
+ok    link inválido não entra: 'javascript:alert(1)'
+ok    link inválido não entra: 'https://x y.com'
+ok    link inválido não entra: 'https://a.com/[x]'
+ok    link inválido não entra: 'https://localhost'
+ok    link inválido não entra: 'qualquer coisa'
+ok    hashtags com # e sem repetir
+ok    mantém a quantidade de hashtags do projeto
+ok    sem hashtags: não fica linha vazia sobrando
+ok    título numa linha só
+ok    rodapé e pontos aparecem uma vez
+ok    créditos antes dos três pontos, modelo mantido
+ok    crédito já presente não é repetido
+ok    crédito obrigatório entra na editada antes do rodapé
+ok    editada sem rodapé: crédito no fim, nada inventado
+ok    aviso só para a rede que passa do limite
+ok    no limite: sem aviso
+
+Aprovação e post do Agente 2
+ok    prévia pronta antes de aprovar, no formato
+Traceback (most recent call last):
+  File "/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/testes/teste_descricao.py", line 106, in <module>
+    r = apv.aprovar(pid, sha, None, 'site', 'teste')
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/aprovacoes.py", line 217, in aprovar
+    raise ErroAprovacao(409, 'O diretor de qualidade não aprovou esta versão: ' + ' '.join(dr['motivos'])[:400] + ' Refaça as cenas apontadas.')
+aprovacoes.ErroAprovacao: O diretor de qualidade não aprovou esta versão: Falta o parecer favorável do diretor para esta versão. Refaça as cenas apontadas.

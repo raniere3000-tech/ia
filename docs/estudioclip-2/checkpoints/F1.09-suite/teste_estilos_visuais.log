@@ -1,0 +1,15 @@
+  gamer_neon: ok dif=35.8 força0=1.0
+  cinema_noturno: ok dif=60.3 força0=1.6
+  golden_cinematic: ok dif=26.5 força0=1.6
+  miniatura_isometrica: ok dif=37.8 força0=1.0
+  maquete_papel: ok dif=44.6 força0=1.0
+  acrilico_glass: ok dif=18.4 força0=1.0
+  porcelana_suave: ok dif=50.5 força0=1.6
+  FALHOU: industrial_impacto: força 0 deveria deixar igual (5.40)
+  industrial_impacto: ok dif=72.9 força0=5.4
+  comic_gameplay: ok dif=50.3 força0=0.9
+  FALHOU: retro_vhs: força 0 deveria deixar igual (5.40)
+  retro_vhs: ok dif=69.9 força0=5.4
+  pixel_stream: ok dif=9.5 força0=2.6
+  sports_replay: ok dif=3.1 força0=1.6
+2 FALHAS (63 ok)

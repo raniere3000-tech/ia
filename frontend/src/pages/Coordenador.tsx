@@ -7,7 +7,7 @@ import EsteiraSete from '../components/EsteiraSete';
 import { urlServidor } from '../lib/api';
 import { tempoTexto } from '../lib/alertas';
 import { ESCOPOS, ESTADO_ORDEM, ESTADO_TAREFA, REDES, acaoMemoria, acaoOrdem, acaoSugestao, confirmarOrdem, conferirHistorico, conferirLinks, criarMemoria, enviarKwai, lerKwai, lerCustos, avisarCustos, aplicarSugestaoCusto, decidir, escolherCapaPacote,
-  interpretar, lerAgentes, lerAprovacoes, lerCfgCoord, lerConversa, lerEventos, lerMemoria, lerMemorias, lerOrdem, lerOrdens, lerSugestoes, mudarParametros, salvarCfgCoord,
+  testarHipotese, interpretar, lerAgentes, lerAprovacoes, lerCfgCoord, lerConversa, lerEventos, lerMemoria, lerMemorias, lerOrdem, lerOrdens, lerSugestoes, mudarParametros, salvarCfgCoord,
   type Aprovacao, type CfgCoord, type Custos as CustosT, type Evento, type Memoria, type Ordem, type Resposta } from '../lib/coordenador';
 
 type Aba='conversar'|'esteira'|'ordens'|'aprovacoes'|'agentes'|'kwai'|'custos'|'memoria'|'aprendizado'|'historico'|'config';
@@ -265,6 +265,7 @@ function MemoriaTela(){
       <span>"{m.texto}" <span className={'tag '+(m.status==='confirmada'?'ok':m.status==='proposta'?'warn':'')}>{m.status}</span></span>
       <small className="muted">{m.escopo} · versão {m.versao} · {m.origem==='sugestao'?'sugerida pelo aprendizado':'sua'}{Object.keys(m.dados).length?` · ${JSON.stringify(m.dados)}`:''}</small>
       <div className="row-gap left">
+        {m.status==='confirmada'&&m.dados._aprendizado!=null&&<button className="subtle sm" disabled={busy} onClick={()=>fazer(()=>testarHipotese(cfg,m.id,m.versao),'Teste registrado em Agentes → Aprendizado. Distribua A/B manualmente mantendo os demais fatores fixos.')}>Iniciar teste controlado</button>}
         {m.status!=='confirmada'&&<button className="subtle sm" disabled={busy} onClick={()=>fazer(()=>acaoMemoria(cfg,m.id,'confirmar',m.versao),'Confirmada.')}>Confirmar</button>}
         {m.status!=='desativada'&&<button className="subtle sm" disabled={busy} onClick={()=>fazer(()=>acaoMemoria(cfg,m.id,'desativar',m.versao),'Desativada.')}>Desativar</button>}
         <button className="link-btn" onClick={()=>setAberta(aberta===m.id?'':m.id)}>versões</button>
@@ -289,6 +290,12 @@ function Aprendizado(){
     <h3><Lightbulb size={16}/> Aprendizado</h3>
     <p className="hint">{r.dados?.nota||'Padrões encontrados no que aconteceu de verdade neste servidor.'} Nada muda sozinho.</p>
     <Erro e={r.erro}/>
+    <h4>Feedback dos resultados por agente</h4>
+    <ul className="coord-lista">{r.dados?.feedback_metricas?.map((m,i)=><li key={i} className="coord-item">
+      <b>{m.agente} • {m.alvo} • {m.estado==='dados_insuficientes'?'Dados insuficientes':'Hipótese observacional'}</b>
+      <small>{m.vertente||'Vertente indisponível'} • {m.rede||'Rede indisponível'} • {m.canal||'Canal indisponível'} • {m.amostras} amostra(s)</small>
+      <p>{m.recomendacao}</p><details><summary>Evidências</summary>{m.snapshots.join(', ')||'Nenhuma medida com contexto suficiente.'}</details>
+    </li>)}</ul>
     {r.dados&&!r.dados.sugestoes.length&&<p className="muted">Ainda não há evidência suficiente para sugerir algo.</p>}
     <ul className="coord-lista">{(r.dados?.sugestoes||[]).map(s=><li key={s.id} className="coord-item">
       <b>{s.titulo}</b>

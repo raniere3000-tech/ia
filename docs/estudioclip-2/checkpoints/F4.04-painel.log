@@ -1,0 +1,41 @@
+1. login
+  ok  sem senha o painel não abre (401)
+  ok  com senha abre
+  ok  sete agentes, na ordem 1..7
+  ok  servidor vazio: zero contado e sem próxima publicação
+  ok  esteira desligada: "aprovados" fica indisponível (None), não 0
+  ok  A7 parado quando não há ordem (abrir a tela não o deixa "rodando")
+2. dados de verdade no banco
+  ok  vídeos: 1 corte (descartado e antigo ficam fora) + 2 arquivos distintos do Agente 3
+  ok  total de vídeos = 3 (render repetido do mesmo SHA conta uma vez)
+  ok  em produção = 2 tarefas (rodando + na fila), separado de vídeos
+  ok  agendados = 3 envios por rede (YouTube, TikTok, Instagram)
+  ok  publicados em 7 dias = 1 (o de 10 dias atrás fica fora; agendado não conta)
+  ok  falhas de tarefa e posts com erro separados
+  ok  próxima publicação = a mais cedo, só com as redes ainda agendadas
+  ok  Agente 3: 2 concluídas e 1 falha em 7 dias
+  ok  Agente 3: tempo ativo = soma medida (120+60+30 s)
+  ok  Agente 6: sem trabalho no período → tempo "não disponível" (None), não 0
+  ok  Agente 1: estado atual vem da fila (trabalhando, 1 na fila)
+  ok  Agente 2 conta posts feitos, não tarefas
+  ok  alertas só do que existe (post com erro, falha nas últimas 24 h)
+3. períodos
+  ok  30 dias inclui o trabalho de 20 dias atrás
+  ok  30 dias inclui o post de 10 dias atrás
+  ok  Hoje começa à meia-noite no fuso do servidor
+  ok  período desconhecido vira 7 dias
+  ok  janela de 7 dias exata
+4. só leitura
+  ok  posts iguais depois de ler o painel (nada postado nem mudado)
+  ok  fila não mexida pelo painel
+  ok  resposta sem senha nem token
+5. execução automática fora da fila
+  ok  etapa antiga sem execução não aparece como trabalho ativo
+  ok  trava de execução do teste adquirida
+  ok  rotina automática deixa o Agente 1 trabalhando no painel e no Coordenador
+  ok  painel mostra etapa e progresso medidos da execução automática
+  ok  uma execução direta + um pedido na fila, sem contar os seis cortes ou pendentes como trabalhos
+  ok  execução pela fila e trava ativa contam uma única vez
+  ok  ao terminar libera a atividade e reduz a produção, mesmo com pedidos pendentes
+
+34 ok, 0 falharam

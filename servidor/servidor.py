@@ -13,12 +13,13 @@ import os
 import re
 import shutil
 import tempfile
+import unicodedata
 import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import cofre
 import postagem as pg
@@ -552,7 +553,7 @@ class Handler(BaseHTTPRequestHandler):
             raise Erro(404, 'Rota não encontrada.')
         sessao = None
         q = parse_qs(urlparse(self.path).query)
-        if metodo == 'GET' and caminho.startswith(('/api/v1/assets/', '/api/v1/thumbnails/midia/', '/api/v1/kwai/')) and q.get('sig'):
+        if metodo == 'GET' and caminho.startswith(('/api/v1/assets/', '/api/v1/thumbnails/midia/', '/api/v1/kwai/', '/api/v1/downloads/')) and q.get('sig'):
             if not api_v1._arquivo_assinado(caminho, q):
                 raise Erro(403, 'Link vencido. Abra de novo pelo site.')
         elif (metodo, caminho) not in api_v1.ABERTAS:
@@ -591,8 +592,9 @@ class Handler(BaseHTTPRequestHandler):
         if parcial:
             self.send_header('Content-Range', f'bytes {ini}-{fim}/{tamanho}')
         if baixar:
-            limpo = re.sub(r'[^\w\-. ]+', '', nome)[:80].strip() or 'arquivo'
-            self.send_header('Content-Disposition', f'attachment; filename="{limpo}"')
+            # nome com acento/qualquer alfabeto: versão simples (ASCII) para navegadores antigos + filename* em UTF-8 (RFC 5987)
+            simples = re.sub(r'[^\w\-. ]+', '', unicodedata.normalize('NFKD', nome).encode('ascii', 'ignore').decode())[:80].strip() or 'arquivo'
+            self.send_header('Content-Disposition', f"attachment; filename=\"{simples}\"; filename*=UTF-8''{quote(nome[:150], safe='')}")
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Cache-Control', 'private, max-age=3600')
         self.end_headers()
@@ -646,6 +648,10 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == '/posts':
             self.token_ok()
             return self.json(200, {'posts': pg.lista_posts(), 'agora': time.time()})
+        if caminho == '/posts/lotes':
+            self.token_ok()
+            import publicacao_lotes as lotes
+            return self.json(200, lotes.listar())
         if caminho == '/agente':
             self.token_ok()
             return self.json(200, ag.ver())
@@ -657,7 +663,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(200, pub.obter(mk.group(1)))
         if caminho == '/perfis':
             self.token_ok()
-            return self.json(200, {'perfis': pf.listar()})
+            return self.json(200, {'perfis': pf.listar(), 'dna_corte_habilitado': pf.dna_ativo()})
         mp = re.fullmatch(r'/perfis/(\w+)(?:/(resolvido|validar))?', caminho)
         if mp:
             self.token_ok()
@@ -671,6 +677,12 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == '/agente/modos':
             self.token_ok()
             return self.json(200, {'modos': mr.resumo()})
+        if caminho == '/agente/aprendizado/indicadores':
+            self.token_ok()
+            if not apz.inteligencia_ativa():
+                raise apz.ErroAprendizado('Inteligência de métricas desativada neste servidor.', 404)
+            filtros = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+            return self.json(200, apz.indicadores(filtros))
         if caminho == '/agente/aprendizado':
             self.token_ok()
             return self.json(200, apz.painel())
@@ -818,7 +830,7 @@ def _rotas_agenda(self, caminho: str):
         return apz.importar(str(d.get('nome', '')), str(d.get('formato', '')), d.get('conteudo'))
     if caminho == '/agente/aprendizado/capturar':
         ag.aprender(ajustar=False)
-        return {**apz.capturar(), 'painel': apz.painel()}
+        return {**apz.capturar(publicacoes=pg.posts()), 'painel': apz.painel()}
     if caminho == '/agente/aprendizado/apagar':
         return apz.apagar(d)
     if caminho == '/agente/aprendizado/aplicar':
@@ -885,13 +897,30 @@ def _rotas_agenda(self, caminho: str):
         return pg.finalizar_video(m.group(1))
     if caminho == '/posts':
         return pg.criar_post(d)
-    m = re.fullmatch(r'/posts/(\w+)/(agora|cancelar|feito|editar|liberar)', caminho)
+    if caminho in ('/posts/lotes/previa', '/posts/lotes'):
+        import publicacao_lotes as lotes
+        return lotes.previa(d) if caminho.endswith('/previa') else lotes.criar(d)
+    m = re.fullmatch(r'/posts/lotes/([\w-]+)/(pausar|retomar|cancelar)', caminho)
+    if m:
+        import publicacao_lotes as lotes
+        return lotes.acao(*m.groups())
+    if caminho == '/posts/tiktok/migrar':
+        import tiktok_assistido as ta
+        return ta.migrar(simular=bool(d.get('simular')))
+    m = re.fullmatch(r'/posts/(\w+)/tiktok', caminho)
+    if m:
+        import tiktok_assistido as ta
+        acao = str(d.get('acao') or 'editar')
+        return ta.editar(m.group(1), d) if acao == 'editar' else ta.registrar(m.group(1), acao, d)
+    m = re.fullmatch(r'/posts/(\w+)/(agora|cancelar|feito|editar|liberar|outras-redes)', caminho)
     if m:
         pid, acao = m.groups()
+        if acao == 'outras-redes':
+            return pg.publicar_em_outras_redes(pid, d.get('redes'))
         if acao == 'editar':
             return pg.editar_post(pid, d)
         if acao == 'liberar':
-            return pg.liberar(pid)
+            return pg.liberar(pid, rede=str(d.get('rede') or ''))
         if acao == 'agora':
             return pg.postar_agora(pid, str(d.get('rede') or ''))
         if acao == 'cancelar':
@@ -908,13 +937,30 @@ Handler.TOKEN = TOKEN
 def _job_agente1(ctx):
     """Pedido manual do agente de cortes, agora pela fila (antes era recusado quando estava ocupado)."""
     oque, link = ctx.dados.get('oque', ''), ctx.dados.get('link', '')
-    ag.AO_ETAPA = lambda p, t: ctx.progresso(float(p) if p else None, t)       # a barra do site acompanha o Agente 1
-    ag.JOB_ATUAL = ctx.id                     # cada corte guarda de qual trabalho saiu (o Coordenador acompanha por ele)
-    ctx.progresso(5, {'buscar': 'Buscando canais', 'cortar': 'Fazendo cortes', 'link': 'Cortando o link', 'tema': 'Procurando vídeo pelo tema', 'postar': 'Agendando cortes'}.get(oque, oque))
-    nome = {'buscar': 'Busca de canais', 'cortar': 'Agente de cortes', 'link': 'Corte do link', 'tema': 'Corte por tema', 'postar': 'Agente de postagem'}.get(oque, oque)
+    def _progresso(pct, texto):
+        ctx.progresso(float(pct) if pct else None, texto)       # a barra do site acompanha o Agente 1
+        historico = ctx.dados.setdefault('etapas_corte', [])
+        if not historico or historico[-1]['texto'] != texto:
+            historico.append({'texto': texto, 't': time.time()})
+            del historico[:-40]
+            ctx.salvar()
+    ag.CONTROLE_TRABALHO.etapa = _progresso
+    ag.CONTROLE_TRABALHO.cancelado = ctx.cancelado
+    ag.CONTROLE_TRABALHO.job = ctx.id                     # cada corte guarda de qual trabalho saiu (o Coordenador acompanha por ele)
+    nome = {'buscar': 'Buscando canais', 'cortar': 'Fazendo cortes', 'link': 'Cortando o link', 'tema': 'Procurando vídeo pelo tema', 'postar': 'Agendando cortes'}.get(oque, ctx.job['titulo'] or oque)
     msg = ''
     try:
-        if oque == 'buscar':
+        ctx.progresso(5, nome)
+        if ctx.dados.get('rotina') and not ag.config()['cortes']['ligado']:
+            return {'etapa': 'Rotina desligada nas configurações'}
+        if oque in ('estoque', 'buscar_estoque'):
+            if oque == 'buscar_estoque':
+                ag.buscar_canais()
+            ctx.progresso(10, 'Repondo estoque de cortes')
+            msg = ag.rodada_estoque(ctx.dados['quantos'], ctx.dados['fontes'])
+        elif oque == 'meta':
+            msg = ag.trabalhar_cortes()
+        elif oque == 'buscar':
             ag.buscar_canais()
         elif oque == 'cortar':
             msg = ag.trabalhar_cortes(True)
@@ -929,25 +975,42 @@ def _job_agente1(ctx):
         e.definitivo = True
         raise
     finally:
-        ag.AO_ETAPA = None
-        ag.JOB_ATUAL = ''
+        del ag.CONTROLE_TRABALHO.cancelado
+        del ag.CONTROLE_TRABALHO.etapa
+        del ag.CONTROLE_TRABALHO.job
         ag.etapa('')
-        ag.depois_do_trabalho()      # Central ligada: continua repondo o estoque logo depois do seu pedido
+        if not ctx.cancelado():
+            ag.depois_do_trabalho()
     # o que o Agente 1 disse no fim (ex.: "Nenhum vídeo novo nos canais aprovados."): o Coordenador mostra isso quando não sai corte
     return {'resultado': {'ok': True, 'mensagem': str(msg or '')[:300]}, 'etapa': (str(msg)[:120] if msg else 'Concluído')}
 
 
+_LOCK_FILA_A1 = threading.Lock()
+
+
 def _enfileirar_agente1(oque: str, link: str = '') -> dict:
-    ja = db.um("SELECT id FROM jobs WHERE agente='agente1' AND status IN ('agendado','na_fila','rodando') AND dados=?",
-               json.dumps({'oque': oque, 'link': link}, ensure_ascii=False))
-    if ja:
-        return {'ok': True, 'job': ja['id'], 'fila': True, 'ja_na_fila': True}
-    pesado = oque in ('cortar', 'link', 'tema')
-    j = fila.enfileirar('agente1.' + ('pesado' if pesado else 'leve'), agente='agente1', dados={'oque': oque, 'link': link},
-                        recurso='pesado' if pesado else 'leve', titulo={'buscar': 'Buscar canais', 'cortar': 'Fazer cortes', 'link': 'Cortar link', 'tema': 'Cortar por tema',
-                                                                        'postar': 'Agendar cortes prontos'}.get(oque, oque),
-                        max_tentativas=1)
+    dados = {'oque': oque, 'link': link}
+    with _LOCK_FILA_A1:
+        ja = db.um("SELECT id FROM jobs WHERE agente='agente1' AND cancelar=0 "
+                   "AND status IN ('agendado','na_fila','rodando','aguardando_tentativa') AND dados=?",
+                   json.dumps(dados, ensure_ascii=False))
+        if ja:
+            return {'ok': True, 'job': ja['id'], 'fila': True, 'ja_na_fila': True}
+        recurso = 'leve' if oque == 'postar' else 'pesado'
+        j = fila.enfileirar('agente1.' + recurso, agente='agente1', dados=dados, recurso=recurso,
+                            titulo={'buscar': 'Buscar canais', 'cortar': 'Fazer cortes', 'link': 'Cortar link',
+                                    'tema': 'Cortar por tema', 'postar': 'Agendar cortes prontos'}.get(oque, oque),
+                            max_tentativas=1)
     return {'ok': True, 'job': j['id'], 'fila': True, 'ocupado': ag.OCUPADO.locked()}
+
+
+def _enfileirar_rotina_agente1(oque, titulo, quantos, fontes):
+    with _LOCK_FILA_A1:
+        if db.um("SELECT id FROM jobs WHERE agente='agente1' AND status IN "
+                 "('agendado','na_fila','rodando','aguardando_tentativa') AND json_extract(dados, '$.rotina')=1"):
+            return
+        fila.enfileirar('agente1.pesado', agente='agente1', titulo=titulo, prioridade=-1, max_tentativas=1,
+                        dados={'rotina': True, 'oque': oque, 'quantos': quantos, 'fontes': fontes})
 
 
 def ligar_servicos():
@@ -959,10 +1022,11 @@ def ligar_servicos():
     fila.registrar('agente1.pesado', _job_agente1, 'pesado')
     fila.registrar('agente1.leve', _job_agente1, 'leve')
     ag.ENFILEIRAR = _enfileirar_agente1
+    ag.ENFILEIRAR_ROTINA = _enfileirar_rotina_agente1
     import live
     live.PEGAR = url_da_live
     live.iniciar()
-    ag.PENDENTES = lambda: (db.um("SELECT COUNT(*) AS n FROM jobs WHERE agente='agente1' AND status IN ('agendado','na_fila','rodando')") or {'n': 0})['n']
+    ag.PENDENTES = lambda: (db.um("SELECT COUNT(*) AS n FROM jobs WHERE agente='agente1' AND status IN ('agendado','na_fila','rodando','aguardando_tentativa')") or {'n': 0})['n']
     produtor.iniciar()
     gpi.iniciar()
     api_v1.iniciar()

@@ -7,6 +7,7 @@ Só usa a biblioteca padrão do Python (roda no Termux).
 from __future__ import annotations
 
 import descricao as ds
+import tiktok_assistido as ta
 import hashlib
 import json
 import os
@@ -24,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import cofre
+from email.utils import parsedate_to_datetime
 
 DADOS = Path(os.getenv('DADOS', str(Path.home() / '.estudioclip')))
 VIDEOS = DADOS / 'videos'
@@ -56,6 +58,9 @@ class ErroRede(Exception):
 
 class ErroTemporario(ErroRede):
     """Falha que costuma passar sozinha (internet caiu, rede fora do ar, limite por minuto): o agendador tenta de novo."""
+    def __init__(self, mensagem, retry_after=0):
+        super().__init__(mensagem)
+        self.retry_after = retry_after
 
 
 # Esperas, em minutos, antes de cada nova tentativa automática de um post que falhou por motivo passageiro.
@@ -121,7 +126,18 @@ def http(metodo: str, url: str, *, dados: bytes | None = None, form: dict | None
             return r.status, dict(r.headers), _json(corpo)
     except urllib.error.HTTPError as e:
         corpo = e.read()
-        return e.code, dict(e.headers or {}), _json(corpo)
+        j = _json(corpo)
+        if e.code == 429 and isinstance(j, dict):
+            valor = (e.headers or {}).get('Retry-After', '')
+            try:
+                espera = float(valor)
+            except ValueError:
+                try:
+                    espera = parsedate_to_datetime(valor).timestamp() - agora()
+                except (TypeError, ValueError, OverflowError):
+                    espera = 0
+            j['_retry_after_s'] = max(0, espera)
+        return e.code, dict(e.headers or {}), j
     except urllib.error.URLError as e:
         raise ErroTemporario(f'Sem conexão com {urllib.parse.urlparse(url).netloc}: {e.reason}')
     except OSError as e:   # queda no meio do envio, tempo esgotado
@@ -148,7 +164,8 @@ def _msg(j) -> str:
 
 def _ok(st, j, oque):
     if st >= 500 or st == 429:
-        raise ErroTemporario(f'{oque} (erro {st}, a rede está instável ou pediu para esperar): {_msg(j)}')
+        raise ErroTemporario(f'{oque} (erro {st}, a rede está instável ou pediu para esperar): {_msg(j)}',
+                            float(j.get('_retry_after_s') or 0) if isinstance(j, dict) else 0)
     if st >= 300:
         raise ErroRede(f'{oque}: {_msg(j)}')
     return j
@@ -508,6 +525,7 @@ def criar_post(d: dict) -> dict:
         'projeto': re.sub(r'[^a-zA-Z0-9]', '', str(d.get('projeto', '')))[:40], 'render_sha': re.sub(r'[^a-f0-9]', '', str(d.get('render_sha', '')))[:64],
         'creditos': [str(x)[:160] for x in (d.get('creditos') or [])[:12]] if isinstance(d.get('creditos'), list) else [],
     }
+    ta.completar(p)          # TikTok assistido: título, descrição, hashtags e links já ficam prontos antes do envio
     with LOCK:
         ps = posts()
         ps.append(p)
@@ -515,10 +533,25 @@ def criar_post(d: dict) -> dict:
     return p
 
 
+_MIGROU_TIKTOK = False
+
+
 def lista_posts() -> list:
+    global _MIGROU_TIKTOK
+    if not _MIGROU_TIKTOK:               # atualização retroativa: preenche só o que falta nos posts antigos (1x por execução)
+        _MIGROU_TIKTOK = True
+        try:
+            ta.migrar()
+        except Exception as e:  # noqa: BLE001
+            print('postagem: migração do TikTok assistido', e)
     ps = sorted(posts(), key=lambda p: p['quando'])
     for p in ps:
+        p['tiktok'] = ta.visao(p)
         p['preparando'] = not video_pronto(p['video'])
+        try:
+            p['arquivo_disponivel'] = video_path(p['video']).is_file()
+        except ErroRede:
+            p['arquivo_disponivel'] = False
     return ps
 
 
@@ -564,6 +597,7 @@ def postar_agora(pid: str, rede: str = ''):
         for nome, r in p['redes'].items():
             if (not rede or nome == rede) and r['status'] in ('erro', 'agendado'):
                 r.update(status='agendado', erro='', tentativas=0, proxima=0)
+                r['quando'] = agora()
                 if rede:
                     _anotar(p, nome, 'tentar_de_novo', 'Você pediu para tentar de novo só nesta rede.')
     p = _mudar(pid, f)
@@ -588,11 +622,13 @@ def postar_agora(pid: str, rede: str = ''):
                 print('postagem: liberar horário', e)
 
 
-def liberar(pid: str, quem: str = 'site') -> dict:
+def liberar(pid: str, quem: str = 'site', rede: str = '') -> dict:
     """Liberação especial: você decide postar mesmo sem a origem do vídeo registrada.
     Vale só para os bloqueios liberáveis e só para este arquivo; fica registrada no relatório do post."""
     def f(p):
-        redes = [r for r, x in p['redes'].items() if x['status'] in ('liberacao', 'erro')]
+        if rede and rede not in p['redes']:
+            raise ErroRede('Este post não tem essa rede.')
+        redes = [r for r, x in p['redes'].items() if (not rede or r == rede) and x['status'] in ('liberacao', 'erro')]
         itens = sorted({x['item'] for r in redes for x in conferencia(dict(p, liberacao=None), r) if x.get('liberavel')})
         if not itens:
             raise ErroRede('Este post não tem nada que precise de liberação especial.')
@@ -601,6 +637,35 @@ def liberar(pid: str, quem: str = 'site') -> dict:
             p['redes'][r].update(status='agendado', erro='', tentativas=0, proxima=0)
             _anotar(p, r, 'liberado', 'Liberação especial dada por você para: ' + ', '.join(itens))
     p = _mudar(pid, f)
+    acordar()
+    return p
+
+
+def publicar_em_outras_redes(pid: str, redes: list) -> dict:
+    """Acrescenta destinos ao mesmo post e conserva o histórico de cada rede."""
+    if not isinstance(redes, list) or not redes or any(not isinstance(r, str) or r not in REDES for r in redes):
+        raise ErroRede('Escolha pelo menos uma rede válida.')
+    redes = list(dict.fromkeys(redes))
+
+    def adicionar(p):
+        if not any(r['status'] == 'postado' for r in p['redes'].values()):
+            raise ErroRede('O post ainda não foi publicado em nenhuma rede.')
+        novas = [r for r in redes if r not in p['redes']]
+        if not novas:
+            return
+        if not video_pronto(p['video']) or not video_path(p['video']).is_file():
+            raise ErroRede('O vídeo ainda precisa estar disponível no servidor.')
+        marca = assinatura(p['video'])
+        duplicadas = {r for outro in posts() if outro['id'] != pid
+                      and (outro.get('video') == p['video'] or (marca and outro.get('hash') == marca))
+                      for r in novas if r in outro['redes']}
+        if duplicadas:
+            raise ErroRede('Uma das redes escolhidas já tem este vídeo em outro post. Confira a aba Posts.')
+        for r in novas:
+            p['redes'][r] = {'status': 'manual' if r == 'kwai' else 'agendado', 'link': '', 'erro': '', 'outra_rede': True}
+            _anotar(p, r, 'outra_rede', 'Destino acrescentado depois da primeira publicação.')
+
+    p = _mudar(pid, adicionar)
     acordar()
     return p
 
@@ -621,7 +686,7 @@ def editar_post(pid: str, d: dict) -> dict:
             p['quando'] = q
             for r in p['redes'].values():
                 if r['status'] in ('agendado', 'erro'):
-                    r.update(status='agendado', erro='', tentativas=0, proxima=0)
+                    r.update(status='agendado', erro='', tentativas=0, quando=q, proxima=0)
         if isinstance(d.get('redes'), list):
             novas = [r for r in d['redes'] if r in REDES]
             feitas = [r for r, s in p['redes'].items() if s['status'] == 'postado']
@@ -676,12 +741,66 @@ def postar_youtube(p: dict, arq: Path) -> str:
         st, _, j = http('PUT', destino, dados=f.read(), cab={'Content-Type': 'video/mp4', 'Content-Length': str(tam)}, tempo=1800)
     _ok(st, j, 'YouTube recusou o vídeo')
     vid = j.get('id')
+    REF['youtube'] = vid or ''
+    p['_canal_publicado'] = (j.get('snippet') or {}).get('channelId')
     _capa_youtube(p, arq, vid, tok)
     priv = (j.get('status') or {}).get('privacyStatus')
     link = f'https://youtube.com/shorts/{vid}'
     if p['opcoes'].get('youtube_privacidade', 'public') != 'private' and priv == 'private':
         link += '  (o YouTube deixou privado: projeto do Google ainda não verificado; veja o "?")'
     return link
+
+
+def contexto_publicacao(p: dict, arq: Path) -> dict:
+    """Retrato local antes do envio. Não afirma que a rede aceitou a capa."""
+    import pipeline as pl
+    import agente as ag
+    sha = pl.sha_arquivo(arq)
+    corte = next((c for c in ag.estado()['cortes'] if c.get('post') == p['id'] or
+                  c.get('video') == p['video']), {})
+    capa = _capa(arq) or {}
+    import banco as db
+    import projetos as pj
+    registro = db.um('SELECT * FROM renders WHERE projeto=? AND sha256=? ORDER BY versao DESC LIMIT 1', p.get('projeto') or '', sha) or {}
+    roteiro_sha = None
+    for v in db.todos('SELECT dados FROM versoes WHERE projeto=? ORDER BY revisao', p.get('projeto') or ''):
+        try:
+            dados = json.loads(v['dados'])
+        except (TypeError, ValueError):
+            continue
+        if isinstance(dados, dict) and isinstance(dados.get('render'), dict) and dados['render'].get('sha') == sha and pj.roteiro_aprovado(dados):
+            roteiro_sha = dados['aprovacao_roteiro']['hash']
+            break
+    cert = pl.certificado(sha) or {}
+    efeitos = None
+    try:
+        # O arquivo da fila é uma cópia; o recibo IA pode permanecer junto ao render original.
+        candidatos = [arq.with_suffix('.efeitos.json')]
+        if registro.get('arquivo'):
+            candidatos.append(Path(registro['arquivo']).with_suffix('.efeitos.json'))
+        for caminho in candidatos:
+            try:
+                recibo = json.loads(caminho.read_text())
+            except (OSError, ValueError):
+                continue
+            if isinstance(recibo, dict) and recibo.get('arquivo_sha') == sha and recibo.get('status') == 'concluido':
+                efeitos = recibo
+                break
+    except (OSError, ValueError):
+        pass
+    return {'schema': 1, 'post': p['id'], 'video': p['video'], 'render_sha': sha,
+            'projeto': p.get('projeto') or None, 'origem': p.get('origem') or 'manual',
+            'vertente': 'criacao_ia' if p.get('origem') == 'agente3' else ('cortes' if corte else 'manual'),
+            'corte': corte.get('id'), 'canal': corte.get('perfil') or None,
+            'canal_origem': corte.get('canal') or None, 'perfil_versao': corte.get('perfil_versao'),
+            'render_versao': registro.get('versao'), 'roteiro_sha': roteiro_sha,
+            'criterio_qa': cert.get('versao_politica'),
+            'certificado': {k: cert.get(k) for k in ('id', 'sha256', 'nota', 'versao_politica', 'modalidade', 'manual')} if cert else None,
+            'titulo': p.get('titulo'), 'legenda': p.get('legenda'),
+            'gancho': corte.get('gancho'), 'modelo': p.get('modelo') or corte.get('modelo'),
+            'efeitos': efeitos,
+            'capa_selecionada': {k: capa.get(k) for k in ('sha', 'formato', 'tempo_ms', 'job', 'variante')} if capa else None,
+            'capa_envio': 'consultar_historico_da_rede', 'capturado_em': agora()}
 
 
 def _capa(arq: Path) -> dict | None:
@@ -699,24 +818,143 @@ def _nota_capa(p: dict, rede: str, msg: str):
         pass
 
 
+CAPA: dict = {}     # estado da capa no envio em andamento, por rede (vai para p['redes'][rede]['capa'] junto com o "postado")
+ESPERAS_CAPA = [5, 15, 60, 180, 720]     # minutos entre novas tentativas SÓ da capa (o vídeo não é reenviado)
+
+
+def _estado_capa(estado: str, cap: dict | None, estrategia: str, detalhe: str = '', **extra) -> dict:
+    """Estados: aplicada (a rede confirmou), indicada (a rede aceitou o tempo do quadro da capa), falhou (tenta de novo sozinho),
+    bloqueada (a rede recusou de vez: ex. conta sem verificação), manual (você aplica no app), sem_capa (sem capa escolhida)."""
+    return {'estado': estado, 'estrategia': estrategia, 'sha': (cap or {}).get('sha', ''), 'variante': (cap or {}).get('variante', ''),
+            'job': (cap or {}).get('job', ''), 'tempo_ms': (cap or {}).get('tempo_ms', 0), 'detalhe': detalhe[:300], 't': agora(), **extra}
+
+
+def _enviar_capa_youtube(vid: str, cap: dict, tok: str) -> tuple[int, dict]:
+    dados = cap['arquivo'].read_bytes()
+    return http('POST', URL['google_api'] + '/upload/youtube/v3/thumbnails/set?videoId=' + urllib.parse.quote(vid), dados=dados,
+                cab={'Authorization': 'Bearer ' + tok, 'Content-Type': 'image/jpeg', 'Content-Length': str(len(dados))}, tempo=120)[::2]
+
+
 def _capa_youtube(p: dict, arq: Path, vid: str, tok: str):
-    """Agente 6: manda a capa aprovada PARA ESTE ARQUIVO (thumbnails.set). Se o YouTube recusar, o vídeo continua postado e fica a nota."""
+    """Agente 6: manda a capa aprovada PARA ESTE ARQUIVO (thumbnails.set). Se o YouTube recusar, o vídeo continua postado,
+    a capa fica como "falhou" (com o ID do vídeo) e o servidor tenta de novo SÓ a capa depois — sem postar de novo."""
     cap = _capa(arq)
     if not cap or not vid:
+        CAPA['youtube'] = _estado_capa('sem_capa', None, 'imagem', 'Sem capa escolhida para este arquivo.', ref_rede=vid or '', tentativas=0)
         return
     try:
-        dados = cap['arquivo'].read_bytes()
-        st, _, j = http('POST', URL['google_api'] + '/upload/youtube/v3/thumbnails/set?videoId=' + urllib.parse.quote(vid), dados=dados,
-                        cab={'Authorization': 'Bearer ' + tok, 'Content-Type': 'image/jpeg', 'Content-Length': str(len(dados))}, tempo=120)
+        st, j = _enviar_capa_youtube(vid, cap, tok)
         if st < 300:
             import thumbnails as th
             th.marcar_rede_ok('youtube')
             _nota_capa(p, 'youtube', 'Capa do Agente 6 enviada.')
+            CAPA['youtube'] = _estado_capa('aplicada', cap, 'imagem', 'O YouTube confirmou a capa.', ref_rede=vid, tentativas=1)
         else:
-            _nota_capa(p, 'youtube', 'O YouTube não aceitou a capa (o vídeo foi postado): ' + _msg(j)[:200] +
-                       (' A conta precisa estar verificada para capa personalizada.' if st == 403 else ''))
-    except (OSError, ErroTemporario) as e:
+            msg = ('O YouTube não aceitou a capa (o vídeo foi postado): ' + _msg(j)[:200] +
+                   (' A conta precisa estar verificada para capa personalizada.' if st == 403 else ''))
+            _nota_capa(p, 'youtube', msg)
+            CAPA['youtube'] = _estado_capa('bloqueada' if st in (401, 403) else 'falhou', cap, 'imagem', msg, ref_rede=vid, tentativas=1,
+                                           proxima=agora() + ESPERAS_CAPA[0] * 60)
+    except (OSError, ErroTemporario, ErroRede) as e:
         _nota_capa(p, 'youtube', f'Capa não enviada (o vídeo foi postado): {e}'[:300])
+        CAPA['youtube'] = _estado_capa('falhou', cap, 'imagem', f'Capa não enviada: {e}', ref_rede=vid, tentativas=1,
+                                       proxima=agora() + ESPERAS_CAPA[0] * 60)
+
+
+def _id_youtube(r: dict) -> str:
+    cap = r.get('capa') or {}
+    if cap.get('ref_rede'):
+        return cap['ref_rede']
+    m = re.search(r'(?:shorts/|watch\?v=|youtu\.be/)([\w-]{6,20})', r.get('link') or '')
+    return m.group(1) if m else ''
+
+
+def reenviar_capa(pid: str, rede: str = 'youtube', quem: str = 'agente2', forcar: bool = False) -> dict:
+    """Manda de novo SÓ a capa de um vídeo JÁ postado (YouTube: thumbnails.set com o ID que já existe). Nunca reenvia o vídeo.
+    forcar=True é o botão "reenviar capa" (você pediu): ignora a espera e o limite automático."""
+    import thumbnails as th
+    if rede != 'youtube':
+        raise ErroRede('Só o YouTube aceita trocar a capa depois de postado pela integração. Nas outras redes, troque no app.')
+    p = next((x for x in posts() if x['id'] == pid), None)
+    if not p or rede not in p['redes']:
+        raise ErroRede('Post não encontrado.')
+    r = p['redes'][rede]
+    if r.get('status') != 'postado':
+        raise ErroRede('O vídeo ainda não foi postado nesta rede: a capa vai junto no envio.')
+    vid = _id_youtube(r)
+    if not vid:
+        raise ErroRede('Não achei o ID do vídeo no YouTube para trocar a capa.')
+    ant = r.get('capa') or {}
+    if ant.get('estado') == 'aplicada' and not forcar:
+        return ant
+    n = int(ant.get('tentativas') or 0)
+    if not forcar and n >= th.config()['max_envios_capa']:
+        return ant
+    try:
+        arq = video_path(p['video'])
+    except ErroRede as e:
+        raise ErroRede(f'O arquivo do vídeo não está mais no servidor: {e}')
+    cap = _capa(arq)
+    if not cap:
+        novo = _estado_capa('sem_capa', None, 'imagem', 'Sem capa escolhida e válida para este arquivo.', ref_rede=vid, tentativas=n)
+    else:
+        try:
+            st, j = _enviar_capa_youtube(vid, cap, _token_google())
+            if st < 300:
+                th.marcar_rede_ok('youtube')
+                novo = _estado_capa('aplicada', cap, 'imagem', 'O YouTube confirmou a capa (só a capa foi reenviada).', ref_rede=vid, tentativas=n + 1)
+            else:
+                fim = st in (401, 403) or n + 1 >= th.config()['max_envios_capa']
+                novo = _estado_capa('bloqueada' if st in (401, 403) else 'falhou', cap, 'imagem', 'O YouTube não aceitou a capa: ' + _msg(j)[:200],
+                                    ref_rede=vid, tentativas=n + 1, **({} if fim else {'proxima': agora() + ESPERAS_CAPA[min(n + 1, len(ESPERAS_CAPA) - 1)] * 60}))
+        except (OSError, ErroTemporario, ErroRede) as e:
+            novo = _estado_capa('falhou', cap, 'imagem', f'Capa não enviada: {e}', ref_rede=vid, tentativas=n + 1,
+                                proxima=agora() + ESPERAS_CAPA[min(n + 1, len(ESPERAS_CAPA) - 1)] * 60)
+    def gravar(q):
+        q['redes'][rede]['capa'] = novo
+        _anotar(q, rede, 'capa', f'{novo["estado"]}: {novo["detalhe"]}')
+    _mudar(pid, gravar)
+    th.registrar_aplicacao(pid, rede, novo, quem)
+    return novo
+
+
+def reenviar_capas_pendentes(limite: int = 5) -> list:
+    """Passada automática: capas do YouTube que falharam depois do vídeo postado (sem repetir o post)."""
+    import thumbnails as th
+    if not th.config()['reenviar_capa']:
+        return []
+    feitos = []
+    for p in posts():
+        r = p['redes'].get('youtube') or {}
+        c = r.get('capa') or {}
+        if r.get('status') == 'postado' and c.get('estado') == 'falhou' and c.get('proxima') and c['proxima'] <= agora():
+            try:
+                feitos.append((p['id'], reenviar_capa(p['id'], 'youtube', 'agente2-reenvio')['estado']))
+            except (ErroRede, ErroTemporario) as e:
+                print('postagem: reenvio da capa', p['id'], e)
+            if len(feitos) >= limite:
+                break
+    return feitos
+
+
+def _versao_com_capa(arq: Path, rede: str) -> tuple[Path, dict | None, dict | None]:
+    """TikTok/Instagram: a rede só aceita um MOMENTO do vídeo como capa. Com a estratégia "quadro", vai a versão de publicação
+    com a arte escolhida no quadro final (presa à mesma escolha). Sem isso, usa o quadro original de onde a capa saiu."""
+    try:
+        import thumbnails as th
+        estr = th.config()['estrategia_rede'].get(rede, 'quadro')
+        cap = th.capa_para_video(arq)
+        if not cap:
+            return arq, None, _estado_capa('sem_capa', None, estr, 'Sem capa escolhida para este arquivo.')
+        if estr == 'quadro':
+            e = th.video_com_capa(arq)
+            if e:
+                return e['arquivo'], dict(cap, tempo_ms=e['tempo_ms']), None
+            return arq, cap, None
+        return arq, cap if estr != 'nenhuma' else None, None
+    except Exception as e:  # noqa: BLE001 - capa nunca derruba o post
+        print('postagem: versão com capa', e)
+        return arq, None, None
 
 
 def _rupload(url: str, token: str, arq: Path):
@@ -739,6 +977,7 @@ def postar_facebook(p: dict, arq: Path) -> str:
         'upload_phase': 'finish', 'video_id': vid, 'video_state': 'PUBLISHED', 'description': _texto(p, 2200), 'access_token': pg['token']})
     _ok(st, j, 'Facebook não publicou o Reels')
     REF['facebook'] = str(vid)
+    p['_canal_publicado'] = pg['id']
     return f'https://www.facebook.com/reel/{vid}'
 
 
@@ -747,10 +986,14 @@ def postar_instagram(p: dict, arq: Path) -> str:
     if not pg.get('ig_id'):
         raise ErroRede('A Página escolhida não tem Instagram profissional ligado. Ligue o Instagram à Página no app do Instagram ou no Facebook.')
     base = f"{URL['graph']}/{GRAPH_V}"
+    arq, cap, sem = _versao_com_capa(arq, 'instagram')
     st, _, j = http('POST', f"{base}/{pg['ig_id']}/media", form={
         'media_type': 'REELS', 'upload_type': 'resumable', 'caption': _texto(p, 2200), 'share_to_feed': 'true', 'access_token': pg['token'],
-        **({'thumb_offset': str(cap['tempo_ms'])} if (cap := _capa(arq)) and cap['tempo_ms'] else {})})
+        **({'thumb_offset': str(cap['tempo_ms'])} if cap and cap['tempo_ms'] else {})})
     _ok(st, j, 'Instagram recusou o Reels')
+    # o Instagram aceitou o pedido COM o tempo da capa: fica "indicada" (a rede não devolve a capa para conferir)
+    CAPA['instagram'] = sem or (_estado_capa('indicada', cap, 'quadro', f'O Instagram aceitou o quadro da capa em {cap["tempo_ms"]} ms.')
+                                if cap and cap['tempo_ms'] else _estado_capa('manual', cap, 'quadro', 'Escolha a capa no app do Instagram.'))
     cont = j['id']
     _rupload(j.get('uri') or f"{URL['rupload']}/ig-api-upload/{GRAPH_V}/{cont}", pg['token'], arq)
     for _ in range(120):   # até ~10 min processando
@@ -767,6 +1010,7 @@ def postar_instagram(p: dict, arq: Path) -> str:
     _ok(st, j, 'Instagram não publicou')
     mid = j['id']
     REF['instagram'] = str(mid)
+    p['_canal_publicado'] = pg['ig_id']
     st, _, j = http('GET', f"{base}/{mid}?fields=permalink&access_token=" + urllib.parse.quote(pg['token']))
     return j.get('permalink') or f"https://www.instagram.com/{pg.get('ig_usuario', '')}"
 
@@ -774,6 +1018,7 @@ def postar_instagram(p: dict, arq: Path) -> str:
 def postar_tiktok(p: dict, arq: Path) -> str:
     t = _token_tiktok()
     cab = {'Authorization': 'Bearer ' + t['access']}
+    arq, cap_pub, sem_capa = _versao_com_capa(arq, 'tiktok')
     tam = arq.stat().st_size
     if tam <= 64 * 1024 * 1024:
         pedaco, n = tam, 1
@@ -781,15 +1026,15 @@ def postar_tiktok(p: dict, arq: Path) -> str:
         pedaco = 10 * 1024 * 1024
         n = tam // pedaco
     fonte = {'source': 'FILE_UPLOAD', 'video_size': tam, 'chunk_size': pedaco, 'total_chunk_count': n}
-    direto = p['opcoes'].get('tiktok_modo') == 'direto'
+    direto = ta.modo_envio(p) == 'direto'     # antes da aprovação do TikTok, tudo é assistido (rascunho)
     caiu_rascunho = False
     if direto:
         st, _, j = http('POST', URL['tiktok_api'] + '/v2/post/publish/creator_info/query/', js={}, cab=cab)
         opcoes = ((j.get('data') or {}).get('privacy_level_options') or ['SELF_ONLY']) if st < 300 else ['SELF_ONLY']
         priv = 'PUBLIC_TO_EVERYONE' if 'PUBLIC_TO_EVERYONE' in opcoes else opcoes[0]
-        corpo = {'post_info': {'title': _texto(p, 2200), 'privacy_level': priv}, 'source_info': fonte}
-        cap = _capa(arq)
-        if cap and cap['tempo_ms']:            # o TikTok só aceita o MOMENTO do vídeo como capa (não a arte)
+        corpo = {'post_info': {'title': ta.texto_do_envio(p, 2200), 'privacy_level': priv}, 'source_info': fonte}
+        cap = cap_pub
+        if cap and cap['tempo_ms']:            # o TikTok só aceita o MOMENTO do vídeo como capa: o quadro final com a arte
             corpo['post_info']['video_cover_timestamp_ms'] = cap['tempo_ms']
         rota = '/v2/post/publish/video/init/'
     else:
@@ -823,6 +1068,14 @@ def postar_tiktok(p: dict, arq: Path) -> str:
             if st >= 300:
                 raise ErroRede('TikTok recusou o envio do vídeo: ' + _msg(jj))
     _conferir_tiktok(dados.get('publish_id'), cab)
+    if sem_capa:
+        CAPA['tiktok'] = sem_capa
+    elif direto and cap_pub and cap_pub['tempo_ms']:
+        CAPA['tiktok'] = _estado_capa('indicada', cap_pub, 'quadro', f'O TikTok aceitou o quadro da capa em {cap_pub["tempo_ms"]} ms.')
+    else:       # rascunho (envio assistido): quem escolhe a capa é você, no app
+        seg = (cap_pub or {}).get('tempo_ms', 0) / 1000
+        CAPA['tiktok'] = _estado_capa('manual', cap_pub, 'quadro', 'No app do TikTok, toque em "Capa" e escolha o ÚLTIMO quadro do vídeo'
+                                      + (f' ({seg:.1f} s): é a arte do Agente 6.' if seg else '.'))
     if direto:
         return 'Enviado ao TikTok' + ('' if priv == 'PUBLIC_TO_EVERYONE' else ' como "Só eu" (app ainda não aprovado pelo TikTok)')
     if caiu_rascunho:
@@ -999,14 +1252,15 @@ def conferencia(p: dict, rede: str) -> list[dict]:
             item('certificado', pp['ok'], pp['detalhe'])
     except Exception as e:  # noqa: BLE001  (sem conseguir conferir, não sai)
         item('certificado', False, f'Não consegui conferir a aprovação do diretor: {str(e)[:120]}')
-    if rede == 'youtube':    # Agente 6: só exige capa se você ligou "exigir capa no YouTube"
-        try:
-            import thumbnails as th
-            if th.config()['exigir_capa_youtube']:
-                item('capa', th.capa_para_video(arq) is not None, 'Capa aprovada para este arquivo.' if th.capa_para_video(arq) else
-                     'Falta a capa aprovada para este arquivo (Agente 6). Escolha uma capa em Thumbnails ou desligue "exigir capa".')
-        except Exception as e:  # noqa: BLE001
-            item('capa', False, f'Não consegui conferir a capa: {str(e)[:120]}')
+    try:     # Agente 6: capa escolhida e válida PARA ESTE ARQUIVO (capa de versão antiga do vídeo não vale), em toda rede que exige capa
+        import thumbnails as th
+        if th.exige_capa(rede):
+            cap = th.capa_para_video(arq)
+            item('capa', cap is not None, 'Capa aprovada para este arquivo.' if cap else
+                 'Falta a capa aprovada para este arquivo (Agente 6). O Agente 6 está fazendo ou escolhendo a capa; '
+                 'se demorar, veja Agentes > Agente 6 ou desligue "exigir capa" para esta rede.')
+    except Exception as e:  # noqa: BLE001
+        item('capa', False, f'Não consegui conferir a capa: {str(e)[:120]}')
     try:     # Agente 7: com "exigir liberação do coordenador" ligado, só sai o pacote que você liberou (vídeo + capa pelo hash)
         import coordenador as co
         if co.exigir_liberacao_efetiva():
@@ -1016,7 +1270,11 @@ def conferencia(p: dict, rede: str) -> list[dict]:
     except Exception as e:  # noqa: BLE001
         item('liberacao', False, f'Não consegui conferir a liberação do coordenador: {str(e)[:120]}')
     ag2 = p.get('agenda') or {}
-    if ag2.get('ate') and ag2.get('politica') != 'publish_when_online' and agora() > ag2['ate'] and not p['redes'].get(rede, {}).get('tentativas'):
+    redes = p.get('redes') if isinstance(p.get('redes'), dict) else {}
+    destino = redes.get(rede) if isinstance(redes.get(rede), dict) else {}
+    item('destino', bool(destino.get('status')), 'Destino de publicação configurado.' if destino.get('status') else
+         'Falta configurar esta rede no post antes de publicar.')
+    if not destino.get('outra_rede') and ag2.get('ate') and ag2.get('politica') != 'publish_when_online' and agora() > ag2['ate'] and not destino.get('tentativas'):
         item('horario', False, 'O horário da programação diária já passou (servidor estava desligado): não posto atrasado.')
     if p.get('hash'):
         atual = assinatura(p['video'])
@@ -1128,7 +1386,15 @@ def _portao_agente3(p: dict, item):
         item('aprovacao', bool(ap) and not depois, 'Versão aprovada por você.' if ap and not depois else 'Esta versão do vídeo não está aprovada (ou foi rejeitada depois).')
         import aprovacoes as apv
         dr = apv.diretor_ok(pj.obter(p['projeto']), p.get('render_sha') or '')
-        item('diretor', dr['aprovado'], 'Aprovado pelo diretor de qualidade.' if dr['aprovado'] else
+        if ap and ap.get('origem') == 'site_manual' and not depois:
+            import pipeline as pl
+            cert = pl.certificado(p['render_sha'])
+            if cert and cert['manual'] and cert['ref'] == p['projeto']:
+                item('diretor', True, 'Versão liberada manualmente pelo usuário.')
+            else:
+                item('diretor', False, 'A liberação manual deste arquivo precisa ser renovada.')
+        else:
+            item('diretor', dr['aprovado'], 'Aprovado pelo diretor de qualidade.' if dr['aprovado'] else
              'O diretor de qualidade não aprovou este vídeo: ' + ' '.join(dr['motivos'])[:300])
         q = (pj.obter(p['projeto'])['dados'].get('qualidade') or {}).get('status', '')
         ok_q = q not in ('', 'falha_tecnica')      # sem conferência técnica registrada também não sai
@@ -1174,16 +1440,44 @@ def _garantir_link(pid: str) -> str | None:
         return None
 
 
+def horario_rede(p: dict, r: dict) -> float:
+    return float(r.get('quando', p['quando']))
+
+
+def _proxima_rede(rede: str) -> float:
+    with LOCK:
+        return float(_ler(DADOS / 'ritmo_posts.json', {}).get(rede) or 0)
+
+
+def _adiar_rede(rede: str, segundos: float):
+    if segundos <= 0:
+        return
+    with LOCK:
+        ritmo = _ler(DADOS / 'ritmo_posts.json', {})
+        ritmo[rede] = max(float(ritmo.get(rede) or 0), agora() + segundos)
+        _gravar(DADOS / 'ritmo_posts.json', ritmo)
+
+
+def _destino_pronto(p: dict, rede: str) -> bool:
+    redes = p.get('redes') if isinstance(p.get('redes'), dict) else {}
+    r = redes.get(rede) if isinstance(redes.get(rede), dict) else {}
+    return (r.get('status') == 'agendado' and not r.get('lote_pausado')
+            and (r.get('outra_rede') and 'quando' not in r or horario_rede(p, r) <= agora())
+            and float(r.get('proxima') or 0) <= agora() and _proxima_rede(rede) <= agora())
+
+
 def _publicar_um(pid: str, rede: str):
     _garantir_link(pid)
     atual = next((x for x in posts() if x['id'] == pid), None)
-    if atual is None:
+    if not atual or not _destino_pronto(atual, rede):
         return
     conf = conferencia(atual, rede)
     bloqueios = [x['detalhe'] for x in conf if x['bloqueia']]
     if bloqueios and all(x.get('liberavel') for x in conf if x['bloqueia']):
         msg = 'Precisa da sua liberação especial para postar: ' + ' '.join(bloqueios) + ' Toque em "Liberar e postar" se quiser postar mesmo assim.'
         def pedir(q):
+            if not _destino_pronto(q, rede):
+                return
             q['redes'][rede].update(status='liberacao', erro=msg[:500])
             _anotar(q, rede, 'pede_liberacao', msg)
         _mudar(pid, pedir)
@@ -1193,6 +1487,8 @@ def _publicar_um(pid: str, rede: str):
         # falta só etapa da esteira (diretor, capa ou liberação): o post espera e tenta de novo; só vira erro depois de 24 h
         msg = 'Esperando a esteira dos 7 agentes: ' + ' '.join(bloqueios)
         def esperar(q):
+            if not _destino_pronto(q, rede):
+                return
             r = q['redes'][rede]
             if not r.get('esperando_esteira'):
                 _anotar(q, rede, 'esperando_esteira', msg)
@@ -1202,6 +1498,8 @@ def _publicar_um(pid: str, rede: str):
     if bloqueios:
         msg = 'Conferência antes de postar: ' + ' '.join(bloqueios)
         def barrar(q):
+            if not _destino_pronto(q, rede):
+                return
             q['redes'][rede].update(status='erro', erro=msg[:500])
             _anotar(q, rede, 'bloqueado', msg)
         _mudar(pid, barrar)
@@ -1210,7 +1508,12 @@ def _publicar_um(pid: str, rede: str):
 
     nova = next((x.get('nova_versao') for x in conf if x.get('nova_versao')), '')
 
+    iniciou = False
     def iniciar(p):
+        nonlocal iniciou
+        if not _destino_pronto(p, rede):
+            return
+        iniciou = True
         p['redes'][rede].update(status='postando', erro='', inicio=agora())
         if nova and p.get('hash') != nova:       # passa a valer a versão nova aprovada (evita postar a mesma de novo depois)
             _anotar(p, rede, 'versao_nova', 'O vídeo foi refeito depois de agendado; a versão nova tem aprovação própria e é a que vai.')
@@ -1220,18 +1523,43 @@ def _publicar_um(pid: str, rede: str):
         _anotar(p, rede, 'enviando', 'Conferência ok: ' + ', '.join(x['item'] for x in conf if x['ok']) +
                 ''.join(f' Aviso: {x["detalhe"]}' for x in conf if not x['ok'] and not x['bloqueia']))
     p = _mudar(pid, iniciar)
+    if not iniciou:
+        return
     try:
         REF.pop(rede, None)
-        link = PUBLICAR[rede](p, video_path(p['video']))
+        CAPA.pop(rede, None)
+        arq = video_path(p['video'])
+        contexto = contexto_publicacao(p, arq) if os.getenv('PUBLICACAO_CONTEXTO', '0') == '1' else None
+        p.pop('_canal_publicado', None)
+        link = PUBLICAR[rede](p, arq)
+        canal_rede = p.pop('_canal_publicado', None)
+        if contexto is not None:
+            contexto['canal_rede'] = str(canal_rede) if canal_rede else None
+            contexto['canal'] = contexto.get('canal') or (rede + ':' + str(canal_rede) if canal_rede else None)
         ref = REF.pop(rede, '')
+        capa = CAPA.pop(rede, None) or (_estado_capa('manual', None, 'manual', 'Esta rede não recebe capa pela integração: aplique no app.')
+                                        if rede == 'facebook' else None)
         def ok(q):
-            q['redes'][rede].update(status='postado', link=link, erro='', feito=agora(), ref=ref)
+            feito = agora()
+            q['redes'][rede].update(status='postado', link=link, erro='', feito=feito, ref=ref, **({'capa': capa} if capa else {}))
+            if contexto is not None:
+                q['redes'][rede]['publicacao'] = dict(contexto, rede=rede, ref=ref or None, link=link, publicado_em=feito)
             _anotar(q, rede, 'postado', link)
         _mudar(pid, ok)
+        if capa:
+            try:
+                import thumbnails as th
+                th.registrar_aplicacao(pid, rede, capa, 'agente2')
+            except Exception as e:  # noqa: BLE001
+                print('postagem: registro da capa', e)
+        if rede == 'tiktok':
+            ta.notificar_pronto(pid)
     except ErroTemporario as e:
         n = int(p['redes'][rede].get('tentativas', 0))
+        _adiar_rede(rede, max(0, getattr(e, 'retry_after', 0)))
         if n < len(ESPERAS):
-            prox = agora() + ESPERAS[n] * 60
+            espera = max(ESPERAS[n] * 60, getattr(e, 'retry_after', 0))
+            prox = agora() + espera
             hora = datetime.fromtimestamp(prox).strftime('%H:%M')
             def de_novo(q):
                 q['redes'][rede].update(status='agendado', tentativas=n + 1, proxima=prox,
@@ -1248,11 +1576,14 @@ def _publicar_um(pid: str, rede: str):
             _anotar(q, rede, 'erro', msg)
         _mudar(pid, falhou)
         _avisar_falha(pid, rede, msg)
+    finally:
+        _adiar_rede(rede, float(p['redes'][rede].get('intervalo_api_s') or 0))
 
 
 _EM_ENVIO: set = set()                  # (post, rede) sendo enviado agora
 _TRAVA_REDE: dict = {}                  # uma trava por rede: TikTok travado não segura o YouTube
 _TRAVA_ENVIO = threading.Lock()
+_REDES_ATIVAS: set = set()
 
 
 def _enviar_rede(pid: str, rede: str):
@@ -1278,26 +1609,43 @@ def _enviar_rede(pid: str, rede: str):
             _EM_ENVIO.discard((pid, rede))
 
 
+def _enviar_lista(rede: str, ids: list):
+    try:
+        for pid in ids:
+            _enviar_rede(pid, rede)
+    finally:
+        with _TRAVA_ENVIO:
+            _REDES_ATIVAS.discard(rede)
+            for pid in ids:
+                _EM_ENVIO.discard((pid, rede))
+
+
 def ciclo(esperar: bool = True):
     """Publica tudo que já passou do horário. Cada rede vai por conta própria: se uma falhar ou demorar
     (ex.: TikTok), as outras (ex.: YouTube) são postadas do mesmo jeito. esperar=False: não espera os envios acabarem."""
-    fios = []
+    fios, por_rede = [], {}
+    try:
+        reenviar_capas_pendentes()
+    except Exception as e:  # noqa: BLE001  (reenvio de capa nunca segura as postagens)
+        print('postagem: reenvio de capas', e)
     for p in lista_posts():
-        if p['quando'] > agora() or not video_pronto(p['video']):
+        if not video_pronto(p['video']):
             continue
         for rede, r in p['redes'].items():
-            if r['status'] == 'agendado':
-                if agora() < r.get('proxima', 0):
-                    continue
-                with _TRAVA_ENVIO:
-                    if (p['id'], rede) in _EM_ENVIO:
-                        continue
-                    _EM_ENVIO.add((p['id'], rede))
-                t = threading.Thread(target=_enviar_rede, args=(p['id'], rede), daemon=True, name=f'post-{rede}')
-                t.start()
-                fios.append(t)
+            if _destino_pronto(p, rede):
+                por_rede.setdefault(rede, []).append((horario_rede(p, r), p['id']))
             elif r['status'] == 'postando' and agora() - r.get('inicio', 0) > 3600 and (p['id'], rede) not in _EM_ENVIO:
                 _mudar(p['id'], lambda q, rede=rede: q['redes'][rede].update(status='erro', erro='O envio foi interrompido (servidor desligou?). Toque em Tentar de novo nesta rede.'))
+    for rede, itens in por_rede.items():
+        with _TRAVA_ENVIO:
+            if rede in _REDES_ATIVAS:
+                continue
+            ids = [pid for _, pid in sorted(itens)]
+            _REDES_ATIVAS.add(rede)
+            _EM_ENVIO.update((pid, rede) for pid in ids)
+        t = threading.Thread(target=_enviar_lista, args=(rede, ids), daemon=True, name=f'post-{rede}')
+        t.start()
+        fios.append(t)
     if esperar:
         for t in fios:
             t.join()

@@ -1,0 +1,146 @@
+INICIO teste_3d.py
+{"teste": "teste_3d.py", "status": "PASS", "exit": 0, "segundos": 2.38}
+INICIO teste_a3_editor_compartilhado.py
+{"teste": "teste_a3_editor_compartilhado.py", "status": "PASS", "exit": 0, "segundos": 12.47}
+INICIO teste_aceite_linha6.py
+{"teste": "teste_aceite_linha6.py", "status": "PASS", "exit": 0, "segundos": 63.63}
+INICIO teste_agenda_agente2.py
+{"teste": "teste_agenda_agente2.py", "status": "PASS", "exit": 0, "segundos": 3.19}
+INICIO teste_agente3.py
+{"teste": "teste_agente3.py", "status": "PASS", "exit": 0, "segundos": 137.7}
+INICIO teste_alertas.py
+{"teste": "teste_alertas.py", "status": "PASS", "exit": 0, "segundos": 0.21}
+INICIO teste_aprendizado.py
+{"teste": "teste_aprendizado.py", "status": "PASS", "exit": 0, "segundos": 0.11}
+INICIO teste_aprovacao_roteiro_corrida.py
+{"teste": "teste_aprovacao_roteiro_corrida.py", "status": "PASS", "exit": 0, "segundos": 0.22}
+INICIO teste_ativacao_termux.py
+{"teste": "teste_ativacao_termux.py", "status": "PASS", "exit": 0, "segundos": 0.27}
+INICIO teste_busca_canais.py
+{"teste": "teste_busca_canais.py", "status": "PASS", "exit": 0, "segundos": 0.06}
+INICIO teste_cancelamento.py
+{"teste": "teste_cancelamento.py", "status": "PASS", "exit": 0, "segundos": 0.22}
+INICIO teste_central_automacao.py
+{"teste": "teste_central_automacao.py", "status": "PASS", "exit": 0, "segundos": 6.76}
+INICIO teste_comandos.py
+{"teste": "teste_comandos.py", "status": "PASS", "exit": 0, "segundos": 0.27}
+INICIO teste_comparacao.py
+{"teste": "teste_comparacao.py", "status": "PASS", "exit": 0, "segundos": 8.51}
+INICIO teste_compatibilidade_metricas.py
+{"teste": "teste_compatibilidade_metricas.py", "status": "PASS", "exit": 0, "segundos": 0.11}
+INICIO teste_consistencia_projeto.py
+{"teste": "teste_consistencia_projeto.py", "status": "PASS", "exit": 0, "segundos": 5.85}
+INICIO teste_coordenador.py
+{"teste": "teste_coordenador.py", "status": "PASS", "exit": 0, "segundos": 9.46}
+INICIO teste_criativo.py
+{"teste": "teste_criativo.py", "status": "PASS", "exit": 0, "segundos": 1.22}
+INICIO teste_custo_corte.py
+{"teste": "teste_custo_corte.py", "status": "PASS", "exit": 0, "segundos": 16.76}
+INICIO teste_decisoes.py
+{"teste": "teste_decisoes.py", "status": "PASS", "exit": 0, "segundos": 0.12}
+INICIO teste_descricao.py
+{"teste": "teste_descricao.py", "status": "PASS", "exit": 0, "segundos": 0.27}
+INICIO teste_diretor.py
+{"teste": "teste_diretor.py", "status": "PASS", "exit": 0, "segundos": 0.22}
+INICIO teste_dna_corte.py
+{"teste": "teste_dna_corte.py", "status": "PASS", "exit": 0, "segundos": 1.42}
+INICIO teste_download_lote.py
+{"teste": "teste_download_lote.py", "status": "PASS", "exit": 0, "segundos": 2.77}
+INICIO teste_efeitos_reais.py
+{"teste": "teste_efeitos_reais.py", "status": "PASS", "exit": 0, "segundos": 5.19}
+{"teste": "teste_email.py", "status": "INTERATIVO_CONTA_REAL", "exit": null, "segundos": 0}
+INICIO teste_estados_fila.py
+{"teste": "teste_estados_fila.py", "status": "PASS", "exit": 0, "segundos": 0.22}
+INICIO teste_esteira_7.py
+{"teste": "teste_esteira_7.py", "status": "PASS", "exit": 0, "segundos": 34.02}
+INICIO teste_esteira_corte_salvo.py
+{"teste": "teste_esteira_corte_salvo.py", "status": "PASS", "exit": 0, "segundos": 0.06}
+INICIO teste_estilos_agente1.py
+{"teste": "teste_estilos_agente1.py", "status": "PASS", "exit": 0, "segundos": 0.11}
+INICIO teste_estilos_editar.py
+{"teste": "teste_estilos_editar.py", "status": "PASS", "exit": 0, "segundos": 87.46}
+INICIO teste_estilos_visuais.py
+{"teste": "teste_estilos_visuais.py", "status": "PASS", "exit": 0, "segundos": 8.55}
+INICIO teste_exportacao.py
+{"teste": "teste_exportacao.py", "status": "PASS", "exit": 0, "segundos": 19.7}
+INICIO teste_feedback_metricas.py
+{"teste": "teste_feedback_metricas.py", "status": "PASS", "exit": 0, "segundos": 0.12}
+INICIO teste_ffmpeg_tempo.py
+{"teste": "teste_ffmpeg_tempo.py", "status": "PASS", "exit": 0, "segundos": 16.31}
+INICIO teste_formatos_ia.py
+{"teste": "teste_formatos_ia.py", "status": "PASS", "exit": 0, "segundos": 0.22}
+INICIO teste_gameplay.py
+{"teste": "teste_gameplay.py", "status": "PASS", "exit": 0, "segundos": 42.79}
+INICIO teste_gancho_capa.py
+{"teste": "teste_gancho_capa.py", "status": "PASS", "exit": 0, "segundos": 1.27}
+INICIO teste_gancho_integro.py
+{"teste": "teste_gancho_integro.py", "status": "PASS", "exit": 0, "segundos": 0.11}
+INICIO teste_historico_publicacao.py
+{"teste": "teste_historico_publicacao.py", "status": "PASS", "exit": 0, "segundos": 0.11}
+INICIO teste_idempotencia_fila_capa.py
+{"teste": "teste_idempotencia_fila_capa.py", "status": "PASS", "exit": 0, "segundos": 0.11}
+INICIO teste_indicadores.py
+{"teste": "teste_indicadores.py", "status": "PASS", "exit": 0, "segundos": 0.17}
+INICIO teste_integridade_render.py
+{"teste": "teste_integridade_render.py", "status": "PASS", "exit": 0, "segundos": 7.74}
+INICIO teste_kwai_diario.py
+{"teste": "teste_kwai_diario.py", "status": "PASS", "exit": 0, "segundos": 0.06}
+INICIO teste_liberacao.py
+{"teste": "teste_liberacao.py", "status": "PASS", "exit": 0, "segundos": 0.87}
+INICIO teste_liberar_corte.py
+{"teste": "teste_liberar_corte.py", "status": "PASS", "exit": 0, "segundos": 0.17}
+INICIO teste_link_original.py
+{"teste": "teste_link_original.py", "status": "PASS", "exit": 0, "segundos": 0.06}
+INICIO teste_live.py
+{"teste": "teste_live.py", "status": "PASS", "exit": 0, "segundos": 34.76}
+INICIO teste_memoria_metricas.py
+{"teste": "teste_memoria_metricas.py", "status": "PASS", "exit": 0, "segundos": 0.11}
+INICIO teste_metricas_publicacoes.py
+{"teste": "teste_metricas_publicacoes.py", "status": "PASS", "exit": 0, "segundos": 0.11}
+INICIO teste_motor.py
+{"teste": "teste_motor.py", "status": "PASS", "exit": 0, "segundos": 50.15}
+INICIO teste_pacote.py
+{"teste": "teste_pacote.py", "status": "PASS", "exit": 0, "segundos": 4.7}
+INICIO teste_painel.py
+{"teste": "teste_painel.py", "status": "PASS", "exit": 0, "segundos": 0.62}
+INICIO teste_perfis.py
+{"teste": "teste_perfis.py", "status": "PASS", "exit": 0, "segundos": 21.69}
+INICIO teste_pipeline_5_agentes.py
+{"teste": "teste_pipeline_5_agentes.py", "status": "PASS", "exit": 0, "segundos": 11.68}
+INICIO teste_portao_diretor.py
+{"teste": "teste_portao_diretor.py", "status": "PASS", "exit": 0, "segundos": 0.17}
+INICIO teste_publicacao_lotes.py
+{"teste": "teste_publicacao_lotes.py", "status": "PASS", "exit": 0, "segundos": 1.12}
+INICIO teste_ranking_metricas.py
+{"teste": "teste_ranking_metricas.py", "status": "PASS", "exit": 0, "segundos": 0.06}
+INICIO teste_redes_independentes.py
+{"teste": "teste_redes_independentes.py", "status": "PASS", "exit": 0, "segundos": 0.41}
+INICIO teste_rejeitar_thumbnail.py
+{"teste": "teste_rejeitar_thumbnail.py", "status": "PASS", "exit": 0, "segundos": 0.17}
+INICIO teste_reposicao.py
+{"teste": "teste_reposicao.py", "status": "PASS", "exit": 0, "segundos": 1.38}
+INICIO teste_retry_fonte_a1.py
+{"teste": "teste_retry_fonte_a1.py", "status": "PASS", "exit": 0, "segundos": 0.16}
+INICIO teste_serie_completa.py
+{"teste": "teste_serie_completa.py", "status": "PASS", "exit": 0, "segundos": 0.17}
+INICIO teste_site_lote1.py
+{"teste": "teste_site_lote1.py", "status": "PASS", "exit": 0, "segundos": 3.38}
+INICIO teste_skills.py
+{"teste": "teste_skills.py", "status": "PASS", "exit": 0, "segundos": 0.17}
+INICIO teste_skills_agentes.py
+{"teste": "teste_skills_agentes.py", "status": "PASS", "exit": 0, "segundos": 2.02}
+INICIO teste_skills_novas.py
+{"teste": "teste_skills_novas.py", "status": "PASS", "exit": 0, "segundos": 88.2}
+INICIO teste_temas.py
+{"teste": "teste_temas.py", "status": "PASS", "exit": 0, "segundos": 0.11}
+INICIO teste_thumbnails.py
+{"teste": "teste_thumbnails.py", "status": "PASS", "exit": 0, "segundos": 19.57}
+INICIO teste_tiktok_assistido.py
+{"teste": "teste_tiktok_assistido.py", "status": "PASS", "exit": 0, "segundos": 0.11}
+INICIO teste_trecho_link.py
+{"teste": "teste_trecho_link.py", "status": "PASS", "exit": 0, "segundos": 0.27}
+INICIO teste_versao_refeita.py
+{"teste": "teste_versao_refeita.py", "status": "PASS", "exit": 0, "segundos": 0.51}
+INICIO teste_whatsapp.py
+{"teste": "teste_whatsapp.py", "status": "PASS", "exit": 0, "segundos": 16.26}
+CONCLUIDO {"INTERATIVO_CONTA_REAL": 1, "PASS": 72}

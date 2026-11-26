@@ -5,7 +5,7 @@ import { cabAuth } from './api';
 export type Template = {legenda:'destaque'|'simples'|'caixa'|'nenhuma';cor:string;cor_destaque:string;maiusculas:boolean;tamanho:'pequeno'|'medio'|'grande';legenda_pos:'baixo'|'meio';enquadramento:'desfoque'|'cortar';zoom:number;gancho:boolean;gancho_pos:'topo'|'alto';tarja_topo:string;tarja_base:string;cor_tarja:string;cor_tarja_texto:string;qualidade:number};
 export type Faixa = {dia:number;hora:string};
 export type ConfigAgente = {
-  cortes:{ligado:boolean;nichos:string[];temas:string[];temas_outros:boolean;proibidos:string[];min_views:number;idioma:string;regiao:string;por_semana:number;por_video:number;por_analise?:number;so_com_legenda?:boolean;dur_min:number;dur_max:number;nota_min:number;video_min:number;video_max:number;dias_video:number;hora_ini:number;hora_fim:number;template:Template;variar:string[];modelos:string[];estilos?:string[];modo?:string;perfil?:string;aprender:boolean;exigir_aprovacao?:boolean;busca_auto?:boolean;busca_horas?:number;busca_max?:number};
+  cortes:{ligado:boolean;nichos:string[];temas:string[];temas_outros:boolean;proibidos:string[];min_views:number;idioma:string;regiao:string;por_semana:number;por_video:number;por_analise?:number;priorizar_legendas?:boolean;so_com_legenda?:boolean;dur_min:number;dur_max:number;nota_min:number;video_min:number;video_max:number;dias_video:number;hora_ini:number;hora_fim:number;template:Template;variar:string[];modelos:string[];estilos?:string[];modo?:string;perfil?:string;aprender:boolean;exigir_aprovacao?:boolean;busca_auto?:boolean;busca_horas?:number;busca_max?:number};
   postagem:{ligado:boolean;redes:Rede[];faixas:Faixa[];youtube_privacidade:string;tiktok_modo:string;antecedencia:number};
   email:{para:string;de:string;smtp:string;porta:number;anexar:boolean;avisos:Record<string,boolean>};
   whatsapp:{ligado:boolean;numero:string;avisos:Record<string,boolean>};
@@ -50,7 +50,7 @@ export const verAgente=(c:Cfg)=>chamar(c,'GET','/agente');
 export const salvarAgente=(c:Cfg,parte:Parcial<ConfigAgente>)=>chamar(c,'POST','/agente/config',parte);
 export const salvarChaves=(c:Cfg,chaves:{gemini?:string;gemini_pago?:string;youtube?:string;email_senha?:string;pexels?:string;pixabay?:string;callmebot?:string})=>chamar(c,'POST','/agente/chaves',chaves);
 export const acaoCanal=(c:Cfg,d:{acao:'aprovar'|'recusar'|'remover'|'adicionar'|'editar';id?:string;link?:string;motivo?:string;comercial?:boolean|null;restricoes?:string;origem_aut?:string})=>chamar(c,'POST','/agente/canais',d);
-export const rodarAgente=(c:Cfg,oque:'buscar'|'cortar'|'postar'|'link'|'tema',link?:string)=>chamar<{ok:boolean}>(c,'POST','/agente/rodar',{oque,link});
+export const rodarAgente=(c:Cfg,oque:'buscar'|'cortar'|'postar'|'link'|'tema',link?:string)=>chamar<{ok:boolean;job?:string}>(c,'POST','/agente/rodar',{oque,link});
 /** Você define os pesos de uma rede à mão, ou zera tudo para voltar às chances iguais. */
 export const salvarPesos=(c:Cfg,d:{rede?:string;pesos?:Record<string,number>;zerar?:boolean})=>chamar(c,'POST','/agente/pesos',d);
 export const aprenderAgora=(c:Cfg)=>chamar<VisaoAgente&{redes:string[]}>(c,'POST','/agente/aprender',{});

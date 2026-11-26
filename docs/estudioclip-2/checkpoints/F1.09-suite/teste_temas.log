@@ -1,0 +1,14 @@
+ok    prioridade padrão: legenda ganha de mais visualizações
+ok    sem prioridade: o mais visto dos canais aprovados
+ok    sem legendas disponíveis: recupera o vídeo pulado só pela regra antiga
+ok    com tema: só o vídeo do tema, nos canais aprovados, sem gastar busca
+ok    sem vídeo do tema: explica e sugere buscar em outros canais
+ok    com "outros canais" ligado: busca no YouTube e marca como fora dos aprovados
+ok    tema pedido na hora: canal aprovado tem prioridade
+ok    tema pedido na hora busca no YouTube todo
+ok    nada novo sobre o tema: avisa
+ok    tema vazio é recusado
+ok    WhatsApp: "corta um vídeo sobre Elden Ring" manda o Agente 1 buscar o tema
+ok    WhatsApp: "cortar sobre ..."
+
+TUDO OK

@@ -1,0 +1,12 @@
+ok    mesmo arquivo: versão ok
+ok    arquivo trocado sem aprovação: barrado
+ok    não posta o arquivo trocado sem aprovação
+ok    versão nova aprovada pelo diretor: ok
+ok    Tentar de novo posta a versão aprovada
+ok    post passa a apontar para a versão nova
+ok    arquivo_trocado atualiza só o post não enviado
+ok    post agendado aponta para a versão nova
+ok    devolve o horário do post
+ok    horário fica livre para o próximo vídeo pronto
+
+TUDO OK

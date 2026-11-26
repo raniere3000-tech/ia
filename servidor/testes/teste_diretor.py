@@ -47,9 +47,9 @@ confere(qd.veredito({'status': 'falha_tecnica'})['tecnico'], 'falha técnica ped
 confere(not qd.veredito(None)['aprovado'], 'vídeo sem conferência não é aprovado')
 v = qd.veredito({'status': 'alerta_visual', 'problemas': [prob('cabeca_cortada', 'alta', 'c2')]})
 confere(not v['aprovado'] and v['cenas'] == ['c2'], 'cabeça cortada (grave) reprova e aponta a cena')
-confere(qd.veredito({'status': 'alerta_visual', 'problemas': [prob('quadro_escuro', 'baixa')]})['aprovado'], 'problema leve não reprova')
-confere(qd.veredito({'status': 'alerta_visual', 'problemas': [prob('narrativa'), prob('ritmo', 'alta')]})['aprovado'], 'nota de roteiro e ritmo não reprova')
-confere(qd.veredito({'status': 'alerta_visual', 'problemas': [prob('sobreposicao', natureza='julgamento')]})['aprovado'], 'opinião da IA não reprova')
+confere(not qd.veredito({'status': 'alerta_visual', 'problemas': [prob('quadro_escuro', 'baixa')]})['aprovado'], 'problema leve pendente bloqueia')
+confere(not qd.veredito({'status': 'alerta_visual', 'problemas': [prob('narrativa'), prob('ritmo', 'alta')]})['aprovado'], 'nota de roteiro e ritmo pendente bloqueia')
+confere(not qd.veredito({'status': 'alerta_visual', 'problemas': [prob('sobreposicao', natureza='julgamento')]})['aprovado'], 'opinião da IA pendente bloqueia')
 confere(qd.veredito({'status': 'alerta_visual', 'problemas': [prob('sai_do_quadro', status='resolvido')]})['aprovado'], 'problema já resolvido não reprova')
 confere(qd.veredito({'status': 'apto_para_revisao_humana', 'problemas': []})['aprovado'], 'tudo certo aprova')
 
@@ -117,7 +117,9 @@ p = pj.obter(pid)
 confere(p['status'] == 'ready_for_review' and p['dados']['render']['sha'] == 'b' * 64, 'refeito e aprovado: chega para a sua aprovação final')
 confere(p['dados']['diretor']['veredito'] == 'aprovado' and p['dados']['diretor']['tentativas'] == 1, 'registra que foi aprovado depois de refazer 1 vez')
 confere(apv.diretor_ok(p, 'b' * 64)['aprovado'], 'a sua aprovação aceita o arquivo que o diretor aprovou')
+confere(not apv.diretor_ok(p, 'c' * 64)['aprovado'], 'laudo limpo não libera outro arquivo')
 qa(pid, ruim)
+confere(not any(x['projeto'] == pid for x in apv.pendentes()), 'arquivo com pendências sai da aprovação final')
 confere(not apv.diretor_ok(pj.obter(pid), 'c' * 64)['aprovado'], 'outro arquivo, sem aprovação do diretor, não passa')
 qa(pid, bom)
 
@@ -133,15 +135,67 @@ confere('foto1' in (c2.get('fotos_recusadas') or []) and not c2.get('imagem'), '
 qa(pid, ruim)
 r = produtor.decisao_do_diretor(ctx, pid, {'estilo': 'documentario'}, render_de('z' * 64), 'z' * 64, 9, conf)
 p = pj.obter(pid)
-confere(not r.get('refazer') and p['status'] == 'failed' and p['dados']['diretor']['veredito'] == 'reprovado', 'acabaram as tentativas: para com o motivo')
-confere('diretor de qualidade' in p['dados']['producao']['erro'] and not p['dados'].get('render'), 'não chega para você e diz o motivo')
-confere(avisos and avisos[-1][0] == pid, 'avisa por e-mail que parou')
+confere(r.get('refazer') and p['status'] == 'rendering', 'ultrapassar o antigo limite mantém a correção automática')
+confere(not p['dados'].get('render') and not avisos, 'continua fora da fila de aprovação')
+qa(pid, bom)
+r = produtor.decisao_do_diretor(ctx, pid, {'estilo': 'documentario'}, render_de('x' * 64), 'x' * 64, 10, conf)
+confere(pj.obter(pid)['status'] == 'ready_for_review', 'parecer favorável após o antigo limite libera a revisão')
 
 # novo pedido de produção (outro job) começa a contagem do zero
 ctx3 = Ctx('job3')
 qa(pid, ruim)
 r = produtor.decisao_do_diretor(ctx3, pid, {'estilo': 'documentario'}, render_de('y' * 64), 'y' * 64, 10, conf)
 confere(r.get('refazer') and pj.obter(pid)['dados']['diretor']['tentativas'] == 1, 'mandar produzir de novo zera as tentativas')
+
+# O parecer do roteiro governa a transição real da fila.
+from unittest.mock import patch
+
+pid_etapas = projeto('documentario')
+ctx_etapas = Ctx('job-etapas')
+ctx_etapas.dados = {'projeto': pid_etapas, 'etapa': 'roteiro'}
+ctx_etapas.progresso = lambda *args: None
+pj.mudar_dados(pid_etapas, lambda d, _p: d['briefing'].update(modo_aprovacao='supervisionado'))
+with patch.object(produtor, 'revisao_narrativa', return_value=[{'descricao': 'Gancho repetido', 'proposta': 'Começar pelo fato.'}]):
+    produtor.job_produzir(ctx_etapas)
+confere(ctx_etapas.dados['etapa'] == 'revisar' and 'Começar pelo fato.' in ctx_etapas.dados['correcao'],
+        'parecer desfavorável envia roteiro e instrução à reescrita')
+ctx_etapas.dados['etapa'] = 'roteiro'
+with patch.object(produtor, 'revisao_narrativa', return_value=[]):
+    produtor.job_produzir(ctx_etapas)
+reg = pj.obter(pid_etapas)['dados']['pareceres_etapas']['roteiro']
+confere(ctx_etapas.dados['etapa'] == 'narracao' and reg['aprovado'] and reg['reprovacoes'] == 1,
+        'o novo parecer libera a narração e preserva a contagem')
+
+# Aprovação manual na versão disponível, com o parecer original preservado.
+import hashlib
+import pipeline as pl
+
+pid_manual = projeto('documentario')
+arquivo = TMP / 'versao-manual.mp4'
+arquivo.write_bytes(b'versao validada para o teste')
+sha = hashlib.sha256(arquivo.read_bytes()).hexdigest()
+render = render_de(sha)
+db.executar('INSERT INTO renders (id, projeto, versao, arquivo, sha256, duracao, validado, criado) VALUES (?,?,?,?,?,?,?,?)',
+            render['id'], pid_manual, 1, str(arquivo), sha, 3, 1, 0)
+qa(pid_manual, ruim)
+produtor.entregar_revisao_manual(pid_manual, render, ['Ajustar o enquadramento.'])
+confere(any(x['projeto'] == pid_manual for x in apv.pendentes()), 'render conferido aparece para revisão com pendências')
+try:
+    apv.aprovar(pid_manual, sha, {'redes': []}, 'site', 'teste')
+    confere(False, 'atalho normal continua exigindo parecer favorável')
+except apv.ErroAprovacao:
+    confere(True, 'atalho normal continua exigindo parecer favorável')
+qa(pid_manual, {'status': 'falha_tecnica'})
+try:
+    apv.aprovar(pid_manual, sha, {'redes': []}, 'site', 'teste', manual=True)
+    confere(False, 'aceite manual preserva o bloqueio técnico')
+except apv.ErroAprovacao:
+    confere(True, 'aceite manual preserva o bloqueio técnico')
+qa(pid_manual, ruim)
+res = apv.aprovar(pid_manual, sha, {'redes': []}, 'site', 'teste', manual=True)
+confere(res['ok'] and pl.certificado(sha)['manual'] and apv.historico(pid_manual)[0]['origem'] == 'site_manual',
+        'aceite manual grava autor e certificado da versão')
+confere(not apv.diretor_ok(pj.obter(pid_manual), sha)['aprovado'], 'aceite manual preserva o parecer desfavorável')
 
 # ---- cortes do Radar (Agente 1)
 import agente  # noqa: E402

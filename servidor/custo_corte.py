@@ -403,11 +403,11 @@ def sugestoes(r: dict) -> list:
     if parte >= 0.3 and (ouvir or h['ouvidos_pela_ia']):
         txt = (f'Ouvir o áudio foi {round(parte * 100)}% do custo dos cortes' if ouvir and medido
                else f'{h["ouvidos_pela_ia"]} de {h["analises"]} vídeo(s) não tinham legenda e a IA teve que ouvir o áudio inteiro')
-        out.append({'id': 'so_com_legenda', 'prioridade': 2, 'feito': bool(co.get('so_com_legenda')), 'fonte': base, 'titulo': txt,
+        out.append({'id': 'priorizar_legendas', 'prioridade': 2, 'feito': bool(co.get('priorizar_legendas')), 'fonte': base, 'titulo': txt,
                     'texto': 'Ouvir é a parte mais cara: áudio custa cerca de 3 vezes o texto e a IA ouve o vídeo todo, em pedaços de 8 minutos. '
-                             'Vídeo com legenda do YouTube sai quase de graça para ouvir. Ligando "Só vídeos com legenda", o Agente 1 pula o vídeo sem '
-                             'legenda e pega o próximo (gameplay sem fala continua funcionando, pelo som e pela imagem).',
-                    'acao': {'rotulo': 'Só cortar vídeos com legenda', 'cortes': {'so_com_legenda': True}}})
+                             'Com a prioridade ligada, o Agente 1 dá preferência a vídeos com legenda. Se o vídeo escolhido não tiver '
+                             'legenda aproveitável, a IA transcreve o áudio e o corte continua.',
+                    'acao': {'rotulo': 'Priorizar vídeos com legenda', 'cortes': {'priorizar_legendas': True}}})
 
     if h['trocas_para_paga']:
         out.append({'id': 'sem_reserva_paga', 'prioridade': 1, 'feito': not cu.get('reserva', True), 'fonte': f'histórico dos últimos {h["dias"]} dias',
@@ -461,7 +461,7 @@ def aplicar(sid: str) -> dict:
     novo: dict = {'cortes': {}, 'chaves_uso': {}}
     for sug in alvo:
         a = sug['acao']
-        novo['cortes'].update({k: v for k, v in (a.get('cortes') or {}).items() if k in ('por_analise', 'por_semana', 'so_com_legenda')})
+        novo['cortes'].update({k: v for k, v in (a.get('cortes') or {}).items() if k in ('por_analise', 'por_semana', 'priorizar_legendas')})
         novo['chaves_uso'].update({k: v for k, v in (a.get('chaves_uso') or {}).items()
                                    if (k in ('cortes', 'camera') and v in ('gratis', 'paga')) or (k == 'reserva' and isinstance(v, bool))})
     ag.salvar_config({k: v for k, v in novo.items() if v})

@@ -1,0 +1,58 @@
+ok    uma linha por skill do manifesto
+ok    nada aparece instalado antes de baixar
+ok    só https do raw.githubusercontent
+ok    skill boa fica com regras prontas
+ok    sem regras em lista: só texto instalado
+ok    hash diferente: recusa e relata
+ok    dependência externa marcada como pendente
+ok    licença não confirmada fica desligada
+ok    regras filtradas (sem ordens, sem comandos, sem código)
+ok    instalar de novo não baixa o que já está certo
+ok    perfil do storyboard usa a skill pronta
+ok    skill ausente aparece com motivo
+ok    skill de desenvolvimento recusada no roteiro
+ok    perfil salvo com limite
+ok    orientação composta e marcada como apoio
+ok    histórico registra qual skill ajudou
+ok    roteiro do Agente 3 recebe as regras (roteiro + planos)
+ok    apoio entra antes do formato da resposta
+ok    perfil desligado não usa skill
+ok    skill desligada não entra em pedido
+ok    arquivo alterado no aparelho detectado
+ok    skill com falha não entra em pedido
+ok    arquivo consertado volta a valer
+ok    versão nova sem teste não é ativada (nada de ativação silenciosa)
+ok    teste da versão nova mostra o que muda e não ativa
+ok    atualização conferida e ativada
+ok    volta para a versão anterior
+ok    teste de versão com hash errado falha
+ok    versão nova com hash errado recusada e a atual fica
+ok    depois de reiniciar, skills e perfis continuam
+ok    relatório de cada skill gravado (0 executores)
+ok    estados com os nomes do lote (disponível, dep. pendente, desativada, falha)
+ok    skill fora do manifesto recusada
+ok    desfazer o lote volta as skills como estavam
+ok    catálogo conferido por programa: item estranho apontado
+ok    tarefa "roteiro" escolhe o perfil do roteiro
+ok    tarefa "planos" escolhe a direção, com a decisão de cada skill
+ok    preferência manual: evitar uma skill
+ok    postagem não recebe skill de direção
+ok    skill de desenvolvimento só quando o agente é o de desenvolvimento
+ok    dependência externa só entra com permissão
+ok    orçamento estourado: fica de fora e cai no fallback
+ok    seleção inventada é recusada pelo código
+ok    perfil com skill fora do catálogo recusado
+ok    perfis de Radar, A1, A2, A3 (roteiro, direção, 2D, áudio), qualidade e site, com fallback e orçamento
+ok    skills indicadas no documento
+ok    desfazer volta o perfil como estava
+ok    Agente 3: skill de direção registrada pelos planos que virou
+ok    registro separa "carregada no pedido" de "utilizada"
+ok    mesmo artefato não duplica o registro
+ok    sem plano produzido, a skill de direção não conta como usada
+ok    ponta a ponta mostra artefato e skills do Agente 3
+ok    GitHub fora do ar: a versão atual continua valendo
+ok    perfil desligado: segue sem skill e registra o fallback
+ok    skill com prompt malicioso: só a regra útil passa
+ok    manifesto real: 133 skills (118 + 15), todas fixadas com hash
+ok    todas as skills dos perfis existem no manifesto
+falhas: 0

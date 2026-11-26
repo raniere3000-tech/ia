@@ -4,8 +4,12 @@ export type Prov = 'google'|'meta'|'tiktok';
 export type Rede = 'youtube'|'facebook'|'instagram'|'tiktok'|'kwai';
 export type Conta = {app:boolean;conectado:boolean;nome:string;client_id:string;paginas:{id:string;nome:string;instagram:string}[];pagina:string;erro:string;verificado?:number};
 export type Contas = Record<Prov,Conta>;
-export type StatusRede = {status:'agendado'|'postando'|'postado'|'erro'|'manual'|'liberacao';link:string;erro:string};
-export type Post = {id:string;video:string;criado:number;quando:number;titulo:string;legenda:string;opcoes:{youtube_privacidade:string;tiktok_modo:string};redes:Partial<Record<Rede,StatusRede>>;preparando?:boolean;relatorio?:{t:number;rede:string;evento:string;detalhe:string}[]};
+export type StatusRede = {status:'agendado'|'postando'|'postado'|'erro'|'manual'|'liberacao'|'cancelado';link:string;erro:string;quando?:number;lote?:string;lote_pausado?:boolean;intervalo_api_s?:number};
+export type Post = {id:string;video:string;hash?:string;arquivo_disponivel?:boolean;criado:number;quando:number;titulo:string;legenda:string;opcoes:{youtube_privacidade:string;tiktok_modo:string};redes:Partial<Record<Rede,StatusRede>>;preparando?:boolean;relatorio?:{t:number;rede:string;evento:string;detalhe:string}[];tiktok?:TikTokInfo};
+
+export type EstadoTikTok='pendente_envio'|'agendado'|'enviado_tiktok'|'aguardando_publicacao_manual'|'aguardando_confirmacao'|'publicado'|'falha'|'cancelado';
+export type TikTokInfo={estado:EstadoTikTok;rotulo:string;meta:{titulo:string;descricao:string;hashtags:string[];links:{rotulo:string;url:string}[]};origem:Record<string,string>;texto:string;ja_enviado:boolean;pode_reenviar:boolean;modo:'assistido'|'direto';editado:number;copiado:number};
+export const ESTADOS_TIKTOK:[EstadoTikTok,string][]=[['pendente_envio','Pendente de envio'],['agendado','Agendado'],['enviado_tiktok','Enviado ao TikTok'],['aguardando_publicacao_manual','Aguardando publicação manual'],['aguardando_confirmacao','Aguardando confirmação'],['publicado','Publicado'],['falha','Falha'],['cancelado','Cancelado']];
 
 export const REDES:{id:Rede;nome:string;prov:Prov|null}[] = [
   {id:'youtube',nome:'YouTube Shorts',prov:'google'},
@@ -18,8 +22,8 @@ export const REDES:{id:Rede;nome:string;prov:Prov|null}[] = [
 /** Endereço fixo para onde as redes devolvem o login (cadastre igual no app de cada rede). */
 export const enderecoRetorno = ()=>location.origin+location.pathname;
 
-type Cfg = {servidor:string;servidorToken:string};
-async function chamar<T=any>(cfg:Cfg,metodo:string,caminho:string,corpo?:unknown,raw?:Blob):Promise<T>{
+export type Cfg = {servidor:string;servidorToken:string};
+export async function chamar<T=any>(cfg:Cfg,metodo:string,caminho:string,corpo?:unknown,raw?:Blob):Promise<T>{
   if(!cfg.servidor) throw new Error('Ligue o servidor primeiro (Chaves e ajustes > Cortes direto pelo link).');
   const h:Record<string,string>={}; Object.assign(h,cabAuth(cfg.servidorToken));
   if(corpo!==undefined) h['Content-Type']='application/json';
@@ -68,6 +72,7 @@ export const criarPost=(c:Cfg,d:{video:string;redes:Rede[];titulo:string;legenda
 export const listarPosts=(c:Cfg)=>chamar<{posts:Post[];agora:number}>(c,'GET','/posts');
 export const postarAgora=(c:Cfg,id:string,rede?:string)=>chamar(c,'POST',`/posts/${id}/agora`,rede?{rede}:{});
 export const cancelarPost=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/cancelar`,{});
+export const publicarEmOutrasRedes=(c:Cfg,id:string,redes:Rede[])=>chamar<Post>(c,'POST',`/posts/${id}/outras-redes`,{redes});
 export const editarPost=(c:Cfg,id:string,d:{quando?:number;redes?:Rede[];titulo?:string;legenda?:string})=>chamar<Post>(c,'POST',`/posts/${id}/editar`,d);
 export const liberarPost=(c:Cfg,id:string)=>chamar(c,'POST',`/posts/${id}/liberar`,{});
 export const AVISO_LIBERAR='Postar mesmo sem registrar de quem é o vídeo? Fica registrado que você deu esta liberação especial, só para este arquivo. A responsabilidade pelos direitos do vídeo fica com você.';
@@ -79,3 +84,17 @@ export async function baixarVideoPost(c:Cfg,id:string,nome:string){
   if(!r||!r.ok) throw new Error('Não consegui baixar o vídeo do servidor.');
   const u=URL.createObjectURL(await r.blob()); const a=document.createElement('a'); a.href=u; a.download=(nome.replace(/[\\/:*?"<>|]+/g,'').slice(0,60)||'corte')+'.mp4'; a.click(); setTimeout(()=>URL.revokeObjectURL(u),30000);
 }
+
+export type ItemLote={post:string;rede:Rede;titulo:string;quando?:number;slot?:string|null;motivo?:string};
+export type PreviaLote={agendados:ItemLote[];ignorados:ItemLote[];ajustes:ItemLote[];versao?:string;lote?:string;repetido?:boolean};
+export type PedidoLote={posts:string[];redes:Rede[];inicio:number;intervalo_min:number;intervalo_api_s:number;modo:'intervalo'|'programacao';reagendar:boolean};
+export type LotePosts={id:string;inicio?:number;total:number;publicados:number;pendentes:number;cancelados:number;pausado:boolean;redes:Rede[]};
+export const previaLote=(c:Cfg,d:PedidoLote)=>chamar<PreviaLote>(c,'POST','/posts/lotes/previa',d);
+export const criarLote=(c:Cfg,d:PedidoLote&{chave:string;versao:string})=>chamar<PreviaLote>(c,'POST','/posts/lotes',d);
+export const listarLotes=(c:Cfg)=>chamar<{lotes:LotePosts[]}>(c,'GET','/posts/lotes');
+export const acaoLote=(c:Cfg,id:string,acao:'pausar'|'retomar'|'cancelar')=>chamar<{lotes:LotePosts[]}>(c,'POST',`/posts/lotes/${id}/${acao}`,{});
+
+/** Publicação assistida do TikTok: ver, editar, copiar e confirmar. Nada disso envia o vídeo de novo. */
+export const editarTikTok=(c:Cfg,id:string,d:{titulo?:string;descricao?:string;hashtags?:string[];links?:{rotulo:string;url:string}[]})=>chamar<TikTokInfo>(c,'POST',`/posts/${id}/tiktok`,{acao:'editar',...d});
+export const acaoTikTok=(c:Cfg,id:string,acao:'copiado'|'abrir'|'confirmar'|'reabrir'|'reenviar',link?:string)=>chamar<TikTokInfo>(c,'POST',`/posts/${id}/tiktok`,{acao,link});
+export const migrarTikTok=(c:Cfg,simular=false)=>chamar<{posts:number;atualizados:number;ja_prontos:number;campos_gerados:number}>(c,'POST','/posts/tiktok/migrar',{simular});

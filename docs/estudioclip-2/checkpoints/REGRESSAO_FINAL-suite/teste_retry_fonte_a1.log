@@ -1,0 +1,19 @@
+.agente: Não deu para cortar "Fonte sem legenda": Vídeo privado
+agente: Não deu para cortar "Fonte sem legenda": URL inválida
+agente: Não deu para cortar "Fonte sem legenda": Sem autorização para cortar
+agente: Não deu para cortar "Fonte sem legenda": O teto de R$ 10 foi atingido
+.agente: Tentativa 1/3: vou repetir a fonte abcdefghijk em 60s.
+agente: Não deu para cortar "Fonte sem legenda": Sem autorização atual do canal para repetir esta fonte.
+.agente: Tentativa 1/3: vou repetir a fonte abcdefghijk em 60s.
+.agente: Não deu para cortar "Fonte sem legenda": timeout
+.agente: Tentativa 1/3: vou repetir a fonte abcdefghijk em 60s.
+agente: 0 corte(s) pronto(s) de "Fonte sem legenda".
+.agente: Tentativa 1/3: vou repetir a fonte abcdefghijk em 60s.
+.agente: Tentativa 1/3: vou repetir a fonte abcdefghijk em 60s.
+agente: Tentativa 2/3: vou repetir a fonte abcdefghijk em 180s.
+agente: Não deu para cortar "Fonte sem legenda": HTTP 429 temporário
+.
+----------------------------------------------------------------------
+Ran 8 tests in 0.051s
+
+OK

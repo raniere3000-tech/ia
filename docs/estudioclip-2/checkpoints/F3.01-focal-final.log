@@ -1,0 +1,30 @@
+Sessão e aparelhos
+  ok  senha errada recusada
+  ok  login cria sessão do aparelho
+  ok  sem sessão não lista projetos
+  ok  pareamento prova que conhece o código
+  ok  código de pareamento é de uso único
+  ok  aparelho desconectado perde acesso
+Projetos e conflito
+  ok  salvar aumenta a revisão
+  ok  revisão antiga dá conflito 409 com a revisão atual
+Configura chave e e-mail do agente
+  ok  configuração salva com sessão de aparelho (rotas antigas)
+Agente 3: produção
+  ok  projeto do Agente 3 criado e na fila
+  ok  roteiro gerado e esperando aprovação
+  ok  trabalho fica esperando (não renderiza sem aprovar)
+  ok  e-mail de roteiro pronto enviado
+  ok  roteiro revisado pelo usuário antes da aprovação
+  ok  aprovação de revisão anterior é recusada
+  ok  aprovação continua no mesmo trabalho
+     (produção levou 8s)
+  ok  vídeo produzido e pronto para revisão
+  ok  ffprobe: 1080x1920 H.264
+  ok  ffprobe: áudio AAC
+  ok  hash do arquivo confere com o registrado
+  ok  nada foi publicado ao terminar o render
+  ok  render mantém o roteiro revisado e o mesmo job, sem reiniciar a produção
+  ok  apontamentos do revisor permanecem auditáveis com o hash do aceite explícito
+
+23 ok, 0 falhas; recorte de roteiro revisado concluído (pasta /tmp/ec-teste-yngsv071)

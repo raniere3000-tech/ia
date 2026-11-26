@@ -1,0 +1,11 @@
+test_autenticacao_e_resposta_de_flags (__main__.HTTPAtivos.test_autenticacao_e_resposta_de_flags) ... ok
+test_consultas_nao_alteram_snapshots_nem_publicam (__main__.HTTPAtivos.test_consultas_nao_alteram_snapshots_nem_publicam) ... ok
+test_filtro_ia_canal_rede_com_dados_persistidos (__main__.HTTPAtivos.test_filtro_ia_canal_rede_com_dados_persistidos) ... ok
+test_flag_desligada_e_filtro_invalido_nao_burlam_api (__main__.HTTPAtivos.test_flag_desligada_e_filtro_invalido_nao_burlam_api) ... ok
+test_metrica_ausente_e_periodo_vazio (__main__.HTTPAtivos.test_metrica_ausente_e_periodo_vazio) ... ok
+test_zero_real_nao_vira_ausencia (__main__.HTTPAtivos.test_zero_real_nao_vira_ausencia) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.420s
+
+OK

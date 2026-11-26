@@ -1,0 +1,79 @@
+1. Regra do estoque (função pura, com histerese)
+  ok   estoque 21 (alvo 21): não procura nem corta
+  ok   estoque 15, acima do mínimo 9 e sem reposição em curso: continua parado
+  ok   estoque 8 < mínimo 9: corta (13 faltando / 60% de aprovação = 22)
+  ok   histerese: já repondo, com 15 ainda segue até o alvo 21
+  ok   entre mínimo e alvo: intervalo entre rodadas respeitado (última rodada há 1 min)
+  ok   abaixo do mínimo: rodadas seguidas, sem esperar o intervalo
+  ok   abaixo do mínimo, mas a última rodada não achou vídeo: espera o intervalo (não fica martelando o YouTube)
+  ok   estoque baixo e busca velha: primeiro procura canais
+2. Configuração da central
+  ok   padrão: desligada, Agente 1 segue a meta semanal antiga
+  ok   alvo igual ao mínimo é recusado
+  ok   modo econômico preenche números visíveis
+  ok   versão velha dá conflito
+  ok   mexer nos números vira "personalizado"
+3. Agente 1 obedece ao estoque
+  ok   com 21 cortes aprovados (alvo 21) o Agente 1 não procura nem corta
+  ok   caiu para 8 (< mínimo 9): o Agente 1 volta a cortar
+  ok   abaixo do mínimo: emenda outra rodada sem esperar o intervalo
+  ok   com 12 (entre mínimo e alvo): respeita o intervalo entre rodadas
+  ok   sem canal aprovado: a tela diz que falta aprovar canal
+  ok   tela explica por que está parado: Faltam 9 para o alvo, mas a última rodada foi há pouco. Próxima em 180
+  ok   resumo da central traz a situação do Agente 1
+  ok   "Começar agora" pula só o intervalo e começa a cortar
+  ok   fora do horário de trabalho: a tela diz isso
+  ok   "Começar agora" não fura o horário de trabalho
+  ok   histórico guarda só as mudanças de decisão, com o motivo
+  ok   decisão repetida não enche o histórico
+  ok   terminou um trabalho com a Central ligada: ela decide o próximo passo na hora
+  ok   pausada: o Agente 1 não começa nada
+4. Linhas de conteúdo: validação
+  ok   estilo indisponível é recusado com o motivo
+  ok   estilo beta pede confirmação
+  ok   estilo beta confirmado é aceito
+  ok   personagem com estilo sem animação é recusado
+  ok   estilo fora do catálogo é recusado
+  ok   publicação automática sem rede é recusada
+  ok   linha criada
+  ok   sugestão automática não mexe no campo travado (estilo), mas muda o resto
+  ok   versão velha da linha dá conflito
+5. Pautas sem repetir
+  ok   pauta quase igual a outra do mesmo lote cai como repetida
+  ok   assunto excluído não entra
+  ok   modo supervisionado: pautas ficam como propostas para você
+  ok   checagem: afirmação com trecho achado no texto da fonte é confirmada; trecho que a IA inventou NÃO é
+  ok   o roteiro recebe a lista do que não pode ser dito como fato
+  ok   saúde sem fonte: risco alto, não verificado, nunca aceito sozinho
+  ok   planejar de novo não repete nenhuma pauta já proposta
+  ok   pauta escrita por você também é conferida contra repetição
+  ok   há 1 pauta aceita (a sua): começa 1
+6. Lote de N episódios independentes
+  ok   lote de 6 = 6 projetos e 6 episódios com ids diferentes
+  ok   cada episódio tem a sua pauta (nenhuma repetida)
+  ok   cada episódio entra na produção com chave própria
+  ok   projeto sabe de que linha veio e não posta sozinho
+  ok   sem pauta aceita sobrando: não inventa vídeo
+  ok   pautas usadas não voltam
+  ok   limite por dia (7) respeitado
+7. Simulação não grava nada
+  ok   simular não muda nenhuma tabela
+  ok   simulação traz decisão e motivo de cada agente
+8. Linha em modo contínuo
+  ok   estoque 0 < mínimo 2: planeja pautas e começa um lote de 3
+  ok   os 3 contam como "em produção"
+  ok   histerese: 3 em produção, alvo 4 -> começa só 1 a mais
+  ok   chegou no alvo (4): para de produzir
+  ok   pausada: o ciclo não faz nada
+9. Vídeo aprovado da linha entra na programação diária (1 vídeo, 2 redes)
+  ok   sem certificado do diretor: a publicação automática não aprova
+  FALHOU: com certificado: aprovado pela automação (registrado como automação)
+  ok   vídeo aprovado conta no estoque da linha
+  FALHOU: um vídeo, duas redes: dois horários, um por rede
+  FALHOU: duas publicações registradas (uma por rede)
+  ok   rodar de novo não repete o vídeo na mesma rede
+Traceback (most recent call last):
+  File "/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/testes/teste_central_automacao.py", line 288, in <module>
+    post = next(p for p in pg.posts() if p['id'] == sl[0]['post'])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+StopIteration

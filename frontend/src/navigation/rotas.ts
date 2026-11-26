@@ -1,5 +1,5 @@
 /**
- * Registro único das 5 áreas e de cada tela (seção) dentro delas, e o roteador de endereços (#...).
+ * Registro único das 6 áreas e de cada tela (seção) dentro delas, e o roteador de endereços (#...).
  *
  * - Endereço novo: #<área>/<seção>[/<extra>]   ex.: #agentes/visao-geral, #agentes/coordenador/ordens:abc, #edicao/manual
  * - Endereço antigo continua valendo: #<aba>[/<extra>]   ex.: #coordenador/ordens:abc, #thumbnails/galeria:j1, #revisar/<projeto>
@@ -8,10 +8,10 @@
  * Este arquivo não importa nada de React: é testado sozinho (frontend/testes/rotas.test.ts).
  */
 
-export type Area = 'inicio'|'agentes'|'edicao'|'estudio-ia'|'publicacoes';
+export type Area = 'inicio'|'agentes'|'edicao'|'estudio-ia'|'publicacoes'|'inteligencia';
 /** Telas (mesma lista de `Tab` em state.ts). */
 export type Aba = 'inicio'|'radar'|'cortes'|'video'|'vozes'|'manual'|'agendar'|'agente'|'estilos'|'templates'|'config'|'ia'|'automatico'|'projetos'|'galeria'|'fila'|'revisar'|'series'|'central'|'live'|'thumbnails'|'coordenador'
-  |'agentes'|'edicao'|'estudioIA';
+  |'agentes'|'edicao'|'estudioIA'|'inteligencia';
 
 export const AREAS:{id:Area;nome:string;curto:string;descricao:string}[] = [
   {id:'inicio',nome:'Início',curto:'Início',descricao:'Resumo da produção'},
@@ -19,11 +19,12 @@ export const AREAS:{id:Area;nome:string;curto:string;descricao:string}[] = [
   {id:'edicao',nome:'Estúdio de Edição',curto:'Edição',descricao:'Montagem manual, radar, cortes, templates e legendas'},
   {id:'estudio-ia',nome:'Estúdio IA',curto:'IA',descricao:'Criar com IA, séries, produção em lote e biblioteca criativa'},
   {id:'publicacoes',nome:'Publicações',curto:'Posts',descricao:'Calendário, posts, contas e resultados'},
+  {id:'inteligencia',nome:'Inteligência',curto:'Inteligência',descricao:'Analytics e aprendizado: o que rendeu, por rede e por vertente'},
 ];
 
 /** Página inicial de cada área. Agentes: MODELO B (painel dos sete agentes primeiro, nunca o chat). */
 export const INICIOS:Record<Area,string> = {
-  inicio:'inicio', agentes:'agentes/visao-geral', edicao:'edicao/inicio', 'estudio-ia':'estudio-ia/inicio', publicacoes:'publicacoes/calendario',
+  inicio:'inicio', agentes:'agentes/visao-geral', edicao:'edicao/inicio', 'estudio-ia':'estudio-ia/inicio', publicacoes:'publicacoes/calendario', inteligencia:'inteligencia/indicadores',
 };
 
 export type Secao = {
@@ -78,7 +79,9 @@ export const SECOES:Secao[] = [
   {area:'publicacoes',secao:'linhas',aba:'central',extra:'calendario',nome:'Calendário das linhas',menu:true},
   {area:'publicacoes',secao:'resultados',aba:'agente',extra:'desempenho',nome:'Resultados',menu:true},
   {area:'publicacoes',secao:'agente2',aba:'agente',extra:'postagem',nome:'Ajustes do Agente 2',menu:true,irPara:'agentes'},
-  // ---- fora das 5 áreas
+  // ---- Inteligência
+  {area:'inteligencia',secao:'indicadores',aba:'inteligencia',nome:'Indicadores e aprendizado',menu:true},
+  // ---- fora das áreas
   {area:'inicio',secao:'config',aba:'config',nome:'Ajustes',menu:false},
 ];
 

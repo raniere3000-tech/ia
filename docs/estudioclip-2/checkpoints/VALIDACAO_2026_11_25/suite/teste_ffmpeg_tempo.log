@@ -1,0 +1,15 @@
+1. lento mas andando passa do tempo_max sem ser morto
+  ok  terminou (3.3 s, tempo_max 1.5 s)
+2. lento demais continua tendo limite (e diz onde)
+  ok  parou em ~2 s: O FFmpeg passou do tempo máximo (plano 2 de 3): 2 s rodando. O aparelho está lento demais 
+3. travado (sem avançar) é parado pelo tempo sem avanço
+  ok  parou em ~1.5 s sem avanço: O FFmpeg travou (cena 4): ficou 2 s sem produzir nada.
+  ok  avançando a cada 0.6 s não é "travado" (limite sem avanço 1.5 s)
+4. progresso e erro do FFmpeg
+  ok  progresso sobe até 100% ([0.25, 0.5, 0.75, 1.0, 1.0])
+  ok  falha mostra a etapa e a linha do erro: FFmpeg falhou (juntando as cenas): erro de teste
+5. cancelar e outros programas
+  ok  cancelar interrompe
+  ok  outro programa (sem avanço): tempo_max vale como antes
+
+8 ok, 0 falharam

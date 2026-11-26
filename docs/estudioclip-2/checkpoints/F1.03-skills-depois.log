@@ -1,0 +1,25 @@
+ok    133 definições instaladas (arquivos simulados, hash conferido)
+ok    Radar: ficha de oportunidade guarda as skills usadas
+ok    Agente 1: corte real com as skills que entraram na escolha
+ok    Agente 2: regras viram lista para você conferir (não liberam nada)
+ok    Agente 2: formato do arquivo (codec) conferido
+ok    Agente 3: direção virou 2 planos tipados
+ok    Qualidade: o pedido visual leva as skills de QC e o enquadramento planejado
+ok    ponta a ponta Radar: skill, versão, decisão, saída útil e artefato
+ok    ponta a ponta Agente 1: skill, versão, decisão, saída útil e artefato
+ok    ponta a ponta Agente 2: skill, versão, decisão, saída útil e artefato
+ok    ponta a ponta Agente 3: skill, versão, decisão, saída útil e artefato
+ok    ponta a ponta Diretor de Qualidade: skill, versão, decisão, saída útil e artefato
+ok    abrir a conferência de novo não duplica o registro
+ok    perfis desligados: Radar, A1, A2, A3 e Qualidade continuam produzindo
+ok    perfis desligados: nenhum texto de skill nos pedidos
+ok    fallback explícito registrado em cada consumidor
+ok    sem skill, nada é registrado como "utilizada"
+ok    redes ausentes/parciais bloqueiam destino: None
+ok    redes ausentes/parciais bloqueiam destino: {}
+ok    redes ausentes/parciais bloqueiam destino: {'youtube': {'status': 'agendado'}}
+ok    redes ausentes/parciais bloqueiam destino: {'kwai': {}}
+ok    redes ausentes/parciais bloqueiam destino: {'kwai': None}
+ok    dados completos preservam bloqueio por horário vencido
+ok    tentativa existente mantém regra de retomada após horário
+falhas: 0

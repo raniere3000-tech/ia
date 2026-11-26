@@ -1,0 +1,13 @@
+F
+======================================================================
+FAIL: test_sim_antigo_nao_aprova_render_novo_mesmo_com_novo_certificado (__main__.PortaoDiretor.test_sim_antigo_nao_aprova_render_novo_mesmo_com_novo_certificado)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/scratch/ecb4bcf1d97f/f102baseline/servidor/testes/teste_portao_diretor.py", line 151, in test_sim_antigo_nao_aprova_render_novo_mesmo_com_novo_certificado
+    self.assertIn('vídeo mudou', cm.responder('sim', self.por))
+AssertionError: 'vídeo mudou' not found in '✅ VID-0FD236 aprovado por você e enviado ao agente de postagem (1 post(s) na fila). Quando: 1795554000.0.'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.019s
+
+FAILED (failures=1)

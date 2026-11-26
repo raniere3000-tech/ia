@@ -10,6 +10,19 @@
 # Para entrar de outro Android (site ou terminal):  bash acesso-remoto.sh   (veja o começo daquele arquivo)
 set -e
 cd "$(dirname "$0")"
+
+# EstúdioClip 2.0: ativação autorizada pelo usuário. Um valor explícito 0 permite rollback.
+export A1_MESMA_FONTE="${A1_MESMA_FONTE:-1}"
+export A1_GANCHO_INTEGRO="${A1_GANCHO_INTEGRO:-1}"
+export THUMB_REJEICAO="${THUMB_REJEICAO:-1}"
+export A5_EFEITOS_REAIS="${A5_EFEITOS_REAIS:-1}"
+export RENDER_INTEGRIDADE="${RENDER_INTEGRIDADE:-1}"
+export DNA_CORTE="${DNA_CORTE:-1}"
+export A3_EDICAO_COMPARTILHADA="${A3_EDICAO_COMPARTILHADA:-1}"
+export FORMATOS_IA="${FORMATOS_IA:-1}"
+export METRICAS_PUBLICACOES="${METRICAS_PUBLICACOES:-1}"
+export PUBLICACAO_CONTEXTO="${PUBLICACAO_CONTEXTO:-1}"
+export INTELIGENCIA_METRICAS="${INTELIGENCIA_METRICAS:-1}"
 if [ "$1" = "senha" ]; then
   read -r -s -p "Digite a nova senha (só letras e números, mínimo 10): " NOVA; echo
   if ! echo "$NOVA" | grep -Eq '^[A-Za-z0-9]{10,60}$'; then echo "Senha inválida. Use só letras e números, de 10 a 60."; exit 1; fi

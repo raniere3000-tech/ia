@@ -3,15 +3,19 @@ import { ShieldCheck, Youtube, Instagram, Music2, CalendarClock, LogIn, LogOut, 
 import { useApp } from '../state';
 import { HelpButton } from '../components/Help';
 import AgendarPost from '../components/AgendarPost';
+import AgendarLote from '../components/AgendarLote';
+import DownloadLote from '../components/DownloadLote';
+import { FILTROS_POST, filtrarPosts, filtrarTikTok, horaDaRede, type FiltroPost } from '../lib/filtrosPosts';
 import ConferenciaPost from '../components/ConferenciaPost';
-import { REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, editarPost, cancelarPost, marcarFeito, baixarVideoPost, enderecoRetorno, type Contas, type Prov, type Post, type Rede, type StatusRede, liberarPost, AVISO_LIBERAR } from '../lib/agenda';
+import TikTokInfoPainel from '../components/TikTokInfo';
+import { ESTADOS_TIKTOK, type EstadoTikTok, REDES, lerContas, verificarContas, salvarApp, entrar, sair, escolherPagina, listarPosts, postarAgora, editarPost, publicarEmOutrasRedes, cancelarPost, marcarFeito, baixarVideoPost, enderecoRetorno, listarLotes, acaoLote, type LotePosts, type Contas, type Prov, type Post, type Rede, type StatusRede, liberarPost, AVISO_LIBERAR } from '../lib/agenda';
 
 const PROVS:{id:Prov;nome:string;redes:string;icone:typeof Youtube;help:'app_google'|'app_meta'|'app_tiktok';idLabel:string;segLabel:string}[] = [
   {id:'google',nome:'YouTube',redes:'Shorts no seu canal',icone:Youtube,help:'app_google',idLabel:'ID do cliente OAuth',segLabel:'Chave secreta do cliente'},
   {id:'meta',nome:'Facebook + Instagram',redes:'Reels na Página e no Instagram profissional',icone:Instagram,help:'app_meta',idLabel:'ID do app (Meta)',segLabel:'Chave secreta do app'},
   {id:'tiktok',nome:'TikTok',redes:'Vídeo nos rascunhos ou direto',icone:Music2,help:'app_tiktok',idLabel:'Client key',segLabel:'Client secret'},
 ];
-const ST:Record<string,[string,string]> = {agendado:['Agendado','info'],postando:['Postando...','info'],postado:['Postado','ok'],erro:['Erro','bad'],manual:['Postar no app','warn'],liberacao:['Esperando sua liberação','warn']};
+const ST:Record<string,[string,string]> = {agendado:['Agendado','info'],postando:['Postando...','info'],postado:['Postado','ok'],erro:['Erro','bad'],manual:['Postar no app','warn'],liberacao:['Esperando sua liberação','warn'],cancelado:['Cancelado','']};
 const fmtData=(ts:number)=>new Date(ts*1000).toLocaleString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
 const dia=(ts:number)=>new Date(ts*1000).toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
 
@@ -71,30 +75,57 @@ export function ContasPainel({aoMudar,onContas}:{aoMudar?:()=>void;onContas?:(c:
    </section>;
 }
 
-const EV:Record<string,string>={enviando:'conferido e enviando',postado:'publicado',tentar_de_novo:'falhou, vai tentar de novo',erro:'falhou',bloqueado:'barrado na conferência',pede_liberacao:'esperando sua liberação especial',liberado:'liberado por você'};
+const EV:Record<string,string>={outra_rede:'incluído para publicação',enviando:'conferido e enviando',postado:'publicado',tentar_de_novo:'falhou, vai tentar de novo',erro:'falhou',bloqueado:'barrado na conferência',pede_liberacao:'esperando sua liberação especial',liberado:'liberado por você'};
 const paraInput=(ts:number)=>{ const d=new Date(ts*1000); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
 const pendente=(p:Post)=>Object.values(p.redes).some(s=>s&&(s.status==='agendado'||s.status==='erro'||s.status==='postando'||s.status==='manual'||s.status==='liberacao'));
 
 /** Uma linha da agenda: hora, redes e o que dá para fazer com o post (postar agora, mudar hora e redes, baixar, cancelar). */
-function PostLinha({p,acao}:{p:Post;acao:(f:()=>Promise<unknown>,ok:string)=>void}){
+function PostLinha({p,acao,redeFiltro='',selecionado,onSelecionar,onAgendar}:{p:Post;redeFiltro?:Rede|'';selecionado:boolean;onSelecionar?:()=>void;onAgendar:()=>void;acao:(f:()=>Promise<unknown>,ok:string)=>Promise<void>}){
   const {settings}=useApp();
   const [editar,setEditar]=useState(false);
+  const [outras,setOutras]=useState<Rede[]|null>(null);
+  const [enviando,setEnviando]=useState(false);
+  const disponiveis=REDES.filter(r=>!p.redes[r.id]);
+  const publicar=async()=>{
+    if(!outras?.length||enviando) return;
+    setEnviando(true);
+    try{
+      await acao(async()=>{
+        await publicarEmOutrasRedes(settings,p.id,outras);
+        setOutras(null);
+      },'Redes adicionadas. Acompanhe o envio em Para postar.');
+    }finally{ setEnviando(false); }
+  };
   const [hora,setHora]=useState(paraInput(p.quando));
   const [redes,setRedes]=useState<Rede[]>(Object.keys(p.redes) as Rede[]);
   const feitas=(Object.entries(p.redes) as [Rede,StatusRede][]).filter(([,s])=>s.status==='postado').map(([r])=>r);
   const abrir=()=>{ setHora(paraInput(p.quando)); setRedes(Object.keys(p.redes) as Rede[]); setEditar(true); };
   const salvar=()=>{ const q=new Date(hora).getTime()/1000; acao(async()=>{ await editarPost(settings,p.id,{quando:Math.abs(q-p.quando)>30?q:undefined,redes}); setEditar(false); },'Post atualizado.'); };
-  const atrasado=pendente(p)&&p.quando<Date.now()/1000-120&&Object.values(p.redes).some(s=>s?.status==='agendado');
+  const alvo=redeFiltro?p.redes[redeFiltro]:undefined;
+  const quando=horaDaRede(p,alvo);
+  const atrasado=(redeFiltro?[alvo]:Object.values(p.redes)).some(s=>s&&['agendado','manual'].includes(s.status)&&!s.lote_pausado&&horaDaRede(p,s)<Date.now()/1000-120);
   return <div className="post-row">
-    <div className="post-hora"><Clock size={14}/> {fmtData(p.quando).split(', ').pop()}</div>
+    <div className="post-hora">{onSelecionar&&<input type="checkbox" aria-label={`Selecionar ${p.titulo||p.id}`} checked={selecionado} onChange={onSelecionar}/>}<Clock size={14}/> {redeFiltro&&!alvo?'Sem horário nesta rede':fmtData(quando).split(', ').pop()}</div>
     <div className="post-info"><strong>{p.titulo||p.legenda.slice(0,60)||'Sem título'}</strong>
      {p.preparando&&<p className="hint"><Loader2 size={13} className="spin"/> Preparando o vídeo no servidor (convertendo para MP4). No celular isso pode levar alguns minutos.</p>}
      {atrasado&&<p className="hint warn">Passou da hora e ainda não saiu. O servidor está ligado? Use Postar agora.</p>}
-     <div className="post-redes">{(Object.entries(p.redes) as [Rede,StatusRede][]).map(([r,s])=><span key={r} className={'tag '+ST[s.status][1]} title={s.erro||s.link}>{REDES.find(x=>x.id===r)?.nome.replace(' (manual)','')}: {ST[s.status][0]}{s.status==='postado'&&s.link.startsWith('http')&&<a href={s.link.split(' ')[0]} target="_blank" rel="noreferrer"> <ExternalLink size={11}/></a>}</span>)}</div>
-     {Object.entries(p.redes).filter(([,s])=>s&&(s.status==='erro'||s.status==='liberacao'||(s.status==='agendado'&&!!s.erro)||(s.status==='postado'&&!s.link.startsWith('http'))||s.link.includes('('))).map(([r,s])=><p key={r} className={'hint '+(s!.status==='erro'?'bad':s!.status==='agendado'?'warn':'')}><b>{REDES.find(x=>x.id===r)?.nome}:</b> {s!.erro||s!.link}
+     <div className="post-redes">{redeFiltro&&!alvo&&<span className="tag warn">{REDES.find(r=>r.id===redeFiltro)?.nome}: Ainda não agendado</span>}{(Object.entries(p.redes) as [Rede,StatusRede][]).map(([r,s])=><span key={r} className={'tag '+(ST[s.status]||['Não disponível',''])[1]} title={s.erro||s.link}>{REDES.find(x=>x.id===r)?.nome.replace(' (manual)','')}: {s.lote_pausado?'Pausado':(ST[s.status]||[s.status,''])[0]}{s.quando&&s.status!=='postado'&&<small> · {fmtData(s.quando)}</small>}{s.status==='postado'&&s.link.startsWith('http')&&<a href={s.link.split(' ')[0]} target="_blank" rel="noreferrer"> <ExternalLink size={11}/></a>}</span>)}</div>
+     {Object.entries(p.redes).filter(([r,s])=>(!redeFiltro||r===redeFiltro)&&s&&(s.status==='erro'||s.status==='liberacao'||(s.status==='agendado'&&!!s.erro)||(s.status==='postado'&&!s.link.startsWith('http'))||s.link.includes('('))).map(([r,s])=><p key={r} className={'hint '+(s!.status==='erro'?'bad':s!.status==='agendado'?'warn':'')}><b>{REDES.find(x=>x.id===r)?.nome}:</b> {s!.erro||s!.link}
        {s!.status==='erro'&&<> <button className="subtle sm" onClick={()=>acao(()=>postarAgora(settings,p.id,r),`Tentando de novo no ${REDES.find(x=>x.id===r)?.nome}...`)}><RefreshCw size={13}/> Tentar de novo no {REDES.find(x=>x.id===r)?.nome.replace(' (manual)','')}</button></>}</p>)}
-     {settings.servidor&&pendente(p)&&<ConferenciaPost id={p.id} onLiberado={()=>acao(async()=>{},'Liberado. Postando...')}/>}
+     {settings.servidor&&pendente(p)&&<ConferenciaPost id={p.id} rede={redeFiltro||undefined} onLiberado={()=>acao(async()=>{},'Liberado. Postando...')}/>}
+     <TikTokInfoPainel p={p} acao={acao}/>
      {!!p.relatorio?.length&&<details className="post-rel"><summary>Relatório da publicação</summary><ul>{p.relatorio.slice().reverse().map((e,k)=><li key={k}><small className="muted">{fmtData(e.t)}</small> <b>{REDES.find(x=>x.id===e.rede)?.nome.replace(' (manual)','')||e.rede}</b>: {EV[e.evento]||e.evento}{e.detalhe&&e.evento!=='postado'?` — ${e.detalhe}`:''}{e.evento==='postado'&&e.detalhe.startsWith('http')&&<a href={e.detalhe} target="_blank" rel="noreferrer"> abrir</a>}</li>)}</ul></details>}
+     {outras&&<div className="post-editar">
+       <div className="field-label">Escolha as redes para este vídeo</div>
+       <div className="chips">{disponiveis.map(r=><button key={r.id} type="button" disabled={enviando}
+         className={'chip '+(outras.includes(r.id)?'on':'')} aria-pressed={outras.includes(r.id)}
+         onClick={()=>setOutras(outras.includes(r.id)?outras.filter(x=>x!==r.id):[...outras,r.id])}>{r.nome}</button>)}</div>
+       <p className="hint">As redes escolhidas recebem o vídeo agora. No Kwai, baixe o vídeo e publique pelo app.</p>
+       <div className="row-gap left mt">
+        <button className="primary sm" disabled={enviando||!outras.some(r=>!p.redes[r])} onClick={()=>void publicar()}><Send size={14}/> Confirmar redes</button>
+        <button className="subtle sm" disabled={enviando} onClick={()=>setOutras(null)}><X size={14}/> Fechar</button>
+       </div>
+     </div>}
      {editar&&<div className="post-editar">
        <label>Novo dia e hora<input type="datetime-local" value={hora} onChange={e=>setHora(e.target.value)}/></label>
        <div className="field-label">Redes</div>
@@ -103,12 +134,14 @@ function PostLinha({p,acao}:{p:Post;acao:(f:()=>Promise<unknown>,ok:string)=>voi
      </div>}
     </div>
     <div className="post-acoes">
-     {Object.values(p.redes).some(s=>s?.status==='agendado'||s?.status==='erro')&&<button className="primary sm" onClick={()=>acao(()=>postarAgora(settings,p.id),'Postando agora...')}>{Object.values(p.redes).some(s=>s?.status==='erro')?<><RefreshCw size={14}/> Tentar de novo em todas</>:<><Send size={14}/> Postar agora</>}</button>}
-     {Object.values(p.redes).some(s=>s?.status==='liberacao'||(s?.status==='erro'&&s.erro.includes('de quem é o vídeo')))&&<button className="primary sm" onClick={()=>{ if(window.confirm(AVISO_LIBERAR)) acao(()=>liberarPost(settings,p.id),'Liberado. Postando...'); }}><ShieldCheck size={14}/> Liberar e postar</button>}
-     {pendente(p)&&!editar&&<button className="subtle sm" onClick={abrir}><Pencil size={14}/> Mudar hora ou redes</button>}
+     {redeFiltro&&(!alvo||!['postado','postando'].includes(alvo.status))&&<button className="subtle sm" onClick={onAgendar}><CalendarClock size={14}/> {alvo?'Reagendar':'Agendar'} no {REDES.find(r=>r.id===redeFiltro)?.nome}</button>}
+     {(redeFiltro?[alvo]:Object.values(p.redes)).some(s=>s&&!s.lote_pausado&&(s.status==='agendado'||s.status==='erro'))&&<button className="primary sm" onClick={()=>acao(()=>postarAgora(settings,p.id,redeFiltro||undefined),'Envio colocado na fila.')}>{<><Send size={14}/> {redeFiltro?`Postar agora no ${REDES.find(r=>r.id===redeFiltro)?.nome}`:'Postar agora nas redes pendentes'}</>}</button>}
+     {!redeFiltro&&Object.values(p.redes).some(s=>s?.status==='liberacao'||(s?.status==='erro'&&s.erro.includes('de quem é o vídeo')))&&<button className="primary sm" onClick={()=>{ if(window.confirm(AVISO_LIBERAR)) acao(()=>liberarPost(settings,p.id),'Liberado. Postando...'); }}><ShieldCheck size={14}/> Liberar e postar</button>}
+     {!redeFiltro&&feitas.length>0&&disponiveis.length>0&&!editar&&!outras&&!p.preparando&&<button className="subtle sm" onClick={()=>setOutras([])}><Send size={14}/> Publicar em outras redes</button>}
+     {!redeFiltro&&pendente(p)&&!editar&&!outras&&<button className="subtle sm" onClick={abrir}><Pencil size={14}/> Mudar hora ou redes</button>}
      <button className="subtle sm" onClick={()=>acao(()=>baixarVideoPost(settings,p.id,p.titulo||'corte'),'Vídeo baixado.')}><Download size={14}/> Baixar</button>
-     {p.redes.kwai?.status==='manual'&&<button className="subtle sm" onClick={()=>acao(()=>marcarFeito(settings,p.id,'kwai'),'Kwai marcado como postado.')}><CheckCircle2 size={14}/> Já postei no Kwai</button>}
-     <button className="icon-btn" title="Cancelar e apagar" aria-label="Cancelar post" onClick={()=>{ if(window.confirm('Cancelar este post e apagar o vídeo do servidor?')) acao(()=>cancelarPost(settings,p.id),'Post cancelado.'); }}><Trash2 size={15}/></button>
+     {(!redeFiltro||redeFiltro==='kwai')&&p.redes.kwai?.status==='manual'&&<button className="subtle sm" onClick={()=>acao(()=>marcarFeito(settings,p.id,'kwai'),'Kwai marcado como postado.')}><CheckCircle2 size={14}/> Já postei no Kwai</button>}
+     {!redeFiltro&&<button className="icon-btn" title="Cancelar e apagar" aria-label="Cancelar post" onClick={()=>{ if(window.confirm('Cancelar este post e apagar o vídeo do servidor?')) acao(()=>cancelarPost(settings,p.id),'Post cancelado.'); }}><Trash2 size={15}/></button>}
     </div>
   </div>;
 }
@@ -116,12 +149,22 @@ function PostLinha({p,acao}:{p:Post;acao:(f:()=>Promise<unknown>,ok:string)=>voi
 export default function Agendar(){
   const {settings,toast,go}=useApp();
   const [posts,setPosts]=useState<Post[]|null>(null);
+  const [rede,setRede]=useState<Rede|''>('');
+  const [filtro,setFiltro]=useState<FiltroPost>('pendentes');
+  const [filtroTk,setFiltroTk]=useState<EstadoTikTok|''>('');
+  const [selecionados,setSelecionados]=useState<Set<string>>(new Set());
+  const [abrirLote,setAbrirLote]=useState(false);
+  const [abrirBaixar,setAbrirBaixar]=useState(false);
+  const [lotes,setLotes]=useState<LotePosts[]>([]);
+  const [busyLote,setBusyLote]=useState('');
+  const [erro,setErro]=useState('');
   const [novo,setNovo]=useState<File|null>(null); const arq=useRef<HTMLInputElement>(null);
   const recarregar=useCallback(()=>{
     if(!settings.servidor) return;
-    listarPosts(settings).then(r=>setPosts(r.posts)).catch(()=>{});
+    listarPosts(settings).then(r=>{setPosts(r.posts);setErro('');}).catch(e=>setErro(e.message));
+    listarLotes(settings).then(r=>setLotes(r.lotes)).catch(()=>{});
   },[settings]);
-  useEffect(()=>{ recarregar(); const t=setInterval(()=>listarPosts(settings).then(r=>setPosts(r.posts)).catch(()=>{}),10000); return ()=>clearInterval(t); },[recarregar,settings]);
+  useEffect(()=>{ recarregar(); const t=setInterval(recarregar,10000); return ()=>clearInterval(t); },[recarregar,settings]);
   const acao=async(f:()=>Promise<unknown>,ok:string)=>{ try{ await f(); toast(ok,'ok'); recarregar(); }catch(e){ toast(e instanceof Error?e.message:String(e),'erro'); } };
 
   if(!settings.servidor) return <section className="panel empty-state">
@@ -130,22 +173,43 @@ export default function Agendar(){
    <button className="primary" onClick={()=>go('config')}>Ligar servidor em Chaves e ajustes</button> <HelpButton topic="servidor" label="Como ligar?"/>
   </section>;
 
-  const [ver,setVer]=useState<'proximos'|'feitos'>('proximos');
-  const lista=(posts||[]).filter(p=>ver==='proximos'?pendente(p):!pendente(p));
-  if(ver==='feitos') lista.reverse();
-  const porDia=new Map<string,Post[]>(); for(const p of lista){ const d=dia(p.quando); porDia.set(d,[...(porDia.get(d)||[]),p]); }
-  const nProx=(posts||[]).filter(pendente).length;
+  const lista=filtrarTikTok(filtrarPosts(posts||[],rede,filtroTk?'todos':filtro),filtroTk);
+  const podeAgendar=(p:Post)=>p.arquivo_disponivel!==false&&!p.preparando&&(!rede||!['postado','postando'].includes(p.redes[rede]?.status||''));
+  // Para baixar, vale pendente, agendado e publicado: basta o arquivo final existir no servidor.
+  const podeSelecionar=(p:Post)=>p.arquivo_disponivel!==false&&!p.preparando;
+  const MAX_SEL=300;
+  const elegiveis=lista.filter(podeSelecionar);
+  const idsAgendar=[...selecionados].filter(id=>{ const p=(posts||[]).find(x=>x.id===id); return !!p&&podeAgendar(p); });
+  const idsBaixar=lista.filter(p=>selecionados.has(p.id)).map(p=>p.id);       // na ordem em que aparecem para você
+  const escopoBaixar=`${idsBaixar.length} vídeo(s) selecionado(s) entre os ${lista.length} do filtro atual${rede?` (${REDES.find(r=>r.id===rede)?.nome})`:' (todas as redes)'}. A seleção vale só para o que está listado aqui e some ao trocar de filtro.`;
+  const porDia=new Map<string,Post[]>(); for(const p of lista){ const d=rede&&!p.redes[rede]?'Ainda não agendados nesta rede':dia(horaDaRede(p,rede?p.redes[rede]:undefined)); porDia.set(d,[...(porDia.get(d)||[]),p]); }
+  const escolher=(id:string)=>setSelecionados(xs=>{const n=new Set(xs);if(n.has(id))n.delete(id);else if(n.size<MAX_SEL)n.add(id);return n;});
+  const agirLote=async(id:string,a:'pausar'|'retomar'|'cancelar')=>{
+    setBusyLote(id);
+    try{setLotes((await acaoLote(settings,id,a)).lotes);recarregar();toast(a==='cancelar'?'Restante do lote cancelado. Envios já iniciados terminam normalmente.':'Lote atualizado.','ok');}
+    catch(e){toast(e instanceof Error?e.message:String(e),'erro');}
+    finally{setBusyLote('');}
+  };
   return <>
    <section className="panel">
-    <div className="section-head"><h2><CalendarClock size={18}/> Posts agendados</h2>
+    <div className="section-head"><h2><CalendarClock size={18}/> Posts por rede</h2>
      <button className="subtle sm" onClick={()=>arq.current?.click()}><Upload size={14}/> Agendar vídeo pronto</button>
      <input ref={arq} type="file" accept="video/*" hidden onChange={e=>{ const f=e.target.files?.[0]; if(f) setNovo(f); e.target.value=''; }}/></div>
-    <p className="subtitle">Tudo o que vai ao ar, dos agentes e o que você agendou. Toque em <b>Postar agora</b> para não esperar, ou em <b>Mudar hora ou redes</b> para trocar o horário e as redes. O servidor posta sozinho na hora marcada e tenta de novo se a internet falhar.</p>
-    <div className="seg mt" role="tablist"><button role="tab" aria-selected={ver==='proximos'} className={ver==='proximos'?'on':''} onClick={()=>setVer('proximos')}>Para postar{nProx?` (${nProx})`:''}</button><button role="tab" aria-selected={ver==='feitos'} className={ver==='feitos'?'on':''} onClick={()=>setVer('feitos')}>Já postados</button></div>
+    <p className="subtitle">Filtre por rede para encontrar o que falta publicar. Um vídeo publicado no YouTube continua pendente no TikTok. Os horários e as ações valem para a rede selecionada.</p>
+    <div className="chips mt" aria-label="Filtrar por rede"><button className={'chip '+(!rede?'on':'')} aria-pressed={!rede} onClick={()=>{setRede('');if(filtro==='nao_agendados')setFiltro('pendentes');setSelecionados(new Set());}}>Todas as redes</button>{REDES.map(r=><button key={r.id} className={'chip '+(rede===r.id?'on':'')} aria-pressed={rede===r.id} onClick={()=>{setRede(r.id);setSelecionados(new Set());}}>{r.nome.replace(' (manual)','')} ({filtrarPosts(posts||[],r.id,'pendentes').length})</button>)}</div>
+    <label className="mt">Situação<select value={filtro} onChange={e=>{setFiltro(e.target.value as FiltroPost);setSelecionados(new Set());}}>{FILTROS_POST.map(([v,n])=><option key={v} value={v} disabled={v==='nao_agendados'&&!rede}>{n}</option>)}</select></label>
+    <label className="mt">Status do TikTok<select value={filtroTk} onChange={e=>{setFiltroTk(e.target.value as EstadoTikTok|'');setSelecionados(new Set());}}><option value="">Todos</option>{ESTADOS_TIKTOK.map(([v,n])=><option key={v} value={v}>{n} ({(posts||[]).filter(p=>p.tiktok?.estado===v).length})</option>)}</select></label>
+    {filtroTk&&<p className="hint">Filtrando pelo status do TikTok: a lista mostra o vídeo em qualquer situação das outras redes.</p>}
+    {!rede&&<p className="hint">Escolha uma rede para incluir os vídeos que ainda não foram agendados nela. Os números dos botões contam pendências de cada rede.</p>}
+    {erro&&<p className="hint bad" role="alert">{erro}</p>}
+    {!!elegiveis.length&&<div className="posts-lote-barra mt"><label className="check"><input type="checkbox" checked={elegiveis.slice(0,MAX_SEL).every(p=>selecionados.has(p.id))} onChange={e=>setSelecionados(e.target.checked?new Set(elegiveis.slice(0,MAX_SEL).map(p=>p.id)):new Set())}/> Selecionar todos do filtro ({Math.min(elegiveis.length,MAX_SEL)}{elegiveis.length>MAX_SEL?` de ${elegiveis.length}, o limite por vez`:''})</label><span>{selecionados.size} selecionado(s)</span><button className="primary sm" disabled={!idsAgendar.length||idsAgendar.length>200} title={idsAgendar.length>200?'O agendamento em lote aceita até 200 vídeos por vez.':''} onClick={()=>setAbrirLote(true)}><CalendarClock size={14}/> Agendar selecionados ({idsAgendar.length})</button><button className="subtle sm" disabled={!idsBaixar.length} onClick={()=>setAbrirBaixar(true)}><Download size={14}/> Baixar selecionados ({idsBaixar.length})</button>{!!selecionados.size&&<button className="subtle sm" onClick={()=>setSelecionados(new Set())}>Limpar seleção</button>}</div>}
     {!posts?<p className="hint"><Loader2 size={14} className="spin"/> Carregando...</p>
-    :!lista.length?<p className="hint center">{ver==='proximos'?'Nada agendado agora. Os cortes do Agente 1 entram aqui sozinhos quando o Agente 2 está ligado.':'Nenhum post publicado ainda.'}</p>
-    :[...porDia].map(([d,ls])=><div key={d} className="agenda-dia"><h3>{d}</h3>{ls.map(p=><PostLinha key={p.id+p.quando} p={p} acao={acao}/>)}</div>)}
+    :!lista.length?<p className="hint center">Nenhum vídeo nesta combinação de rede e situação.</p>
+    :[...porDia].map(([d,ls])=><div key={d} className="agenda-dia"><h3>{d}</h3>{ls.map(p=><PostLinha key={p.id+'-'+rede} p={p} redeFiltro={rede} selecionado={selecionados.has(p.id)} onSelecionar={podeSelecionar(p)?()=>escolher(p.id):undefined} onAgendar={()=>{setSelecionados(new Set([p.id]));setAbrirLote(true);}} acao={acao}/>)}</div>)}
    </section>
+   {!!lotes.length&&<section className="panel"><h2>Lotes de publicação</h2>{lotes.map(l=><article className="post-row" key={l.id}><div className="grow"><b>Lote{l.inicio?` · ${fmtData(l.inicio)}`:""} · {l.redes.map(r=>REDES.find(x=>x.id===r)?.nome).join(', ')}</b><p className="hint">{l.publicados} publicado(s) · {l.pendentes} restante(s) · {l.cancelados} cancelado(s){l.pausado?' · Pausado':''}</p></div>{l.pendentes>0&&<div className="row-gap"><button className="subtle sm" disabled={!!busyLote} onClick={()=>void agirLote(l.id,l.pausado?'retomar':'pausar')}>{l.pausado?'Retomar':'Pausar'} lote</button><button className="subtle sm" disabled={!!busyLote} onClick={()=>void agirLote(l.id,'cancelar')}>Cancelar restante</button></div>}</article>)}</section>}
+   {abrirBaixar&&<DownloadLote ids={idsBaixar} escopo={escopoBaixar} onClose={()=>setAbrirBaixar(false)}/>}
+   {abrirLote&&<AgendarLote posts={posts||[]} ids={idsAgendar} redeInicial={rede||undefined} onClose={()=>setAbrirLote(false)} onAgendado={()=>{setAbrirLote(false);setSelecionados(new Set());recarregar();}}/>}
 
    <details className="recolhido contas-dobra" open={!posts?.length}>
     <summary><ChevronDown size={16}/> Contas das redes (YouTube, Facebook, Instagram, TikTok)</summary>

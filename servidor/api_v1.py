@@ -34,6 +34,7 @@ import projetos as pj
 import renderizador as rd
 import rotas_esteira
 import thumbnails as th
+import download_lote as dl
 import series as srs
 from skills import catalogo as skcat
 from skills import roteador as skrot
@@ -367,6 +368,8 @@ def _criativo(metodo: str, caminho: str, q: dict, corpo, quem: str, sid: str) ->
     p = lambda k, padrao='': q.get(k, [padrao])[0]  # noqa: E731
     if rota == ('GET', '/api/v1/criativo/capacidades'):
         return cri.capacidades()
+    if rota == ('GET', '/api/v1/criativo/formatos'):
+        return cri.formatos_ia()
     if rota == ('GET', '/api/v1/criativo/biblioteca'):
         return cri.biblioteca(p('tipo'), p('q')[:80], _int(p('pagina', '1'), 1))
     if rota == ('POST', '/api/v1/criativo/biblioteca'):
@@ -503,6 +506,32 @@ def _series(metodo: str, caminho: str, q: dict, corpo, quem: str) -> dict:
     raise pj.ErroProjeto(404, 'Rota não encontrada.')
 
 
+def _downloads(metodo: str, caminho: str, corpo, quem: str):
+    base = '/api/v1/downloads'
+    try:
+        if (metodo, caminho) == ('POST', base):
+            d = corpo()
+            return dl.criar(d.get('posts'), str(d.get('formato') or 'pacote'), quem)
+        m = re.fullmatch(base + r'/([0-9a-f]{12})(?:/(cancelar|tentar-novamente|arquivo|item/(\d{1,3})))?', caminho)
+        if m:
+            jid, acao = m.group(1), m.group(2)
+            if metodo == 'GET' and not acao:
+                return dl.obter(jid)
+            if metodo == 'POST' and acao == 'cancelar':
+                return dl.cancelar(jid, quem)
+            if metodo == 'POST' and acao == 'tentar-novamente':
+                return dl.tentar_de_novo(jid, quem)
+            if metodo == 'GET' and acao == 'arquivo':
+                arq, nome = dl.arquivo_zip(jid)
+                raise Resposta(arq, 'application/zip', nome, True)
+            if metodo == 'GET' and m.group(3):
+                arq, nome = dl.arquivo_item(jid, int(m.group(3)))
+                raise Resposta(arq, 'video/mp4' if arq.suffix.lower() == '.mp4' else 'application/octet-stream', nome, True)
+    except dl.ErroDownload as e:
+        raise pj.ErroProjeto(e.status, e.msg)
+    raise pj.ErroProjeto(404, 'Rota não encontrada.')
+
+
 def _thumbs(metodo: str, caminho: str, q: dict, corpo, quem: str):
     rota = (metodo, caminho)
     base = '/api/v1/thumbnails'
@@ -520,6 +549,19 @@ def _thumbs(metodo: str, caminho: str, q: dict, corpo, quem: str):
         return th.criar(corpo(), quem)
     if rota == ('GET', base + '/desempenho'):
         return th.desempenho()
+    if rota == ('GET', base + '/autonomia'):              # Agente 6 autônomo: números reais, pendências e capa por post/rede
+        return th.painel_autonomia(_int(q.get('dias', ['30'])[0], 30))
+    if rota == ('POST', base + '/autonomia/auditar'):     # auditoria do estoque: simular (padrão) ou aplicar
+        d = corpo()
+        return th.auditar_estoque(bool(d.get('aplicar')), quem)
+    if rota == ('POST', base + '/autonomia/ignorar'):
+        return th.ignorar(corpo(), quem)
+    if rota == ('POST', base + '/autonomia/reenviar-capa'):  # troca SÓ a capa de um vídeo já postado (YouTube)
+        d = corpo()
+        try:
+            return pg.reenviar_capa(str(d.get('post') or ''), str(d.get('rede') or 'youtube'), quem, forcar=True)
+        except pg.ErroRede as e:
+            raise th.ErroThumb(409, str(e))
     if rota == ('GET', base + '/perfis'):
         return {'perfis': th.perfis()}
     if rota == ('POST', base + '/perfis'):
@@ -531,7 +573,7 @@ def _thumbs(metodo: str, caminho: str, q: dict, corpo, quem: str):
     if m and metodo == 'GET':
         arq, nome = th.midia(m.group(1))
         raise Resposta(arq, 'image/jpeg', nome, 'baixar' in q)
-    m = re.fullmatch(base + r'/jobs/(\w+)(?:/(cancelar|refazer|variantes|selecionar|validar|pacote))?', caminho)
+    m = re.fullmatch(base + r'/jobs/(\w+)(?:/(cancelar|refazer|variantes|selecionar|rejeitar|validar|pacote))?', caminho)
     if m:
         tid, acao = m.group(1), m.group(2)
         if metodo == 'GET' and not acao:
@@ -544,6 +586,8 @@ def _thumbs(metodo: str, caminho: str, q: dict, corpo, quem: str):
             return th.cancelar(tid, quem)
         if metodo == 'POST' and acao == 'refazer':
             return th.refazer(tid, corpo(), quem)
+        if metodo == 'POST' and acao == 'rejeitar':
+            return th.rejeitar(tid, corpo(), quem)
         if metodo == 'POST' and acao == 'selecionar':
             return th.selecionar(tid, corpo(), quem)
         if metodo == 'POST' and acao == 'validar':        # o diretor confere de novo a escolha (vídeo e capa ainda iguais?)
@@ -644,6 +688,9 @@ def _coord(metodo: str, caminho: str, q: dict, corpo, quem: str):
             return co.desativar_memoria(mid, quem, corpo().get('versao'))
         if metodo == 'POST' and acao == 'reverter':
             return co.reverter_memoria(mid, _int(corpo().get('versao'), 0), quem)
+    m = re.fullmatch(base + r'/memorias/([\w-]+)/testar', caminho)
+    if m and metodo == 'POST':
+        return co.testar_hipotese(m.group(1), quem, corpo().get('versao'))
     if rota == ('POST', base + '/feedback'):
         return co.feedback(corpo(), quem)
     if rota == ('GET', base + '/aprendizado/sugestoes'):
@@ -785,7 +832,9 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
             r = p['dados'].get('render')
             redes = (p['dados']['briefing'].get('destinos') or {}).get('redes') or [] if p['tipo'] == 'agente3' else []
             ok, faltam = apv.contas_ok(redes)
-            return {'projeto': p, 'ref': apv.ref(pid), 'links': links_render(r), 'historico': apv.historico(pid),
+            return {'projeto': p, 'ref': apv.ref(pid), 'links': links_render(r),
+                    'parecer': apv.diretor_ok(p, r.get('sha')) if r else None,
+                    'bloqueios_manuais': apv.bloqueios_manuais(p, r['sha']) if r and r.get('sha') else [], 'historico': apv.historico(pid),
                     'contas': {'ok': ok, 'faltam': faltam}, 'estados': produtor.ESTADOS,
                     'job': db.um("SELECT * FROM jobs WHERE projeto=? ORDER BY criado DESC LIMIT 1", pid)}
         if acao == 'descricao':
@@ -821,7 +870,7 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         d = corpo()
         if acao == 'aprovar':
             chave = (h.headers.get('Idempotency-Key') or d.get('chave') or '')[:80]
-            return apv.aprovar(pid, str(d.get('render_sha', '')), d.get('destinos'), 'site', quem, chave)
+            return apv.aprovar(pid, str(d.get('render_sha', '')), d.get('destinos'), 'site', quem, chave, manual=d.get('manual') is True)
         if acao == 'alterar':
             return apv.pedir_alteracao(pid, str(d.get('render_sha', '')), str(d.get('texto', '')), 'site', quem)
         if acao == 'rejeitar':
@@ -864,13 +913,13 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         j = fila.obter(m.group(1))
         if not j:
             raise pj.ErroProjeto(404, 'Trabalho não encontrado.')
-        j = dict(j)
+        j = fila.estado_publico(j)
         j['dados'] = json.loads(j.get('dados') or '{}')
         j['resultado'] = json.loads(j['resultado']) if j.get('resultado') else None
         if j['status'] not in fila.FINAIS:
-            j['restante'] = round(fila.restante(j)[0])
+            j['restante'] = None if j['heartbeat_atrasado'] or j['estado_comum'] in ('PAUSED','WAITING_USER','CANCEL_REQUESTED') else round(fila.restante(j)[0])
         return j
-    m = re.fullmatch(r'/api/v1/fila/(\w+)/(pausar|retomar|cancelar|tentar|reagendar)', caminho)
+    m = re.fullmatch(r'/api/v1/fila/(\w+)/(pausar|retomar|cancelar|ignorar|tentar|reagendar)', caminho)
     if m and metodo == 'POST':
         jid, acao = m.groups()
         if not fila.obter(jid):
@@ -879,7 +928,7 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
         if acao == 'reagendar':
             t = _quando(corpo()) or time.time()
             return fila.reagendar(jid, t)
-        return {'pausar': fila.pausar, 'retomar': fila.retomar, 'cancelar': fila.cancelar, 'tentar': fila.tentar_de_novo}[acao](jid)
+        return {'pausar': fila.pausar, 'retomar': fila.retomar, 'cancelar': fila.cancelar, 'ignorar': fila.ignorar, 'tentar': fila.tentar_de_novo}[acao](jid)
     if rota == ('GET', '/api/v1/capacidade'):
         return fila.capacidade()
 
@@ -1060,6 +1109,8 @@ def tratar(h, metodo: str, caminho: str, sessao: dict | None):
     if caminho.startswith('/api/v1/criativo/'):
         return _criativo(metodo, caminho, q, corpo, quem, sid)
     # ---- Agente 6: capas (thumbnails)
+    if caminho.startswith('/api/v1/downloads'):          # download em lote de Publicações (somente leitura)
+        return _downloads(metodo, caminho, corpo, quem)
     if caminho.startswith('/api/v1/thumbnails'):
         try:
             return _thumbs(metodo, caminho, q, corpo, quem)

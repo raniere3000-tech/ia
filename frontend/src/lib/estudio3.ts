@@ -27,12 +27,13 @@ export const lerModos=(cfg:CfgSrv)=>api<{modos:Record<string,Modo>}>(cfg,'GET','
 export const mmss=(t:number)=>`${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,'0')}`;
 
 // ---------------------------------------------------------------- perfis de canal
-export type PerfilCampos={nome:string;nicho:string;publico:string;tom:string;voz:string;elenco:string[];series:string[];cores:{primaria:string;secundaria:string};logo:string;templates:string[];estilos_permitidos:string[];hashtags_base:string[];
+export type DnaCorte={fonte?:'Inter';legenda?:'destaque'|'simples'|'caixa'|'nenhuma';zoom?:number;ritmo?:'calmo'|'padrao'|'dinamico'};
+export type PerfilCampos={dna_corte?:DnaCorte;nome:string;nicho:string;publico:string;tom:string;voz:string;elenco:string[];series:string[];cores:{primaria:string;secundaria:string};logo:string;templates:string[];estilos_permitidos:string[];hashtags_base:string[];
   politica_fonte:{origens:string[];nota:string};redes:string[];contas:{meta_pagina:string};modo_qualidade:''|'rapido'|'caprichado';orcamento:number;temas_frequentes:string[];regras_de_marca:string};
 export type Perfil=PerfilCampos&{id:string;versao:number;atualizado:number;historico:{versao:number;t:number;o_que:string}[]};
 export type PerfilResumo={id:string;nome:string;nicho:string;redes:string[];modo_qualidade:string;versao:number;atualizado:number;tem_logo:boolean};
 export const PERFIL_VAZIO:PerfilCampos={nome:'',nicho:'',publico:'',tom:'',voz:'',elenco:[],series:[],cores:{primaria:'',secundaria:''},logo:'',templates:[],estilos_permitidos:[],hashtags_base:[],politica_fonte:{origens:[],nota:''},redes:[],contas:{meta_pagina:''},modo_qualidade:'',orcamento:0,temas_frequentes:[],regras_de_marca:''};
-export const listarPerfis=(cfg:CfgSrv)=>api<{perfis:PerfilResumo[]}>(cfg,'GET','/perfis');
+export const listarPerfis=(cfg:CfgSrv)=>api<{perfis:PerfilResumo[];dna_corte_habilitado?:boolean}>(cfg,'GET','/perfis');
 export const lerPerfil=(cfg:CfgSrv,id:string)=>api<Perfil>(cfg,'GET','/perfis/'+id);
 export const salvarPerfil=(cfg:CfgSrv,d:Partial<PerfilCampos>&{id?:string})=>api<Perfil>(cfg,'POST','/perfis',d);
 export const acaoPerfil=(cfg:CfgSrv,id:string,acao:'duplicar'|'restaurar'|'apagar',extra?:{versao:number})=>api<Perfil>(cfg,'POST',`/perfis/${id}/${acao}`,extra||{});

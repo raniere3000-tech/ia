@@ -10,7 +10,7 @@ export type Marca = {id:string;inicio:number;fim:number;titulo:string;nota?:numb
 export type Settings = {ytKey:string; claudeKey:string; whisperModel:string; idioma:string; api:string; legendaPadrao:string; efeitoPadrao:string; servidor:string; servidorToken:string; servidorCanal:string; servidorSessao?:string; servidorAnuncio?:string; geminiKey:string; muapiKey?:string; ia:''|'gemini'|'claude'};
 export type Tab = 'inicio'|'radar'|'cortes'|'video'|'vozes'|'manual'|'agendar'|'agente'|'estilos'|'templates'|'config'|'ia'|'automatico'|'projetos'|'galeria'|'fila'|'revisar'|'series'|'central'|'live'|'thumbnails'|'coordenador'
   /** Entradas das áreas novas (Agentes = painel dos 7 agentes; Estúdio de Edição; Estúdio IA). */
-  |'agentes'|'edicao'|'estudioIA';
+  |'agentes'|'edicao'|'estudioIA'|'inteligencia';
 
 export type Projeto = {
   file:File|null; url:string; nome:string; duracao:number;

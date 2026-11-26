@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Download, Image as ImgIcon, Loader2, Palette, Plus, RefreshCw, Settings2, Sparkles, XCircle, BarChart3, ListChecks } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, Image as ImgIcon, Loader2, Palette, Plus, RefreshCw, Settings2, Sparkles, XCircle, BarChart3, ListChecks, ShieldCheck } from 'lucide-react';
 import { useApp } from '../state';
 import { useCfg, useServidor, erroTexto } from '../components/Servidor2';
 import Progresso from '../components/Progresso';
+import ThumbAutonomia from './ThumbAutonomia';
 import { urlServidor } from '../lib/api';
 import { tempoTexto } from '../lib/alertas';
 import { ESTADOS, LAYOUT, METODOS, cancelarJob, criarPerfil, escolherCapa, lerCapacidades, lerCfgThumb, lerDesempenho, lerFontes, lerJob, lerJobs, lerPerfis,
-  mudarPerfil, pedirCapas, refazerCapa, salvarCfgThumb, type CfgThumb, type Fonte, type Metodo, type Pedido, type Perfil, type Variante } from '../lib/thumbnails';
+  mudarPerfil, pedirCapas, refazerCapa, rejeitarCapa, salvarCfgThumb, type CfgThumb, type Fonte, type Metodo, type Pedido, type Perfil, type Variante } from '../lib/thumbnails';
 
-type Aba='fila'|'criar'|'galeria'|'modelos'|'desempenho'|'config';
-const ABAS:[Aba,string,typeof ImgIcon][]=[['fila','Fila',ListChecks],['criar','Criar',Plus],['galeria','Galeria',ImgIcon],['modelos','Modelos',Palette],['desempenho','Desempenho',BarChart3],['config','Configurações',Settings2]];
+type Aba='fila'|'autonomia'|'criar'|'galeria'|'modelos'|'desempenho'|'config';
+const ABAS:[Aba,string,typeof ImgIcon][]=[['fila','Fila',ListChecks],['autonomia','Autonomia e Integração',ShieldCheck],['criar','Criar',Plus],['galeria','Galeria',ImgIcon],['modelos','Modelos',Palette],['desempenho','Desempenho',BarChart3],['config','Configurações',Settings2]];
 const RODANDO=['na_fila','analisando','criando','validando','aguardando_video'];
 const quando=(t?:number|null)=>t?new Date(t*1000).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
 const seg=(s?:number|null)=>s==null?'sem medida ainda':tempoTexto(s);
@@ -27,6 +28,7 @@ export default function Thumbnails(){
   return <div className="thumbs">
     <div className="ag-abas" role="tablist">{ABAS.map(([k,t,I])=><button key={k} role="tab" aria-selected={aba===k} className={aba===k?'active':''} onClick={()=>trocar(k)}><I size={14}/> {t}</button>)}</div>
     {aba==='fila'&&<FilaThumbs abrir={abrir} criar={()=>trocar('criar')}/>}
+    {aba==='autonomia'&&<ThumbAutonomia abrir={abrir}/>}
     {aba==='criar'&&<Criar pronto={abrir}/>}
     {aba==='galeria'&&<Galeria id={jobSel} voltar={()=>trocar('fila')}/>}
     {aba==='modelos'&&<Modelos/>}
@@ -51,7 +53,7 @@ function FilaThumbs({abrir,criar}:{abrir:(id:string)=>void;criar:()=>void}){
         {(()=>{ const v=j.variantes.find(x=>x.id===j.selecao?.variante)||j.variantes.find(x=>x.estado==='aprovada')||j.variantes[0];
           return v?<img src={urlServidor(cfg,v.url)} alt="" loading="lazy" className={v.formato==='9:16'?'vert':''}/>:<span className="thumb-vazio"><ImgIcon size={20}/></span>; })()}
         <span className="thumb-job-txt"><b>{j.titulo}</b><small className="muted">{j.origem==='corte'?'Corte do Agente 1':j.origem==='render'?'Vídeo do Agente 3':'Post'} · {quando(j.criado)}</small>
-          <span><Tag estado={j.estado}/> {j.variantes.filter(v=>v.estado!=='substituida').length} capa(s)</span>
+          <span><Tag estado={j.estado}/> {j.variantes.filter(v=>v.estado!=='substituida'&&v.estado!=='rejeitada').length} capa(s)</span>
           {j.erro&&j.estado!=='pronto'&&<small className="muted">{j.erro}</small>}
           {j.progresso&&RODANDO.includes(j.estado)&&<Progresso pct={j.progresso.pct} restante={j.progresso.restante_s} estimado={j.progresso.estimado} status={j.progresso.status}/>}</span>
       </button></li>)}</ul>}
@@ -93,8 +95,8 @@ function Criar({pronto}:{pronto:(id:string)=>void}){
     <label className="field"><span>3. Descreva a capa (opcional)</span><textarea rows={2} value={p.descricao} onChange={e=>setP({...p,descricao:e.target.value})} placeholder={'Ex.: Uma lua enorme no horizonte e o texto "POR QUÊ?" com contraste amarelo'}/>
       <small className="muted">Texto entre aspas vira o texto da capa no modo automático.</small></label>
     <div className="field"><span className="field-label">4. Texto da capa</span>
-      <div className="seg" role="radiogroup">{([['auto','Automático (até 4 palavras)'],['exato','Texto exato'],['sem','Sem texto']] as const).map(([k,t])=><button key={k} role="radio" aria-checked={p.texto_modo===k} className={p.texto_modo===k?'on':''} onClick={()=>setP({...p,texto_modo:k})}>{t}</button>)}</div>
-      {p.texto_modo==='exato'&&<input maxLength={60} value={p.texto} onChange={e=>setP({...p,texto:e.target.value})} placeholder="Ex.: POR QUÊ?" style={{marginTop:8}}/>}
+      <div className="seg" role="radiogroup">{([['auto','Automático (gancho completo)'],['exato','Texto exato'],['sem','Sem texto']] as const).map(([k,t])=><button key={k} role="radio" aria-checked={p.texto_modo===k} className={p.texto_modo===k?'on':''} onClick={()=>setP({...p,texto_modo:k})}>{t}</button>)}</div>
+      {p.texto_modo==='exato'&&<textarea maxLength={500} value={p.texto} onChange={e=>setP({...p,texto:e.target.value})} placeholder="Escreva a frase completa da capa" style={{marginTop:8}}/>}
       {p.texto_modo!=='sem'&&<small className="muted">O texto é desenhado pelo EstúdioClip (nunca pela IA), então sai sem erro de escrita. Emoji não aparece: a fonte não tem.</small>}
     </div>
     <div className="thumb-grade">
@@ -113,8 +115,8 @@ function Galeria({id,voltar}:{id:string;voltar:()=>void}){
   const r=useServidor(c=>id?lerJob(c,id):Promise.resolve(null),4,[id]);
   const [busy,setBusy]=useState(false); const [comparar,setComparar]=useState<string[]>([]); const [refTxt,setRefTxt]=useState<Record<number,string>>({});
   const j=r.dados;
-  const ativas=useMemo(()=>j?j.variantes.filter(v=>v.estado!=='substituida'):[],[j]);
-  const historico=useMemo(()=>j?j.variantes.filter(v=>v.estado==='substituida'):[],[j]);
+  const ativas=useMemo(()=>j?j.variantes.filter(v=>v.estado!=='substituida'&&v.estado!=='rejeitada'):[],[j]);
+  const historico=useMemo(()=>j?j.variantes.filter(v=>v.estado==='substituida'||v.estado==='rejeitada'):[],[j]);
   if(!id) return <section className="panel"><p className="muted">Escolha um pedido na <button className="link-btn" onClick={voltar}>Fila</button>.</p></section>;
   if(!j) return <section className="panel">{r.erro?<p className="hint bad">{r.erro}</p>:<p className="muted"><Loader2 size={14} className="spin"/> Carregando…</p>}</section>;
   async function fazer(f:()=>Promise<unknown>,msg:string){ setBusy(true); try{ await f(); toast(msg,'ok'); await r.recarregar(); }catch(e){ toast(erroTexto(e),'erro'); }finally{ setBusy(false); } }
@@ -157,18 +159,19 @@ function Galeria({id,voltar}:{id:string;voltar:()=>void}){
         <details><summary>Notas do diretor</summary><ul className="thumb-crit">{(['fidelidade','legibilidade','area_segura','tecnica','identidade','rede'] as const).map(k=><li key={k}>{({fidelidade:'Fiel ao vídeo (25)',legibilidade:'Leitura no celular (20)',area_segura:'Área segura (15)',tecnica:'Arquivo (15)',identidade:'Identidade (15)',rede:'Formato da rede (10)'})[k]}: <b>{v.relatorio.criterios[k]??'-'}</b></li>)}</ul>
           <small className="muted">{v.relatorio.metodo}</small></details>
         <div className="row-gap left">
+          {j.rejeicao_habilitada&&!sel&&<button className="subtle sm" disabled={busy||rodando} onClick={()=>fazer(()=>rejeitarCapa(cfg,j.id,v),'Proposta recusada. A capa escolhida foi preservada.')}><XCircle size={13}/> Recusar</button>}
           {!sel&&<button className="primary sm" disabled={busy||rodando||!!v.relatorio.bloqueios.length} onClick={()=>escolher(v)}><CheckCircle2 size={13}/> Escolher</button>}
           <a className="subtle sm btn-link" href={urlServidor(cfg,v.baixar)} download><Download size={13}/> Baixar</a>
           <label className="check sm"><input type="checkbox" checked={comparar.includes(v.id)} onChange={e=>setComparar(e.target.checked?[...comparar.slice(-1),v.id]:comparar.filter(x=>x!==v.id))}/> comparar</label>
         </div>
         <details><summary>Refazer só esta capa</summary>
-          <input maxLength={60} placeholder="Texto novo (deixe vazio para manter)" value={refTxt[v.numero]||''} onChange={e=>setRefTxt({...refTxt,[v.numero]:e.target.value})}/>
+          <textarea maxLength={500} placeholder="Texto novo completo (deixe vazio para manter)" value={refTxt[v.numero]||''} onChange={e=>setRefTxt({...refTxt,[v.numero]:e.target.value})}/>
           <button className="subtle sm" disabled={busy||rodando} onClick={()=>fazer(()=>refazerCapa(cfg,j.id,v.numero,refTxt[v.numero]?.trim()||undefined),`Refazendo a capa ${v.numero}.`)}><RefreshCw size={13}/> Refazer</button>
           <small className="muted">Só esta capa muda. O vídeo não é refeito.</small></details>
       </article>; })}
       {!ativas.length&&!rodando&&<section className="panel"><p className="muted">Nenhuma capa neste pedido.</p></section>}</div>
-    {historico.length>0&&<section className="panel"><details><summary>Histórico ({historico.length} versão(ões) corrigida(s) pelo diretor)</summary>
-      <div className="thumb-hist">{historico.map(v=><figure key={v.id}><img src={urlServidor(cfg,v.url)} alt=""/><figcaption>Capa {v.numero} v{v.versao} · nota {v.nota}<br/>{v.relatorio.bloqueios[0]||v.relatorio.notas[0]||''}</figcaption></figure>)}</div></details></section>}
+    {historico.length>0&&<section className="panel"><details><summary>Histórico ({historico.length} versão(ões) substituída(s) ou recusada(s))</summary>
+      <div className="thumb-hist">{historico.map(v=><figure key={v.id}><img src={urlServidor(cfg,v.url)} alt=""/><figcaption>Capa {v.numero} v{v.versao} · {v.estado==='rejeitada'?'recusada por você':`nota ${v.nota}`}<br/>{v.relatorio.bloqueios[0]||v.relatorio.notas[0]||''}</figcaption></figure>)}</div></details></section>}
   </>;
 }
 
@@ -252,7 +255,7 @@ function Config(){
       <label className="check"><input type="checkbox" checked={c.ia_fallback_local} onChange={e=>m({ia_fallback_local:e.target.checked})}/> Se a IA falhar, fazer com quadros do vídeo sem perguntar</label>
       {cap.dados&&!cap.dados.ia.disponivel&&<p className="hint warn">{cap.dados.ia.motivo}</p>}
       <h4>Redes</h4>
-      <label className="check"><input type="checkbox" checked={c.exigir_capa_youtube} onChange={e=>m({exigir_capa_youtube:e.target.checked})}/> Só postar no YouTube com capa escolhida para o arquivo</label>
+      <p className="hint">Capa obrigatória por rede, estratégia de cada rede e recuperação ficam na aba <b>Autonomia e Integração</b>.</p>
       <ul className="thumb-redes">{cap.dados&&Object.entries(cap.dados.redes).map(([k,x])=><li key={k}><b>{k[0].toUpperCase()+k.slice(1)}</b> <span className={'tag '+(x.testado?'ok':x.tipo==='manual_only'?'':'warn')}>{x.estado}</span>
         <label className="sm"> formato <select value={c.formato_por_rede[k]||'auto'} onChange={e=>m({formato_por_rede:{...c.formato_por_rede,[k]:e.target.value}})}><option value="auto">automático</option>{['16:9','9:16','4:5','1:1'].map(f=><option key={f}>{f}</option>)}</select></label>
         <br/><small className="muted">{x.detalhe}</small></li>)}</ul>

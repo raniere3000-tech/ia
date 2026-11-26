@@ -10,6 +10,9 @@ Falha técnica do render (FFmpeg, falta de espaço...) sobe como exceção: a fi
 from __future__ import annotations
 
 import copy
+import json
+import os
+import time
 import subprocess
 from pathlib import Path
 
@@ -225,6 +228,8 @@ def tem_audio(arq: Path) -> bool:
 def executar_corte(plano: dict, video: Path, c: dict, palavras: list, tpl: dict, destino: Path, pasta: Path) -> Path:
     """Render do plano de um corte do Agente 1: o montador do modelo (agente.editar) faz a base; o passo final tira pausas e suaviza."""
     import agente as ag
+    if ct.efeitos_reais_ativos():
+        return _executar_corte_efeitos(plano,video,c,palavras,tpl,destino,pasta)
     cl = plano['clips']
     ini, fim = cl[0]['in_ms'], cl[-1]['out_ms']
     t = tpl_do_plano(tpl, plano)
@@ -298,6 +303,11 @@ def rodar(rid: str, ref: str, plano: dict, render, contexto, *, dur_fonte: float
         pl.mover(rid, 'rendering', agente='agent5', etapa=f'Editor exportando a versão {versao} do plano')
         arq = Path(render(plano))
         sha = pl.sha_arquivo(arq)
+        if ct.efeitos_reais_ativos():
+            recibo = json.loads(arq.with_suffix('.efeitos.json').read_text())
+            if recibo.get('status') != 'concluido' or recibo.get('arquivo_sha') != sha or recibo.get('plano_hash') != ct.hash_plano(plano):
+                raise RuntimeError('Falta comprovar os efeitos aplicados neste render.')
+            pl.mover(rid, 'rendering', dados={'execucao_efeitos': recibo})
         pl.guardar_plano(rid, plano, arquivo_sha=sha)
         es.marcar_run(rid, 'a5_edicao', 'concluida', executor='editor_ia.rodar', saida_sha=sha, correcoes=corrigindo,
                       recibo={'plano_versao': versao, 'sha': sha, 'arquivo': arq.name, 'tamanho': arq.stat().st_size,
@@ -371,7 +381,7 @@ def plano_importado(dur: float, aspecto: str = '9:16', template_id: str = '') ->
                              'edit_reason': 'Vídeo recebido pronto: conferir antes de mexer.'}, dur)
 
 
-def executar_importado(plano: dict, fonte: Path, destino: Path, inicial_hash: str = '') -> Path:
+def _executar_importado_base(plano: dict, fonte: Path, destino: Path, inicial_hash: str = '', *, cancelado=None) -> Path:
     """Plano igual ao inicial: o arquivo segue como veio (mesmo SHA). Senão: trechos, enquadramento, fade e volume, sempre 30 fps."""
     import shutil
     if inicial_hash and ct.hash_plano(plano) == inicial_hash:
@@ -418,9 +428,150 @@ def executar_importado(plano: dict, fonte: Path, destino: Path, inicial_hash: st
     cmd = ['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', str(fonte), '-filter_complex', ';'.join(fc), '-map', '[v]', *(['-map', '[a]'] if audio else []),
            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p', '-r', '30',
            *(['-c:a', 'aac', '-b:a', '128k', '-ar', '44100'] if audio else []), '-movflags', '+faststart', str(tmp)]
-    r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
-    if r.returncode != 0 or not tmp.exists() or tmp.stat().st_size < 2000:
+    import renderizador as rd
+    try:
+        rd.rodar(cmd, cancelado=cancelado or _cancelamento_editor(), dur=total)
+    except BaseException:
         tmp.unlink(missing_ok=True)
-        raise RuntimeError('O editor não conseguiu montar o vídeo: ' + (r.stderr.strip()[-300:] or 'erro desconhecido'))
+        raise
+    if not tmp.exists() or tmp.stat().st_size < 2000:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError('O editor não conseguiu montar o vídeo: arquivo incompleto.')
     tmp.replace(destino)
     return destino
+
+
+# F2.02: execução verificável compartilhada, desativada por padrão.
+def _cancelamento_editor():
+    import agente as ag
+    return getattr(ag.CONTROLE_TRABALHO,'cancelado',None)
+
+
+def _registrar_efeitos(destino: Path, recibo: dict):
+    p=destino.with_suffix('.efeitos.json')
+    p.parent.mkdir(parents=True,exist_ok=True)
+    tmp=p.with_suffix('.json.tmp')
+    tmp.write_text(json.dumps(recibo,ensure_ascii=False,indent=2))
+    tmp.replace(p)
+
+
+def _finalizar_efeitos(plano: dict, base: Path, destino: Path, *, ass: Path | None = None, base_aplicados=(), cancelado=None) -> Path:
+    import projetos as pj
+    import renderizador as rd
+    plano=ct.validar_plano(plano)
+    total=duracao_saida(plano)
+    efeitos=plano['effects']
+    recibo={'schema':1,'plano_hash':ct.hash_plano(plano),'planejados':len(efeitos),'aplicados':0,'falhas':0,
+            'efeitos':[],'criado':time.time(),'status':'executando'}
+    tmp=destino.with_name(destino.stem+'-efeitos.tmp.mp4')
+    cancelar=cancelado or _cancelamento_editor()
+    try:
+        meta=rd.sonda(base)
+        v=next(x for x in meta['streams'] if x['codec_type']=='video');w,h=int(v['width']),int(v['height'])
+        cmd=['ffmpeg','-nostdin','-y','-v','error','-i',str(base)]
+        filtros=[];atual='[0:v]';entrada=1;parados=[]
+        for k,e in enumerate(efeitos):
+            tipo=e['tipo'];status='aplicado';motivo=''
+            a=float(e.get('ini_ms',0))/1000;b=float(e.get('fim_ms',total*1000))/1000
+            if tipo=='zoom' and not e.get('fim_ms'):
+                b=total  # planos antigos omitem o fim do zoom global
+            if tipo in ('zoom','broll') and not (0<=a<b<=total+0.05):
+                raise ct.ErroContrato('Intervalo do efeito passa da duração renderizada.')
+            if tipo=='zoom' and e['nivel']>1:
+                cw=max(2,int(w/e['nivel'])//2*2);ch=max(2,int(h/e['nivel'])//2*2)
+                filtros += [f'{atual}split[z{k}a][z{k}b]',f'[z{k}b]crop={cw}:{ch},scale={w}:{h}[z{k}c]',
+                            f"[z{k}a][z{k}c]overlay=0:0:enable='between(t,{a:.3f},{b:.3f})'[e{k}]"]
+                atual=f'[e{k}]'
+            elif tipo=='broll':
+                midia=pj.asset(e['asset']);mime=midia['mime']
+                if not mime.startswith(('image/','video/')):
+                    raise ct.ErroContrato('B-roll precisa de uma imagem ou vídeo.')
+                if mime.startswith('image/'):
+                    parados.append([a,b])
+                    cmd += ['-loop','1','-t',str(total),'-i',midia['caminho']]
+                else:
+                    cmd += ['-stream_loop','-1','-i',midia['caminho']]
+                filtros += [f'[{entrada}:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,format=yuv420p[br{k}]',
+                            f"{atual}[br{k}]overlay=0:0:enable='between(t,{a:.3f},{b:.3f})':shortest=1[e{k}]"]
+                atual=f'[e{k}]';entrada+=1
+            elif tipo=='caption':
+                if e.get('ligado',1) and (ass is None or ',Leg,' not in ass.read_text()):
+                    raise ct.ErroContrato('Legenda dinâmica exige transcrição da fala para aplicação.')
+                if not e.get('ligado',1):status='sem_alteracao'
+            elif tipo=='zoom':
+                status='sem_alteracao';motivo='Nível de zoom igual a 1.'
+            elif tipo=='reframe' and e.get('modo')=='manter':
+                status='sem_alteracao';motivo='Enquadramento mantido.'
+            elif tipo not in base_aplicados:
+                raise ct.ErroContrato('O render base não comprovou aplicação de '+tipo)
+            recibo['efeitos'].append({'tipo':tipo,'status':status,'parametros':e,'motivo':motivo})
+        if ass:
+            esc=lambda p:str(p).replace('\\','/').replace(':','\\:').replace("'","\\'")
+            filtros.append(f"{atual}ass='{esc(ass)}'[leg]");atual='[leg]'
+        filtros.append(f'{atual}format=yuv420p[v]')
+        cmd += ['-filter_complex',';'.join(filtros),'-map','[v]','-map','0:a?','-t',str(total),
+                '-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac']
+        ln=_efeito(plano,'loudnorm')
+        if ln:
+            cmd += ['-af',f"loudnorm=I={ln['alvo_lufs']:.1f}:TP=-1.5:LRA=11"]
+        cmd += ['-movflags','+faststart',str(tmp)]
+        rd.rodar(cmd,cancelado=cancelar,dur=total)
+        dur=rd.duracao(tmp)
+        if abs(dur-total)>0.25:
+            raise rd.ErroRender('Duração do efeito divergente do plano.')
+        if os.getenv('RENDER_INTEGRIDADE','0')=='1':
+            qa=destino.parent/(destino.stem+'-integridade');qa.mkdir(exist_ok=True)
+            conferencia=rd.conferir(tmp,qa,{'largura':w,'altura':h,'duracao':total,
+                                         'parados_previstos':parados},cancelar)
+            recibo['integridade']=conferencia['integridade']
+            if not conferencia['ok']:
+                raise rd.ErroRender('Integridade do render: '+'; '.join(conferencia['erros']))
+        if cancelar and cancelar():
+            raise InterruptedError('cancelado')
+        recibo.update(status='concluido',arquivo_sha=rd.sha256(tmp),duracao=dur,
+                      aplicados=sum(x['status']=='aplicado' for x in recibo['efeitos']),
+                      sem_alteracao=sum(x['status']=='sem_alteracao' for x in recibo['efeitos']))
+        _registrar_efeitos(destino,recibo)
+        tmp.replace(destino)
+        return destino
+    except BaseException as erro:
+        tmp.unlink(missing_ok=True)
+        recibo.update(status='falhou',falhas=1,erro=str(erro)[:500],aplicados=0)
+        _registrar_efeitos(destino,recibo)
+        raise
+
+
+def _executar_corte_efeitos(plano: dict, video: Path, c: dict, palavras: list, tpl: dict, destino: Path, pasta: Path) -> Path:
+    import agente as ag
+    import renderizador as rd
+    plano=ct.validar_plano(plano)
+    pasta.mkdir(parents=True,exist_ok=True)
+    cl=plano['clips'];ini,fim=cl[0]['in_ms']/1000,cl[-1]['out_ms']/1000
+    t=tpl_do_plano(tpl,plano);t['zoom']=1.0
+    base=pasta/(destino.stem+'-base-efeitos.mp4');montado=pasta/(destino.stem+'-montado-efeitos.mp4')
+    sem_texto=dict(t,legenda='nenhuma',gancho=False,credito='',tarja_topo='',tarja_base='')
+    ag.editar(video,dict(c,ini=ini,fim=fim),palavras,sem_texto,base,pasta)
+    try:
+        temporal=base
+        if len(cl)>1 or _efeito(plano,'fade'):
+            _passo_final(base,plano,montado,int(ini*1000));temporal=montado
+        vs=next(x for x in rd.sonda(temporal)['streams'] if x['codec_type']=='video')
+        ass=pasta/(destino.stem+'-efeitos.ass')
+        cap=_efeito(plano,'caption')
+        if not cap or not cap.get('ligado',1):t['legenda']='nenhuma'
+        ass.write_text(ag.montar_ass(palavras_saida(plano,palavras),0,duracao_saida(plano),t,c.get('gancho',''),int(vs['width']),int(vs['height'])))
+        return _finalizar_efeitos(plano,temporal,destino,ass=ass,base_aplicados=('reframe','fade','loudnorm'))
+    finally:
+        base.unlink(missing_ok=True);montado.unlink(missing_ok=True)
+
+
+def executar_importado(plano: dict, fonte: Path, destino: Path, inicial_hash: str = '', *, comprovar=False, cancelado=None) -> Path:
+    if not comprovar and not ct.efeitos_reais_ativos():
+        return _executar_importado_base(plano,fonte,destino,inicial_hash,cancelado=cancelado)
+    p=copy.deepcopy(ct.validar_plano(plano));base=destino.with_name(destino.stem+'-base-efeitos.mp4')
+    p['effects']=[e for e in p['effects'] if e['tipo'] not in ('zoom','broll','caption')]
+    try:
+        _executar_importado_base(p,fonte,base,cancelado=cancelado)
+        return _finalizar_efeitos(plano,base,destino,base_aplicados=('reframe','fade','loudnorm'),cancelado=cancelado)
+    finally:
+        base.unlink(missing_ok=True)

@@ -110,7 +110,7 @@ def etapa(rid: str, modalidade: str) -> dict:
     return s
 
 
-def registrar_avaliacao(rid: str, modalidade: str, rel: dict, *, mudou: bool = True) -> dict:
+def registrar_avaliacao(rid: str, modalidade: str, rel: dict, *, mudou: bool = True, continuo: bool = False) -> dict:
     """Aplica a política a um relatório do diretor e devolve a decisão:
     {'decisao': 'aprovado'|'corrigir'|'revisao_manual', 'tentativa', 'restam', 'motivo'}.
     `mudou` = o reenvio trouxe plano/arquivo diferente do anterior (se não, não adianta repetir)."""
@@ -123,10 +123,10 @@ def registrar_avaliacao(rid: str, modalidade: str, rel: dict, *, mudou: bool = T
     if aprovado:
         dec, est = 'aprovado', 'aprovado'
         motivo = f'Nota {rel["score"]} sem bloqueios.'
-    elif avaliacoes > 1 and not mudou:
+    elif not continuo and avaliacoes > 1 and not mudou:
         dec, est = 'revisao_manual', 'revisao_manual'
         motivo = 'A correção não mudou nada no vídeo (mesmo plano e mesmo arquivo): não adianta repetir.'
-    elif correcoes >= s['limite']:
+    elif not continuo and correcoes >= s['limite']:
         dec, est = 'revisao_manual', 'revisao_manual'
         motivo = f'Reprovado depois de {correcoes} correções (limite {s["limite"]}).'
     else:
@@ -261,7 +261,7 @@ def portao_postagem(arq: Path) -> dict:
         return {'ok': False, 'ativo': True, 'sha': sha, 'detalhe': 'Este arquivo não tem a aprovação do diretor de qualidade (Agente 4) para esta versão. '
                 'Mande para o editor e o diretor antes de postar.'}
     return {'ok': True, 'ativo': True, 'sha': sha, 'certificado': c['id'], 'nota': c['nota'], 'manual': bool(c['manual']),
-            'detalhe': f'Aprovado pelo diretor (nota {c["nota"]}{", revisão manual" if c["manual"] else ""}) para este arquivo.'}
+            'detalhe': ('Arquivo aprovado em revisão manual.' if c['manual'] else f'Aprovado pelo diretor (nota {c["nota"]}) para este arquivo.')}
 
 
 # ---------------------------------------------------------------- revisão manual

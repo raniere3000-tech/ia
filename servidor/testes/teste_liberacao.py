@@ -19,6 +19,7 @@ import banco as db  # noqa: E402
 import api_v1  # noqa: E402
 import aprovacoes as apv  # noqa: E402
 import postagem as pg  # noqa: E402
+import thumbnails as _th  # noqa: E402
 import produtor  # noqa: E402
 import projetos as pj  # noqa: E402
 
@@ -32,6 +33,7 @@ def confere(c, nome):
 
 
 db.migrar()
+_th.salvar_config({'exigir_capa': False, 'exigir_capa_youtube': False})   # este teste cobre outros portões; a capa obrigatória está em teste_agente6_autonomia
 api_v1.iniciar()
 pg.status_contas = lambda: {k: {'conectado': True, 'erro': '', 'paginas': [], 'pagina': ''} for k in set(pg.PROV.values())}
 enviados = []
@@ -47,7 +49,8 @@ def novo_post(versao=1):
     sha = (pid * 8)[:64]
     db.executar('INSERT INTO renders (id, projeto, versao, arquivo, sha256, duracao, codec, largura, altura, validado, alertas, criado) VALUES (?,?,?,?,?,?,?,?,?,1,?,?)',
                 'r' + pid, pid, versao, str(arq), sha, 3.0, 'h264', 360, 640, '[]', 0)
-    pj.mudar_dados(pid, lambda d, _p: (d.update(render={'id': 'r' + pid, 'versao': 1, 'sha': sha, 'validado': True}, qualidade={'status': 'apto_para_revisao_humana', 'problemas': []}), {'status': 'ready_for_review'})[1])
+    pj.mudar_dados(pid, lambda d, _p: (d.update(render={'id': 'r' + pid, 'versao': 1, 'sha': sha, 'validado': True}, qualidade={'status': 'apto_para_revisao_humana', 'problemas': []},
+        diretor={'sha': sha, 'veredito': 'aprovado', 'motivos': []}), {'status': 'ready_for_review'})[1])
     apv.aprovar(pid, sha, {'redes': ['youtube'], 'quando': 'data', 'data': 4102444800}, 'site', 'teste')
     post = next(x for x in pg.posts() if x.get('projeto') == pid)
     # simula um corte do Agente 1 sem a origem registrada (o caso do aviso)

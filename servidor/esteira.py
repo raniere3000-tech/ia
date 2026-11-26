@@ -425,7 +425,7 @@ def _a6(v: dict, e: dict, sha: str):
         cfg = th.config()
         try:
             j0 = th.criar({'origem': origem, 'referencia': v['ref'], 'metodo': 'inteligente', 'variantes': cfg['variantes_padrao'], 'formato': 'auto',
-                           'texto_modo': 'auto', 'chave_idempotencia': f'esteira:{v["id"]}:{sha[:16]}'}, 'agente7-esteira')
+                           'texto_modo': 'auto', 'chave_idempotencia': f'esteira:{v["id"]}:{sha[:16]}', 'reaproveitar': True}, 'agente7-esteira')
         except th.ErroThumb as err:
             marcar(v['id'], 'a6_capa', 'falhou', erro=str(err))
             return
@@ -442,6 +442,8 @@ def _a6(v: dict, e: dict, sha: str):
             marcar(v['id'], 'a6_capa', 'na_fila', recibo=rec, entrada_sha=sha, motivo=j.get('erro') or '')
         return
     s = th.revalidar(j['id']) if est in ('pronto', 'aguardando_escolha') else None
+    if not s and est in ('pronto', 'aguardando_escolha', 'revisao_manual') and th.config()['modo'] == 'automatico':
+        s = th.selecionar_melhor(j['id'], 'agente6-automatico') and th.revalidar(j['id'])   # automático: escolhe a aprovada de maior nota
     if s and s.get('aprovado') in (1, True, None):
         n_var = db.um("SELECT COUNT(*) n FROM thumbnail_variantes WHERE job=? AND estado<>'substituida'", j['id'])['n']
         ini, fim = j.get('criado'), j.get('atualizado')
@@ -471,7 +473,7 @@ def revisar_pacote(v: dict, arq: Path, sha: str, extra: dict) -> dict:
     def item(nome, ok, detalhe):
         itens.append({'item': nome, 'ok': bool(ok), 'detalhe': detalhe})
     cert = pl.certificado(sha)
-    item('diretor', cert is not None, f'Diretor aprovou este arquivo (nota {cert["nota"]}).' if cert else 'Falta o certificado do diretor para este arquivo.')
+    item('diretor', cert is not None, ('Arquivo aceito em revisão manual.' if cert['manual'] else f'Diretor aprovou este arquivo (nota {cert["nota"]}).') if cert else 'Falta o certificado do diretor para este arquivo.')
     pre = _etapa(v['id'], 'a4_previo')
     item('avaliacao_inicial', pre and pre['estado'] in OK, 'Avaliação inicial do diretor feita.' if pre and pre['estado'] == 'concluida' else
          (pre['motivo'] or 'Não se aplica.') if pre and pre['estado'] == 'pulada_justificada' else 'Falta a avaliação inicial do diretor.')

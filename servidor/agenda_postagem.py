@@ -493,6 +493,12 @@ def ordenar(cand: list, politica: str) -> list:
 def _reservar(s: dict, cfg: dict) -> str:
     import agente as ag
     import postagem as pg
+    # Recupera a ligação caso o servidor caia após salvar um lote e antes de atualizar o slot.
+    existente = next((p for p in pg.posts() if p['redes'].get(s['rede'], {}).get('lote_slot') == s['id']), None)
+    if existente:
+        estado = 'cancelado' if existente['redes'][s['rede']]['status'] == 'cancelado' else 'agendado'
+        db.executar('UPDATE posting_slots SET estado=?, post=?, atualizado=? WHERE id=? AND estado=\'vazio\'', estado, existente['id'], time.time(), s['id'])
+        return estado
     cand = elegiveis(s['rede'])
     if not cand:
         db.executar("UPDATE posting_slots SET motivo='Sem vídeo aprovado pelo diretor', atualizado=? WHERE id=? AND estado='vazio'", time.time(), s['id'])
@@ -639,6 +645,14 @@ def _acompanhar(s: dict, cfg: dict | None):
                 _liberar_ref(s, s['post'])
         return
     st = p['redes'].get(s['rede'], {}).get('status', '')
+    destino = p['redes'].get(s['rede'], {})
+    if destino.get('lote'):
+        if destino.get('lote_slot') != s['id'] or st == 'cancelado':
+            db.executar("UPDATE posting_slots SET estado='cancelado', motivo='Destino reagendado ou lote cancelado', atualizado=? WHERE id=?", agora, s['id'])
+        else:
+            estado = {'postado': 'publicado', 'postando': 'publicando', 'erro': 'erro', 'manual': 'manual', 'liberacao': 'aguardando_aprovacao'}.get(st, 'agendado')
+            db.executar('UPDATE posting_slots SET estado=?, atualizado=? WHERE id=?', estado, agora, s['id'])
+        return
     mapa = {'postado': 'publicado', 'postando': 'publicando', 'erro': 'erro', 'liberacao': 'aguardando_aprovacao', 'manual': 'manual'}
     if st in mapa and mapa[st] != s['estado']:
         db.executar('UPDATE posting_slots SET estado=?, motivo=?, atualizado=? WHERE id=?', mapa[st], (p['redes'][s['rede']].get('erro') or '')[:200], agora, s['id'])

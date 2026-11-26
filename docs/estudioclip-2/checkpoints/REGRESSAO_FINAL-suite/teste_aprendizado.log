@@ -1,0 +1,57 @@
+Painel vazio
+  ok   sem dados: todas as variáveis dizem "dados insuficientes"
+  ok   o painel diz que não é causa e que a frequência é sua
+  ok   não aplica peso sem dados
+Importação
+  ok   12 linhas aceitas e 4 recusadas (12/4)
+  ok   cada recusada diz a linha e o motivo
+  ok   importar o mesmo arquivo de novo não duplica
+  ok   12 retratos guardados, sem duplicar (12)
+  ok   vazio e formato errado são recusados
+  ok   JSON quebrado é recusado
+  ok   arquivo acima de 1 MB é recusado
+  ok   retrato guarda fonte, rede e período
+Leitura honesta
+  ok   estilo: neon na frente com amostra suficiente
+  ok   a mensagem nunca afirma causa
+  ok   modelo: só um valor com amostra → dados insuficientes
+  ok   gancho (pergunta × afirmação) é lido
+  ok   por rede sem dados → dados insuficientes
+  ok   duração vira faixa
+Pesos com versão
+  ok   pesos favorecem o melhor, com piso de variedade ({'neon': 0.5723, 'vhs': 0.4277})
+  ok   variável sem sorteio só é lida, não recebe peso
+  ok   o sorteio de estilo passa a favorecer neon ({'neon': 1126, 'vhs': 874})
+  ok   o estilo pior continua saindo (variedade)
+  ok   cada aplicação é uma versão nova ligada à anterior
+  ok   desfazer volta à versão anterior
+  ok   desfazer de novo volta ao sorteio igual
+  ok   sem pesos o sorteio é igual ({'neon': 973, 'vhs': 1027})
+Apagar dados tira o efeito
+  ok   pesos ligados antes de apagar
+  ok   apagar a importação desliga os pesos que dependiam dela
+  ok   os retratos sumiram
+  ok   apagar algo que não existe ou sem dizer o quê é recusado
+JSON e captura das redes
+  ok   JSON em lista é aceito (curtidas+comentários quando não há views)
+  ok   capturar guarda um retrato por corte medido e não repete
+  ok   variáveis do corte registradas ({'estilo': 'vhs', 'modelo': 'Template um', 'faixa': 'seg-18', 'duracao': '30 a 60 s', 'gancho': 'pergunta'})
+  ok   o painel mostra fonte, rede e período
+Teste A/B
+  ok   A e B iguais são recusados
+  ok   fixar a própria variável é recusado (uma por vez)
+  ok   fixar variável desconhecida é recusado
+  ok   sem vídeos medidos: dados insuficientes
+  ok   só um teste ativo por vez
+  ok   com teste de estilo ativo o Agente 1 só sorteia A ou B ({'neon': 204, 'vhs': 196})
+  ok   só entram vídeos que combinam com os valores fixos (OUTRO ficou de fora)
+  ok   diferença pequena → inconclusivo (inconclusivo)
+  ok   diferença grande → "sinal", com aviso de que não prova causa (sinal a favor de A)
+  ok   encerrar libera um novo teste
+Garantias
+  ok   nada aqui mexeu na frequência ou nos horários de postagem
+  ok   cada ação ficou no registro (importar, aplicar, desfazer, apagar, teste)
+  ok   o módulo não chama a postagem
+  ok   o painel lê as boas práticas das skills de aprendizado (lista, pode ficar vazia se não instaladas)
+
+TUDO OK (47 ok, 0 falhas)

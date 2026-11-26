@@ -67,7 +67,8 @@ export const lerMemoria=(c:CfgSrv,id:string)=>api<Memoria>(c,'GET',`${B}/memoria
 export const criarMemoria=(c:CfgSrv,d:{texto:string;escopo:string;tipo:string;confirmar:boolean})=>api<Memoria>(c,'POST',`${B}/memorias`,d);
 export const acaoMemoria=(c:CfgSrv,id:string,acao:'confirmar'|'desativar'|'reverter',versao?:number)=>api<Memoria>(c,'POST',`${B}/memorias/${id}/${acao}`,versao===undefined?{}:{versao});
 export const editarMemoria=(c:CfgSrv,id:string,d:{texto?:string;escopo?:string;travada?:boolean;versao:number})=>api<Memoria>(c,'PATCH',`${B}/memorias/${id}`,d);
-export const lerSugestoes=(c:CfgSrv)=>api<{sugestoes:Sugestao[];nota:string}>(c,'GET',`${B}/aprendizado/sugestoes`);
+export type FeedbackMetricas={agente:string;alvo:string;vertente:string;rede:string;canal:string|null;estado:string;recomendacao:string;amostras:number;snapshots:string[]};
+export const lerSugestoes=(c:CfgSrv)=>api<{sugestoes:Sugestao[];feedback_metricas:FeedbackMetricas[];nota:string}>(c,'GET',`${B}/aprendizado/sugestoes`);
 export const acaoSugestao=(c:CfgSrv,id:string,acao:'propor'|'dispensar')=>api<Memoria|{ok:boolean}>(c,'POST',`${B}/aprendizado/sugestoes/${encodeURIComponent(id)}/${acao}`,{});
 export const lerEventos=(c:CfgSrv,ordem='')=>api<{eventos:Evento[]}>(c,'GET',`${B}/eventos?ordem=${ordem}&limite=150`);
 export const conferirHistorico=(c:CfgSrv)=>api<{ok:boolean;conferidos:number;quebrado_em?:number}>(c,'GET',`${B}/historico/conferir`);
@@ -89,3 +90,5 @@ export const ESTADO_TAREFA:Record<string,[string,string]>={pendente:['Na espera'
   falhou:['Falhou','bad'],bloqueada:['Bloqueada','bad'],cancelada:['Cancelada',''],pulada:['Pulada','']};
 export const REDES=['youtube','tiktok','instagram','facebook','kwai'];
 export const ESCOPOS:[string,string][]=[['global','Tudo'],['plataforma:youtube','Só no YouTube'],['plataforma:tiktok','Só no TikTok'],['plataforma:instagram','Só no Instagram']];
+
+export const testarHipotese=(c:CfgSrv,id:string,versao:number)=>api<{id:string}>(c,'POST',`${B}/memorias/${id}/testar`,{versao});

@@ -1,0 +1,43 @@
+1. Horários cheios: nada de pedir mais vídeo
+  ok   os 2 horários das próximas 24 h receberam vídeo: {'agendados': 2}
+  ok   com vídeo em todos os horários, o Agente 2 não pede nada
+2. Você posta antes da hora: o horário fica livre
+  ok   horário de 23:00 voltou a ficar livre
+  ok   o post vai agora e não fica mais preso ao horário
+  ok   o corte já postado não volta para a fila
+  ok   fica registrado no histórico que o horário foi liberado
+3. Sem vídeo para o horário: o Agente 2 pede ao Coordenador, que manda o Agente 1 cortar
+  ok   o mesmo corte não é usado de novo para tapar o buraco
+  ok   o Agente 2 pediu mais vídeos: {'ok': True, 'ordem': '13383afcc9d3'}
+  ok   o Coordenador abriu uma ordem de reposição
+  ok   o Agente 1 recebeu "cortar": ['cortar']
+4. Sem pedidos repetidos
+  ok   rodar de novo não abre outra ordem enquanto a primeira trabalha
+  ok   depois que termina, espera o intervalo antes de pedir de novo
+  ok   Central pausada: não pede nada
+  ok   opção desligada no Coordenador: não pede nada
+  ok   intervalo padrão de 60 minutos
+  ok   intervalo menor que 10 minutos não é aceito
+4b. Reposição que só falha: não avisa a cada hora e espera cada vez mais
+  ok   primeira falha: avisa com o motivo de verdade
+  ok   mesma falha de novo: não avisa outra vez
+  ok   depois de 3 falhas seguidas, espera 8 h para pedir de novo
+  ok   motivo novo: avisa
+  ok   no máximo 1 pedido por dia enquanto só falha
+  ok   deu certo: volta ao intervalo normal
+  ok   a tarefa mostra o motivo do Agente 1: O Agente 1 terminou sem nenhum corte aprovado. O Agente 1 disse: Nenhum vídeo novo nos canais aprovados.
+5. O Agente 1 entregou um corte novo: ele vai para o mesmo horário
+  ok   o horário de 23:00 recebeu o corte novo
+  ok   o post novo sai no horário original
+6. Caminho antigo (sem programação diária)
+  ok   programação desligada
+  FALHOU: sem corte pronto e com horário livre: pede mais cortes ao Coordenador
+  FALHOU: não pede de novo enquanto o Agente 1 trabalha
+7. Ordem do Coordenador (vídeos próprios, um por dia): postar antes da hora adianta o próximo
+  ok   o vídeo 1 sai agora
+  ok   o vídeo 2 subiu para o horário que ficou livre (o do vídeo 1)
+  ok   o vídeo 3, ainda em produção, já vai para o horário do vídeo 2
+  ok   fica no histórico da ordem
+  ok   tentar de novo o mesmo post não adianta nada de novo
+
+31 ok, 2 falhas

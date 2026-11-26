@@ -10,6 +10,7 @@ import VozGravada from '../components/VozGravada';
 import Ficha, { fichaDoServidor } from '../components/Ficha';
 import Diretor from '../components/Diretor';
 import StoryboardVisual from '../components/StoryboardVisual';
+import FormatosIA from '../components/FormatosIA';
 import ModelagemIA, { EscolherDaBiblioteca } from '../components/ModelagemIA';
 import type { Campos } from '../lib/criativo';
 import { catalogo, ideias as pedirIdeias, gerarRoteiro, novoVideo, obterProjeto, salvarStoryboard, aprovarRoteiro, type Briefing, type Cena, type Roteiro, type Ideia, type Plano, type Chave } from '../lib/api';
@@ -27,7 +28,7 @@ export function CamposBriefing({b,set,cat}:{b:Partial<Briefing>;set:(p:Partial<B
     <label>Imagens de cada cena<select value={b.imagens||'nenhuma'} onChange={e=>set({imagens:e.target.value})}><option value="busca">Fotos reais remodeladas no estilo (grátis)</option><option value="nenhuma">Sem fotos (só desenhos do estilo)</option><option value="gemini">Imagem criada por IA em cada cena (tem custo)</option></select></label>
     <label>Quem confere<select value={b.modo_aprovacao||'assistido'} onChange={e=>set({modo_aprovacao:e.target.value as Briefing['modo_aprovacao']})}><option value="assistido">Aprovo o roteiro e depois o vídeo</option><option value="supervisionado">Aprovo só o vídeo pronto</option></select></label>
     {(b.modo_aprovacao||'assistido')==='assistido'&&<label className="check"><input type="checkbox" checked={!!b.porta_storyboard} onChange={e=>set({porta_storyboard:e.target.checked})}/> Também conferir os quadros de cada cena antes do vídeo final (storyboard visual)</label>}
-    <label className="check"><input type="checkbox" checked={!!b.qa_visao} onChange={e=>set({qa_visao:e.target.checked})}/> A IA também olha os quadros do vídeo pronto (opcional, gasta a chave paga; é só opinião, não bloqueia)</label>
+    <label className="check"><input type="checkbox" checked={!!b.qa_visao} onChange={e=>set({qa_visao:e.target.checked})}/> A IA também olha os quadros do vídeo pronto (opcional, gasta a chave paga; apontamentos ficam no laudo para revisão)</label>
    </div>
    <details className="mt"><summary>Mais opções (nicho, público, número de cenas, limite de gasto)</summary><div className="small-grid">
     <label>Nicho<input value={b.nicho||''} onChange={e=>set({nicho:e.target.value})} placeholder="Curiosidades, Games, História..."/></label>
@@ -223,6 +224,7 @@ export default function CriarIA(){
    {detalhado&&<><section className="panel">
     <div className="section-head"><h2><Lightbulb size={17}/> 1. Assunto do vídeo</h2></div>
     <label>Tema ou ideia<input value={b.tema||''} onChange={e=>set({tema:e.target.value})} placeholder="Ex.: Por que o céu é azul?"/></label>
+    <FormatosIA b={b} set={set}/>
     <div className="row-gap left mt">
      <button className="subtle" disabled={!!busy} onClick={()=>fazer('ideias',async()=>{ const r=await pedirIdeias(cfg,{...b,quantidade:6}); setIdeias(r.ideias); if(!r.ideias.length) toast('A IA não trouxe ideias. Tente outro nicho.','info'); })}>{busy==='ideias'?<Loader2 size={15} className="spin"/>:<Lightbulb size={15}/>} Sugerir pautas originais</button>
     </div>

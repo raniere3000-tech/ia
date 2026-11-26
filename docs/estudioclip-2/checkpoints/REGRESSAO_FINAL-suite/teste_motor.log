@@ -1,0 +1,59 @@
+T2: boneco 2D articulado
+  ok  IK leva a mão exatamente ao alvo em todos os pontos de alcance (erro 0.0000)
+  ok  alvo fora do alcance: o braço estica na direção dele, sem quebrar
+  ok  pose desconhecida é descartada; ações do catálogo ficam
+  ok  só objetos da lista e só em ações de mão
+  ok  alcançar guarda alvo e lado
+  ok  vogais do texto viram formas de boca (a, o/u, e/i)
+  ok  com texto: boca por texto + volume (marcado como aproximação)
+  ok  sem texto: só volume; sem áudio: boca parada
+  ok  mesmo personagem = mesmas peças (nome e voz não mexem no desenho)
+  ok  trocar a roupa muda a assinatura (nada muda escondido)
+  ok  biblioteca lista poses, ações e versão do rig
+  ok  o objeto entra no desenho da cena
+  ok  cena com IK, objeto e pose renderiza e passa na conferência []
+  ok  render determinístico: mesma cena, mesmo arquivo (sha256 igual)
+T3: render por plano
+  ok  só cenas com 2+ planos (e fora do 3D) vão por pedaço; o resto segue o caminho antigo
+  ok  primeira vez: os 3 planos são feitos
+  ok  cena montada dos pedaços tem a duração certa (3.000 s) e passa na conferência []
+  ok  mesma duração do jeito antigo (cena inteira)
+  ok  mudou só o plano 2: só ele é refeito, os outros vêm do cache
+  ok  vídeo novo (hash novo) e completo
+     (plano 2 sozinho: 0.97 s; cena inteira: 0.97 s)
+  ok  "refazer este plano" muda só a chave dele
+  ok  mudou o conteúdo da cena (texto, voz, personagem): todos os planos refazem
+  ok  cancelar no meio não deixa arquivo pela metade
+  ok  retomar termina a cena reaproveitando o que já estava pronto
+T4: diretor de qualidade
+  ok  close em quem corre: "sai do quadro" com evidência e instante
+  ok  dois personagens no mesmo lugar: "um esconde o outro"
+  ok  laudo com todos os campos pedidos (status, cena, plano, timecode, evidência, tipo, severidade, proposta, tentativas)
+  ok  correção localizada: close vira aberto e quem não fala vai para um lado livre
+  ok  depois da correção o defeito some
+  ok  sem correção segura: para em 0 tentativa(s) e vai para revisão humana (sem laço)
+  ok  limite padrão: 2 correções por defeito
+  ok  alerta estético só sinaliza (não reprova); laudo separa medido de opinião
+  ok  falha técnica reprova
+  ok  vídeo bom passa
+  ok  fixture com defeito técnico (bytes estragados) é reprovada: ['O vídeo tem 7 erro(s) de decodificação (ex.: [h264 @ 0x56518195cd00] Invalid NAL unit size (1509950869 > 1429).).']
+  ok  tamanho errado reprova
+  ok  legenda com tempo errado reprova
+T5: efeitos, som e área segura
+  ok  efeitos sonoros: só os da lista, em ordem de tempo
+  ok  tremor só quando pedido de verdade (true)
+  ok  câmera treme só na janela do plano pedido (sem borda preta)
+  ok  sons sintetizados entram no instante certo
+  ok  fumaça e nuvens em camada (paralaxe) entram no desenho
+  ok  cena com efeitos e som passa na conferência []
+  ok  legenda dentro da área segura das redes (margem de baixo 95px)
+  ok  Galeria: cada estilo diz como é feito e o que não faz
+  ok  nenhum cartão de estilo duplicado
+T7: 3D
+  ok  acha o vídeo 3D já feito (sem mover nem apagar)
+  ok  3D e 2D renderizam a mesma cena e passam na conferência ()
+  ok  fora do celular: continua beta e diz que não serve para decidir
+     (sandbox: 2D 2.6 s/s, 3D 0.95 s/s, loop 3D 0.86 s/s)
+  ok  laudo do 3D gravado
+
+50 ok, 0 falhas   (pasta /tmp/ec-motor-7qeedv3e)

@@ -1,3 +1,4 @@
+import Indicadores from './Indicadores';
 import { useRef, useState } from 'react';
 import { BrainCircuit, FlaskConical, Loader2, Undo2, Upload } from 'lucide-react';
 import { useApp } from '../state';
@@ -45,6 +46,10 @@ export default function Aprendizado(){
     {d.fontes.length>0&&<ul className="skill-regras">{d.fontes.map(f=><li key={f.fonte+f.rede}>{f.fonte==='rede'?'Lido da rede':'Importado por você'} • {NOME_REDE[f.rede]||f.rede} • {f.retratos} medida(s) • {dia(f.de)} a {dia(f.ate)}</li>)}</ul>}
     {d.importacoes.length>0&&<details><summary>Arquivos importados ({d.importacoes.length})</summary><ul className="skill-regras">{d.importacoes.map(i=><li key={i.id}>{i.nome} • {i.linhas} linha(s){i.recusadas?` • ${i.recusadas} recusada(s)`:''} • {dia(i.t)} <button className="subtle sm" onClick={()=>{ if(confirm('Apagar este arquivo importado e o efeito dele?')) rodar('apagar',()=>apagarAprendizado(cfg,{alvo:'importacao',id:i.id}),'Importação apagada.'); }}>Apagar</button></li>)}</ul></details>}
 
+    {d.inteligencia_habilitada===true?<Indicadores/>:<section className="panel"><h3>Inteligência — indicadores reais</h3>
+      <p className="hint warn">{d.inteligencia_habilitada===false
+        ?'Desligada neste servidor. Reinicie com: bash ~/ia/servidor/atualizar-termux.sh (ou ligue com INTELIGENCIA_METRICAS=1).'
+        :'O servidor do celular está desatualizado e não conhece esta página. Rode no Termux: bash ~/ia/servidor/atualizar-termux.sh'}</p></section>}
     <h4>O que dá para dizer hoje</h4>
     <ul className="ag-aprend">{d.variaveis.map(v=><li key={v.variavel}>
       <b>{v.nome}</b> <span className={'tag '+(v.estado==='tendência'?'ok':v.estado==='dados insuficientes'?'warn':'info')}>{v.estado==='tendência'?'tendência':v.estado==='dados insuficientes'?'dados insuficientes':'sem diferença clara'}</span>
@@ -62,7 +67,8 @@ export default function Aprendizado(){
     {ex?<div className="ag-teste">
       <p><b>{ex.nome}</b> — {ex.resultado}</p><p className="hint">{ex.mensagem}</p>
       <p className="hint">A ({ex.lados.a.valor}): {ex.lados.a.n} vídeo(s) • B ({ex.lados.b.valor}): {ex.lados.b.n} vídeo(s){Object.keys(ex.fixos).length?` • fixo: ${Object.entries(ex.fixos).map(([k,x])=>`${k}=${x}`).join(', ')}`:''}</p>
-      {ex.variavel==='estilo'&&<p className="hint">Enquanto o teste está ativo, o Agente 1 sorteia o estilo só entre A e B.</p>}
+      {ex.contexto&&<p className="hint">Teste manual: {ex.contexto.canal} • {ex.contexto.vertente} • {ex.contexto.rede}. Apenas publicações posteriores à criação do teste entram na amostra. Mantenha os demais fatores fixos; não há distribuição automática ou mudança no DNA.</p>}
+      {ex.variavel==='estilo'&&!ex.contexto&&<p className="hint">Enquanto o teste está ativo, o Agente 1 sorteia o estilo só entre A e B.</p>}
       <button className="subtle sm" disabled={!!busy} onClick={()=>rodar('encerrar',()=>encerrarTeste(cfg,ex.id),'Teste encerrado.')}>Encerrar teste</button>
     </div>:<div className="ag-grade">
       <label>Variável<select value={t.variavel} onChange={e=>setT({...t,variavel:e.target.value})}>{d.variaveis.map(v=><option key={v.variavel} value={v.variavel}>{v.nome}</option>)}</select></label>

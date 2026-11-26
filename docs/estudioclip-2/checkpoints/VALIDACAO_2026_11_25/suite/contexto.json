@@ -1,0 +1,6 @@
+{
+  "sha": "3ef0d8150302894a21e91fd63d7ac662832532c8",
+  "branch": "codex/validacao-recursos-20261125",
+  "inicio": 1795577740.563622,
+  "comando": "PYTHONPATH=servidor python servidor/testes/teste_*.py, um processo por arquivo"
+}

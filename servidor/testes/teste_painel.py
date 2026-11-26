@@ -148,5 +148,41 @@ confere([(j['id'], j['status']) for j in db.todos('SELECT id, status FROM jobs O
 txt = json.dumps(r)
 confere('senha-de-teste-123' not in txt and 'token' not in txt.lower(), 'resposta sem senha nem token')
 
+print('5. execução automática fora da fila')
+from unittest.mock import patch
+
+# Sem job rodando, reproduz a rotina do relógio mantendo apenas o pedido na fila.
+db.executar("UPDATE jobs SET status='concluido', terminado=? WHERE id='j5'", agora)
+ag.etapa('Etapa antiga', 70)
+st, parado = api('/api/v1/dashboard/resumo', TOK)
+confere(not next(a for a in parado['agentes'] if a['id'] == 'agente1')['atual'],
+        'etapa antiga sem execução não aparece como trabalho ativo')
+confere(ag.OCUPADO.acquire(blocking=False), 'trava de execução do teste adquirida')
+try:
+    ag.etapa('Editor e diretor trabalhando no corte 1 de 6', 35)
+    with patch.object(ag, 'PENDENTES', lambda: 9):
+        st, direto = api('/api/v1/dashboard/resumo', TOK)
+    a1 = next(a for a in direto['agentes'] if a['id'] == 'agente1')
+    confere(a1['estado'] == 'trabalhando' and a1['estado_real'] == 'ativo',
+            'rotina automática deixa o Agente 1 trabalhando no painel e no Coordenador')
+    confere(len(a1['atual']) == 1 and a1['atual'][0]['progresso'] == 35 and
+            a1['atual'][0]['etapa'] == 'Editor e diretor trabalhando no corte 1 de 6',
+            'painel mostra etapa e progresso medidos da execução automática')
+    confere(direto['totais']['em_producao'] == 2, 'uma execução direta + um pedido na fila, sem contar os seis cortes ou pendentes como trabalhos')
+    db.executar("UPDATE jobs SET status='rodando', terminado=NULL WHERE id='j5'")
+    st, junto = api('/api/v1/dashboard/resumo', TOK)
+    a1 = next(a for a in junto['agentes'] if a['id'] == 'agente1')
+    confere(junto['totais']['em_producao'] == 2 and len(a1['atual']) == 1 and a1['atual'][0]['job'] == 'j5',
+            'execução pela fila e trava ativa contam uma única vez')
+finally:
+    ag.etapa('')
+    ag.OCUPADO.release()
+    db.executar("UPDATE jobs SET status='concluido', terminado=? WHERE id='j5'", agora)
+with patch.object(ag, 'PENDENTES', lambda: 9):
+    st, fim = api('/api/v1/dashboard/resumo', TOK)
+a1 = next(a for a in fim['agentes'] if a['id'] == 'agente1')
+confere(not a1['atual'] and a1['estado_real'] != 'ativo' and fim['totais']['em_producao'] == 1,
+        'ao terminar libera a atividade e reduz a produção, mesmo com pedidos pendentes')
+
 print(f'\n{ok_n} ok, {falhas} falharam')
 sys.exit(1 if falhas else 0)

@@ -1,0 +1,118 @@
+0. Preparo
+  ok  esteira desligada no começo
+1. Segurança da API
+  ok  sem sessão válida: recusado (401)
+  ok  referência com caminho: 400 (400)
+  ok  origem desconhecida: 400 (400)
+  ok  corte inexistente: 404 (404)
+  ok  variantes demais: 400 (400)
+  ok  arquivo fora da pasta de dados recusado (403)
+fila: agente6.thumbnail O vídeo não abre (arquivo incompleto ou corrompido). Nenhuma capa foi feita.
+  ok  vídeo corrompido: nenhuma capa, falhou com motivo (falhou: O vídeo não abre (arquivo incompleto ou corrompido). Nenhuma capa foi feita.)
+  ok  capacidades por rede, nada "testado" antes de envio real
+2. IA desligada
+  ok  IA sem configuração: 503 com orientação (503)
+3. Capas de um corte do Agente 1 (9:16)
+  ok  pedido vira trabalho na fila, sem imagem na resposta (200)
+  ok  pedido repetido (duplo clique) devolve o mesmo
+  ok  trabalho na classe pesada
+  ok  modo supervisionado: espera sua escolha (aguardando_escolha )
+  ok  3 capas com hashes diferentes
+  ok  três composições diferentes: cheia, faixa, dividido
+  ok  quadros de momentos diferentes do vídeo
+  ok  vídeo vertical: capas 9:16 (1080x1920)
+  ok  laudo diz o método usado
+  ok  legibilidade medida a 120 px
+  ok  aprovadas não têm bloqueio
+  ok  capa 1 gravada com o hash certo e até 2 MB
+  ok  capa 2 gravada com o hash certo e até 2 MB
+  ok  capa 3 gravada com o hash certo e até 2 MB
+  ok  link assinado abre a imagem sem sessão (200)
+  ok  sem assinatura e sem sessão: recusado (401)
+  ok  assinatura adulterada: recusado (403)
+  ok  texto automático: gancho completo do corte, com pontuação e mais de 4 palavras
+4. Escolha e pacote
+  ok  pelo menos uma capa aprovada pelo diretor
+  ok  versão errada: 409 (409)
+  ok  escolha feita: pacote pronto (200)
+  ok  pacote liga o vídeo e a capa pelos hashes
+  ok  evento thumbnail.pacote_pronto registrado (para o Agente 7)
+  ok  Agente 2 acha a capa aprovada para este arquivo
+  ok  o corte mostra a capa escolhida
+  ok  capa mudou depois da aprovação: não vai junto
+  ok  pacote inválido depois que a capa mudou
+  ok  escolher de novo depois de restaurar
+5. Refazer só uma capa
+  ok  pedido de refazer aceito (200)
+  ok  só a capa 2 ganhou versão nova
+  ok  emoji removido e acento mantido no texto exato da refação
+  ok  aviso de emoji removido
+  ok  refazer outra capa não derruba a escolha
+6. Texto exato longo, quebras, 16:9 e área segura
+  ok  16:9 cheia: texto dentro da área segura (ou estouro detectado)
+  ok  16:9 faixa: texto dentro da área segura (ou estouro detectado)
+  ok  16:9 dividido: texto dentro da área segura (ou estouro detectado)
+  ok  16:9 moldura: texto dentro da área segura (ou estouro detectado)
+  ok  16:9 cheia_topo: texto dentro da área segura (ou estouro detectado)
+  ok  16:9 caixa: texto dentro da área segura (ou estouro detectado)
+  ok  9:16 cheia: texto dentro da área segura (ou estouro detectado)
+  ok  9:16 faixa: texto dentro da área segura (ou estouro detectado)
+  ok  9:16 dividido: texto dentro da área segura (ou estouro detectado)
+  ok  9:16 moldura: texto dentro da área segura (ou estouro detectado)
+  ok  9:16 cheia_topo: texto dentro da área segura (ou estouro detectado)
+  ok  9:16 caixa: texto dentro da área segura (ou estouro detectado)
+  ok  4:5 cheia: texto dentro da área segura (ou estouro detectado)
+  ok  4:5 faixa: texto dentro da área segura (ou estouro detectado)
+  ok  4:5 dividido: texto dentro da área segura (ou estouro detectado)
+  ok  4:5 moldura: texto dentro da área segura (ou estouro detectado)
+  ok  4:5 cheia_topo: texto dentro da área segura (ou estouro detectado)
+  ok  4:5 caixa: texto dentro da área segura (ou estouro detectado)
+  ok  1:1 cheia: texto dentro da área segura (ou estouro detectado)
+  ok  1:1 faixa: texto dentro da área segura (ou estouro detectado)
+  ok  1:1 dividido: texto dentro da área segura (ou estouro detectado)
+  ok  1:1 moldura: texto dentro da área segura (ou estouro detectado)
+  ok  1:1 cheia_topo: texto dentro da área segura (ou estouro detectado)
+  ok  1:1 caixa: texto dentro da área segura (ou estouro detectado)
+  ok  texto de 2 linhas cabe na maioria das composições (24 de 24)
+  ok  texto que não cabe é detectado (overflow), não cortado em silêncio
+7. Capas de um vídeo do Agente 3 (16:9)
+  ok  pedido do Agente 3 aceito (200)
+  ok  vídeo horizontal: capas 16:9 (1280x720)
+  ok  texto exato mantido
+  ok  lista de fontes mostra corte e vídeo do Agente 3 com o pedido
+  ok  vídeo mudou: a escolha da capa caiu sozinha
+  ok  não deixa escolher capa feita para a versão antiga (409)
+8. Capa reprovada e perfil de marca
+  ok  perfil de marca criado (200)
+  ok  cor inválida recusada
+  ok  mudar perfil cria versão nova sem perder o resto
+  ok  perfil "geral" aplicado sozinho (identidade 15)
+  ok  capa reprovada pede confirmação (409)
+  ok  com confirmação: escolha manual registrada
+  ok  nova escolha para o mesmo vídeo derruba a anterior (uma capa por vídeo)
+  ok  bloqueio crítico: nem com confirmação (409)
+9. Cancelar e reiniciar
+  ok  cancelado na fila (200)
+  ok  cancelado: nenhuma capa feita
+  ok  reinício: não cria capas em dobro
+10. Esteira ligada
+  ok  sem certificado do vídeo: espera o diretor, sem capa (aguardando_video)
+11. Agente 2 envia a capa ao YouTube (falso)
+  ok  vídeo postado
+  ok  capa aprovada enviada para o vídeo certo, com o mesmo hash
+  ok  YouTube vira "funcionou num envio real" só depois do envio
+  ok  YouTube recusou a capa: o vídeo segue postado e fica a nota (sem fingir que a capa foi)
+  ok  "exigir capa" ligado: sem capa aprovada, o YouTube não sai
+12. Modo automático e desempenho
+  ok  criou capas sozinho para corte novo (1)
+  ok  automático: escolheu a melhor aprovada (pronto)
+  ok  desempenho com tempos medidos e sem CTR
+  ok  modo inválido recusado
+13. Criar sozinho também no supervisionado, com cortes já agendados
+  ok  modo manual: não cria nada sozinho
+  ok  "criar sozinho" vem ligado
+  ok  supervisionado: cria capa para corte já agendado, primeiro o que sai antes (2)
+  ok  corte já postado não ganha capa
+  ok  supervisionado: as capas esperam a sua escolha (aguardando_escolha)
+
+101 ok, 0 falha(s)   (pasta /tmp/ec-thumb-r0rpq43l)

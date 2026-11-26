@@ -63,7 +63,9 @@ export function useResumo(cfg:CfgSrv,periodo:Periodo,seg=30){
     setDados(ULTIMO.get(chave)||null); setErro(''); setAntigo(false);
     ler(); if(!seg) return;
     const iv=setInterval(()=>{ if(document.visibilityState==='visible') ler(); },seg*1000);
-    return ()=>{ clearInterval(iv); pedido.current++; };
+    const atualizar=()=>{ void ler(); };
+    addEventListener('estudio:decisoes',atualizar);
+    return ()=>{ clearInterval(iv); removeEventListener('estudio:decisoes',atualizar); pedido.current++; };
   },[ler,seg,chave]);
   return {dados,erro,carregando,antigo,recarregar:ler};
 }

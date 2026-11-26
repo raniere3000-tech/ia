@@ -1,0 +1,25 @@
+Manifesto
+  ok  recusa sem quadros
+  ok  recusa duração zero
+  ok  recusa áudio no lugar de imagem
+  ok  recusa caminho estranho
+  ok  recusa imagem no lugar do áudio
+  ok  manifesto válido: total e tipos certos
+  ok  legenda sem chaves (não vira comando de estilo)
+Exportação com quadro que falha
+  ok  pedido entra na fila
+  FALHOU falha diz qual quadro
+  FALHOU diagnóstico tem quadro, segundo, mídia e comando
+  FALHOU estado devolve o diagnóstico
+Nova tentativa refaz só o quadro que falhou
+  FALHOU exportação termina (O quadro 1 (00:00.00, a.png) falhou: o pedaço ficou com 2.00s em vez de 2.40s. Os outros quadros ficaram guardados; tentar de novo refaz só este.)
+Corte seco, sem áudio e sem legenda
+  ok  corte seco funciona (None)
+Editor: corte e transição misturados, efeitos, textos e junção em partes
+  ok  cor estranha vira branco; 1º quadro sempre entra seco
+  FALHOU exporta com todos os efeitos e junção em partes (O quadro 1 (00:00.00, a.png) falhou: o pedaço ficou com 1.20s em vez de 1.60s. Os outros quadros ficaram guardados; tentar de novo refaz só este.)
+Traceback (most recent call last):
+  File "/workspace/scratch/ecb4bcf1d97f/estudioclip/servidor/testes/teste_exportacao.py", line 138, in <module>
+    ass = (ex.PASTA / next(d.name for d in ex.PASTA.iterdir() if (d / 'legendas.ass').exists() and 'Título' in (d / 'legendas.ass').read_text())) / 'legendas.ass'
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+StopIteration

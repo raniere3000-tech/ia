@@ -1,0 +1,71 @@
+DL.03 Nomes seguros
+  ok  títulos iguais viram nomes diferentes (número + ID)
+  ok  nome seguro para '../../etc/passwd' -> '007 - etcpasswd - zz99aa'
+  ok  nome seguro para 'a/b\\c:d*e?f"g<h>i|j' -> '007 - abcdefghij - zz99aa'
+  ok  nome seguro para 'CON' -> '007 - CON - zz99aa'
+  ok  nome seguro para '....' -> '007 - Video - zz99aa11bb - zz99aa'
+  ok  nome seguro para '   ' -> '007 - Video - zz99aa11bb - zz99aa'
+  ok  nome seguro para 'xxxxxxxxxxxxxxxxxxxxxxxx' -> '007 - xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+  ok  nome seguro para 'Vídeo 🔥🚀 incrível ✨ — aç' -> '007 - Vídeo incrível — ação! - zz99aa'
+  ok  nome seguro para '\x00\x01evil.mp4' -> '007 - evil.mp4 - zz99aa'
+  ok  nome seguro para 'a\u202eb' -> '007 - a b - zz99aa'
+  ok  sem título: "Video - ID"
+  ok  acentos ficam; emoji sai só do nome do arquivo
+DL.03 TXT de publicação
+  ok  cabeçalho com título real e ID
+  ok  um bloco por rede do post
+  ok  emoji, acento e quebra de linha preservados
+  ok  links reais do YouTube (o publicado e o original)
+  ok  hashtags do YouTube vêm da legenda salva
+  ok  campo descrição não repete título, hashtags nem link do texto pronto
+  ok  YouTube também tem o texto pronto para copiar
+  ok  TikTok usa os metadados próprios dele
+  ok  TikTok: texto pronto é o do TikTok
+  ok  Instagram sem link próprio: só o original (nada inventado)
+  ok  campos ausentes: "[não configurado]" e nenhum bloco de cópia vazio
+DL.03/04 API, segurança e MP4 individual
+  ok  sem login: recusado (401)
+  ok  consulta sem login: recusada (401)
+  ok  sem vídeo escolhido: 400
+  ok  formato inválido: 400
+  ok  passou do limite por vez: 400
+  ok  pedido aceito: duplicado some, inexistente e sem arquivo ficam indisponíveis (5/3)
+  ok  numeração na ordem apresentada
+  ok  caminho malicioso do cliente é só um ID inexistente
+  ok  resultado parcial declarado (parcial, 3 preparados)
+  ok  nome do ZIP do pacote completo
+  ok  ZIP entregue como download (com nome em UTF-8)
+  ok  ZIP íntegro
+  ok  estrutura: pasta por vídeo com MP4 e TXT com o mesmo nome base
+  ok  capa com a extensão VERDADEIRA (PNG, mesmo salva como .jpg)
+  ok  a capa do ZIP é a aprovada, byte a byte
+  ok  cada MP4 corresponde ao vídeo certo (títulos iguais não se misturam)
+  ok  vídeo sem capa aprovada: sem capa no ZIP, MP4 e TXT seguem
+  ok  relatório lista ausentes e vídeos sem capa
+  ok  TXT em UTF-8 dentro do ZIP
+  ok  nenhum caminho absoluto ou relativo dentro do ZIP
+  ok  transferência interrompida retoma por Range e fecha igual
+  ok  sem assinatura nem login: recusado
+  ok  assinatura adulterada: 403
+  ok  assinatura de um arquivo não vale para outro endereço
+  ok  ZIP só com vídeos: sem pastas, sem capa, sem TXT, mesmos nomes base; completo = "pronto"
+  ok  MP4 individual: link só para quem tem arquivo; o ausente é declarado
+  ok  MP4 individual: bytes do arquivo final e nome base no cabeçalho
+  ok  item indisponível não é entregue
+  ok  posts (status, horários, redes, links) exatamente iguais
+  ok  nenhuma capa revogada, nenhum job de agente criado
+  ok  vídeos originais intactos
+DL.04 Capa desatualizada, falta de espaço, cancelar, repetir
+  ok  capa de versão antiga não vai; o MP4 novo sim; relatório avisa (ausente)
+  ok  falta de espaço: falha clara, sem arquivo pela metade
+  ok  enquanto espera a vez, o estado é "preparando"
+  ok  cancelado: estado certo e temporários apagados
+  ok  cancelar nunca apaga o vídeo original
+  ok  cancelar de novo: 409
+  ok  tentar novamente: novo preparo com os mesmos vídeos, completo
+  ok  o pedido cancelado antigo foi limpo
+  ok  preparo interrompido por reinício vira falha com saída (tentar novamente)
+  ok  arquivos prontos velhos são apagados; vídeos originais não
+  ok  status dos posts continuam os de antes
+
+65 ok, 0 falha(s)   (pasta /tmp/ec-dl-wa181j3p)

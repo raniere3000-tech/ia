@@ -16,6 +16,7 @@ import hashlib
 import io
 import json
 import math
+import os
 import re
 import time
 import uuid
@@ -26,6 +27,7 @@ import modelos as mo
 
 VARIAVEIS = {'estilo': 'Estilo visual', 'modelo': 'Template', 'faixa': 'Dia e hora', 'duracao': 'Duração', 'gancho': 'Tipo de gancho', 'formato': 'Formato', 'perfil': 'Perfil',
              'arranjo': 'Tela dividida (comparação)'}
+ALVOS_TESTE = dict(VARIAVEIS, roteiro='Roteiro', efeitos='Efeitos', capa='Capa', horario='Hora UTC', criterios='Critérios QA')
 APLICAVEIS = ('estilo',)                 # onde já existe um sorteio que pode usar os pesos; o template tem os pesos próprios do Agente 1
 REDES = ('youtube', 'instagram', 'facebook', 'kwai', 'tiktok')
 MIN_AMOSTRAS = 5                         # vídeos medidos por valor antes de dizer qualquer coisa
@@ -108,9 +110,13 @@ def _hash(d: dict) -> str:
     return hashlib.sha256(json.dumps(d, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-def _gravar_retrato(fonte: str, rede: str, item: str, variaveis: dict, metricas: dict, ini, fim, imp: str = '') -> bool:
+def _gravar_retrato(fonte: str, rede: str, item: str, variaveis: dict, metricas: dict, ini, fim, imp: str = '', publicacao: dict | None = None) -> bool:
     variaveis = {k: _txt(v) for k, v in variaveis.items() if k in VARIAVEIS and _txt(v)}
-    metricas = {k: metricas.get(k) for k in ('views', 'curtidas', 'comentarios', 'compartilhamentos') if metricas.get(k) is not None}
+    if publicacao:
+        variaveis['_publicacao'] = json.loads(json.dumps(publicacao))
+    metricas = metricas_validas(metricas)
+    if not metricas:
+        return False
     base = {'fonte': fonte, 'rede': rede, 'item': item, 'v': variaveis, 'm': metricas, 'ini': ini, 'fim': fim}
     h = _hash(base)
     if db.um('SELECT 1 FROM aprendizado_snapshots WHERE hash=?', h):
@@ -121,6 +127,18 @@ def _gravar_retrato(fonte: str, rede: str, item: str, variaveis: dict, metricas:
 
 
 # ---------------------------------------------------------------- entrada 1: o que o servidor leu das redes
+def metricas_validas(m: dict) -> dict:
+    out = {}
+    for k in ('views', 'curtidas', 'comentarios', 'compartilhamentos'):
+        try:
+            n = _num(m.get(k))
+        except (ValueError, TypeError, OverflowError):
+            n = None
+        if n is not None:
+            out[k] = n
+    return out
+
+
 def variaveis_do_corte(c: dict) -> dict:
     ini, fim = c.get('ini'), c.get('fim')
     return {'estilo': c.get('estilo_visual') or '', 'modelo': c.get('modelo_nome') or c.get('modelo') or '', 'faixa': c.get('faixa') or '',
@@ -129,17 +147,34 @@ def variaveis_do_corte(c: dict) -> dict:
             'arranjo': {'empilhado': 'Um em cima do outro', 'lado': 'Lado a lado'}.get(c.get('arranjo') or '', '')}
 
 
-def capturar() -> dict:
+def capturar(publicacoes: list | None = None) -> dict:
     """Guarda um retrato de cada corte já medido numa rede (idempotente). Só números que a rede entregou."""
     import agente as ag
     novos = 0
+    representados = set()
+    posts = {p['id']: p for p in publicacoes or []}
     for c in ag.estado()['cortes']:
         if not c.get('medido') or not c.get('metricas'):
             continue
         fim = c.get('postado') or c.get('criado') or 0
         for rede, m in c['metricas'].items():
-            if rede in REDES and isinstance(m, dict) and resultado(m) is not None:
-                novos += _gravar_retrato('rede', rede, c.get('id', ''), variaveis_do_corte(c), m, fim, fim)
+            if rede in REDES and isinstance(m, dict) and resultado(metricas_validas(m)) is not None:
+                destino = ((posts.get(c.get('post')) or {}).get('redes') or {}).get(rede) or {}
+                novos += _gravar_retrato('rede', rede, c.get('id', ''), variaveis_do_corte(c), m, fim, c.get('metricas_em'), publicacao=destino.get('publicacao'))
+                if c.get('post'):
+                    representados.add((c['post'], rede))
+    if os.getenv('METRICAS_PUBLICACOES', '0') == '1':
+        for p in publicacoes or []:
+            if not p.get('medido') or not isinstance(p.get('metricas'), dict):
+                continue
+            for rede, m in p['metricas'].items():
+                destino = (p.get('redes') or {}).get(rede) or {}
+                if (rede not in REDES or destino.get('status') != 'postado' or not isinstance(m, dict)
+                        or (p['id'], rede) in representados):
+                    continue
+                inicio = destino.get('feito') or p.get('quando')
+                novos += _gravar_retrato('rede', rede, 'post:' + p['id'],
+                                        {'modelo': p.get('modelo') or ''}, m, inicio, p.get('metricas_em'), publicacao=destino.get('publicacao'))
     if novos:
         db.evento('aprendizado', 'capturar', '', {'novos': novos})
     return {'novos': novos}
@@ -325,7 +360,7 @@ def desfazer(variavel: str, quem: str = 'site') -> dict:
 def sortear_estilo(ok: list, rnd) -> str:
     """Usado pelo Agente 1: com pesos aprendidos e/ou teste A/B ativo no estilo; senão, sorteio igual (como sempre foi)."""
     ex = experimento_ativo()
-    if ex and ex['variavel'] == 'estilo':
+    if ex and not ex.get('contexto') and ex['variavel'] == 'estilo':
         par = [x for x in (ex['a'], ex['b']) if x in ok]
         if par:
             return rnd.choice(par)
@@ -344,27 +379,57 @@ def experimento_ativo() -> dict | None:
 
 
 def _exp(r: dict) -> dict:
-    return {'id': r['id'], 'nome': r['nome'], 'variavel': r['variavel'], 'a': r['a'], 'b': r['b'], 'fixos': json.loads(r['fixos_json']), 'min_amostras': r['min_amostras'],
-            'status': r['status'], 'criado': r['criado'], 'encerrado': r['encerrado']}
+    fixos = json.loads(r['fixos_json'])
+    contexto = fixos.pop('_contexto', None)
+    return {'id': r['id'], 'nome': r['nome'], 'variavel': r['variavel'], 'a': r['a'], 'b': r['b'], 'fixos': fixos,
+            'contexto': contexto, 'min_amostras': r['min_amostras'], 'status': r['status'], 'criado': r['criado'], 'encerrado': r['encerrado']}
 
 
-def criar_experimento(d: dict) -> dict:
+def contexto_teste(d: dict) -> dict:
+    if not isinstance(d, dict) or d.get('vertente') not in ('cortes', 'criacao_ia') or not str(d.get('canal') or '').strip():
+        raise ErroAprendizado('Teste contextual exige canal e vertente conhecidos.')
+    if d.get('rede') not in REDES or d.get('metrica') not in ('views', 'curtidas', 'comentarios', 'compartilhamentos'):
+        raise ErroAprendizado('Rede ou métrica inválida para o teste.')
+    return {k: str(d[k])[:100] for k in ('canal', 'vertente', 'rede', 'metrica')}
+
+
+def valor_contexto(c: dict, alvo: str):
+    if alvo == 'gancho': return c.get('gancho')
+    if alvo == 'roteiro': return c.get('roteiro_sha')
+    if alvo == 'capa': return (c.get('capa_selecionada') or {}).get('sha')
+    if alvo == 'criterios': return c.get('criterio_qa')
+    if alvo == 'horario': return time.strftime('%Hh UTC', time.gmtime(c['publicado_em'])) if c.get('publicado_em') else None
+    if alvo == 'efeitos' and isinstance(c.get('efeitos'), dict):
+        return ','.join(sorted({e['tipo'] for e in c['efeitos'].get('efeitos', []) if e.get('status') == 'aplicado'})) or 'nenhum'
+    return c.get(alvo)
+
+
+def criar_experimento(d: dict, *, c=None) -> dict:
+    if c is None:
+        with db.tx() as conn:
+            ex = criar_experimento(d, c=conn)
+        db.evento('aprendizado', 'experimento_criado', 'experimento:' + ex['id'], {'variavel': ex['variavel'], 'contexto': ex.get('contexto')})
+        return ex
     var, a, b = str(d.get('variavel', '')), _txt(d.get('a')), _txt(d.get('b'))
-    if var not in VARIAVEIS:
+    if var not in ALVOS_TESTE:
         raise ErroAprendizado('Escolha a variável que vai mudar.')
+    contexto = contexto_teste(d['contexto']) if d.get('contexto') is not None else None
+    if var not in VARIAVEIS and contexto is None:
+        raise ErroAprendizado('Esta variável exige teste contextual.')
     if not a or not b or a == b:
         raise ErroAprendizado('Informe dois valores diferentes para comparar (A e B).')
     fixos = d.get('fixos') or {}
     if not isinstance(fixos, dict) or var in fixos or any(k not in VARIAVEIS for k in fixos):
         raise ErroAprendizado('Os valores fixos precisam ser de OUTRAS variáveis. Muda uma coisa por vez.')
     fixos = {k: _txt(v) for k, v in fixos.items() if _txt(v)}
+    if contexto:
+        fixos['_contexto'] = contexto
     if experimento_ativo():
         raise ErroAprendizado('Já existe um teste ativo. Encerre-o antes: o painel só roda um teste por vez para não misturar causas.', 409)
     mn = max(MIN_AMOSTRAS, min(int(d.get('min_amostras') or MIN_AMOSTRAS), 100))
     eid = uuid.uuid4().hex[:10]
-    db.executar('INSERT INTO aprendizado_experimentos (id, nome, variavel, a, b, fixos_json, min_amostras, status, criado) VALUES (?,?,?,?,?,?,?,?,?)',
-                eid, _txt(d.get('nome'), 80) or f'{VARIAVEIS[var]}: {a} contra {b}', var, a, b, json.dumps(fixos, ensure_ascii=False), mn, 'ativo', time.time())
-    db.evento('aprendizado', 'experimento_criado', 'experimento:' + eid, {'variavel': var, 'a': a, 'b': b, 'fixos': fixos})
+    c.execute('INSERT INTO aprendizado_experimentos (id, nome, variavel, a, b, fixos_json, min_amostras, status, criado) VALUES (?,?,?,?,?,?,?,?,?)',
+                (eid, _txt(d.get('nome'), 80) or f'{ALVOS_TESTE[var]}: {a} contra {b}', var, a, b, json.dumps(fixos, ensure_ascii=False), mn, 'ativo', time.time()))
     return ler_experimento(eid)
 
 
@@ -373,7 +438,26 @@ def ler_experimento(eid: str) -> dict:
     if not r:
         raise ErroAprendizado('Teste não encontrado.', 404)
     ex = _exp(r)
+    if ex.get('contexto') and ex['status'] == 'encerrado' and r.get('resultado_json'):
+        ex.update(json.loads(r['resultado_json']), aviso_frequencia=FREQUENCIA)
+        return ex
     ret = [x for x in _retratos() if all(x['v'].get(k) == v for k, v in ex['fixos'].items())]
+    if ex.get('contexto'):
+        ret = []
+        renders_vistos = set()
+        for x in indicadores(ex['contexto'])['itens']:
+            ctx = x['publicacao'] or {}
+            metrica = ex['contexto']['metrica']
+            # Só publicações novas após a criação do teste. A amostra da hipótese não é reutilizada.
+            if (ctx.get('publicado_em') or 0) < ex['criado'] or metrica not in x['metricas']:
+                continue
+            render = ctx.get('render_sha')
+            if not render or render in renders_vistos:
+                continue
+            v = {k: valor_contexto(ctx, k) for k in [ex['variavel'], *ex['fixos']]}
+            if v.get(ex['variavel']) in (ex['a'], ex['b']) and all(v.get(k) == val for k, val in ex['fixos'].items()):
+                renders_vistos.add(render)
+                ret.append({'v': v, 'r': x['metricas'][metrica]})
     br = {lado: [x['r'] for x in ret if x['v'].get(ex['variavel']) == ex[lado]] for lado in ('a', 'b')}
     ex['lados'] = {lado: ({'valor': ex[lado], **_estat(v)} if v else {'valor': ex[lado], 'n': 0}) for lado, v in br.items()}
     na, nb = len(br['a']), len(br['b'])
@@ -434,7 +518,12 @@ def apagar(d: dict) -> dict:
 
 
 # ---------------------------------------------------------------- painel
+def inteligencia_ativa() -> bool:
+    return os.getenv('INTELIGENCIA_METRICAS', '1') != '0'
+
+
 def painel() -> dict:
+    import agente as ag
     ret = _retratos()
     fontes: dict = {}
     for r in db.todos('SELECT fonte, rede, COUNT(*) AS n, MIN(periodo_ini) AS a, MAX(periodo_fim) AS b FROM aprendizado_snapshots GROUP BY fonte, rede'):
@@ -457,7 +546,63 @@ def painel() -> dict:
     except Exception:  # noqa: BLE001
         pass
     return {'retratos': len(ret), 'minimo': MIN_AMOSTRAS, 'fontes': list(fontes.values()), 'variaveis': vars_, 'experimentos': exps,
+            'coleta': ag.inventario_metricas(), 'inteligencia_habilitada': inteligencia_ativa(),
             'importacoes': db.todos('SELECT id, nome, formato, linhas, recusadas, t FROM aprendizado_importacoes ORDER BY t DESC LIMIT 20'),
             'historico_pesos': db.todos('SELECT versao, t, variavel, motivo, ativo FROM aprendizado_pesos ORDER BY versao DESC LIMIT 20'),
             'aviso_causa': AVISO_CAUSA, 'aviso_frequencia': FREQUENCIA, 'boas_praticas': apoio,
             'como_voltar': 'Cada peso aprendido tem versão: "Desfazer" volta ao anterior (ou ao sorteio igual). "Apagar dados" tira o efeito dos números apagados.'}
+
+
+def indicadores(filtros: dict | None = None) -> dict:
+    """Leitura dos snapshots existentes: última observação por publicação/rede."""
+    f = filtros or {}
+    vertente, rede, canal = (str(f.get(k) or '') for k in ('vertente', 'rede', 'canal'))
+    if vertente and vertente not in ('cortes', 'criacao_ia', 'manual', 'indisponivel'):
+        raise ErroAprendizado('Vertente desconhecida.')
+    if rede and rede not in REDES:
+        raise ErroAprendizado('Rede desconhecida.')
+    ini, fim = _data(f.get('de')), _data(f.get('ate'))
+    if ini is not None and fim is not None and ini > fim:
+        raise ErroAprendizado('Período invertido.')
+    ultimos = {}
+    canais = set()
+    for r in db.todos('SELECT * FROM aprendizado_snapshots ORDER BY t, id'):
+        v = json.loads(r['variaveis'])
+        ctx = v.get('_publicacao') or {}
+        ch = str(ctx.get('canal') or '')
+        if ch:
+            canais.add(ch)
+        vt = ctx.get('vertente') or 'indisponivel'
+        instante = r['periodo_fim']
+        if ((vertente and vt != vertente) or (rede and r['rede'] != rede) or (canal and ch != canal)
+                or (ini is not None and (instante is None or instante < ini))
+                or (fim is not None and (instante is None or instante >= fim + 86400))):
+            continue
+        # Um ID de publicação é estável mesmo que o corte e o post tenham IDs locais diferentes.
+        identidade = ctx.get('ref') or ctx.get('post') or r['item'] or r['id']
+        key = (r['fonte'], r['rede'], identidade, ctx.get('render_sha'))
+        atual = {'snapshot': r['id'], 'fonte': r['fonte'], 'rede': r['rede'], 'item': r['item'],
+                 'vertente': vt, 'canal': ch or None, 'medido_em': instante,
+                 'metricas': metricas_validas(json.loads(r['metricas'])), 'publicacao': ctx or None,
+                 'registrado_em': r['t']}
+        old = ultimos.get(key)
+        if old is None or (instante if instante is not None else r['t']) >= (old['medido_em'] if old['medido_em'] is not None else old['registrado_em']):
+            ultimos[key] = atual
+    itens = list(ultimos.values())
+    metrica = str(f.get('metrica') or 'views')
+    if metrica not in ('views', 'curtidas', 'comentarios', 'compartilhamentos'):
+        raise ErroAprendizado('Métrica desconhecida.')
+    destaques = []
+    for plataforma in sorted({x['rede'] for x in itens}):
+        grupo = [x for x in itens if x['rede'] == plataforma]
+        ordem = sorted((x for x in grupo if metrica in x['metricas']),
+                       key=lambda x: (-x['metricas'][metrica], x['item']))
+        destaques.append({'rede': plataforma, 'metrica': metrica, 'sem_metrica': len(grupo)-len(ordem), 'videos': ordem[:10]})
+    medidas = {}
+    for k in ('views', 'curtidas', 'comentarios', 'compartilhamentos'):
+        vals = [x['metricas'][k] for x in itens if k in x['metricas']]
+        medidas[k] = {'valor': sum(vals) if vals else None, 'amostras': len(vals)}
+    medidas['retencao'] = {'valor': None, 'amostras': 0}
+    return {'filtros': {'vertente': vertente, 'rede': rede, 'canal': canal, 'de': f.get('de') or '', 'ate': f.get('ate') or ''},
+            'destaques': destaques, 'publicacoes': len(itens), 'medidas': medidas, 'canais': sorted(canais), 'itens': itens,
+            'aviso': 'Última leitura disponível por publicação/rede no período de medição. Ausência não é zero. ' + AVISO_CAUSA}

@@ -78,7 +78,7 @@ PADRAO = {
     'cortes': {
         'ligado': False, 'nichos': ['Games'], 'temas': [], 'temas_outros': False, 'proibidos': ['conteúdo adulto', 'discurso de ódio', 'menores de idade'],
         'min_views': 500000, 'idioma': 'pt', 'regiao': 'BR',
-        'por_semana': 6, 'por_video': 2, 'por_analise': 12, 'so_com_legenda': False, 'dur_min': 60, 'dur_max': 65, 'dur_v': 0, 'nota_min': 60,
+        'por_semana': 6, 'por_video': 2, 'por_analise': 12, 'priorizar_legendas': True, 'dur_min': 60, 'dur_max': 65, 'dur_v': 0, 'nota_min': 60,
         'video_min': 4, 'video_max': 120, 'dias_video': 14, 'hora_ini': 0, 'hora_fim': 24,
         'template': {'legenda': 'destaque', 'cor': '#FFFFFF', 'cor_destaque': '#FFE14D', 'maiusculas': True,
                      'tamanho': 'medio', 'legenda_pos': 'baixo', 'enquadramento': 'desfoque', 'zoom': 1.0,
@@ -174,7 +174,6 @@ def _limpar_cfg(c: dict) -> dict:
     co['por_video'] = max(1, min(LIM_POR_VIDEO, int(_n(co['por_video'], 2))))
     # banco de trechos: quantos trechos a IA aponta numa análise (o que não sai agora fica guardado e vira corte depois, sem IA); 0 = desligado
     co['por_analise'] = max(0, min(20, int(co.get('por_analise') or 0)))
-    co['so_com_legenda'] = co.get('so_com_legenda') is True     # vídeo sem legenda do YouTube: pula em vez de pagar a IA para ouvir
     if co.get('dur_v', 0) < 2:          # versão 2: duração do corte passa a ter padrão de 1 min a 1 min e 5 s (pedido do dono)
         co['dur_min'], co['dur_max'], co['dur_v'] = 60, 65, 2
     co['dur_min'] = max(10, min(175, co['dur_min']))
@@ -252,14 +251,40 @@ def anotar(texto: str, tipo: str = 'info'):
 
 
 JOB_ATUAL = ''          # id do trabalho da fila do Agente 1 rodando agora: vai em cada corte (job_a1) para o Coordenador saber o que saiu dele
+CONTROLE_TRABALHO = threading.local()
 AO_ETAPA = None          # trabalho da fila rodando o Agente 1: recebe (pct, texto) para a barra de progresso do site
 
 
+def atividade_atual() -> dict | None:
+    """Execução viva, inclusive a rotina automática que não passa pela fila.
+
+    Só a trava de execução prova atividade; pedidos pendentes e uma etapa antiga
+    não significam que o agente esteja trabalhando.
+    """
+    if not OCUPADO.locked():
+        return None
+    a = dict(ATUAL)
+    return {'job': JOB_ATUAL or 'agente1:direto', 'titulo': 'Radar e Cortes',
+            'progresso': a['pct'], 'etapa': a['etapa'] or 'Iniciando trabalho',
+            'restante_s': None, 'desde': a['desde'] if a['etapa'] else None,
+            'execucao_direta': True}
+
+
+def verificar_cancelamento():
+    cancelado = getattr(CONTROLE_TRABALHO, 'cancelado', None)
+    if cancelado and cancelado():
+        from fila import Cancelado
+        raise Cancelado()
+
+
 def etapa(texto: str, pct: float = 0):
+    if texto:
+        verificar_cancelamento()
     ATUAL.update(etapa=texto, pct=round(pct), desde=ATUAL['desde'] if texto and ATUAL['etapa'] else time.time())
-    if AO_ETAPA and texto:
+    avisar_etapa = getattr(CONTROLE_TRABALHO, 'etapa', None) or AO_ETAPA
+    if avisar_etapa and texto:
         try:
-            AO_ETAPA(pct, texto)
+            avisar_etapa(pct, texto)
         except Exception as e:  # noqa: BLE001
             if e.__class__.__name__ == 'Cancelado':
                 raise                     # você cancelou o trabalho na fila
@@ -321,16 +346,21 @@ def _pedir_gemini(caminho: str, corpo: dict, chave: str, tempo: int) -> tuple[in
     espera e tenta de novo sozinho algumas vezes antes de desistir."""
     ultimo: Exception | None = None
     for i in range(len(ESPERAS_GEMINI) + 1):
+        verificar_cancelamento()
         try:
             st, _, j = pg.http('POST', f'{URL_GEMINI}/v1beta/models/{caminho}', js=corpo, cab={'x-goog-api-key': chave}, tempo=tempo)
             ultimo = None
         except pg.ErroTemporario as e:
             st, j, ultimo = 0, {}, e
+        verificar_cancelamento()
         ocupado = ultimo is not None or st in (500, 502, 503, 504) or (st >= 400 and st != 429 and _OCUPADO.search(pg._msg(j) or ''))
         if not ocupado:
             return st, j
         if i < len(ESPERAS_GEMINI):
-            time.sleep(ESPERAS_GEMINI[i] + random.random() * 2)
+            fim = time.monotonic() + ESPERAS_GEMINI[i] + random.random() * 2
+            while time.monotonic() < fim:
+                verificar_cancelamento()
+                time.sleep(min(0.3, max(0, fim - time.monotonic())))
     if ultimo is not None:
         raise ErroAgente('Não consegui falar com o Google (a conexão caiu várias vezes). Confira a internet do celular; o agente tenta de novo na próxima rodada.')
     return st, j
@@ -419,9 +449,10 @@ def _detalhes(ids: list) -> dict:
         j = yt('videos', part='snippet,statistics,contentDetails', id=','.join(ids[i:i + 50]), maxResults=50)
         for it in j.get('items', []):
             sn, stt = it.get('snippet', {}), it.get('statistics', {})
+            cd = it.get('contentDetails', {})
             out[it['id']] = {'id': it['id'], 'titulo': sn.get('title', ''), 'canal': sn.get('channelId', ''), 'canal_nome': sn.get('channelTitle', ''),
-                             'views': int(stt.get('viewCount') or 0), 'dur': _iso_dur(it.get('contentDetails', {}).get('duration', '')),
-                             'publicado': sn.get('publishedAt', ''),
+                             'views': int(stt.get('viewCount') or 0), 'dur': _iso_dur(cd.get('duration', '')),
+                             'tem_legenda': cd.get('caption') == 'true', 'publicado': sn.get('publishedAt', ''),
                              'idioma': (sn.get('defaultAudioLanguage') or sn.get('defaultLanguage') or '').lower()[:2]}
     return out
 
@@ -597,7 +628,7 @@ def _casa_tema(titulo: str, temas: list) -> str:
 
 
 def proximo_video(tema: str = '') -> dict | None:
-    """Vídeo novo mais visto, ainda não usado. Sem tema: entre os canais aprovados. Com os temas da configuração (ou um tema
+    """Vídeo novo, priorizando canais aprovados, depois legenda quando configurado e, por fim, visualizações. Sem tema: entre os canais aprovados. Com os temas da configuração (ou um tema
     pedido na hora): só vídeos que falam do tema. Tema pedido na hora, ou 'também outros canais' ligado, busca no YouTube todo;
     o corte de canal não aprovado fica sem origem registrada e só posta com a sua liberação especial."""
     co = config()['cortes']
@@ -628,7 +659,10 @@ def proximo_video(tema: str = '') -> dict | None:
                     ids += [it['id']['videoId'] for it in j.get('items', []) if it.get('id', {}).get('videoId')]
             except ErroAgente as err:
                 anotar(f'Não consegui procurar "{tm}": {err}', 'erro')
-    ids = [i for i in dict.fromkeys(ids) if i not in e['vistos']]
+    # A regra antiga marcava o vídeo como visto antes de haver qualquer corte.
+    vistos = {i for i, visita in e['vistos'].items()
+              if not visita.get('r', '').startswith('erro: Vídeo sem legenda no YouTube: pulei')}
+    ids = [i for i in dict.fromkeys(ids) if i not in vistos]
     limite = (datetime.utcnow() - timedelta(days=co['dias_video'])).strftime('%Y-%m-%dT%H:%M:%SZ')
     ok_canais = {c['id'] for c in aprovados}
     bons = []
@@ -646,7 +680,8 @@ def proximo_video(tema: str = '') -> dict | None:
             v['tema'] = casou
         v['fora_aprovados'] = v['canal'] not in ok_canais
         bons.append(v)
-    return max(bons, key=lambda v: (not v['fora_aprovados'], v['views'])) if bons else None
+    return max(bons, key=lambda v: (not v['fora_aprovados'],
+                                    co['priorizar_legendas'] and v['tem_legenda'], v['views']), default=None)
 
 
 # ---------------------------------------------------------------- fala: legenda do YouTube ou IA
@@ -806,8 +841,31 @@ def _sem_link(s) -> str:
     return re.sub(r'\s+', ' ', re.sub(r'[\x00-\x1f@<>]', ' ', s)).strip()
 
 
+def gancho_integro_ativo() -> bool:
+    return os.getenv('A1_GANCHO_INTEGRO','0').lower() in ('1','true','sim')
+
+
+def _fronteira_fala(frs: list, i: int) -> bool:
+    texto = str(frs[i].get('texto') or '').rstrip('"”’) ')
+    return bool(re.search(r'[.!?…]$', texto)) or (i + 1 < len(frs) and frs[i+1]['ini'] - frs[i]['fim'] > 0.7)
+
+
+def _limites_integros(frs: list, i0: int, i1: int, co: dict):
+    # Chunks de 12 palavras não são necessariamente frases. Junta até pontuação/pausa.
+    while i0 > 0 and not _fronteira_fala(frs, i0-1):
+        i0 -= 1
+    finais = [k for k in range(i0,len(frs)) if _fronteira_fala(frs,k) and
+              co['dur_min'] <= frs[k]['fim'] - frs[i0]['ini'] <= co['dur_max']]
+    if not finais:
+        return None
+    fim = min(finais,key=lambda k:abs(frs[k]['fim']-frs[i1]['fim']))
+    return i0,fim
+
+
 def validar(achados: list, frs: list, co: dict) -> list:
     """Confere o que a IA devolveu: tempos reais, duração, nota, proibidos e repetidos."""
+    if not frs:
+        return []
     notas = []
     for a in achados:
         try:
@@ -836,8 +894,14 @@ def validar(achados: list, frs: list, co: dict) -> list:
         # a IA às vezes devolve um trecho curto no fim do vídeo: tenta completar a duração puxando o começo para trás
         while frs[i1]['fim'] - frs[i0]['ini'] < co['dur_min'] and i0 > 0:
             i0 -= 1
+        integro = gancho_integro_ativo()
+        if integro:
+            limites = _limites_integros(frs,i0,i1,co)
+            if not limites:
+                continue
+            i0,i1 = limites
         ini, fim = frs[i0]['ini'], frs[i1]['fim']
-        if fim - ini > co['dur_max'] + 0.5 and fim - ini - co['dur_max'] <= 6 and i1 > i0:
+        if not integro and fim - ini > co['dur_max'] + 0.5 and fim - ini - co['dur_max'] <= 6 and i1 > i0:
             fim = ini + co['dur_max']           # passou por pouco (frase comprida): termina no limite em vez de perder o trecho
         if not (co['dur_min'] <= fim - ini <= co['dur_max'] + 0.5):
             continue
@@ -846,9 +910,20 @@ def validar(achados: list, frs: list, co: dict) -> list:
             continue
         tags = [re.sub(r'[^\w#]', '', str(h)) for h in (a.get('hashtags') or []) if isinstance(h, str)]
         tags = [h if h.startswith('#') else '#' + h for h in tags if len(h) > 1][:6]
-        out.append({'ini': round(max(0, ini - 0.15), 2), 'fim': round(fim + 0.25, 2), 'nota': int(max(0, min(99, round(nota)))),
+        ini_saida, fim_saida = max(0, ini - 0.15), fim + 0.25
+        if integro:
+            folga = max(0,co['dur_max']-(fim-ini))
+            antes = min(0.15,folga,max(0,ini-(frs[i0-1]['fim'] if i0 else 0)))
+            depois = min(0.25,folga-antes,max(0,(frs[i1+1]['ini'] if i1+1<len(frs) else fim+0.25)-fim))
+            ini_saida,fim_saida=ini-antes,fim+depois
+        out.append({'ini': round(ini_saida, 2), 'fim': round(fim_saida, 2), 'nota': int(max(0, min(99, round(nota)))),
                     'titulo': _sem_link(a.get('titulo', ''))[:90] or texto[:60], 'gancho': _sem_link(a.get('gancho', ''))[:60],
                     'hashtags': tags, 'motivo': _sem_link(a.get('motivo', ''))[:200], 'texto': texto[:600]})
+        if integro:
+            out[-1]['gancho_integridade'] = {'verificado':True,'fonte':'transcricao',
+                'inicio_solicitado':float(a['inicio']),'fim_solicitado':float(a['fim']),
+                'inicio_frase':ini,'fim_frase':fim,'criterio':'pontuacao_ou_pausa',
+                'motivo':'Mantidas palavras inteiras e fronteiras observadas de fala, dentro do limite de duração.'}
     out.sort(key=lambda c: -c['nota'])
     limpos = []
     for c in out:
@@ -938,6 +1013,9 @@ def escolher_sem_fala(arq: Path, dur: float, palavras: list, quantos: int, co: d
                     'gancho': _sem_link(str(tx.get('gancho') or ''))[:60] or 'OLHA ESSE MOMENTO', 'hashtags': tags or ['#gameplay', '#live'],
                     'motivo': c['motivo'] + (f' Na imagem: {str(tx.get("descricao"))[:120]}' if tx.get('descricao') else ''),
                     'texto': '', 'sem_legenda': True})
+        if gancho_integro_ativo():
+            out[-1]['gancho_integridade']={'verificado':False,'fonte':'som_imagem',
+                'motivo':'Sem transcrição: limites medidos por eventos de som/imagem; integridade da fala não confirmada.'}
     return out
 
 
@@ -1053,10 +1131,11 @@ def montar_ass(palavras: list, ini: float, fim: float, tpl: dict, gancho: str, L
     if tpl['legenda'] != 'nenhuma':
         ps = [(max(0, a - ini), min(dur, b - ini), p) for a, b, p in palavras if b > ini and a < fim]
         grupo, grupos = [], []
+        max_palavras, max_letras = {'calmo': (4, 24), 'dinamico': (2, 12)}.get(tpl.get('ritmo'), (3, 16))
         for i, w in enumerate(ps):
             grupo.append(w)
             prox = ps[i + 1][0] if i + 1 < len(ps) else None
-            if len(grupo) >= 3 or sum(len(x[2]) for x in grupo) >= 16 or prox is None or prox - w[1] > 0.6:
+            if len(grupo) >= max_palavras or sum(len(x[2]) for x in grupo) >= max_letras or prox is None or prox - w[1] > 0.6:
                 grupos.append(grupo)
                 grupo = []
         dest = _ass_cor(tpl['cor_destaque'])
@@ -1208,15 +1287,24 @@ def editar(video: Path, corte: dict, palavras: list, tpl: dict, destino: Path, p
     cmd += ['-filter_complex', fc, '-map', '[v]', '-map', '0:a?', '-t', f'{dur:.2f}', '-c:v', 'libx264', '-preset', tpl.get('x264_preset') or os.getenv('PRESET_X264', 'veryfast'),
             '-crf', str(tpl.get('crf', 23)), '-pix_fmt', 'yuv420p', *af, '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-movflags', '+faststart', str(destino)]
     t0 = time.time()
-    r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
-    if r.returncode == 0 and tpl.get('modo'):
-        mr.registrar_tempo(tpl['modo'], time.time() - t0, dur)
-    ass.unlink(missing_ok=True)
-    if logo:
-        logo.unlink(missing_ok=True)
-    if r.returncode != 0 or not destino.exists() or destino.stat().st_size < 2000:
+    import renderizador as rd
+    try:
+        rd.rodar(cmd, cancelado=getattr(CONTROLE_TRABALHO, 'cancelado', None), dur=dur)
+        if not destino.exists() or destino.stat().st_size < 2000:
+            raise rd.ErroRender('arquivo de saída vazio')
+        if tpl.get('modo'):
+            mr.registrar_tempo(tpl['modo'], time.time() - t0, dur)
+    except InterruptedError:
+        from fila import Cancelado
         destino.unlink(missing_ok=True)
-        raise ErroAgente('O FFmpeg não conseguiu montar o corte: ' + (r.stderr.strip()[-300:] or 'erro desconhecido'))
+        raise Cancelado() from None
+    except rd.ErroRender as e:
+        destino.unlink(missing_ok=True)
+        raise ErroAgente(f'O FFmpeg não conseguiu montar o corte: {e}') from e
+    finally:
+        ass.unlink(missing_ok=True)
+        if logo:
+            logo.unlink(missing_ok=True)
 
 
 def duracao(video: Path) -> float:
@@ -1422,6 +1510,7 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
     pre: trechos do banco de trechos (custo_corte.tomar): a transcrição e a escolha já foram pagas numa análise anterior,
     então não chama a IA para ouvir nem para escolher. A edição, o editor e o diretor de qualidade seguem iguais."""
     import custo_corte as cc
+    from fila import Cancelado
     if BAIXAR is None and baixado is None:
         raise ErroAgente('Servidor sem a função de download.')
     cfg = config()
@@ -1432,6 +1521,8 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
     ref = (pre or {}).get('ref') or cc.nova_ref()       # as chamadas à IA desta análise ficam ligadas a ela (custo por corte)
     cc.definir_ref(ref)
     sobras: list = []
+    cid = None
+    vid = None
     try:
         etapa(f'Baixando: {v["titulo"][:60]}', 2)
         if baixado:
@@ -1451,10 +1542,8 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             palavras, fonte = [tuple(p) for p in pre['palavras'] if p[1] <= dur + 1], 'banco de trechos (análise já feita)'
             escolhidos = [dict(c) for c in pre['itens'] if c['fim'] <= dur + 1][:max(1, quantos)]
             etapa(f'{len(escolhidos)} trecho(s) guardado(s) de "{v["titulo"][:50]}": sem gastar IA para ouvir e escolher', 50)
-        elif len(palavras) < 40 and co.get('so_com_legenda') and not baixado:
-            if not co.get('sem_fala'):
-                raise ErroAgente('Vídeo sem legenda no YouTube: pulei para não gastar IA ouvindo o áudio (opção "Só vídeos com legenda" no Agente 1).')
         elif len(palavras) < 40:
+            etapa(f'Sem legenda aproveitável: transcrevendo o áudio de "{v["titulo"][:50]}"', 20)
             fonte = 'IA'
             palavras = transcrever_ia(arq, dur, pasta, co['idioma'])
         if pre:
@@ -1494,10 +1583,10 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
             mid = mo.sortear(estado()['pesos'], [m['id'] for m in ativos], cfg['postagem']['redes'], rnd)
             modelo = next(m for m in ativos if m['id'] == mid)
             tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
-            if c.get('sem_legenda'):
-                tpl['legenda'] = 'nenhuma'          # momento sem fala: não há o que legendar
             if perfil:
                 usadas.append(f'Perfil {perfil["nome"]}: ' + ('; '.join(pf.aplicar_ao_tpl(tpl, perfil, rnd)) or 'sem mudanças de identidade'))
+            if c.get('sem_legenda'):
+                tpl['legenda'] = 'nenhuma'          # momento sem fala: não há o que legendar
             usadas += _sortear_estilo(tpl, co, rnd)
             arranjo = cmp.sortear_arranjo(tpl, rnd)       # comparação: um em cima do outro ou lado a lado, sorteado por corte
             if arranjo:
@@ -1532,6 +1621,8 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
                 ajuste = ajustar_corte(c, palavras, qa, co, dur)
                 if qa.get('erros') or not ajuste:
                     tpl, usadas = sortear(mo.tpl(modelo), co['variar'], rnd)
+                    if perfil:
+                        usadas += pf.aplicar_ao_tpl(tpl, perfil, rnd)
                     if c.get('sem_legenda'):
                         tpl['legenda'] = 'nenhuma'
                     tpl['estilo_visual'], tpl['estilo_forca'], tpl['estilo_off'], tpl['estilo_texto'] = estilo_ant
@@ -1560,10 +1651,14 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
                     c['hashtags'] = list(dict.fromkeys([*(c.get('hashtags') or []), *perfil['hashtags_base']]))[:12]
             if extra:
                 c.update(extra)
-            if JOB_ATUAL:
-                c.setdefault('job_a1', JOB_ATUAL)
+            job_atual = getattr(CONTROLE_TRABALHO, 'job', '') or JOB_ATUAL
+            if job_atual:
+                c.setdefault('job_a1', job_atual)
+            verificar_cancelamento()
             _mudar(lambda e, c=c: e['cortes'].append(c))
             criados.append(c)
+            cid = None       # o corte já salvo permanece disponível ao cancelar os próximos
+            vid = None
             t_corte = time.time()
         if not pre:
             guardados = 0
@@ -1577,9 +1672,26 @@ def processar_video(v: dict, quantos: int, baixado: tuple | None = None, extra: 
                     anotar(f'Banco de trechos: guardei mais {guardados} trecho(s) bons de "{v["titulo"][:60]}" para virar corte depois, sem gastar IA.')
             cc.registrar_analise(ref, v, fonte, dur, len(escolhidos) + len(sobras), len(escolhidos), guardados)
         return criados
+    except Cancelado:
+        if cid:
+            encerrar_corte_interrompido(cid)
+        if vid:
+            (pg.VIDEOS / (vid + '.mp4')).unlink(missing_ok=True)
+        raise
     finally:
         cc.definir_ref('')
         shutil.rmtree(pasta, ignore_errors=True)
+
+
+def encerrar_corte_interrompido(cid: str):
+    """Encerra as etapas do corte parcial para os agentes não ficarem ativos no painel."""
+    import banco as db
+    import esteira as es
+    import pipeline as pl
+    for v in db.todos("SELECT id FROM esteira_videos WHERE origem='corte' AND ref=?", cid):
+        es.cancelar(v['id'], 'Produção interrompida por você.')
+    for r in db.todos("SELECT id FROM pipeline_runs WHERE origem='corte' AND ref=? AND estado<>'cancelled'", cid):
+        pl.mover(r['id'], 'cancelled', etapa='Produção interrompida por você.')
 
 
 # ---------------------------------------------------------------- esteira dos 5 agentes (Agente 1 -> 5 -> 4 -> 2)
@@ -1601,7 +1713,7 @@ def _previo_corte(c: dict, palavras: list, co: dict, dur: float, v: dict, cid: s
     evid = es.garantir('corte', cid, c.get('titulo') or '')
     es.marcar_seguro(evid, 'producao', 'concluida', inicio=t0, fim=time.time(), executor='agente.processar_video',
                      recibo={'corte': cid, 'origem': v.get('id', ''), 'ini': round(float(c['ini']), 2), 'fim': round(float(c['fim']), 2),
-                             'nota_agente1': c.get('nota'), 'fala': fonte, 'job': JOB_ATUAL or None})
+                             'nota_agente1': c.get('nota'), 'fala': fonte, 'job': getattr(CONTROLE_TRABALHO, 'job', '') or JOB_ATUAL or None})
     run = pl.criar('corte', cid, (c.get('titulo') or 'corte')[:120], chave=f'corte:{v.get("id", "")}:{float(c["ini"]):.2f}:{cid}',
                    estado='cuts_selected', dados={'origem': v.get('id', '')})
     __import__('banco').executar('UPDATE esteira_videos SET run=? WHERE id=?', run['id'], evid)
@@ -1928,12 +2040,67 @@ def _marcar_visto(vid: str, resultado: str):
     _mudar(f)
 
 
+def mesma_fonte_ativa() -> bool:
+    return os.getenv('A1_MESMA_FONTE', '0').lower() in ('1', 'true', 'sim')
+
+
+def _fonte_transitoria(erro: Exception) -> bool:
+    texto = str(erro)
+    # Sem autorização, fonte removida e limites financeiros nunca entram em retry.
+    if re.search(r'privad|private|removid|removed|404|copyright|sem (direito|autoriza)|url inv[aá]lida|teto|or[cç]amento|falta.*chave', texto, re.I):
+        return False
+    return isinstance(erro, (TimeoutError, ConnectionError)) or bool(re.search(
+        r'timeout|timed out|429|502|503|504|tempor[aá]ri|temporar|connection|conex[aã]o|rede indispon|network|ffmpeg.*(busy|recurso|broken pipe)', texto, re.I))
+
+
+def _salvar_fonte(chave: str, registro: dict, *, encerrar=False):
+    import banco as db
+    with db.tx() as c:
+        c.execute('INSERT INTO kv (chave,valor) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor',
+                  ('a1.fonte:' + registro['video']['id'], json.dumps(registro, ensure_ascii=False)))
+        if encerrar:
+            c.execute('DELETE FROM kv WHERE chave=?', (chave,))
+        else:
+            c.execute('INSERT INTO kv (chave,valor) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor',
+                      (chave, json.dumps(registro, ensure_ascii=False)))
+
+
+def _esperar_fonte(segundos: float, motivo: str) -> str:
+    if getattr(CONTROLE_TRABALHO, 'job', ''):
+        from fila import Esperar
+        raise Esperar(max(0, segundos), motivo)
+    return motivo
+
+
 def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '', limite: int = 0) -> str:
     """Um passo do agente de cortes: no máximo um vídeo por vez. limite > 0: quem manda é o estoque da Central de Automação."""
     co = config()['cortes']
+    retry = mesma_fonte_ativa()
+    registro = None
+    chave_fonte = 'a1.pendente:' + hashlib.sha256((link + '\0' + tema).encode()).hexdigest()[:20]
+    max_fonte = max(1, min(10, int(os.getenv('A1_FONTE_MAX_TENTATIVAS', '3')))) if retry else 1
+    if retry:
+        import banco as db
+        verificar_cancelamento()
+        registro = db.kv(chave_fonte)
+        if registro:
+            dono = db.um('SELECT status,cancelar FROM jobs WHERE id=?', registro.get('job') or '')
+            if dono and (dono['cancelar'] or dono['status'] == 'cancelado'):
+                registro.update(estado='CANCELLED')
+                _salvar_fonte(chave_fonte, registro, encerrar=True)
+                return 'A tentativa desta fonte foi cancelada.'
+            if registro.get('tentativas', 0) >= max_fonte:
+                registro.update(estado='BLOCKED', erro='Limite de tentativas atingido.')
+                _salvar_fonte(chave_fonte, registro, encerrar=True)
+                _marcar_visto(registro['video']['id'], registro['erro'])
+                return registro['erro']
+            if registro.get('proxima', 0) > time.time():
+                return _esperar_fonte(registro['proxima'] - time.time(), 'Esperando para tentar novamente a mesma fonte.')
     if limite > 0 and not link:
         forcar = True
-    if link:
+    if registro:
+        v, quantos = registro['video'], registro['quantos']
+    elif link:
         m = re.search(r'(?:v=|youtu\.be/|shorts/|live/)([\w-]{11})', link)
         v = {'id': m.group(1) if m else 'x' + uuid.uuid4().hex[:10], 'url': link, 'titulo': '', 'canal': '', 'canal_nome': 'link enviado por você'}
         quantos = co['por_video']
@@ -1960,13 +2127,39 @@ def trabalhar_cortes(forcar: bool = False, link: str = '', tema: str = '', limit
             return 'Nenhum vídeo novo nos canais aprovados.' if any(c['status'] == 'aprovado' for c in estado()['canais']) else 'Nenhum canal aprovado ainda. Aprove canais na aba Agente.'
         v['url'] = os.getenv('URL_VIDEO_TESTE') or 'https://www.youtube.com/watch?v=' + v['id']
         quantos = max(1, min(co['por_video'], limite if limite > 0 else (falta if falta > 0 else co['por_video'])))
+    if retry:
+        registro = registro or {'video': v, 'quantos': quantos, 'tentativas': 0,
+                                'job': getattr(CONTROLE_TRABALHO, 'job', ''),
+                                'canal_aprovado': any(c.get('id') == v.get('canal') and c.get('status') == 'aprovado' for c in estado()['canais'])}
+        registro.update(tentativas=registro['tentativas'] + 1, estado='RUNNING', proxima=0)
+        _salvar_fonte(chave_fonte, registro)  # fonte salva antes de baixar/IA: sobrevive à queda
     try:
+        if retry:
+            verificar_cancelamento()
+            if registro.get('canal_aprovado') and not any(
+                    c.get('id') == v.get('canal') and c.get('status') == 'aprovado' for c in estado()['canais']):
+                raise ErroAgente('Sem autorização atual do canal para repetir esta fonte.')
         criados = processar_video(v, quantos)
-    except (ErroAgente, pg.ErroRede) as e:
+    except (ErroAgente, pg.ErroRede, TimeoutError, ConnectionError) as e:
+        if not retry and not isinstance(e, (ErroAgente, pg.ErroRede)):
+            raise  # flag desligada conserva inclusive o contrato de erro antigo
+        if retry:
+            transitorio = _fonte_transitoria(e)
+            repetir = transitorio and registro['tentativas'] < max_fonte
+            atraso = min(1800, 60 * 3 ** (registro['tentativas'] - 1))
+            registro.update(estado='RETRYABLE_ERROR' if repetir else 'BLOCKED', erro=str(e)[:500],
+                            proxima=time.time() + atraso if repetir else 0)
+            _salvar_fonte(chave_fonte, registro, encerrar=not repetir)
+            if repetir:
+                anotar(f'Tentativa {registro["tentativas"]}/{max_fonte}: vou repetir a fonte {v["id"]} em {atraso}s.', 'erro')
+                return _esperar_fonte(atraso, 'Nova tentativa na mesma fonte: ' + str(e)[:160])
         _marcar_visto(v['id'], 'erro: ' + str(e))
         anotar(f'Não deu para cortar "{v.get("titulo") or link}": {e}', 'erro')
         avisar('falha', 'Um vídeo não pôde ser cortado', f'Vídeo: {v.get("titulo") or link}\nMotivo: {e}', zap_tipo='a1_falha')
         return str(e)
+    if retry:
+        registro.update(estado='COMPLETED', proxima=0)
+        _salvar_fonte(chave_fonte, registro, encerrar=True)
     _marcar_visto(v['id'], f'{len(criados)} corte(s)')
     anotar(f'{len(criados)} corte(s) pronto(s) de "{v["titulo"][:80]}".', 'ok')
     return _depois_de_cortar(v, criados)
@@ -2459,9 +2652,49 @@ def acompanhar():
 
 def _numero(v):
     try:
-        return int(v)
-    except (TypeError, ValueError):
+        if isinstance(v, bool):
+            return None
+        n = int(v)
+        if isinstance(v, float) and v != n:
+            return None
+        return n if n >= 0 else None
+    except (TypeError, ValueError, OverflowError):
         return None
+
+
+def _id_youtube_publicado(destino: dict) -> str:
+    u = urllib.parse.urlsplit(str(destino.get('link') or '').split(' ')[0])
+    host = (u.hostname or '').lower()
+    if host in ('youtu.be', 'www.youtu.be'):
+        vid = u.path.strip('/')
+    elif host in ('youtube.com', 'www.youtube.com', 'm.youtube.com'):
+        if u.path.rstrip('/') == '/watch':
+            vid = urllib.parse.parse_qs(u.query).get('v', [''])[0]
+        else:
+            m = re.fullmatch(r'/(?:shorts|embed|live)/([\w-]{11})/?', u.path)
+            vid = m.group(1) if m else ''
+    else:
+        vid = ''
+    return vid if re.fullmatch(r'[\w-]{11}', vid) else ''
+
+
+def inventario_metricas() -> dict:
+    """Capacidade do código, não prova de autorização de uma conta. Não faz HTTP."""
+    escopos = {k: v.replace(',', ' ').split() for k, v in pg.ESCOPOS.items()}
+    redes = {
+        'youtube': {'coletor': True, 'campos': ['views', 'curtidas', 'comentarios'],
+                    'endpoint': 'youtube/v3/videos?part=statistics', 'escopos_solicitados': escopos['google']},
+        'instagram': {'coletor': True, 'campos': ['curtidas', 'comentarios'],
+                      'endpoint': pg.GRAPH_V + '/{media_id}?fields=like_count,comments_count', 'escopos_solicitados': escopos['meta']},
+        'facebook': {'coletor': True, 'campos': ['curtidas', 'comentarios'], 'campos_condicionais': ['views'],
+                     'endpoint': pg.GRAPH_V + '/{video_id}', 'escopos_solicitados': escopos['meta'],
+                     'limite': 'Views dependem do campo/versão e autorização. Video Insights não é consultado.'},
+        'tiktok': {'coletor': False, 'campos': [], 'escopos_solicitados': escopos['tiktok'],
+                   'limite': 'Sem adaptador de métricas; video.list não é solicitado por este cliente.'},
+        'kwai': {'coletor': False, 'campos': [], 'limite': 'Sem integração de métricas.'},
+    }
+    return {'publicacoes_habilitadas': os.getenv('METRICAS_PUBLICACOES', '0') == '1',
+            'redes': {r: dict(d, autorizacao_verificada=False, retencao='nao_coletada') for r, d in redes.items()}}
 
 
 def medir_post(p: dict) -> dict:
@@ -2473,9 +2706,9 @@ def medir_post(p: dict) -> dict:
         m = {'views': None, 'curtidas': None, 'comentarios': None}
         try:
             if rede == 'youtube':
-                achou = re.search(r'shorts/([\w-]{11})', r.get('link', ''))
-                if achou:
-                    st, _, j = pg.http('GET', pg.URL['google_api'] + '/youtube/v3/videos?part=statistics&id=' + achou.group(1),
+                vid = _id_youtube_publicado(r)
+                if vid:
+                    st, _, j = pg.http('GET', pg.URL['google_api'] + '/youtube/v3/videos?part=statistics&id=' + vid,
                                        cab={'Authorization': 'Bearer ' + pg._token_google()}, tempo=30)
                     itens = (j.get('items') or []) if st < 300 else []
                     if itens:
@@ -2520,11 +2753,12 @@ def aprender(ajustar: bool = True):
         p = ps.get(c.get('post'))
         medida = medir_post(p) if p else {}
         views = (medida.get('youtube') or {}).get('views')
+        medido_em = time.time()
 
-        def f(e, cid=c['id'], fx=c.get('faixa', ''), v=views, md=medida, c=c):
+        def f(e, cid=c['id'], fx=c.get('faixa', ''), v=views, md=medida, c=c, em=medido_em):
             for x in e['cortes']:
                 if x['id'] == cid:
-                    x.update(medido=True, views=v, metricas=md)
+                    x.update(medido=True, views=v, metricas=md, metricas_em=em)
             if v is not None and fx:
                 h = e['horarios'].setdefault(fx, {'n': 0, 'views': 0})
                 h['n'] += 1
@@ -2536,6 +2770,7 @@ def aprender(ajustar: bool = True):
         _mudar(f)
     for p in soltos[:20]:
         medida = medir_post(p)
+        medido_em = time.time()
 
         def g(e, md=medida, p=p):
             for rede, m in md.items():
@@ -2543,13 +2778,13 @@ def aprender(ajustar: bool = True):
             e['medidas'] = e['medidas'][-3000:]
         _mudar(g)
         try:
-            pg._mudar(p['id'], lambda q, md=medida: q.update(medido=True, metricas=md))
+            pg._mudar(p['id'], lambda q, md=medida, em=medido_em: q.update(medido=True, metricas=md, metricas_em=em))
         except pg.ErroRede:
             pass
     if pend or soltos:
         try:
             import aprendizado as apr
-            apr.capturar()                  # guarda o retrato dos números lidos agora (sem editar depois)
+            apr.capturar(publicacoes=pg.posts())  # guarda o retrato dos números lidos agora (sem editar depois)
         except Exception as e:  # noqa: BLE001
             print('agente: retratos do aprendizado', e)
     if ajustar and (pend or soltos) and config()['cortes']['aprender']:
@@ -2733,6 +2968,7 @@ def _em_fundo(nome: str, f, *a):
         if not OCUPADO.acquire(blocking=False):
             return
         try:
+            etapa(nome)
             f(*a)
         except (ErroAgente, pg.ErroRede) as e:
             anotar(f'{nome}: {e}', 'erro')
@@ -2747,6 +2983,7 @@ def _em_fundo(nome: str, f, *a):
 
 PENDENTES = None         # ligado pelo servidor: quantos pedidos do agente de cortes esperam na fila
 ENFILEIRAR = None        # ligado pelo servidor: pedidos manuais entram na fila em vez de serem recusados
+ENFILEIRAR_ROTINA = None  # ligado pelo servidor: busca e cortes automáticos também aparecem na fila
 
 
 def rodar_agora(oque: str, link: str = '') -> dict:
@@ -3074,6 +3311,13 @@ def parar_tudo() -> dict:
     return ver()
 
 
+def _rodar_rotina(oque, nome, trabalho, quantos=0, fontes=1):
+    if ENFILEIRAR_ROTINA:
+        ENFILEIRAR_ROTINA(oque, nome, quantos, fontes)
+    else:
+        _em_fundo(nome, trabalho)
+
+
 def passo():
     """Chamado pelo relógio: decide o que fazer agora, sem nunca rodar dois trabalhos pesados juntos."""
     cfg = config()
@@ -3101,7 +3345,7 @@ def passo():
         _mudar(lambda e: e['marcas'].update(relatorio=semana))
         if not primeira:
             relatorio_semana()
-    if not co['ligado'] or OCUPADO.locked():
+    if not co['ligado'] or OCUPADO.locked() or (PENDENTES and PENDENTES()):
         return
     if _live_esperando():
         return                 # a Live vem primeiro: o celular fica livre para os blocos dela
@@ -3121,16 +3365,19 @@ def passo():
     if dec is not None:
         if dec['acao'] == 'buscar_canais':          # procura canais e já emenda a rodada de cortes (não espera a próxima volta)
             _mudar(lambda e: e['marcas'].update(tentativa=time.time()))
-            _em_fundo('Busca de canais e cortes', lambda q=dec['quantos'], f=dec.get('fontes', 1): (buscar_canais(), rodada_estoque(q, f)))
+            _rodar_rotina('buscar_estoque', 'Busca de canais e cortes',
+                          lambda: (buscar_canais(), rodada_estoque(dec['quantos'], dec.get('fontes', 1))), dec['quantos'], dec.get('fontes', 1))
         elif dec['acao'] == 'cortar':
             _mudar(lambda e: e['marcas'].update(tentativa=time.time()))
-            _em_fundo('Agente de cortes', lambda q=dec['quantos'], f=dec.get('fontes', 1): rodada_estoque(q, f))
+            _rodar_rotina('estoque', 'Agente de cortes',
+                          lambda: rodada_estoque(dec['quantos'], dec.get('fontes', 1)), dec['quantos'], dec.get('fontes', 1))
         return
-    if busca_vencida():
-        _em_fundo('Busca de canais', buscar_canais)
+    if busca_vencida() and time.time() - m.get('busca_solicitada', 0) > co['busca_horas'] * 3600:
+        _mudar(lambda e: e['marcas'].update(busca_solicitada=time.time()))
+        _rodar_rotina('buscar', 'Busca automática de canais', buscar_canais)
     elif cortes_da_semana() < co['por_semana'] and time.time() - m.get('tentativa', 0) > float(os.getenv('INTERVALO_CORTES', '3600')):
         _mudar(lambda e: e['marcas'].update(tentativa=time.time()))
-        _em_fundo('Agente de cortes', trabalhar_cortes)
+        _rodar_rotina('meta', 'Cortes da meta semanal', trabalhar_cortes)
 
 
 def iniciar():

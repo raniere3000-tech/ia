@@ -192,11 +192,22 @@ check(abs(pk3['quando'] - s1['quando_utc']) < 1, 'o post novo sai no horário or
 print('6. Caminho antigo (sem programação diária)')
 db.executar('UPDATE posting_schedules SET ligado=0')
 check(not a2.tem_programacao(), 'programação desligada')
-ag.salvar_config({'postagem': {'redes': ['youtube'], 'faixas': [{'dia': d, 'hora': h1} for d in range(7)]}})
+# A agenda diária usa São Paulo; o caminho antigo usa o fuso local do processo.
+# Referenciar a reserva REAL, não reutilizar sua hora formatada em outro fuso.
+hora_ocupada_local = datetime.fromtimestamp(s1['quando_utc']).strftime('%H:%M')
+ag.salvar_config({'postagem': {'redes': ['youtube'], 'faixas': [{'dia': d, 'hora': hora_ocupada_local} for d in range(7)]}})
 ag._mudar(lambda e: [c.update(status='postado') for c in e['cortes']])
 db.executar("UPDATE coordenador_ordens SET status='concluida'")
 db.kv_gravar('agente7.ultima_reposicao', 0)
 antes = len(PEDIDOS)
+# O horário h1 foi preenchido por k3 no cenário anterior. Marcar o corte
+# como postado não remove sua reserva futura; não deve pedir reposição ali.
+ag.trabalhar_postagem()
+check(len(PEDIDOS) == antes, 'sem horário livre nas próximas 24 h: não pede reposição antecipada')
+livre = datetime.now() + timedelta(hours=6)
+ag.salvar_config({'postagem': {'faixas': [{'dia': livre.weekday(), 'hora': livre.strftime('%H:%M')}]}})
+vaga = ag.escolher_vaga(ag.config()['postagem'], ag.config()['cortes']['por_semana'])
+check(vaga and time.time() < vaga['quando'] < time.time() + 24 * 3600, 'cenário antigo tem uma vaga realmente livre nas próximas 24 h')
 ag.trabalhar_postagem()
 check(len(PEDIDOS) == antes + 1 and len(ordens_repo()) == 2, 'sem corte pronto e com horário livre: pede mais cortes ao Coordenador')
 ag.trabalhar_postagem()
