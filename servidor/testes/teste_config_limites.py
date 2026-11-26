@@ -9,3 +9,13 @@ assert (c['por_semana'], c['por_video'], c['por_analise'], c['dur_min'], c['dur_
 c = ag._limpar_cfg(ag._mesclar(ag.PADRAO, {'cortes': {'por_semana': 9999, 'por_video': 99}}))['cortes']
 assert (c['por_semana'], c['por_video']) == (ag.LIM_POR_SEMANA, ag.LIM_POR_VIDEO), c
 print('OK')
+
+# cookies do YouTube: diagnóstico
+import time  # noqa: E402
+import servidor as sv  # noqa: E402
+def ck(nome, exp): return f'.youtube.com\tTRUE\t/\tTRUE\t{exp}\t{nome}\tx'
+fut, pas = int(time.time()) + 86400, int(time.time()) - 86400
+assert sv.diagnostico_cookies(ck('__Secure-3PSID', fut))['estado'] == 'ok'
+assert sv.diagnostico_cookies(ck('__Secure-3PSID', pas))['estado'] == 'vencido'
+assert sv.diagnostico_cookies(ck('VISITOR_INFO1_LIVE', fut))['estado'] == 'sem_login'
+print('OK cookies')
