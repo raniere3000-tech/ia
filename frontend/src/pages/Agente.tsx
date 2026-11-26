@@ -258,6 +258,13 @@ function ConfiguracaoAgente(){
           toast('O servidor não salvou a opção de legenda. Atualize o EstúdioClip no Termux e reinicie o servidor.','erro');
           return;
         }
+        // o servidor pode ajustar um número (limite, servidor antigo): avisa em vez de dizer só "salva" e o valor voltar calado
+        const nc=nv.config.cortes as unknown as Record<string,unknown>;
+        const dif=Object.entries(p.cortes||{}).filter(([k,x])=>typeof x==='number'&&k in nc&&nc[k]!==x);
+        if(dif.length){
+          toast('O servidor ajustou: '+dif.map(([k,x])=>`${k} ${x} → ${String(nc[k])}`).join(', ')+'. Se o limite parece velho, atualize o servidor (git checkout main && git pull) e reinicie.','erro');
+          return;
+        }
         toast(ok,'ok');
       }catch(e){
         if(vivo.current) toast('Não consegui salvar. '+(e instanceof Error?e.message:String(e)),'erro');
@@ -414,8 +421,8 @@ function ConfiguracaoAgente(){
       <section className="panel">
         <h3>Quantidade e tamanho</h3>
         <div className="ag-grade">
-          <label>Cortes por semana<Campo tipo="number" min={1} max={21} valor={co.por_semana} salvar={x=>salvar({cortes:{por_semana:+x}})}/></label>
-          <label>Cortes por vídeo<Campo tipo="number" min={1} max={6} valor={co.por_video} salvar={x=>salvar({cortes:{por_video:+x}})}/></label>
+          <label>Cortes por semana<Campo tipo="number" min={1} max={200} valor={co.por_semana} salvar={x=>salvar({cortes:{por_semana:+x}})}/></label>
+          <label>Cortes por vídeo<Campo tipo="number" min={1} max={20} valor={co.por_video} salvar={x=>salvar({cortes:{por_video:+x}})}/></label>
           <label>Trechos por análise (banco de trechos, 0 = desligado){' '}<small className="muted">os que não saem agora viram corte depois, sem gastar IA</small><Campo tipo="number" min={0} max={20} valor={co.por_analise??12} salvar={x=>salvar({cortes:{por_analise:+x}})}/></label>
           <label>Cada corte dura no mínimo (em SEGUNDOS){' '}<small className="muted">= {tempo(co.dur_min)}</small><Campo tipo="number" min={10} max={175} valor={co.dur_min} salvar={x=>salvar({cortes:{dur_min:+x}})}/></label>
           <label>Cada corte dura no máximo (em SEGUNDOS){' '}<small className="muted">= {tempo(co.dur_max)}</small><Campo tipo="number" min={15} max={180} valor={co.dur_max} salvar={x=>salvar({cortes:{dur_max:+x}})}/></label>

@@ -122,13 +122,47 @@ def js_runtimes() -> dict:
         return {'deno': {}, 'node': {}}
 
 
+LOGIN_COOKIES = ('SID', '__Secure-1PSID', '__Secure-3PSID', 'LOGIN_INFO', 'SAPISID', '__Secure-3PAPISID')
+
+
+def diagnostico_cookies(texto: str | None = None) -> dict:
+    """Confere o cookies.txt guardado (ou o texto recebido): tem login de verdade? Os cookies de login já venceram?
+    estado: 'ok' | 'sem_login' (exportado sem estar logado) | 'vencido' | 'sem_cookies'."""
+    if texto is None:
+        if not COOKIES.exists():
+            return {'estado': 'sem_cookies'}
+        try:
+            texto = cofre.decifrar(COOKIES.read_bytes().strip()).decode('utf-8', 'replace')
+        except Exception:  # noqa: BLE001
+            return {'estado': 'vencido', 'motivo': 'cofre ilegível'}
+    agora = time.time()
+    achados, validos = 0, 0
+    for ln in texto.split('\n'):
+        partes = ln.split('\t')
+        if len(partes) >= 7 and partes[5] in LOGIN_COOKIES:
+            achados += 1
+            try:
+                exp = int(float(partes[4] or 0))
+            except ValueError:
+                exp = 0
+            if exp == 0 or exp > agora:     # 0 = cookie de sessão (sem data)
+                validos += 1
+    if not achados:
+        return {'estado': 'sem_login'}
+    return {'estado': 'ok' if validos else 'vencido'}
+
+
 def erro_amigavel(msg: str) -> str:
     msg = re.sub(r'\x1b\[[0-9;]*m', '', msg)        # tira as cores do terminal
     m = msg.lower()
     if 'sign in to confirm' in m or 'not a bot' in m:
         if COOKIES.exists():
-            return ('O YouTube ainda pede login (confirmar que não é robô), mesmo com os cookies. Os cookies podem ter vencido: '
-                    'exporte de novo em Chaves e ajustes > "YouTube pede login". Ou baixe o vídeo e use Enviar arquivo.')
+            d = diagnostico_cookies().get('estado')
+            causa = {'sem_login': 'O arquivo de cookies foi exportado SEM estar logado na conta.',
+                     'vencido': 'Os cookies de login já venceram.'}.get(d, 'Os cookies foram recusados (o YouTube troca os cookies quando o navegador fica aberto).')
+            return ('O YouTube ainda pede login (confirmar que não é robô), mesmo com os cookies. ' + causa +
+                    ' Exporte de novo: abra uma janela anônima, entre no youtube.com, exporte o cookies.txt, feche a janela sem sair da conta '
+                    'e envie em Chaves e ajustes > "YouTube pede login". Ou baixe o vídeo e use Enviar arquivo.')
         return ('O YouTube pediu login para confirmar que não é robô (acontece muito com internet de celular). '
                 'Resolva enviando os cookies do YouTube em Chaves e ajustes > "YouTube pede login", ou baixe o vídeo e use Enviar arquivo.')
     if 'private video' in m:
@@ -164,13 +198,18 @@ def salvar_cookies(corpo: bytes | None) -> dict:
             linhas.append(ln)
     if not any('youtube.com' in ln for ln in linhas):
         raise Erro(400, 'Esse arquivo não tem cookies do YouTube. Exporte com a extensão "Get cookies.txt LOCALLY" estando na página do youtube.com e logado.')
+    diag = diagnostico_cookies('\n'.join(linhas))
+    if diag['estado'] == 'sem_login':
+        raise Erro(400, 'Esse cookies.txt não tem o login do Google (você exportou sem estar logado). Entre na sua conta no youtube.com e exporte de novo.')
+    if diag['estado'] == 'vencido':
+        raise Erro(400, 'Os cookies desse arquivo já venceram. Exporte de novo, com o YouTube aberto e logado, numa janela anônima.')
     COOKIES.parent.mkdir(parents=True, exist_ok=True)
     COOKIES.write_bytes(cofre.cifrar(('# Netscape HTTP Cookie File\n' + '\n'.join(linhas) + '\n').encode('utf-8')))
     try:
         os.chmod(COOKIES, 0o600)
     except OSError:
         pass
-    return {'ok': True, 'cookies': True, 'linhas': len(linhas)}
+    return {'ok': True, 'cookies': True, 'linhas': len(linhas), 'estado': diag['estado']}
 
 
 def faixa_pedida(d: dict) -> tuple[float, float] | None:
@@ -600,7 +639,7 @@ class Handler(BaseHTTPRequestHandler):
                 versao_yt = yt_dlp.version.__version__
             except Exception:
                 versao_yt = None
-            return self.json(200, {'ok': True, 'download': versao_yt is not None, 'agendador': True, 'agente': True, 'versao': VERSAO, 'yt_dlp': versao_yt, 'senha': bool(TOKEN), 'max_minutos': MAX_MIN, 'cookies': COOKIES.exists(),
+            return self.json(200, {'ok': True, 'download': versao_yt is not None, 'agendador': True, 'agente': True, 'versao': VERSAO, 'yt_dlp': versao_yt, 'senha': bool(TOKEN), 'max_minutos': MAX_MIN, 'cookies': COOKIES.exists(), 'cookies_estado': diagnostico_cookies().get('estado'),
                                    'api': 1, 'projetos': True, 'fila': True, 'agente3': rd.tem_ffmpeg(),
                                    'aviso': None if versao_yt else 'yt-dlp não instalado: rode  pip install -U yt-dlp'})
         if caminho == '/contas':

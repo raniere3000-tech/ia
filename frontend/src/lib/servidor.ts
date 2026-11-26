@@ -1,6 +1,6 @@
 // Cliente do servidor opcional (pasta servidor/) que baixa o vídeo do YouTube pelo link.
 import { cabAuth } from './api';
-export type Saude = {ok:boolean;versao:string;yt_dlp:string;senha:boolean;max_minutos:number;cookies?:boolean};
+export type Saude = {ok:boolean;versao:string;yt_dlp:string;senha:boolean;max_minutos:number;cookies?:boolean;cookies_estado?:string};
 
 const base=(u:string)=>u.trim().replace(/\/+$/,'');
 function headers(token:string){ return {'Content-Type':'application/json',...cabAuth(token)}; }

@@ -53,7 +53,8 @@ function ServidorCard(){
   const [url,setUrl]=useState(settings.servidor||'http://localhost:8787'); const [tok,setTok]=useState(settings.servidorToken);
   const [busy,setBusy]=useState(false); const [info,setInfo]=useState('');
   const [cookies,setCookies]=useState<boolean|null>(null);
-  useEffect(()=>{ if(settings.servidor) testarServidor(settings.servidor,settings.servidorToken).then(s=>setCookies(s.cookies??null)).catch(()=>{}); },[settings.servidor,settings.servidorToken]);
+  const [ckEstado,setCkEstado]=useState('');
+  useEffect(()=>{ if(settings.servidor) testarServidor(settings.servidor,settings.servidorToken).then(s=>{ setCookies(s.cookies??null); setCkEstado(s.cookies_estado||''); }).catch(()=>{}); },[settings.servidor,settings.servidorToken]);
   async function salvar(){
     setBusy(true); setInfo('');
     try{ const s=await testarServidor(url,tok); setSettings({servidor:url.trim().replace(/\/+$/,''),servidorToken:tok.trim()}); setInfo(`Conectado (versão ${s.versao}, vídeos até ${Math.round(s.max_minutos)} min).`); toast('Servidor conectado! Agora é só colar o link em Gerar cortes.','ok'); }
@@ -77,7 +78,7 @@ function ServidorCard(){
      </div>
      {settings.servidor&&<div className="key-field cookies-box">
       <label className="key-label">YouTube pede login ("confirme que não é robô")? <HelpButton topic="cookies" label="Como resolver?"/></label>
-      <p className="hint">Envie o arquivo <b>cookies.txt</b> do YouTube. Ele fica só no seu servidor e faz o download entrar como se fosse você no navegador. {cookies===true?<span className="tag ok">Cookies enviados</span>:cookies===false?<span className="tag">Sem cookies</span>:null}</p>
+      <p className="hint">Envie o arquivo <b>cookies.txt</b> do YouTube. Ele fica só no seu servidor e faz o download entrar como se fosse você no navegador. {cookies===true?(ckEstado==='vencido'||ckEstado==='sem_login'?<span className="tag warn">{ckEstado==='vencido'?'Cookies vencidos: envie de novo':'Cookies sem login: envie de novo'}</span>:<span className="tag ok">Cookies enviados</span>):cookies===false?<span className="tag">Sem cookies</span>:null}</p>
       <div className="key-row">
        <label className="subtle file-btn"><Upload size={15}/> Enviar cookies.txt<input type="file" accept=".txt,text/plain" hidden onChange={async e=>{ const f=e.target.files?.[0]; e.target.value=''; if(!f) return; try{ const r=await enviarCookies(settings.servidor,settings.servidorToken,await f.text()); setCookies(r.cookies); toast('Cookies salvos no servidor. Tente o link de novo.','ok'); }catch(er){ toast(er instanceof Error?er.message:String(er),'erro'); } }}/></label>
        {cookies&&<button className="subtle" onClick={async()=>{ try{ await enviarCookies(settings.servidor,settings.servidorToken,null); setCookies(false); toast('Cookies apagados do servidor.'); }catch(er){ toast(er instanceof Error?er.message:String(er),'erro'); } }}><Trash2 size={15}/> Apagar cookies</button>}
